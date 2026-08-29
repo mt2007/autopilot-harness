@@ -97,7 +97,7 @@ program
   .option("--dry-run", "Preview actions without writing")
   .option(
     "--target <version>",
-    "Reserved; v0.1 pins to the running CLI version",
+    "Reserved; currently pins to the running CLI version",
   )
   .action((opts: { dryRun?: boolean; target?: string }) => {
     const result = upgradeProject({

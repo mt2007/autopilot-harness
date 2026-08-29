@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import { CLI_NAME } from "../names.js";
 import type { InitLocale, InitYesOptions, PlansGitPolicy } from "./types.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
@@ -263,15 +264,69 @@ export function answersToInstallOptions(
   };
 }
 
-const ALIAS_LINE = "alias autopilot='npx autopilot-harness'";
+/** POSIX single-quote a string for safe embedding in shell. */
+export function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
 
-/** Append shell alias with dedupe. Returns path + whether a line was added. */
+/**
+ * Absolute path of the running CLI entry (e.g. …/dist/bin.js), or null.
+ * Used so local checkouts write a working alias before the package is on npm.
+ */
+export function tryResolveRunningCliScript(): string | null {
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== "string" || argv1.trim() === "") return null;
+  try {
+    const abs = fs.realpathSync(path.resolve(argv1));
+    if (!fs.statSync(abs).isFile()) return null;
+    // Refuse control chars that break shell rc lines.
+    if (/[\0\n\r]/.test(abs)) return null;
+    return abs;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Runnable CLI command for docs / cheat sheets.
+ * Prefers `node <this-bin>`; falls back to `npx autopilot-harness`.
+ */
+export function resolveCliCommand(): string {
+  const script = tryResolveRunningCliScript();
+  if (script) return `node ${shellSingleQuote(script)}`;
+  return `npx ${CLI_NAME}`;
+}
+
+/**
+ * Shell rc snippet that defines `autopilot` as a function (not `alias=`).
+ * Alias RHS quoting breaks on paths containing `'`; a function body can embed
+ * the path via {@link shellSingleQuote} without source-time `$()` expansion.
+ */
+export function autopilotShellAliasLine(): string {
+  const script = tryResolveRunningCliScript();
+  if (script) {
+    return `autopilot() { command node ${shellSingleQuote(script)} "$@"; }`;
+  }
+  return `autopilot() { command npx ${CLI_NAME} "$@"; }`;
+}
+
+function shellRcDefinesAutopilot(body: string): boolean {
+  // Line-anchored only — avoid false positives from comments / prose that
+  // mention `alias autopilot=` mid-line.
+  return (
+    /(?:^|\n)\s*alias\s+autopilot=/.test(body) ||
+    /(?:^|\n)\s*autopilot\s*\(\)/.test(body) ||
+    /(?:^|\n)\s*function\s+autopilot\b/.test(body)
+  );
+}
+
+/** Append shell shortcut with dedupe. Returns path + whether a line was added. */
 export function appendShellAlias(
   target: Exclude<ShellAliasTarget, "skip">,
 ): { path: string; added: boolean } {
   const home = process.env.HOME ?? process.env.USERPROFILE;
   if (!home) {
-    throw new Error("HOME is not set; cannot write shell alias");
+    throw new Error("HOME is not set; cannot write shell shortcut");
   }
   const file =
     target === "zshrc"
@@ -288,11 +343,11 @@ export function appendShellAlias(
       throw err;
     }
   }
-  if (body.includes("alias autopilot=")) {
+  if (shellRcDefinesAutopilot(body)) {
     return { path: file, added: false };
   }
   if (body.length > 0 && !body.endsWith("\n")) body += "\n";
-  body += `\n# Autopilot Harness\n${ALIAS_LINE}\n`;
+  body += `\n# Autopilot Harness\n${autopilotShellAliasLine()}\n`;
   assertNotSymlink(file, path.basename(file));
   writeTextFileReplace(file, body);
   return { path: file, added: true };
@@ -328,6 +383,7 @@ export function writeQuickstart(
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code !== "ENOENT") throw err;
   }
+  const cliCmd = resolveCliCommand();
   const body =
     locale === "zh-CN"
       ? `# Autopilot 快速开始
@@ -353,9 +409,9 @@ export function writeQuickstart(
 ## 终端
 
 \`\`\`bash
-npx autopilot-harness status
-npx autopilot-harness doctor
-npx autopilot-harness upgrade --dry-run
+${cliCmd} status
+${cliCmd} doctor
+${cliCmd} upgrade --dry-run
 \`\`\`
 
 方案与清单在 \`${plansLabel}/<slug>/\`。
@@ -383,9 +439,9 @@ Also: \`Autopilot RUN\`
 ## Terminal
 
 \`\`\`bash
-npx autopilot-harness status
-npx autopilot-harness doctor
-npx autopilot-harness upgrade --dry-run
+${cliCmd} status
+${cliCmd} doctor
+${cliCmd} upgrade --dry-run
 \`\`\`
 
 Artifacts live under \`${plansLabel}/<slug>/\`.
@@ -397,7 +453,7 @@ Artifacts live under \`${plansLabel}/<slug>/\`.
 
 export function formatCheatSheet(
   locale: InitLocale,
-  cliName: string,
+  cliCommand: string = resolveCliCommand(),
   plansDir = "plans",
 ): string[] {
   const normalized = normalizePlansDir(plansDir);
@@ -417,10 +473,10 @@ export function formatCheatSheet(
       "  Autopilot OFF · RESUME · REPLAN",
       "",
       "── 终端 ─────────────────────────────────",
-      `  ${cliName} status`,
-      `  ${cliName} doctor`,
-      `  ${cliName} session list`,
-      `  ${cliName} locale set en`,
+      `  ${cliCommand} status`,
+      `  ${cliCommand} doctor`,
+      `  ${cliCommand} session list`,
+      `  ${cliCommand} locale set en`,
       "",
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
@@ -439,10 +495,10 @@ export function formatCheatSheet(
     "  Autopilot OFF · RESUME · REPLAN",
     "",
     "── Terminal ─────────────────────────────",
-    `  ${cliName} status`,
-    `  ${cliName} doctor`,
-    `  ${cliName} session list`,
-    `  ${cliName} locale set zh-CN`,
+    `  ${cliCommand} status`,
+    `  ${cliCommand} doctor`,
+    `  ${cliCommand} session list`,
+    `  ${cliCommand} locale set zh-CN`,
     "",
     `  See: docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
   ];

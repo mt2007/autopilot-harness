@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { skillDescription } from "@autopilot-harness/i18n";
 import { installInitYes, mergeHooksJson, preflightForceRefresh } from "../src/init/install.js";
 import { runDoctor } from "../src/status-doctor.js";
 
@@ -528,5 +529,11 @@ describe("init --yes install", () => {
         path.join(root, ".autopilot", "bin", "autopilot-harness-hook.mjs"),
       ),
     ).toBe(true);
+    // Skills follow config.yml locale, not the CLI --locale flag.
+    const skill = fs.readFileSync(
+      path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      "utf8",
+    );
+    expect(skill).toContain(skillDescription("zh-CN", "autopilot-on"));
   });
 });

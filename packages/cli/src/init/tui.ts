@@ -9,10 +9,17 @@ import {
   formatCheatSheet,
   normalizePlansDir,
   probeProject,
+  resolveCliCommand,
   type InitWizardAnswers,
   type PlansGitPolicy,
   type ShellAliasTarget,
 } from "./wizard-helpers.js";
+import { readConfigInstallHints } from "./config-merge.js";
+import {
+  MAX_UNTRUSTED_TEXT_BYTES,
+  readUntrustedUtf8File,
+} from "../read-untrusted-file.js";
+import path from "node:path";
 
 export type SelectOption<T> = { value: T; label: string; hint?: string };
 
@@ -96,6 +103,41 @@ function cancelOut(p: InitPrompts, message: string): null {
   return null;
 }
 
+/** Skip the prompt when only one choice exists (still logs the selection). */
+async function selectOrOnly<T>(
+  p: InitPrompts,
+  opts: {
+    message: string;
+    options: SelectOption<T>[];
+    initialValue?: T;
+  },
+): Promise<T | symbol> {
+  if (opts.options.length === 0) {
+    throw new Error(`selectOrOnly: no options for "${opts.message}"`);
+  }
+  if (opts.options.length === 1) {
+    const only = opts.options[0]!;
+    p.log.info(`${opts.message}: ${only.label}`);
+    return only.value;
+  }
+  return p.select(opts);
+}
+
+function readProjectLocale(projectRoot: string): InitLocale {
+  const configPath = path.join(projectRoot, ".autopilot", "config.yml");
+  try {
+    const yaml = readUntrustedUtf8File(
+      configPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".autopilot/config.yml",
+    );
+    const hints = readConfigInstallHints(yaml);
+    return hints.locale === "zh-CN" ? "zh-CN" : "en";
+  } catch {
+    return "en";
+  }
+}
+
 /**
  * Collect wizard answers via prompts. Returns null if the user cancels.
  */
@@ -158,25 +200,31 @@ export async function collectWizardAnswers(
     p.log.info(
       "Refresh keeps config.yml (plans dir, verify, triggers unchanged).",
     );
-    const locale: InitLocale = opts.locale === "zh-CN" ? "zh-CN" : "en";
+    const locale = readProjectLocale(probe.projectRoot);
+    p.log.info(`Locale (from config.yml): ${locale}`);
     const shellDefault: ShellAliasTarget =
       (process.env.SHELL ?? "").includes("zsh")
         ? "zshrc"
         : (process.env.SHELL ?? "").includes("bash")
           ? "bashrc"
           : "skip";
+    const cliCmd = resolveCliCommand();
     const shellAlias = await p.select<ShellAliasTarget>({
       message: "Shell shortcut",
       options: [
         {
           value: "zshrc",
-          label: "Auto-add alias to ~/.zshrc",
-          hint: "alias autopilot='npx autopilot-harness'",
+          label: "Add autopilot() to ~/.zshrc",
+          hint: cliCmd,
         },
-        { value: "bashrc", label: "Auto-add alias to ~/.bashrc" },
+        {
+          value: "bashrc",
+          label: "Add autopilot() to ~/.bashrc",
+          hint: cliCmd,
+        },
         {
           value: "skip",
-          label: `Skip — use ${CLI_NAME} / npx`,
+          label: `Skip — run via: ${cliCmd}`,
         },
       ],
       initialValue: shellDefault,
@@ -188,8 +236,8 @@ export async function collectWizardAnswers(
     const summary = [
       `Project:   ${probe.projectRoot}`,
       `Mode:      force refresh (keep config.yml)`,
-      `Locale:    ${locale} (cheat sheet only)`,
-      `CLI:       npx ${CLI_NAME}${shellAlias === "skip" ? "" : ` (+ ~/.${shellAlias})`}`,
+      `Locale:    ${locale} (from config.yml; skills refresh)`,
+      `CLI:       ${cliCmd}${shellAlias === "skip" ? "" : ` (+ ~/.${shellAlias})`}`,
       "",
       "Will refresh: hook, skills, workflows, pin, hooks.json merge",
     ].join("\n");
@@ -227,28 +275,21 @@ export async function collectWizardAnswers(
     return cancelOut(p, "Cancelled.");
   }
 
-  const platform = await p.select<"cursor">({
+  const platform = await selectOrOnly<"cursor">(p, {
     message: "AI platform",
-    options: [
-      {
-        value: "cursor",
-        label: "Cursor",
-        hint: "v0.1 only — others Coming v0.2+",
-      },
-    ],
+    options: [{ value: "cursor", label: "Cursor" }],
     initialValue: "cursor",
   });
   if (p.isCancel(platform)) {
     return cancelOut(p, "Cancelled.");
   }
 
-  const surface = await p.select<"ide">({
+  const surface = await selectOrOnly<"ide">(p, {
     message: "Surface",
     options: [
       {
         value: "ide",
         label: "IDE — hook integration (recommended)",
-        hint: "CLI/runner Coming v0.4",
       },
     ],
     initialValue: "ide",
@@ -330,19 +371,13 @@ export async function collectWizardAnswers(
   p.note(
     [
       "Triggers are text fallbacks (line-start). Prefer /autopilot-on skills.",
-      "Slash skill names are fixed; editing triggers only changes text phrases.",
+      "Slash skill names are fixed; stock phrases follow the selected locale.",
+      "Customize later via .autopilot/config.yml (or locale set).",
     ].join("\n"),
     "Triggers",
   );
-  const triggersChoice = await p.select<"defaults">({
-    message: "Customize trigger phrases?",
-    options: [{ value: "defaults", label: "Use defaults" }],
-    initialValue: "defaults",
-  });
-  if (p.isCancel(triggersChoice)) {
-    return cancelOut(p, "Cancelled.");
-  }
 
+  const cliCmd = resolveCliCommand();
   const shellDefault: ShellAliasTarget =
     (process.env.SHELL ?? "").includes("zsh")
       ? "zshrc"
@@ -354,16 +389,17 @@ export async function collectWizardAnswers(
     options: [
       {
         value: "zshrc",
-        label: "Auto-add alias to ~/.zshrc",
-        hint: "alias autopilot='npx autopilot-harness'",
+        label: "Add autopilot() to ~/.zshrc",
+        hint: cliCmd,
       },
       {
         value: "bashrc",
-        label: "Auto-add alias to ~/.bashrc",
+        label: "Add autopilot() to ~/.bashrc",
+        hint: cliCmd,
       },
       {
         value: "skip",
-        label: `Skip — use ${CLI_NAME} / npx`,
+        label: `Skip — run via: ${cliCmd}`,
       },
     ],
     initialValue: shellDefault,
@@ -379,7 +415,7 @@ export async function collectWizardAnswers(
     `Plans:     ${plansDir}/<slug>/checklist.md`,
     `Plans git: ${plansGit}`,
     `Verify:    ${verifyChoice === "skip" ? "skipped" : "enabled (flag)"}`,
-    `CLI:       npx ${CLI_NAME}${shellAlias === "skip" ? "" : ` (+ ~/.${shellAlias})`}`,
+    `CLI:       ${cliCmd}${shellAlias === "skip" ? "" : ` (+ ~/.${shellAlias})`}`,
     `Force:     ${force ? "yes (keep config.yml)" : "no"}`,
     "",
     "Will write: .autopilot/, .cursor/hooks.json, skills, workflows, quickstart",
@@ -455,22 +491,22 @@ export async function runInteractiveInit(
 
   if (answers.shellAlias !== "skip") {
     try {
-      const alias = appendShellAlias(answers.shellAlias);
-      if (alias.added) {
-        p.log.step(`alias → ${alias.path}`);
-        p.log.info(`Run: source ${alias.path}   then: autopilot status`);
+      const shortcut = appendShellAlias(answers.shellAlias);
+      if (shortcut.added) {
+        p.log.step(`shell shortcut → ${shortcut.path}`);
+        p.log.info(`Run: source ${shortcut.path}   then: autopilot status`);
       } else {
-        p.log.info(`Alias already present in ${alias.path}`);
+        p.log.info(`Shell shortcut already present in ${shortcut.path}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      p.log.warn(`Could not write shell alias: ${msg}`);
+      p.log.warn(`Could not write shell shortcut: ${msg}`);
     }
   }
 
   const cheat = formatCheatSheet(
     answers.locale,
-    CLI_NAME,
+    resolveCliCommand(),
     answers.plansDir,
   );
   p.note(cheat.join("\n"), `${PREFERRED_NAME} is ready`);

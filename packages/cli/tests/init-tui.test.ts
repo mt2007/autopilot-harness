@@ -10,9 +10,13 @@ import {
   assertParentDirInProject,
   assertWrittenInsideProject,
   assertRegularFileInsideProject,
+  autopilotShellAliasLine,
+  appendShellAlias,
   formatCheatSheet,
   normalizePlansDir,
   probeProject,
+  resolveCliCommand,
+  shellSingleQuote,
   writeQuickstart,
 } from "../src/init/wizard-helpers.js";
 import { installInitYes } from "../src/init/install.js";
@@ -208,9 +212,9 @@ describe("wizard helpers", () => {
     root = tmpProject();
     const rel = writeQuickstart(root, "zh-CN");
     expect(rel).toBe(path.join("docs", "autopilot", "quickstart.md"));
-    expect(
-      fs.readFileSync(path.join(root, rel!), "utf8"),
-    ).toMatch(/快速开始/);
+    const qs = fs.readFileSync(path.join(root, rel!), "utf8");
+    expect(qs).toMatch(/快速开始/);
+    expect(qs).toMatch(/status/);
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /Planning/,
     );
@@ -223,6 +227,88 @@ describe("wizard helpers", () => {
     expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
       /locale set en/,
     );
+  });
+
+  it("resolveCliCommand and alias prefer running bin when available", () => {
+    root = tmpProject();
+    const prev = process.argv[1];
+    const fakeBin = path.join(root, "fake-bin.js");
+    fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = fakeBin;
+    try {
+      const abs = fs.realpathSync(fakeBin);
+      const cmd = resolveCliCommand();
+      expect(cmd).toBe(`node ${shellSingleQuote(abs)}`);
+      expect(autopilotShellAliasLine()).toBe(
+        `autopilot() { command node ${shellSingleQuote(abs)} "$@"; }`,
+      );
+    } finally {
+      process.argv[1] = prev;
+    }
+  });
+
+  it("autopilotShellAliasLine survives quotes, $, backticks, and spaces in path", () => {
+    root = tmpProject();
+    const prev = process.argv[1];
+    const nastyDir = path.join(root, `dir " $(\`id\`) o'hara space`);
+    fs.mkdirSync(nastyDir, { recursive: true });
+    const fakeBin = path.join(nastyDir, "bin.js");
+    fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = fakeBin;
+    try {
+      const abs = fs.realpathSync(fakeBin);
+      const line = autopilotShellAliasLine();
+      expect(line).toBe(
+        `autopilot() { command node ${shellSingleQuote(abs)} "$@"; }`,
+      );
+      // Function form — not a single-quoted alias= that would truncate on '.
+      expect(line.startsWith("autopilot() {")).toBe(true);
+      expect(line).not.toMatch(/^alias autopilot=/);
+      // Path is single-quoted for the shell; $( must not appear outside quotes
+      // as a bare expansion (the quoted path may still contain those chars).
+      const afterNode = line.slice(line.indexOf("node ") + 5);
+      const pathTok = afterNode.slice(0, afterNode.lastIndexOf(' "$@"'));
+      expect(pathTok.startsWith("'")).toBe(true);
+      expect(pathTok.endsWith("'") || pathTok.includes(`'"'"'`)).toBe(true);
+    } finally {
+      process.argv[1] = prev;
+    }
+  });
+
+  it("appendShellAlias dedupes function and legacy alias forms", () => {
+    root = tmpProject();
+    const prevHome = process.env.HOME;
+    const prevArgv = process.argv[1];
+    process.env.HOME = root;
+    const fakeBin = path.join(root, "cli-bin.js");
+    fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = fakeBin;
+    try {
+      const first = appendShellAlias("zshrc");
+      expect(first.added).toBe(true);
+      expect(first.path).toBe(path.join(root, ".zshrc"));
+      const body = fs.readFileSync(first.path, "utf8");
+      expect(body).toMatch(/autopilot\s*\(\)/);
+      expect(appendShellAlias("zshrc").added).toBe(false);
+
+      fs.writeFileSync(
+        path.join(root, ".bashrc"),
+        "alias autopilot='npx old'\n",
+        "utf8",
+      );
+      expect(appendShellAlias("bashrc").added).toBe(false);
+
+      // Comment / prose mentioning alias must not block installing the shortcut.
+      fs.writeFileSync(
+        path.join(root, ".bashrc"),
+        "# see docs: alias autopilot='npx old'\necho hi\n",
+        "utf8",
+      );
+      expect(appendShellAlias("bashrc").added).toBe(true);
+    } finally {
+      process.env.HOME = prevHome;
+      process.argv[1] = prevArgv;
+    }
   });
 
   it("normalizePlansDir rejects traversal and injection", () => {
@@ -542,7 +628,7 @@ describe("interactive init (scripted prompts)", () => {
     fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
     fs.writeFileSync(
       path.join(root, ".autopilot", "config.yml"),
-      "platform: cursor\n",
+      "platform: cursor\nlocale: zh-CN\n",
     );
     const answers = await collectWizardAnswers({
       projectRoot: root,
@@ -555,6 +641,7 @@ describe("interactive init (scripted prompts)", () => {
     expect(answers).not.toBeNull();
     expect(answers!.force).toBe(true);
     expect(answers!.plansDir).toBe("plans");
+    expect(answers!.locale).toBe("zh-CN");
   });
 
   it("collectWizardAnswers happy path", async () => {
@@ -565,12 +652,9 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true], // install here, ready
         selects: [
           "en",
-          "cursor",
-          "ide",
           "plans",
           "commit",
           "skip",
-          "defaults",
           "skip",
         ],
       }),
@@ -600,12 +684,9 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "zh-CN",
-          "cursor",
-          "ide",
           "custom",
           "local-only",
           "enable",
-          "defaults",
           "skip",
         ],
         texts: ["docs/plans"],
@@ -626,12 +707,9 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "en",
-          "cursor",
-          "ide",
           "plans",
           "commit",
           "skip",
-          "defaults",
           "skip",
         ],
       }),

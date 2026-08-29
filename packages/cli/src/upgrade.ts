@@ -31,7 +31,7 @@ export interface UpgradeOptions {
   projectRoot: string;
   dryRun?: boolean;
   packageVersion?: string;
-  /** Accepted for CLI compat; v0.1 always pins to the running CLI version. */
+  /** Accepted for CLI compat; currently always pins to the running CLI version. */
   target?: string;
 }
 
@@ -224,7 +224,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
     const hints = readConfigInstallHints(existingConfig);
     const locale: InitLocale = hints.locale === "zh-CN" ? "zh-CN" : "en";
-    // v0.1 refresh always uses the supported cursor/ide pair.
+    // Refresh always uses the supported cursor/ide pair.
     const defaultsYaml = defaultConfigYaml({
       platform: "cursor",
       surface: "ide",
@@ -278,7 +278,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
 
     if (opts.target && opts.target !== version) {
       actions.push(
-        `note: --target ${opts.target} ignored in v0.1; pinning to CLI ${version}`,
+        `note: --target ${opts.target} ignored; pinning to CLI ${version}`,
       );
     }
 

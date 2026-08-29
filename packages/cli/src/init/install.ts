@@ -27,6 +27,7 @@ import {
   assertPresentRealFile,
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
+import { readConfigInstallHints } from "./config-merge.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
@@ -301,15 +302,38 @@ function assertSupported(
   locale: string,
 ): string | null {
   if (platform !== "cursor") {
-    return `Unsupported platform "${platform}" in v0.1 (only cursor).`;
+    return `Unsupported platform "${platform}" (supported: cursor).`;
   }
   if (surface !== "ide") {
-    return `Unsupported surface "${surface}" in v0.1 (only ide).`;
+    return `Unsupported surface "${surface}" (supported: ide).`;
   }
   if (locale !== "en" && locale !== "zh-CN") {
     return `Unsupported locale "${locale}" (en | zh-CN).`;
   }
   return null;
+}
+
+/** On --force refresh, skills must follow config.yml locale (not CLI flag default). */
+function resolveInstallLocale(
+  optsLocale: string,
+  configExists: boolean,
+  force: boolean,
+  configPath: string,
+): InitLocale {
+  if (configExists && force) {
+    try {
+      const yaml = readUntrustedUtf8File(
+        configPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        ".autopilot/config.yml",
+      );
+      const hints = readConfigInstallHints(yaml);
+      return hints.locale === "zh-CN" ? "zh-CN" : "en";
+    } catch {
+      // Fall through to opts / default.
+    }
+  }
+  return optsLocale === "zh-CN" ? "zh-CN" : "en";
 }
 
 function installSkills(
@@ -574,6 +598,12 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const plansDir = plansNorm.value;
   const verifyEnabled = Boolean(opts.verifyEnabled);
   const writeQs = opts.writeQuickstart !== false;
+  const locale = resolveInstallLocale(
+    opts.locale,
+    configExists,
+    Boolean(opts.force),
+    configPath,
+  );
 
   let createdConfig = false;
   try {
@@ -583,7 +613,6 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     // Only write config on first init — never clobber user config on --force.
     // wx: fail closed if another process created config.yml between check and write.
     if (!configExists) {
-      const locale = opts.locale as InitLocale;
       try {
         // Re-check immediately before wx: earlier `configExists` / mkdir leave a window
         // where a symlink (or non-file) can appear and make wx fail with EEXIST —
@@ -680,7 +709,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       ),
     );
 
-    written.push(...installSkills(templatesRoot, projectRoot, opts.locale as InitLocale));
+    written.push(...installSkills(templatesRoot, projectRoot, locale));
     written.push(...installWorkflows(templatesRoot, projectRoot));
 
     // Fresh init only: plans tree / plans gitignore / quickstart follow wizard.
@@ -701,7 +730,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     if (!configExists && writeQs) {
       const qsRel = writeQuickstart(
         projectRoot,
-        opts.locale as InitLocale,
+        locale,
         plansDir,
       );
       if (qsRel && !written.includes(qsRel)) written.push(qsRel);

@@ -5,17 +5,17 @@
   "bin": {
     "autopilot-harness": "./dist/bin.js"
   },
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "files": [
     "dist",
-    "assets",
-    "src"
+    "assets"
   ],
   "scripts": {
     "bundle-vendor": "node ./scripts/bundle-vendor.mjs",
