@@ -65,21 +65,154 @@ function resolveHookAsset(cliRoot: string): string | null {
   return candidates.find((p) => fs.existsSync(p)) ?? null;
 }
 
-function assertSupported(
-  platform: string,
-  surface: string,
-  locale: string,
-): string | null {
-  if (platform !== "cursor") {
-    return `Unsupported platform "${platform}" in v0.1 (only cursor).`;
-  }
-  if (surface !== "ide") {
-    return `Unsupported surface "${surface}" in v0.1 (only ide).`;
-  }
-  if (locale !== "en" && locale !== "zh-CN") {
-    return `Unsupported locale "${locale}" (en | zh-CN).`;
+function resolveVendorRoot(cliRoot: string): string | null {
+  const candidates = [
+    path.join(cliRoot, "assets", "vendor"),
+    path.join(cliRoot, "dist", "assets", "vendor"),
+  ];
+  // Both files must come from the same vendor root (no assets/dist mix).
+  for (const dir of candidates) {
+    const runtime = path.join(dir, "runtime.mjs");
+    const mig = path.join(dir, "migrations", "001_initial.sql");
+    if (!fs.existsSync(runtime) || !fs.existsSync(mig)) continue;
+    try {
+      assertNotSymlink(dir, "vendor/");
+      assertNotSymlink(runtime, "vendor/runtime.mjs");
+      assertNotSymlink(path.join(dir, "migrations"), "vendor/migrations/");
+      assertNotSymlink(mig, "vendor/migrations/001_initial.sql");
+    } catch {
+      continue;
+    }
+    return dir;
   }
   return null;
+}
+
+/** Rename staged tmp into place (keeps prior dest until rename succeeds). */
+function renameIntoPlace(tmp: string, dest: string): void {
+  try {
+    fs.renameSync(tmp, dest);
+    return;
+  } catch (first) {
+    const code =
+      first && typeof first === "object" && "code" in first
+        ? String((first as { code: unknown }).code)
+        : "";
+    // Cross-device: same-dir temps should not hit this, but copy is safe.
+    if (code === "EXDEV") {
+      fs.copyFileSync(tmp, dest);
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* dest is good; tmp leak is OK */
+      }
+      return;
+    }
+    // Windows may refuse rename-over-existing (EPERM/EEXIST).
+    // Park dest aside so a failed/partial replace can restore (no hole/corrupt).
+    const replaceOver = code === "EPERM" || code === "EEXIST";
+    if (!replaceOver || !fs.existsSync(tmp) || !fs.existsSync(dest)) {
+      throw first;
+    }
+    const bak = `${dest}.${process.pid}.${Date.now()}.bak`;
+    fs.renameSync(dest, bak);
+    try {
+      try {
+        fs.renameSync(tmp, dest);
+      } catch {
+        fs.copyFileSync(tmp, dest);
+        try {
+          fs.unlinkSync(tmp);
+        } catch {
+          /* dest is good; tmp leak is OK */
+        }
+      }
+    } catch (err) {
+      // Drop any partial dest, then put the prior file back.
+      try {
+        fs.unlinkSync(dest);
+      } catch {
+        /* may not exist */
+      }
+      try {
+        fs.renameSync(bak, dest);
+      } catch {
+        /* leave bak for manual recovery */
+      }
+      throw err;
+    }
+    try {
+      fs.unlinkSync(bak);
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
+}
+
+function copyVendorDir(cliRoot: string, destBin: string): void {
+  const vendorRoot = resolveVendorRoot(cliRoot);
+  if (!vendorRoot) {
+    throw new Error(
+      "Missing assets/vendor/runtime.mjs or migrations — run pnpm bundle-vendor (or pnpm build)",
+    );
+  }
+  const runtimeSrc = path.join(vendorRoot, "runtime.mjs");
+  const migSrc = path.join(vendorRoot, "migrations", "001_initial.sql");
+
+  const destVendor = path.join(destBin, "vendor");
+  assertNotSymlink(destVendor, ".autopilot/bin/vendor/");
+  fs.mkdirSync(destVendor, { recursive: true });
+  const runtimeDest = path.join(destVendor, "runtime.mjs");
+  assertNotSymlink(runtimeDest, ".autopilot/bin/vendor/runtime.mjs");
+
+  const migDestDir = path.join(destVendor, "migrations");
+  assertNotSymlink(migDestDir, ".autopilot/bin/vendor/migrations/");
+  fs.mkdirSync(migDestDir, { recursive: true });
+  const migDest = path.join(migDestDir, "001_initial.sql");
+  assertNotSymlink(migDest, ".autopilot/bin/vendor/migrations/001_initial.sql");
+
+  // Stage both temps first so a mid-stage failure does not wipe a good prior pair.
+  // Commit migration before runtime: a torn upgrade then keeps old runtime + new
+  // SQL (still loadable); the reverse (new runtime + old SQL) is worse for migrate.
+  const runtimeTmp = path.join(
+    destVendor,
+    `.runtime.mjs.${process.pid}.${Date.now()}.tmp`,
+  );
+  const migTmp = path.join(
+    migDestDir,
+    `.001_initial.sql.${process.pid}.${Date.now()}.tmp`,
+  );
+  try {
+    fs.copyFileSync(runtimeSrc, runtimeTmp);
+    fs.copyFileSync(migSrc, migTmp);
+    renameIntoPlace(migTmp, migDest);
+    renameIntoPlace(runtimeTmp, runtimeDest);
+  } catch (err) {
+    try {
+      fs.unlinkSync(runtimeTmp);
+    } catch {
+      /* ignore */
+    }
+    try {
+      fs.unlinkSync(migTmp);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+}
+
+function copyHookAsset(cliRoot: string, destBin: string): void {
+  const src = resolveHookAsset(cliRoot);
+  if (!src) {
+    throw new Error("Missing autopilot-harness-hook.mjs asset in CLI package");
+  }
+  fs.mkdirSync(destBin, { recursive: true });
+  // Vendor first: if this fails, leave the previous hook intact.
+  copyVendorDir(cliRoot, destBin);
+  const hookDest = path.join(destBin, "autopilot-harness-hook.mjs");
+  assertNotSymlink(hookDest, ".autopilot/bin/autopilot-harness-hook.mjs");
+  fs.copyFileSync(src, hookDest);
 }
 
 type HooksRead =
@@ -161,13 +294,21 @@ function renderSkill(template: string, description: string): string {
   return template.replaceAll("{{description}}", escaped);
 }
 
-function copyHookAsset(cliRoot: string, destBin: string): void {
-  const src = resolveHookAsset(cliRoot);
-  if (!src) {
-    throw new Error("Missing autopilot-harness-hook.mjs asset in CLI package");
+function assertSupported(
+  platform: string,
+  surface: string,
+  locale: string,
+): string | null {
+  if (platform !== "cursor") {
+    return `Unsupported platform "${platform}" in v0.1 (only cursor).`;
   }
-  fs.mkdirSync(destBin, { recursive: true });
-  fs.copyFileSync(src, path.join(destBin, "autopilot-harness-hook.mjs"));
+  if (surface !== "ide") {
+    return `Unsupported surface "${surface}" in v0.1 (only ide).`;
+  }
+  if (locale !== "en" && locale !== "zh-CN") {
+    return `Unsupported locale "${locale}" (en | zh-CN).`;
+  }
+  return null;
 }
 
 function installSkills(
@@ -307,6 +448,13 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
       error: "Missing autopilot-harness-hook.mjs asset in CLI package",
     };
   }
+  if (!resolveVendorRoot(cliRoot)) {
+    return {
+      ok: false,
+      error:
+        "Missing assets/vendor/runtime.mjs or migrations — run pnpm bundle-vendor (or pnpm build)",
+    };
+  }
   const hooksPath = path.join(root, ".cursor", "hooks.json");
   const hooksRead = readHooksFile(hooksPath);
   if (!hooksRead.ok) {
@@ -434,6 +582,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     written.push(path.relative(projectRoot, pinPath));
 
     const binDir = path.join(autopilotDir, "bin");
+    assertNotSymlink(binDir, ".autopilot/bin/");
+    fs.mkdirSync(binDir, { recursive: true });
+    assertRealpathInside(projectRoot, binDir, ".autopilot/bin/");
     copyHookAsset(cliRoot, binDir);
     written.push(
       path.relative(

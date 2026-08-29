@@ -18,7 +18,8 @@
     "src"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
+    "bundle-vendor": "node ./scripts/bundle-vendor.mjs",
+    "build": "node ./scripts/bundle-vendor.mjs && tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "yaml": "^2.7.0"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "typescript": "^5.8.2"
   },
   "engines": {

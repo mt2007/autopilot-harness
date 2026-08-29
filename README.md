@@ -36,9 +36,12 @@ Requires **Node.js 22+** (uses built-in `node:sqlite` for the state store).
 
 ```bash
 pnpm install
-pnpm test
+pnpm test          # bundles hook vendor, then Vitest
+pnpm bundle-vendor # refresh .autopilot hook runtime (core + port-cursor)
 pnpm build
 ```
+
+`init` / `upgrade` copy `assets/vendor/runtime.mjs` next to the project hook so Cursor can run Autopilot **without** installing `@autopilot-harness/*` into the consumer `node_modules`.
 
 SQLite: v0.1 uses `node:sqlite` (`DatabaseSync`) so hooks run without native addons. `better-sqlite3` may return as an optional fast path when prebuilds cover your Node version.
 

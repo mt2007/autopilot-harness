@@ -2,8 +2,9 @@
  * Cursor hook entry — marker: autopilot-harness
  * Installed at .autopilot/bin/autopilot-harness-hook.mjs (copy, not symlink).
  *
- * Resolves @autopilot-harness/port-cursor from the consumer project when present;
- * otherwise fail-open (continue / empty followup) so the IDE is not blocked.
+ * Prefers bundled vendor/runtime.mjs (shipped by init/upgrade) so empty
+ * consumer projects work without @autopilot-harness/* in node_modules.
+ * Falls back to project-local packages, then fail-open.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -49,11 +50,48 @@ async function tryImport(specifier) {
   }
 }
 
-async function loadPort() {
-  const vendor = path.join(__dirname, "vendor", "port-cursor.mjs");
-  if (fs.existsSync(vendor)) {
-    return tryImport(pathToFileURL(vendor).href);
+function isSymlinkOrUnreadable(filePath) {
+  try {
+    return fs.lstatSync(filePath).isSymbolicLink();
+  } catch {
+    // Cannot verify — refuse vendor load (fail-closed, match CLI policy).
+    return true;
   }
+}
+
+/** Refuse vendor paths whose realpath escapes the project root. */
+function realpathEscapesProject(filePath) {
+  try {
+    const realRoot = fs.realpathSync(projectRoot);
+    const real = fs.realpathSync(filePath);
+    return real !== realRoot && !real.startsWith(realRoot + path.sep);
+  } catch {
+    return true;
+  }
+}
+
+async function loadVendorRuntime() {
+  const vendorDir = path.join(__dirname, "vendor");
+  const vendor = path.join(vendorDir, "runtime.mjs");
+  const migDir = path.join(vendorDir, "migrations");
+  const mig = path.join(migDir, "001_initial.sql");
+  if (!fs.existsSync(vendor) || !fs.existsSync(mig)) return null;
+  // Refuse symlink escape / unreadable lstat (same policy as CLI).
+  if (
+    isSymlinkOrUnreadable(vendorDir) ||
+    isSymlinkOrUnreadable(vendor) ||
+    isSymlinkOrUnreadable(migDir) ||
+    isSymlinkOrUnreadable(mig)
+  ) {
+    return null;
+  }
+  if (realpathEscapesProject(vendor) || realpathEscapesProject(mig)) {
+    return null;
+  }
+  return tryImport(pathToFileURL(vendor).href);
+}
+
+async function loadPortFromNodeModules() {
   try {
     const require = createRequire(path.join(projectRoot, "package.json"));
     const resolved = require.resolve("@autopilot-harness/port-cursor");
@@ -63,7 +101,7 @@ async function loadPort() {
   }
 }
 
-async function loadCore() {
+async function loadCoreFromNodeModules() {
   try {
     const require = createRequire(path.join(projectRoot, "package.json"));
     const resolved = require.resolve("@autopilot-harness/core");
@@ -75,59 +113,74 @@ async function loadCore() {
 
 function failOpen(event) {
   if (event === "beforeSubmitPrompt") {
-    process.stdout.write(JSON.stringify({ continue: true }));
+    writeReply(JSON.stringify({ continue: true }));
   } else {
-    process.stdout.write("{}");
+    writeReply("{}");
   }
+}
+
+/** At-most-once stdout so fail-open cannot append a second JSON blob. */
+let replied = false;
+function writeReply(text) {
+  if (replied) return;
+  process.stdout.write(text);
+  // Set only after a successful write so failOpen can still retry on throw.
+  replied = true;
 }
 
 async function main() {
   const { event } = parseArgs(process.argv.slice(2));
-  const payload = await readStdin();
-
-  const port = await loadPort();
-  const coreMod = await loadCore();
-  if (!port?.handleBeforeSubmitPrompt || !coreMod?.StateStore) {
-    failOpen(event);
-    return;
-  }
-
-  const store = new coreMod.StateStore(projectRoot);
   try {
-    if (event === "beforeSubmitPrompt") {
-      const result = port.handleBeforeSubmitPrompt(store, payload, projectRoot);
-      process.stdout.write(JSON.stringify(result));
+    const payload = await readStdin();
+
+    const vendor = await loadVendorRuntime();
+    const port = vendor ?? (await loadPortFromNodeModules());
+    const coreMod = vendor ?? (await loadCoreFromNodeModules());
+    if (!port?.handleBeforeSubmitPrompt || !coreMod?.StateStore) {
+      failOpen(event);
       return;
     }
-    if (event === "afterFileEdit") {
-      port.handleAfterFileEdit?.(store, payload);
-      process.stdout.write("{}");
-      return;
-    }
-    if (event === "stop") {
-      const engine = new coreMod.ReviewEngine(store, {
-        confirmRounds: 5,
-        verifyEnabled: false,
-        verifyCommands: [],
-        maxIdleStops: 5,
-        projectRoot,
-      });
-      const result = port.handleStop(engine, payload);
-      process.stdout.write(JSON.stringify(result ?? {}));
-      return;
-    }
-    process.stdout.write("{}");
-  } finally {
+
+    const store = new coreMod.StateStore(projectRoot);
     try {
-      store.close();
-    } catch {
-      /* ignore */
+      if (event === "beforeSubmitPrompt") {
+        const result = port.handleBeforeSubmitPrompt(store, payload, projectRoot);
+        writeReply(JSON.stringify(result));
+        return;
+      }
+      if (event === "afterFileEdit") {
+        port.handleAfterFileEdit?.(store, payload);
+        writeReply("{}");
+        return;
+      }
+      if (event === "stop") {
+        const engine = new coreMod.ReviewEngine(store, {
+          confirmRounds: 5,
+          verifyEnabled: false,
+          verifyCommands: [],
+          maxIdleStops: 5,
+          projectRoot,
+        });
+        const result = port.handleStop(engine, payload);
+        writeReply(JSON.stringify(result ?? {}));
+        return;
+      }
+      writeReply("{}");
+    } finally {
+      try {
+        store.close();
+      } catch {
+        /* ignore */
+      }
     }
+  } catch (err) {
+    console.error("[autopilot-harness] hook error:", err?.message ?? err);
+    failOpen(event);
   }
 }
 
 main().catch((err) => {
   console.error("[autopilot-harness] hook error:", err?.message ?? err);
-  process.stdout.write(JSON.stringify({ continue: true }));
+  failOpen("beforeSubmitPrompt");
   process.exitCode = 0;
 });

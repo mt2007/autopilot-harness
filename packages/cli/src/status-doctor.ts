@@ -14,7 +14,7 @@ import {
   validateHooksShape,
 } from "./init/hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
-import { assertNotSymlink, normalizePlansDir } from "./init/wizard-helpers.js";
+import { assertNotSymlink, assertRealpathInside, normalizePlansDir } from "./init/wizard-helpers.js";
 import { formatSessionDisplayName, shortSessionId } from "./session.js";
 
 const VALID_PHASES = new Set<Phase>([
@@ -394,12 +394,56 @@ export function runDoctor(
     }
   }
 
-  const hook = path.join(root, ".autopilot", "bin", "autopilot-harness-hook.mjs");
+  const binDir = path.join(root, ".autopilot", "bin");
+  const hook = path.join(binDir, "autopilot-harness-hook.mjs");
+  let binTrusted = true;
+  try {
+    assertNotSymlink(binDir, ".autopilot/bin/");
+    if (fs.existsSync(binDir)) {
+      assertRealpathInside(root, binDir, ".autopilot/bin/");
+    }
+  } catch (err) {
+    binTrusted = false;
+    const msg = err instanceof Error ? err.message : String(err);
+    lines.push(`FAIL  hook bin — ${safeDisplayToken(msg, "unreadable")}`);
+    ok = false;
+  }
   if (!fs.existsSync(hook)) {
     lines.push("FAIL  hook binary missing");
     ok = false;
-  } else {
+  } else if (binTrusted) {
     lines.push("OK    autopilot-harness-hook.mjs");
+  }
+
+  const vendorDir = path.join(binDir, "vendor");
+  const vendorRuntime = path.join(vendorDir, "runtime.mjs");
+  const vendorMigDir = path.join(vendorDir, "migrations");
+  const vendorMig = path.join(vendorMigDir, "001_initial.sql");
+  try {
+    assertNotSymlink(vendorDir, ".autopilot/bin/vendor/");
+    assertNotSymlink(vendorRuntime, ".autopilot/bin/vendor/runtime.mjs");
+    assertNotSymlink(vendorMigDir, ".autopilot/bin/vendor/migrations/");
+    assertNotSymlink(
+      vendorMig,
+      ".autopilot/bin/vendor/migrations/001_initial.sql",
+    );
+    if (fs.existsSync(vendorDir)) {
+      assertRealpathInside(root, vendorDir, ".autopilot/bin/vendor/");
+    }
+    if (!fs.existsSync(vendorRuntime) || !fs.existsSync(vendorMig)) {
+      lines.push(
+        "FAIL  hook vendor runtime missing — run upgrade (or init --force)",
+      );
+      ok = false;
+    } else if (binTrusted) {
+      lines.push("OK    hook vendor runtime");
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    lines.push(
+      `FAIL  hook vendor — ${safeDisplayToken(msg, "unreadable")}`,
+    );
+    ok = false;
   }
 
   const hooksPath = path.join(root, ".cursor", "hooks.json");

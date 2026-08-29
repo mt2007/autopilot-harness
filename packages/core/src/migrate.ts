@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SqlDatabase } from "./sqlite.js";
@@ -11,7 +11,16 @@ export function getLatestSchemaVersion(): number {
 
 export function readMigrationSql(version: number): string {
   const filename = `${String(version).padStart(3, "0")}_initial.sql`;
-  return readFileSync(join(__dirname, "..", "migrations", filename), "utf8");
+  // Package layout: packages/core/{src,dist}/../migrations
+  // Vendor layout: .autopilot/bin/vendor/migrations (beside runtime.mjs)
+  const candidates = [
+    join(__dirname, "..", "migrations", filename),
+    join(__dirname, "migrations", filename),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return readFileSync(p, "utf8");
+  }
+  throw new Error(`Missing migration SQL: ${filename}`);
 }
 
 export function getCurrentSchemaVersion(db: SqlDatabase): number {

@@ -94,6 +94,23 @@ describe("init --yes install", () => {
     );
     expect(fs.existsSync(hook)).toBe(true);
     expect(fs.readFileSync(hook, "utf8")).toMatch(/autopilot-harness/);
+    expect(
+      fs.existsSync(
+        path.join(root, ".autopilot", "bin", "vendor", "runtime.mjs"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(
+          root,
+          ".autopilot",
+          "bin",
+          "vendor",
+          "migrations",
+          "001_initial.sql",
+        ),
+      ),
+    ).toBe(true);
 
     for (const skill of [
       "autopilot-on",
