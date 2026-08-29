@@ -6,6 +6,7 @@ import { StateStore } from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
 import {
   formatStatus,
+  hasGlobalSelfReviewHooks,
   readStaleAfterHours,
   runDoctor,
   shortSessionId,
@@ -98,6 +99,71 @@ describe("runDoctor", () => {
     expect(joined).toMatch(/OK\s+state\.db/);
     expect(joined).toMatch(/schema_version/);
     expect(joined).toMatch(/OK\s+plans/);
+  });
+
+  it("WARNs when ~/.cursor still has global self-review hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-home-"));
+    try {
+      const cursorDir = path.join(fakeHome, ".cursor");
+      fs.mkdirSync(cursorDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(cursorDir, "hooks.json"),
+        JSON.stringify({
+          version: 1,
+          hooks: {
+            stop: [
+              {
+                command: "python3 ./hooks/run-global-self-review.py stop",
+              },
+            ],
+          },
+        }),
+      );
+      const { ok, lines } = runDoctor(root, { homeDir: fakeHome });
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).toMatch(/global self-review/i);
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores symlinked ~/.cursor/hooks.json (no follow)", () => {
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-home-sym-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-outside-"));
+    try {
+      const target = path.join(outside, "secret-hooks.json");
+      fs.writeFileSync(
+        target,
+        JSON.stringify({
+          hooks: { stop: [{ command: "run-global-self-review.py" }] },
+        }),
+      );
+      const cursorDir = path.join(fakeHome, ".cursor");
+      fs.mkdirSync(cursorDir, { recursive: true });
+      fs.symlinkSync(target, path.join(cursorDir, "hooks.json"));
+      expect(hasGlobalSelfReviewHooks(fakeHome)).toBe(false);
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects non-absolute homeDir for global hooks check", () => {
+    expect(hasGlobalSelfReviewHooks("")).toBe(false);
+    expect(hasGlobalSelfReviewHooks(".cursor")).toBe(false);
+    expect(hasGlobalSelfReviewHooks("relative/home")).toBe(false);
   });
 
   it("WARNs on stale sessions and can prune them", () => {
@@ -805,6 +871,64 @@ describe("runDoctor", () => {
     expect(ok).toBe(false);
     expect(lines.join("\n")).toMatch(/pin\.json missing or invalid/i);
     expect(formatStatus(root)).toMatch(/autopilot-harness@unknown/);
+  });
+
+  it("treats symlinked pin.json as missing/invalid (no follow)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const pinPath = path.join(root, ".autopilot", "pin.json");
+    const outside = path.join(root, "outside-pin.json");
+    fs.renameSync(pinPath, outside);
+    fs.symlinkSync(outside, pinPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/pin\.json missing or invalid/i);
+  });
+
+  it("FAILs when project .cursor/hooks.json is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".cursor", "hooks.json");
+    const outside = path.join(root, "outside-hooks.json");
+    fs.renameSync(hooksPath, outside);
+    fs.symlinkSync(outside, hooksPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/hooks\.json unreadable|symlink/i);
+  });
+
+  it("FAILs when project .cursor/hooks.json is too large", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".cursor", "hooks.json");
+    fs.writeFileSync(hooksPath, `{"pad":"${"x".repeat(1_000_100)}"}`);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/hooks\.json unreadable|too large/i);
   });
 
   it("FAILs hooks shape without echoing control chars in keys", () => {

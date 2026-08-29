@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   getLatestSchemaVersion,
@@ -101,6 +102,8 @@ export type DoctorOptions = {
   nowMs?: number;
   /** Injectable package version (defaults to PACKAGE_VERSION). */
   packageVersion?: string;
+  /** Injectable home directory for global hooks dual-inject check (tests). */
+  homeDir?: string;
 };
 
 export type DoctorResult = {
@@ -112,15 +115,77 @@ export type DoctorResult = {
 /** pin.json is tiny (version string); refuse absurd blobs before parse. */
 const MAX_PIN_BYTES = 64_000;
 
+/**
+ * Đọc file text không tin cậy: không follow symlink, giới hạn size (fstat + readSync).
+ * Ném Error khi symlink / không phải file thường / quá lớn.
+ */
+function readUntrustedUtf8File(
+  filePath: string,
+  maxBytes: number,
+  label: string,
+): string {
+  const nofollow =
+    typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  if (nofollow === 0) {
+    assertNotSymlink(filePath, label);
+  }
+
+  let fd: number;
+  try {
+    fd = fs.openSync(filePath, fs.constants.O_RDONLY | nofollow);
+  } catch (err) {
+    if (nofollow !== 0 && (err as NodeJS.ErrnoException)?.code === "ELOOP") {
+      throw new Error(`${label} is a symlink; refusing to modify`);
+    }
+    throw err;
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) {
+      throw new Error(`${label} is not a regular file`);
+    }
+    if (st.size > maxBytes) {
+      throw new Error(`${label} is too large (>${maxBytes} bytes)`);
+    }
+    const buf = Buffer.alloc(st.size);
+    const n = fs.readSync(fd, buf, 0, st.size, 0);
+    const raw = buf.subarray(0, n).toString("utf8");
+    if (Buffer.byteLength(raw, "utf8") > maxBytes) {
+      throw new Error(`${label} is too large (>${maxBytes} bytes)`);
+    }
+    return raw;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** True when user-level Cursor hooks still run a legacy global self-review script. */
+export function hasGlobalSelfReviewHooks(homeDir: string): boolean {
+  // homeDir inject được (tests) — chỉ chấp nhận absolute để chặn path lung tung.
+  if (typeof homeDir !== "string" || !homeDir || !path.isAbsolute(homeDir)) {
+    return false;
+  }
+  const hooksPath = path.join(homeDir, ".cursor", "hooks.json");
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_CONFIG_BYTES,
+      "~/.cursor/hooks.json",
+    );
+    return (
+      raw.includes("run-global-self-review") ||
+      raw.includes("self-review-on-stop.py")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function readPinVersion(projectRoot: string): string | null {
   const pinPath = path.join(projectRoot, ".autopilot", "pin.json");
-  if (!fs.existsSync(pinPath)) return null;
   try {
-    assertNotSymlink(pinPath, ".autopilot/pin.json");
-    if (fs.statSync(pinPath).size > MAX_PIN_BYTES) return null;
-    const pin = JSON.parse(fs.readFileSync(pinPath, "utf8")) as {
-      "autopilot-harness"?: string;
-    };
+    const raw = readUntrustedUtf8File(pinPath, MAX_PIN_BYTES, ".autopilot/pin.json");
+    const pin = JSON.parse(raw) as { "autopilot-harness"?: string };
     return typeof pin["autopilot-harness"] === "string"
       ? pin["autopilot-harness"]
       : null;
@@ -131,17 +196,11 @@ export function readPinVersion(projectRoot: string): string | null {
 
 /** Read config.yml with symlink refuse + size cap (untrusted project file). */
 function readProjectConfigYaml(configPath: string): string {
-  assertNotSymlink(configPath, ".autopilot/config.yml");
-  // Cap by on-disk size *before* read so a multi-GB file cannot inflate memory.
-  const size = fs.statSync(configPath).size;
-  if (size > MAX_CONFIG_BYTES) {
-    throw new Error(`config.yml is too large (>${MAX_CONFIG_BYTES} bytes)`);
-  }
-  const raw = fs.readFileSync(configPath, "utf8");
-  if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) {
-    throw new Error(`config.yml is too large (>${MAX_CONFIG_BYTES} bytes)`);
-  }
-  return raw;
+  return readUntrustedUtf8File(
+    configPath,
+    MAX_CONFIG_BYTES,
+    ".autopilot/config.yml",
+  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -452,7 +511,12 @@ export function runDoctor(
     ok = false;
   } else {
     try {
-      const parsed: unknown = JSON.parse(fs.readFileSync(hooksPath, "utf8"));
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_CONFIG_BYTES,
+        ".cursor/hooks.json",
+      );
+      const parsed: unknown = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         lines.push("FAIL  hooks.json is not a JSON object");
         ok = false;
@@ -482,10 +546,20 @@ export function runDoctor(
           }
         }
       }
-    } catch {
-      lines.push("FAIL  hooks.json unreadable");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lines.push(
+        `FAIL  hooks.json unreadable (${safeDisplayToken(msg, "error")})`,
+      );
       ok = false;
     }
+  }
+
+  const homeDir = opts.homeDir ?? os.homedir();
+  if (hasGlobalSelfReviewHooks(homeDir)) {
+    lines.push(
+      "WARN  ~/.cursor global self-review hooks detected — may double-inject with Autopilot; disable run-global-self-review or rely on Autopilot alone",
+    );
   }
 
   const nodeMajor = Number.parseInt(

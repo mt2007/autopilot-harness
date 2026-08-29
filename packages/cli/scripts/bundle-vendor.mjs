@@ -49,6 +49,13 @@ await esbuild.build({
       "src",
       "index.ts",
     ),
+    "@autopilot-harness/i18n": path.join(
+      repoRoot,
+      "packages",
+      "i18n",
+      "src",
+      "index.ts",
+    ),
   },
   logLevel: "info",
 });

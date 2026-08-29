@@ -47,6 +47,21 @@ export {
   type StopHandlerInput,
 } from "./review-engine.js";
 
+export {
+  loadProjectReviewConfig,
+  normalizeProjectReviewConfig,
+  DEFAULT_PROJECT_REVIEW_CONFIG,
+  type ProjectReviewConfig,
+} from "./project-config.js";
+
+export {
+  createRenderFollowup,
+  createResolveLens,
+  type FollowupLocaleBundle,
+} from "./review-i18n.js";
+
+export { createConfiguredReviewEngine } from "./review-runtime.js";
+
 export { isSafeTrackSlug } from "./track-slug.js";
 
 export {

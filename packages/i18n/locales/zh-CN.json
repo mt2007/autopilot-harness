@@ -34,10 +34,11 @@
       "confirm": "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。只审本角。不要 commit。",
       "confirm_final": "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。只读终审，不要改代码、不要 commit。"
     },
-    "advance": "推进下一项：勾选当前项 [x]，按范围 conventional commit（若有改动），然后实现下一项。",
+    "advance": "推进下一项：勾选当前项 [x]，按范围 conventional commit（若有改动），然后实现下一项：{nextId} — {nextTitle}。",
     "done": "全部完成。勾选最后一项 [x]，必要时 scoped commit，然后停止。",
     "recover": "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
     "stuck": "卡住：连续多轮无进展。请换策略，或修好后发送 Autopilot RESUME。",
+    "verify_fix": "校验失败（{reason}）。请修复 verify 命令并重写 verify-last.json；不要推进。",
     "track_pick": "请用数字或 slug 选择要执行的 plan。"
   },
   "error": {

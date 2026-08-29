@@ -14,9 +14,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
-    "yaml": "^2.7.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.8.2"
   },

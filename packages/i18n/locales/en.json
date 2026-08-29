@@ -34,10 +34,11 @@
       "confirm": "Review confirm {n}/{total} — Lens ({lensTitle}): {lensFocus}. Stay on this lens only. Do not commit.",
       "confirm_final": "Review confirm {n}/{total} — Lens ({lensTitle}): {lensFocus}. Read-only final lens; do not change code or commit."
     },
-    "advance": "Advance checklist: mark current item [x], scoped conventional commit if dirty, then implement the next item.",
+    "advance": "Advance checklist: mark current item [x], scoped conventional commit if dirty, then implement next item: {nextId} — {nextTitle}.",
     "done": "All checklist items done. Mark the last item [x], scoped commit if needed, then stop.",
     "recover": "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
     "stuck": "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
+    "verify_fix": "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     "track_pick": "Select a plan by number or slug."
   },
   "error": {

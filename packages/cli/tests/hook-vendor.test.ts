@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { StateStore } from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
 import { runDoctor } from "../src/status-doctor.js";
 
@@ -79,6 +80,76 @@ describe("hook vendor runtime", () => {
     expect(out.continue).toBe(true);
     // Vendor path opened state.db (fail-open would not create it).
     expect(fs.existsSync(path.join(root, ".autopilot", "state.db"))).toBe(true);
+  });
+
+  it("stop hook reads confirm_rounds + locale from config.yml", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "zh-CN",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    let config = fs.readFileSync(configPath, "utf8");
+    config = config.replace(/confirm_rounds:\s*\d+/, "confirm_rounds: 3");
+    fs.writeFileSync(configPath, config);
+
+    const cid = "hook-cfg-aaaa-bbbb-cccc-ddddeeee0002";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    store.updateReviewChain(cid, {
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      fix_round: 0,
+    });
+    store.close();
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const proc = spawnSync(
+      process.execPath,
+      [hook, "--event", "stop"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          status: "completed",
+          loop_count: 1,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(proc.status).toBe(0);
+    const out = JSON.parse(proc.stdout.trim() || "{}") as {
+      followup_message?: string;
+      loop?: boolean;
+    };
+    expect(out.loop).toBe(true);
+    expect(out.followup_message).toBeTruthy();
+    expect(out.followup_message).toMatch(/1\/3/);
+    expect(out.followup_message).toMatch(/自审确认|范围与正确性/);
   });
 
   it("doctor FAILs when vendor runtime is missing", () => {

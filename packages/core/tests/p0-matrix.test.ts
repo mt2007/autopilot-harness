@@ -233,9 +233,21 @@ describe("F-CED code-edit-detector", () => {
     expect(isProductCodeEdit("plans/foo/checklist.md")).toBe(false);
     expect(isProductCodeEdit("docs/readme.md")).toBe(false);
     expect(isProductCodeEdit(".autopilot/config.yml")).toBe(false);
+    expect(isProductCodeEdit(".cursor/hooks.json")).toBe(false);
     expect(isProductCodeEdit("README.md")).toBe(false);
     expect(isProductCodeEdit("src/index.ts")).toBe(true);
     expect(isProductCodeEdit("package.json")).toBe(true);
+  });
+
+  it("treats common non-JS languages as product code", () => {
+    expect(isProductCodeEdit("lib/main.dart")).toBe(true);
+    expect(isProductCodeEdit("src/Main.scala")).toBe(true);
+    expect(isProductCodeEdit("lib/app.ex")).toBe(true);
+    expect(isProductCodeEdit("src/App.vue")).toBe(true);
+    expect(isProductCodeEdit("infra/main.tf")).toBe(true);
+    expect(isProductCodeEdit("api/schema.proto")).toBe(true);
+    expect(isProductCodeEdit("Cargo.toml")).toBe(true);
+    expect(isProductCodeEdit("services/config.yaml")).toBe(true);
   });
 });
 

@@ -5,7 +5,7 @@ import {
   parseChecklist,
   type ChecklistItem,
 } from "./checklist-md.js";
-import { getLens } from "./review-lenses.js";
+import { getLens, type ConfirmLens } from "./review-lenses.js";
 import type { Phase, ReviewChainRow, SessionRow, StateStore } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
 import {
@@ -47,6 +47,8 @@ export interface ReviewEngineConfig {
   verifyReportPath?: string;
   /** Render followup message; default English templates. */
   renderFollowup?: (kind: FollowupKind, vars: Record<string, string | number>) => string;
+  /** Resolve confirm lens; default English CONFIRM_LENSES. */
+  resolveLens?: (roundIndex: number, confirmRounds: number) => ConfirmLens;
 }
 
 function defaultRender(kind: FollowupKind, vars: Record<string, string | number>): string {
@@ -80,6 +82,11 @@ export class ReviewEngine {
 
   private render(kind: FollowupKind, vars: Record<string, string | number>): string {
     return (this.config.renderFollowup ?? defaultRender)(kind, vars);
+  }
+
+  private lens(roundIndex: number): ConfirmLens {
+    const rounds = this.config.confirmRounds;
+    return (this.config.resolveLens ?? getLens)(roundIndex, rounds);
   }
 
   /** E1: afterFileEdit product code → code_edited=1 */
@@ -200,7 +207,7 @@ export class ReviewEngine {
 
   private e3ArmConfirm(session: SessionRow, _chain: ReviewChainRow): FollowupAction {
     const rounds = this.config.confirmRounds;
-    const lens = getLens(1, rounds);
+    const lens = this.lens(1);
     const left = rounds - 1; // inject 1st then set left = rounds-1
     this.store.updateReviewChain(session.conversation_id, {
       confirm_left: left,
@@ -227,7 +234,7 @@ export class ReviewEngine {
     const left = chain.confirm_left!;
     // lensIndex = rounds - left + 1 (before decrement)
     const n = rounds - left + 1;
-    const lens = getLens(n, rounds);
+    const lens = this.lens(n);
     const newLeft = left - 1;
     this.store.updateReviewChain(session.conversation_id, {
       confirm_left: newLeft,

@@ -154,13 +154,18 @@ async function main() {
         return;
       }
       if (event === "stop") {
-        const engine = new coreMod.ReviewEngine(store, {
-          confirmRounds: 5,
-          verifyEnabled: false,
-          verifyCommands: [],
-          maxIdleStops: 5,
-          projectRoot,
-        });
+        // Vendor injects locale; core still applies config.yml. Fall back if
+        // an older vendor/runtime lacks the factory (upgrade mid-flight).
+        const engine =
+          typeof coreMod.createConfiguredReviewEngine === "function"
+            ? coreMod.createConfiguredReviewEngine(store, projectRoot)
+            : new coreMod.ReviewEngine(store, {
+                confirmRounds: 5,
+                verifyEnabled: false,
+                verifyCommands: [],
+                maxIdleStops: 5,
+                projectRoot,
+              });
         const result = port.handleStop(engine, payload);
         writeReply(JSON.stringify(result ?? {}));
         return;

@@ -1,3 +1,162 @@
+// ../i18n/locales/en.json
+var en_default = {
+  preferred_name: "Autopilot",
+  cli: {
+    help: "Autopilot Harness \u2014 Planning \u2192 Executing agent harness"
+  },
+  triggers: {
+    on: ["Autopilot ON", "Enable autopilot"],
+    run: ["Autopilot RUN", "Start execution"],
+    off: ["Autopilot OFF", "Disable autopilot"],
+    resume: ["Autopilot RESUME"],
+    replan: ["Autopilot REPLAN"],
+    resume_review: ["Resume review"]
+  },
+  skill: {
+    autopilot_on: {
+      description: "Start Planning \u2014 discuss what to build"
+    },
+    autopilot_run: {
+      description: "Start Executing \u2014 run checklist"
+    },
+    autopilot_off: {
+      description: "Pause Autopilot"
+    },
+    autopilot_resume: {
+      description: "Resume this conversation"
+    },
+    autopilot_replan: {
+      description: "Revise plan"
+    }
+  },
+  followup: {
+    review: {
+      fix: "Review fix round {round}: inspect the full diff, fix CRITICAL/HIGH issues, run relevant tests. Do not commit.",
+      confirm: "Review confirm {n}/{total} \u2014 Lens ({lensTitle}): {lensFocus}. Stay on this lens only. Do not commit.",
+      confirm_final: "Review confirm {n}/{total} \u2014 Lens ({lensTitle}): {lensFocus}. Read-only final lens; do not change code or commit."
+    },
+    advance: "Advance checklist: mark current item [x], scoped conventional commit if dirty, then implement next item: {nextId} \u2014 {nextTitle}.",
+    done: "All checklist items done. Mark the last item [x], scoped commit if needed, then stop.",
+    recover: "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
+    stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
+    verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
+    track_pick: "Select a plan by number or slug."
+  },
+  error: {
+    one_executor_busy: "Another session is already executing ({track}). OFF or wait, then retry.",
+    on_while_executing: "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON."
+  },
+  lens: {
+    "scope-correctness": {
+      title: "Scope & correctness",
+      focus: "Within the current checklist item scope: logic, invariants, alignment with plan.md."
+    },
+    boundaries: {
+      title: "Boundaries & errors",
+      focus: "Null/empty, bounds, error paths, failure rollback."
+    },
+    security: {
+      title: "Security",
+      focus: "Authz, injection, sensitive data, trust boundaries."
+    },
+    concurrency: {
+      title: "Concurrency",
+      focus: "Races, transactions, partial failure; N/A if inapplicable."
+    },
+    "tests-regression": {
+      title: "Tests & regression",
+      focus: "Missing tests, weak asserts, contract drift; read-only."
+    }
+  }
+};
+
+// ../i18n/locales/zh-CN.json
+var zh_CN_default = {
+  preferred_name: "Autopilot",
+  cli: {
+    help: "Autopilot Harness \u2014 \u4E24\u9636\u6BB5 Agent \u5916\u9AA8\u9ABC\uFF1A\u89C4\u5212 \u2192 \u6267\u884C"
+  },
+  triggers: {
+    on: ["Autopilot ON", "\u5F00\u542F\u81EA\u52A8\u9A7E\u9A76"],
+    run: ["Autopilot RUN", "\u5F00\u59CB\u6267\u884C"],
+    off: ["Autopilot OFF", "\u5173\u95ED\u81EA\u52A8\u9A7E\u9A76"],
+    resume: ["Autopilot RESUME", "\u7EE7\u7EED\u6267\u884C"],
+    replan: ["Autopilot REPLAN", "\u4FEE\u6539\u65B9\u6848"],
+    resume_review: ["\u7EE7\u7EED\u81EA\u5BA1", "Resume review"]
+  },
+  skill: {
+    autopilot_on: {
+      description: "\u5F00\u59CB\u89C4\u5212 \u2014 \u8BA8\u8BBA\u8981\u505A\u4EC0\u4E48"
+    },
+    autopilot_run: {
+      description: "\u5F00\u59CB\u6267\u884C \u2014 \u8DD1 checklist"
+    },
+    autopilot_off: {
+      description: "\u6682\u505C Autopilot"
+    },
+    autopilot_resume: {
+      description: "\u6062\u590D\u5F53\u524D\u4F1A\u8BDD"
+    },
+    autopilot_replan: {
+      description: "\u4FEE\u6539\u65B9\u6848"
+    }
+  },
+  followup: {
+    review: {
+      fix: "\u81EA\u5BA1\u4FEE\u590D\u7B2C {round} \u8F6E\uFF1A\u68C0\u67E5\u5B8C\u6574 diff\uFF0C\u4FEE\u590D CRITICAL/HIGH\uFF0C\u8DD1\u76F8\u5173\u6D4B\u8BD5\u3002\u4E0D\u8981 commit\u3002",
+      confirm: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total} \u2014 \u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A{lensFocus}\u3002\u53EA\u5BA1\u672C\u89D2\u3002\u4E0D\u8981 commit\u3002",
+      confirm_final: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total} \u2014 \u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A{lensFocus}\u3002\u53EA\u8BFB\u7EC8\u5BA1\uFF0C\u4E0D\u8981\u6539\u4EE3\u7801\u3001\u4E0D\u8981 commit\u3002"
+    },
+    advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u52FE\u9009\u5F53\u524D\u9879 [x]\uFF0C\u6309\u8303\u56F4 conventional commit\uFF08\u82E5\u6709\u6539\u52A8\uFF09\uFF0C\u7136\u540E\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
+    done: "\u5168\u90E8\u5B8C\u6210\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\uFF0C\u5FC5\u8981\u65F6 scoped commit\uFF0C\u7136\u540E\u505C\u6B62\u3002",
+    recover: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D checklist \u9879\uFF0C\u4E0D\u8981\u63A8\u8FDB\u3002",
+    stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
+    verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
+    track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
+  },
+  error: {
+    one_executor_busy: "\u5DF2\u6709\u5176\u4ED6\u4F1A\u8BDD\u5728\u6267\u884C\uFF08{track}\uFF09\u3002\u8BF7\u5148 OFF \u6216\u7B49\u5F85\u540E\u518D\u8BD5\u3002",
+    on_while_executing: "\u5F53\u524D\u6B63\u5728\u6267\u884C\u3002\u8BF7\u5148\u53D1\u9001 Autopilot OFF\u3001REPLAN \u6216 RESUME\uFF0C\u518D ON\u3002"
+  },
+  lens: {
+    "scope-correctness": {
+      title: "\u8303\u56F4\u4E0E\u6B63\u786E\u6027",
+      focus: "\u4EC5\u5728\u5F53\u524D checklist \u9879\u8303\u56F4\u5185\uFF1A\u903B\u8F91\u3001\u4E0D\u53D8\u91CF\u3001\u4E0E plan.md \u4E00\u81F4\u3002"
+    },
+    boundaries: {
+      title: "\u8FB9\u754C\u4E0E\u9519\u8BEF\u8DEF\u5F84",
+      focus: "\u7A7A\u503C\u3001\u8FB9\u754C\u3001\u9519\u8BEF\u8DEF\u5F84\u3001\u5931\u8D25\u56DE\u6EDA\u3002"
+    },
+    security: {
+      title: "\u5B89\u5168",
+      focus: "\u9274\u6743/\u8D8A\u6743\u3001\u6CE8\u5165\u3001\u654F\u611F\u6570\u636E\u3001\u4FE1\u4EFB\u8FB9\u754C\u3002"
+    },
+    concurrency: {
+      title: "\u5E76\u53D1",
+      focus: "\u7ADE\u6001\u3001\u4E8B\u52A1\u3001\u90E8\u5206\u5931\u8D25\uFF1B\u4E0D\u9002\u7528\u5219 N/A\u3002"
+    },
+    "tests-regression": {
+      title: "\u6D4B\u8BD5\u4E0E\u56DE\u5F52",
+      focus: "\u7F3A\u6D4B\u3001\u65AD\u8A00\u5F31\u3001\u5951\u7EA6\u6F02\u79FB\uFF1B\u53EA\u8BFB\u3002"
+    }
+  }
+};
+
+// ../i18n/src/index.ts
+var LOCALES = {
+  en: en_default,
+  "zh-CN": zh_CN_default
+};
+function isLocaleCode(code) {
+  return code === "en" || code === "zh-CN";
+}
+function loadLocale(code) {
+  if (isLocaleCode(code)) {
+    return LOCALES[code];
+  }
+  return LOCALES.en;
+}
+
 // ../core/src/checklist-md.ts
 import fs from "node:fs";
 var ITEM_RE = /^-\s*\[([ xX])\]\s*(.+)$/;
@@ -578,6 +737,10 @@ var ReviewEngine = class {
   render(kind, vars) {
     return (this.config.renderFollowup ?? defaultRender)(kind, vars);
   }
+  lens(roundIndex) {
+    const rounds = this.config.confirmRounds;
+    return (this.config.resolveLens ?? getLens)(roundIndex, rounds);
+  }
   /** E1: afterFileEdit product code → code_edited=1 */
   onCodeEdited(conversationId) {
     this.store.markCodeEdited(conversationId);
@@ -674,7 +837,7 @@ var ReviewEngine = class {
   }
   e3ArmConfirm(session, _chain) {
     const rounds = this.config.confirmRounds;
-    const lens = getLens(1, rounds);
+    const lens = this.lens(1);
     const left = rounds - 1;
     this.store.updateReviewChain(session.conversation_id, {
       confirm_left: left,
@@ -699,7 +862,7 @@ var ReviewEngine = class {
     const rounds = this.config.confirmRounds;
     const left = chain.confirm_left;
     const n = rounds - left + 1;
-    const lens = getLens(n, rounds);
+    const lens = this.lens(n);
     const newLeft = left - 1;
     this.store.updateReviewChain(session.conversation_id, {
       confirm_left: newLeft,
@@ -959,13 +1122,303 @@ function applyResumeReview(store, conversationId) {
   store.setChainPending(conversationId);
 }
 
-// ../core/src/phase-actions.ts
-import fs6 from "node:fs";
-import path5 from "node:path";
-
-// ../core/src/list-tracks.ts
+// ../core/src/project-config.ts
 import fs5 from "node:fs";
 import path4 from "node:path";
+var MAX_CONFIG_BYTES = 1e6;
+var DEFAULT_PROJECT_REVIEW_CONFIG = {
+  confirmRounds: 5,
+  verifyEnabled: false,
+  // freeze: chặn mutate hằng số mặc định làm bẩn mọi clone sau này
+  verifyCommands: Object.freeze([]),
+  maxIdleStops: 5,
+  locale: "en"
+};
+function cloneDefaultProjectReviewConfig() {
+  return {
+    confirmRounds: DEFAULT_PROJECT_REVIEW_CONFIG.confirmRounds,
+    verifyEnabled: DEFAULT_PROJECT_REVIEW_CONFIG.verifyEnabled,
+    verifyCommands: [],
+    maxIdleStops: DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
+    locale: DEFAULT_PROJECT_REVIEW_CONFIG.locale
+  };
+}
+function coerceIntInRange(raw, min, max, fallback) {
+  if (raw == null || !raw.trim()) return fallback;
+  const n = Number(raw.trim());
+  if (!Number.isInteger(n) || n < min || n > max) return fallback;
+  return n;
+}
+function unquote(value) {
+  const v = value.trim();
+  if (v.startsWith('"') && v.endsWith('"') || v.startsWith("'") && v.endsWith("'")) {
+    return v.slice(1, -1);
+  }
+  return v;
+}
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value) && Object.prototype.toString.call(value) === "[object Object]";
+}
+function isUnsafeKey(key) {
+  return key === "__proto__" || key === "prototype" || key === "constructor";
+}
+function coerceScalar(value) {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "null" || value === "~") return null;
+  return unquote(value);
+}
+function lineIndent(line) {
+  let n = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === " ") n += 1;
+    else if (ch === "	") n += 2;
+    else break;
+  }
+  return n;
+}
+function parseSimpleYaml(raw) {
+  const root = {};
+  const stack = [{ indent: -1, obj: root }];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const indent = lineIndent(line);
+    const trimmed = line.trim();
+    while (stack.length > 1 && indent <= stack[stack.length - 1].indent) {
+      stack.pop();
+    }
+    const frame = stack[stack.length - 1];
+    if (trimmed.startsWith("- ")) {
+      const itemRaw = trimmed.slice(2).trim();
+      if (!frame.openKey) continue;
+      let list = frame.obj[frame.openKey];
+      if (!Array.isArray(list)) {
+        list = [];
+        frame.obj[frame.openKey] = list;
+      }
+      if (itemRaw.includes(":") && !itemRaw.startsWith("{")) {
+        const item = {};
+        list.push(item);
+        const m = itemRaw.match(/^([^:#]+):\s*(.*)$/);
+        if (m) {
+          const k = m[1].trim();
+          const v = m[2].trim();
+          if (!isUnsafeKey(k)) {
+            item[k] = v === "" ? null : coerceScalar(v);
+          }
+          stack.push({ indent, obj: item });
+        }
+      } else {
+        list.push(coerceScalar(itemRaw));
+      }
+      continue;
+    }
+    const kv = trimmed.match(/^([^:#]+):\s*(.*)$/);
+    if (!kv) continue;
+    const key = kv[1].trim();
+    const value = kv[2].trim();
+    if (isUnsafeKey(key)) continue;
+    if (frame.openKey && frame.openKeyIndent != null && indent > frame.openKeyIndent) {
+      let child = frame.obj[frame.openKey];
+      if (!isPlainObject(child) || Array.isArray(child)) {
+        child = {};
+        frame.obj[frame.openKey] = child;
+      }
+      const childObj = child;
+      const childIndent = frame.openKeyIndent;
+      frame.openKey = void 0;
+      frame.openKeyIndent = void 0;
+      stack.push({ indent: childIndent, obj: childObj });
+      const childFrame = stack[stack.length - 1];
+      if (value === "" || value === "|" || value === ">") {
+        childFrame.openKey = key;
+        childFrame.openKeyIndent = indent;
+      } else {
+        childObj[key] = coerceScalar(value);
+      }
+      continue;
+    }
+    if (value === "" || value === "|" || value === ">") {
+      frame.openKey = key;
+      frame.openKeyIndent = indent;
+      continue;
+    }
+    frame.openKey = void 0;
+    frame.openKeyIndent = void 0;
+    frame.obj[key] = coerceScalar(value);
+  }
+  return root;
+}
+function coerceBool(raw) {
+  if (raw === true || raw === "true") return true;
+  if (raw === false || raw === "false") return false;
+  return void 0;
+}
+function parseVerifyCommands(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const entry of raw) {
+    if (!isPlainObject(entry)) continue;
+    if (typeof entry.id !== "string" || !entry.id.trim()) continue;
+    const cmd = { id: entry.id.trim() };
+    if (typeof entry.run === "string") cmd.run = entry.run;
+    const required = coerceBool(entry.required);
+    if (required !== void 0) cmd.required = required;
+    out.push(cmd);
+  }
+  return out;
+}
+function loadProjectReviewConfig(projectRoot) {
+  const configPath = path4.join(projectRoot, ".autopilot", "config.yml");
+  try {
+    const nofollow = typeof fs5.constants.O_NOFOLLOW === "number" ? fs5.constants.O_NOFOLLOW : 0;
+    if (nofollow === 0) {
+      if (!fs5.existsSync(configPath)) return cloneDefaultProjectReviewConfig();
+      if (fs5.lstatSync(configPath).isSymbolicLink()) {
+        return cloneDefaultProjectReviewConfig();
+      }
+    }
+    let fd;
+    try {
+      fd = fs5.openSync(configPath, fs5.constants.O_RDONLY | nofollow);
+    } catch {
+      return cloneDefaultProjectReviewConfig();
+    }
+    let raw;
+    try {
+      const st = fs5.fstatSync(fd);
+      if (!st.isFile() || st.size > MAX_CONFIG_BYTES) {
+        return cloneDefaultProjectReviewConfig();
+      }
+      const buf = Buffer.alloc(st.size);
+      const n = fs5.readSync(fd, buf, 0, st.size, 0);
+      raw = buf.subarray(0, n).toString("utf8");
+    } finally {
+      fs5.closeSync(fd);
+    }
+    if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) {
+      return cloneDefaultProjectReviewConfig();
+    }
+    const text = raw.charCodeAt(0) === 65279 ? raw.slice(1) : raw;
+    const parsed = parseSimpleYaml(text);
+    if (!isPlainObject(parsed)) return cloneDefaultProjectReviewConfig();
+    const review = isPlainObject(parsed.review) ? parsed.review : {};
+    const verify = isPlainObject(review.verify) ? review.verify : {};
+    const stuck = isPlainObject(review.stuck) ? review.stuck : {};
+    return normalizeProjectReviewConfig({
+      confirmRounds: review.confirm_rounds,
+      verifyEnabled: verify.enabled,
+      verifyCommands: verify.commands,
+      maxIdleStops: stuck.max_idle_stops,
+      locale: parsed.locale
+    });
+  } catch {
+    return cloneDefaultProjectReviewConfig();
+  }
+}
+function normalizeProjectReviewConfig(raw) {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    return cloneDefaultProjectReviewConfig();
+  }
+  const o = raw;
+  return {
+    confirmRounds: coerceIntInRange(
+      o.confirmRounds != null ? String(o.confirmRounds) : void 0,
+      1,
+      5,
+      DEFAULT_PROJECT_REVIEW_CONFIG.confirmRounds
+    ),
+    verifyEnabled: coerceBool(o.verifyEnabled) === true,
+    verifyCommands: parseVerifyCommands(o.verifyCommands),
+    maxIdleStops: coerceIntInRange(
+      o.maxIdleStops != null ? String(o.maxIdleStops) : void 0,
+      1,
+      100,
+      DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops
+    ),
+    locale: typeof o.locale === "string" && o.locale.trim() ? o.locale.trim() : DEFAULT_PROJECT_REVIEW_CONFIG.locale
+  };
+}
+
+// ../core/src/i18n-render.ts
+function renderTemplate(template, vars) {
+  return template.replace(/\{(\w+)\}/g, (_, key) => {
+    const v = vars[key];
+    return v === void 0 || v === null ? "" : String(v);
+  });
+}
+
+// ../core/src/review-i18n.ts
+function createRenderFollowup(bundle) {
+  return (kind, vars) => {
+    const f = bundle?.followup;
+    if (!f) return "";
+    switch (kind) {
+      case "review.fix":
+        return renderTemplate(f.review?.fix ?? "", vars);
+      case "review.confirm":
+        return renderTemplate(f.review?.confirm ?? "", vars);
+      case "review.confirm_final":
+        return renderTemplate(f.review?.confirm_final ?? "", vars);
+      case "advance":
+        return renderTemplate(f.advance ?? "", vars);
+      case "done":
+        return renderTemplate(f.done ?? "", vars);
+      case "recover":
+        return renderTemplate(f.recover ?? "", vars);
+      case "stuck":
+        return renderTemplate(f.stuck ?? "", vars);
+      case "verify_fix":
+        return renderTemplate(
+          f.verify_fix ?? "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
+          vars
+        );
+      default:
+        return "";
+    }
+  };
+}
+function createResolveLens(bundle) {
+  return (roundIndex, confirmRounds) => {
+    const base = getLens(roundIndex, confirmRounds);
+    const loc = bundle?.lens?.[base.key];
+    if (!loc) return base;
+    return {
+      key: base.key,
+      title: loc.title || base.title,
+      focus: loc.focus || base.focus
+    };
+  };
+}
+
+// ../core/src/review-runtime.ts
+function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloaded) {
+  const cfg = normalizeProjectReviewConfig(
+    preloaded ?? loadProjectReviewConfig(projectRoot)
+  );
+  const usableLocale = Boolean(localeBundle?.followup?.review?.fix);
+  return new ReviewEngine(store, {
+    confirmRounds: cfg.confirmRounds,
+    verifyEnabled: cfg.verifyEnabled,
+    // bản sao nông — caller mutate preloaded.verifyCommands không ảnh hưởng engine
+    verifyCommands: cfg.verifyCommands.map((c) => ({ ...c })),
+    maxIdleStops: cfg.maxIdleStops,
+    projectRoot,
+    ...usableLocale && localeBundle ? {
+      renderFollowup: createRenderFollowup(localeBundle),
+      resolveLens: createResolveLens(localeBundle)
+    } : {}
+  });
+}
+
+// ../core/src/phase-actions.ts
+import fs7 from "node:fs";
+import path6 from "node:path";
+
+// ../core/src/list-tracks.ts
+import fs6 from "node:fs";
+import path5 from "node:path";
 function isRunnableTrack(t) {
   if (t.paused) return false;
   const unchecked = t.checklistTotal - t.checklistDone;
@@ -973,13 +1426,13 @@ function isRunnableTrack(t) {
   return t.phase === "planning" || t.phase === "executing" || t.phase === "idle" || t.phase === "done";
 }
 function readPlansDir(root, plansDir = "plans") {
-  const dir = path4.join(root, plansDir);
-  if (!fs5.existsSync(dir)) return [];
-  return fs5.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+  const dir = path5.join(root, plansDir);
+  if (!fs6.existsSync(dir)) return [];
+  return fs6.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
 }
 function titleFromPlan(planPath, slug) {
-  if (!fs5.existsSync(planPath)) return slug;
-  const first = fs5.readFileSync(planPath, "utf8").split(/\r?\n/)[0] ?? "";
+  if (!fs6.existsSync(planPath)) return slug;
+  const first = fs6.readFileSync(planPath, "utf8").split(/\r?\n/)[0] ?? "";
   const m = first.match(/^#\s+(.+)/);
   return m?.[1]?.trim() ?? slug;
 }
@@ -987,15 +1440,15 @@ function listTracks(root, store, filter = "all", plansDir = "plans") {
   const slugs = readPlansDir(root, plansDir);
   const tracks = [];
   for (const slug of slugs) {
-    const planPath = path4.join(root, plansDir, slug, "plan.md");
-    const checklistPath = path4.join(root, plansDir, slug, "checklist.md");
+    const planPath = path5.join(root, plansDir, slug, "plan.md");
+    const checklistPath = path5.join(root, plansDir, slug, "checklist.md");
     let checklistTotal = 0;
     let checklistDone = 0;
-    if (fs5.existsSync(checklistPath)) {
+    if (fs6.existsSync(checklistPath)) {
       const cl = parseChecklist(checklistPath);
       checklistTotal = cl.items.length;
       checklistDone = cl.items.filter((i) => i.checked).length;
-    } else if (!fs5.existsSync(planPath)) {
+    } else if (!fs6.existsSync(planPath)) {
       continue;
     }
     let phase = "idle";
@@ -1017,7 +1470,7 @@ function listTracks(root, store, filter = "all", plansDir = "plans") {
       } else {
         if (checklistTotal > 0 && checklistDone === checklistTotal) {
           phase = "done";
-        } else if (checklistTotal - checklistDone > 0 && fs5.existsSync(planPath)) {
+        } else if (checklistTotal - checklistDone > 0 && fs6.existsSync(planPath)) {
           phase = "idle";
         }
       }
@@ -1051,7 +1504,7 @@ function canEnterExecuting(options) {
   if (!slug || slug === "_pending") {
     return { ok: false, reason: "no track slug" };
   }
-  if (!checklistPath || !fs5.existsSync(checklistPath)) {
+  if (!checklistPath || !fs6.existsSync(checklistPath)) {
     return { ok: false, reason: "checklist missing" };
   }
   if (countUnchecked(parseChecklist(checklistPath)) < 1) {
@@ -1068,7 +1521,7 @@ function nowIso2() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
 function checklistPathFor(projectRoot, slug, plansDir) {
-  return path5.join(projectRoot, plansDir, slug, "checklist.md");
+  return path6.join(projectRoot, plansDir, slug, "checklist.md");
 }
 function ensureSession(store, conversationId, projectRoot) {
   const existing = store.getSession(conversationId);
@@ -1087,8 +1540,8 @@ function ensureSession(store, conversationId, projectRoot) {
 }
 function upsertTrack(store, slug, checklistPath, plansDir, projectRoot) {
   const ts = nowIso2();
-  const planPath = path5.join(projectRoot, plansDir, slug, "plan.md");
-  const briefPath = path5.join(projectRoot, plansDir, slug, "brief.md");
+  const planPath = path6.join(projectRoot, plansDir, slug, "plan.md");
+  const briefPath = path6.join(projectRoot, plansDir, slug, "brief.md");
   store.db.prepare(
     `INSERT INTO tracks (track_id, slug, checklist_path, plan_path, brief_path, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -1102,8 +1555,8 @@ function upsertTrack(store, slug, checklistPath, plansDir, projectRoot) {
     slug,
     slug,
     checklistPath,
-    fs6.existsSync(planPath) ? planPath : null,
-    fs6.existsSync(briefPath) ? briefPath : null,
+    fs7.existsSync(planPath) ? planPath : null,
+    fs7.existsSync(briefPath) ? briefPath : null,
     ts
   );
 }
@@ -1403,62 +1856,143 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
 }
 
 // ../core/src/code-edit-detector.ts
-import path6 from "node:path";
+import path7 from "node:path";
 var CODE_EXTENSIONS = /* @__PURE__ */ new Set([
+  // JS / TS
   ".ts",
   ".tsx",
   ".js",
   ".jsx",
   ".mjs",
   ".cjs",
-  ".py",
-  ".go",
-  ".rs",
-  ".java",
-  ".kt",
-  ".swift",
-  ".rb",
-  ".php",
-  ".cs",
-  ".cpp",
-  ".c",
-  ".h",
-  ".hpp",
+  ".mts",
+  ".cts",
+  // Web
   ".vue",
   ".svelte",
-  ".sql",
+  ".astro",
+  ".css",
+  ".scss",
+  ".sass",
+  ".less",
+  // Systems / native
+  ".c",
+  ".h",
+  ".cc",
+  ".cpp",
+  ".cxx",
+  ".hpp",
+  ".hh",
+  ".m",
+  ".mm",
+  ".rs",
+  ".go",
+  ".zig",
+  ".nim",
+  ".v",
+  // JVM / .NET
+  ".java",
+  ".kt",
+  ".kts",
+  ".scala",
+  ".groovy",
+  ".cs",
+  ".fs",
+  ".fsx",
+  ".vb",
+  // Mobile / UI
+  ".swift",
+  ".dart",
+  // Scripting
+  ".py",
+  ".rb",
+  ".php",
+  ".pl",
+  ".pm",
+  ".lua",
+  ".r",
+  ".jl",
+  ".ex",
+  ".exs",
+  ".erl",
+  ".hrl",
+  ".clj",
+  ".cljs",
+  ".cljc",
+  ".edn",
+  ".hs",
+  ".lhs",
+  ".ml",
+  ".mli",
+  ".elm",
+  // Shell
   ".sh",
   ".bash",
-  ".zsh"
+  ".zsh",
+  ".ps1",
+  ".bat",
+  ".cmd",
+  // Data / IDL / infra
+  ".sql",
+  ".graphql",
+  ".gql",
+  ".proto",
+  ".tf",
+  ".toml",
+  ".yaml",
+  ".yml",
+  ".json",
+  ".jsonc",
+  ".xml",
+  ".prisma"
 ]);
 var ROOT_CONFIG_NAMES = /* @__PURE__ */ new Set([
   "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
   "pnpm-workspace.yaml",
   "Cargo.toml",
+  "Cargo.lock",
   "go.mod",
+  "go.sum",
   "pom.xml",
   "build.gradle",
   "build.gradle.kts",
+  "settings.gradle",
+  "settings.gradle.kts",
   "docker-compose.yml",
   "docker-compose.yaml",
+  "Dockerfile",
   "Makefile",
+  "makefile",
+  "CMakeLists.txt",
   "pyproject.toml",
-  "tsconfig.json"
+  "Pipfile",
+  "requirements.txt",
+  "Gemfile",
+  "composer.json",
+  "tsconfig.json",
+  "jsconfig.json",
+  "deno.json",
+  "deno.jsonc"
 ]);
 function normalizePosix(filePath) {
   return filePath.replace(/\\/g, "/");
 }
 function isProductCodeEdit(filePath) {
   const posix = normalizePosix(filePath);
-  const base = path6.posix.basename(posix);
+  const base = path7.posix.basename(posix);
   const lower = posix.toLowerCase();
-  if (lower.includes("/docs/") || lower.startsWith("docs/") || lower.includes("/plans/") || lower.startsWith("plans/") || lower.includes("/.autopilot/") || lower.startsWith(".autopilot/") || lower.endsWith(".md") || lower.endsWith(".mdx")) {
+  if (lower.includes("/docs/") || lower.startsWith("docs/") || lower.includes("/plans/") || lower.startsWith("plans/") || lower.includes("/.autopilot/") || lower.startsWith(".autopilot/") || lower.includes("/.cursor/") || lower.startsWith(".cursor/") || lower.endsWith(".md") || lower.endsWith(".mdx")) {
     return false;
   }
   if (/\/\.cursor\/hooks\/\./.test(lower) || /^\.cursor\/hooks\/\./.test(lower)) {
     return false;
   }
-  const ext = path6.posix.extname(posix).toLowerCase();
+  const ext = path7.posix.extname(posix).toLowerCase();
   if (CODE_EXTENSIONS.has(ext)) return true;
   if (ROOT_CONFIG_NAMES.has(base)) return true;
   return false;
@@ -1706,11 +2240,20 @@ function handleStop(engine, payload) {
   if (!action) return {};
   return { followup_message: action.message, loop: true };
 }
+
+// src/vendor-entry.ts
+function createConfiguredReviewEngine2(store, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  const bundle = loadLocale(cfg.locale);
+  return createConfiguredReviewEngine(store, projectRoot, bundle, cfg);
+}
 export {
   ReviewEngine,
   StateStore,
+  createConfiguredReviewEngine2 as createConfiguredReviewEngine,
   getLatestSchemaVersion,
   handleAfterFileEdit,
   handleBeforeSubmitPrompt,
-  handleStop
+  handleStop,
+  loadProjectReviewConfig
 };
