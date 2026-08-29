@@ -17,6 +17,10 @@ export default defineConfig({
         __dirname,
         "packages/i18n/src/index.ts",
       ),
+      "@autopilot-harness/cli": path.resolve(
+        __dirname,
+        "packages/cli/src/index.ts",
+      ),
     },
   },
 });

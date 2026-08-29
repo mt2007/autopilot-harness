@@ -2,15 +2,16 @@
 
 **Autopilot** — a project-level agent harness for Planning → Executing with structured self-review.
 
-Install with `npx autopilot-harness init`, then use `/autopilot-on` to plan and `/autopilot-run` to execute.
+Install with `npx autopilot-harness init --yes`, then use `/autopilot-on` to plan and `/autopilot-run` to execute.
 
 ## Quick start
 
 ```bash
 npx autopilot-harness init --platform cursor --yes
+npx autopilot-harness doctor
 ```
 
-Default locale: **en**. CLI preferred name: **Autopilot** (npm package remains `autopilot-harness`).
+Interactive TUI init lands in a later slice; `--yes` writes `.autopilot/`, merges `.cursor/hooks.json`, installs skills/workflows.
 
 ## Monorepo packages
 
