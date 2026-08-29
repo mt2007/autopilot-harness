@@ -1,14 +1,18 @@
 import {
   applyOff,
   applyOn,
+  applyReplan,
   applyResume,
   applyResumeReview,
+  applyRun,
+  applyTrackPick,
   isHarnessFollowupMessage,
   isProductCodeEdit,
   parseTrigger,
   ReviewEngine,
   StateStore,
   type FollowupAction,
+  type PhaseActionConfig,
 } from "@autopilot-harness/core";
 
 export interface CursorSubmitPayload {
@@ -35,6 +39,10 @@ export interface CursorStopPayload {
   loopCount?: number;
 }
 
+export interface CursorPortConfig {
+  phaseActions?: PhaseActionConfig;
+}
+
 function cid(p: { conversation_id?: string; conversationId?: string }): string {
   return (p.conversation_id ?? p.conversationId ?? "").trim();
 }
@@ -43,6 +51,7 @@ export function handleBeforeSubmitPrompt(
   store: StateStore,
   payload: CursorSubmitPayload,
   projectRoot: string,
+  portConfig?: CursorPortConfig,
 ): { continue: boolean; userMessage?: string } {
   const conversationId = cid(payload);
   if (!conversationId) return { continue: true };
@@ -55,6 +64,8 @@ export function handleBeforeSubmitPrompt(
     projectRoot,
     pendingAction: session?.pending_action,
   });
+
+  const actionConfig = portConfig?.phaseActions;
 
   if (trigger) {
     if (trigger.kind === "off") {
@@ -79,7 +90,39 @@ export function handleBeforeSubmitPrompt(
       applyResumeReview(store, conversationId);
       return { continue: true };
     }
-    // run / replan / track_pick handled by higher-level init wiring later
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+      });
+      if (!result.ok) {
+        return { continue: false, userMessage: result.userMessage };
+      }
+      return { continue: true };
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+      });
+      if (!result.ok) {
+        return { continue: false, userMessage: result.userMessage };
+      }
+      return { continue: true };
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig },
+      );
+      if (!result.ok) {
+        return { continue: false, userMessage: result.userMessage };
+      }
+      return { continue: true };
+    }
     return { continue: true };
   }
 

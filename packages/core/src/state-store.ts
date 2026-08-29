@@ -49,11 +49,19 @@ function nowIso(): string {
 export class StateStore {
   readonly db: SqlDatabase;
   readonly projectRoot: string;
+  private writeDepth = 0;
 
   constructor(projectRoot: string, dbPath?: string) {
     this.projectRoot = path.resolve(projectRoot);
     const resolved = dbPath ?? path.join(this.projectRoot, ".autopilot", "state.db");
     this.db = openDatabase(resolved);
+    try {
+      // Wait on locks so concurrent BEGIN IMMEDIATE (one_executor) can serialize
+      // instead of failing immediately with SQLITE_BUSY.
+      this.db.pragma("busy_timeout = 5000");
+    } catch {
+      /* node:sqlite may ignore */
+    }
     if (resolved !== ":memory:") {
       try {
         this.db.pragma("journal_mode = WAL");
@@ -118,8 +126,9 @@ export class StateStore {
         .prepare(
           `INSERT INTO sessions (
             conversation_id, platform, track_id, checklist_path, phase, armed, paused,
+            paused_reason, pending_action, track_candidates_json,
             project_root, code_root, last_active_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           partial.conversation_id,
@@ -129,6 +138,9 @@ export class StateStore {
           partial.phase ?? "idle",
           partial.armed ?? 0,
           partial.paused ?? 0,
+          partial.paused_reason ?? null,
+          partial.pending_action ?? null,
+          partial.track_candidates_json ?? null,
           partial.project_root,
           partial.code_root,
           ts,
@@ -218,6 +230,32 @@ export class StateStore {
         )
         .get(excludeConversationId) as SessionRow | undefined) ?? null
     );
+  }
+
+  /**
+   * Serialize writers with BEGIN IMMEDIATE so check-then-act (e.g. one_executor)
+   * and multi-statement enters stay atomic. Callback chooses commit vs rollback.
+   */
+  exclusiveWrite<T>(fn: () => { commit: boolean; value: T }): T {
+    if (this.writeDepth > 0) {
+      throw new Error("exclusiveWrite does not support nesting");
+    }
+    this.writeDepth += 1;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const { commit, value } = fn();
+      this.db.exec(commit ? "COMMIT" : "ROLLBACK");
+      return value;
+    } catch (err) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        /* ignore rollback errors after primary failure */
+      }
+      throw err;
+    } finally {
+      this.writeDepth -= 1;
+    }
   }
 
   static openMemory(projectRoot: string): StateStore {

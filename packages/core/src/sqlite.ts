@@ -54,7 +54,11 @@ export function openDatabase(filename: string): SqlDatabase {
     exec: (sql: string) => {
       db.exec(sql);
     },
-    pragma: () => undefined,
+    pragma: (source: string) => {
+      // source is always a trusted constant from StateStore (not user input)
+      db.exec(`PRAGMA ${source}`);
+      return undefined;
+    },
     close: () => db.close(),
   };
 }

@@ -43,6 +43,19 @@ export {
   type StopHandlerInput,
 } from "./review-engine.js";
 
+export { isSafeTrackSlug } from "./track-slug.js";
+
+export {
+  applyRun,
+  applyReplan,
+  applyTrackPick,
+  type ConcurrencyMode,
+  type PhaseActionConfig,
+  type PhaseActionResult,
+  type PhaseActionOk,
+  type PhaseActionFail,
+} from "./phase-actions.js";
+
 export { CONFIRM_LENSES, getLens, lensNumberForRound, type ConfirmLens } from "./review-lenses.js";
 
 export { isProductCodeEdit } from "./code-edit-detector.js";

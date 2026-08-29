@@ -7,6 +7,7 @@ import {
 } from "./checklist-md.js";
 import { getLens } from "./review-lenses.js";
 import type { Phase, ReviewChainRow, SessionRow, StateStore } from "./state-store.js";
+import { isSafeTrackSlug } from "./track-slug.js";
 import {
   defaultVerifyReportPath,
   evaluateVerifyReport,
@@ -460,6 +461,15 @@ export function applyOn(
     };
   }
 
+  if (opts?.slug && !isSafeTrackSlug(opts.slug)) {
+    return {
+      ok: false,
+      userMessage: `Invalid track slug "${opts.slug}".`,
+    };
+  }
+
+  const trackId = opts?.slug ?? session?.track_id ?? "_pending";
+
   if (session?.phase === "done") {
     const s = store.upsertSession({
       conversation_id: conversationId,
@@ -484,7 +494,7 @@ export function applyOn(
     armed: 0,
     paused: 0,
     paused_reason: null,
-    track_id: opts?.slug ?? session?.track_id ?? "_pending",
+    track_id: trackId,
     checklist_path: session?.checklist_path ?? "",
   });
   return { ok: true, session: s };
