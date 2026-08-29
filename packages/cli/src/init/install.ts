@@ -10,6 +10,14 @@ import type {
   InitYesOptions,
 } from "./types.js";
 import { PACKAGE_VERSION } from "./types.js";
+import {
+  applyPlansGitignore,
+  applyAutopilotRuntimeGitignore,
+  assertNotSymlink,
+  assertRealpathInside,
+  normalizePlansDir,
+  writeQuickstart,
+} from "./wizard-helpers.js";
 
 export {
   mergeHooksJson,
@@ -139,18 +147,23 @@ function copyHookAsset(cliRoot: string, destBin: string): void {
 
 function installSkills(templatesRoot: string, projectRoot: string): string[] {
   const written: string[] = [];
+  const skillsRoot = path.join(projectRoot, ".cursor", "skills");
+  assertNotSymlink(skillsRoot, ".cursor/skills/");
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
     if (!fs.existsSync(tplPath)) {
       throw new Error(`Missing skill template: ${tplPath}`);
     }
-    const destDir = path.join(projectRoot, ".cursor", "skills", name);
+    const destDir = path.join(skillsRoot, name);
+    assertNotSymlink(destDir, `.cursor/skills/${name}/`);
     fs.mkdirSync(destDir, { recursive: true });
+    assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
     const body = renderSkill(
       fs.readFileSync(tplPath, "utf8"),
       SKILL_DESCRIPTIONS[name] ?? name,
     );
     const dest = path.join(destDir, "SKILL.md");
+    assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
     fs.writeFileSync(dest, body, "utf8");
     written.push(path.relative(projectRoot, dest));
   }
@@ -159,25 +172,59 @@ function installSkills(templatesRoot: string, projectRoot: string): string[] {
 
 function installWorkflows(templatesRoot: string, projectRoot: string): string[] {
   const written: string[] = [];
-  const destDir = path.join(projectRoot, "docs", "autopilot", "workflows");
+  const docsDir = path.join(projectRoot, "docs");
+  const autopilotDocs = path.join(docsDir, "autopilot");
+  const destDir = path.join(autopilotDocs, "workflows");
+  assertNotSymlink(docsDir, "docs/");
+  assertNotSymlink(autopilotDocs, "docs/autopilot/");
+  assertNotSymlink(destDir, "docs/autopilot/workflows/");
   fs.mkdirSync(destDir, { recursive: true });
+  assertRealpathInside(projectRoot, destDir, "docs/autopilot/workflows/");
   for (const name of WORKFLOW_FILES) {
     const src = path.join(templatesRoot, "workflows", name);
     if (!fs.existsSync(src)) {
       throw new Error(`Missing workflow template: ${src}`);
     }
     const dest = path.join(destDir, name);
+    assertNotSymlink(dest, `docs/autopilot/workflows/${name}`);
     fs.copyFileSync(src, dest);
     written.push(path.relative(projectRoot, dest));
   }
   return written;
 }
 
-function ensurePlansReadme(projectRoot: string): string | null {
-  const plansDir = path.join(projectRoot, "plans");
-  const readme = path.join(plansDir, "README.md");
-  if (fs.existsSync(readme)) return null;
-  fs.mkdirSync(plansDir, { recursive: true });
+function ensurePlansReadme(
+  projectRoot: string,
+  plansDir = "plans",
+): string | null {
+  const normalized = normalizePlansDir(plansDir);
+  if (!normalized.ok) {
+    throw new Error(normalized.error);
+  }
+  const safePlansDir = normalized.value;
+  const plansRoot = path.join(projectRoot, safePlansDir);
+  const resolvedRoot = path.resolve(projectRoot);
+  const resolvedPlans = path.resolve(plansRoot);
+  if (
+    resolvedPlans !== resolvedRoot &&
+    !resolvedPlans.startsWith(resolvedRoot + path.sep)
+  ) {
+    throw new Error("plansDir resolves outside the project root");
+  }
+
+  // Refuse symlink escapes (path.resolve does not follow links; write would).
+  if (fs.existsSync(plansRoot)) {
+    assertNotSymlink(plansRoot, "plansDir");
+  }
+
+  const readme = path.join(plansRoot, "README.md");
+  if (fs.existsSync(readme)) {
+    assertNotSymlink(readme, "plans README");
+    return null;
+  }
+  fs.mkdirSync(plansRoot, { recursive: true });
+  assertRealpathInside(projectRoot, plansRoot, "plansDir");
+
   fs.writeFileSync(
     readme,
     `# Plans
@@ -185,9 +232,9 @@ function ensurePlansReadme(projectRoot: string): string | null {
 Per-track Autopilot artifacts live here:
 
 \`\`\`text
-plans/<slug>/brief.md
-plans/<slug>/plan.md
-plans/<slug>/checklist.md
+${safePlansDir}/<slug>/brief.md
+${safePlansDir}/<slug>/plan.md
+${safePlansDir}/<slug>/checklist.md
 \`\`\`
 
 Start with \`/autopilot-on\`, then \`/autopilot-run\` when the checklist is ready.
@@ -252,6 +299,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const projectRoot = path.resolve(opts.projectRoot);
   const autopilotDir = path.join(projectRoot, ".autopilot");
   const configPath = path.join(autopilotDir, "config.yml");
+  const cursorDir = path.join(projectRoot, ".cursor");
+  const hooksPath = path.join(cursorDir, "hooks.json");
+
+  try {
+    assertNotSymlink(autopilotDir, ".autopilot/");
+    assertNotSymlink(configPath, ".autopilot/config.yml");
+    assertNotSymlink(cursorDir, ".cursor/");
+    assertNotSymlink(hooksPath, ".cursor/hooks.json");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+
   const configExists = fs.existsSync(configPath);
 
   if (configExists && !opts.force) {
@@ -268,31 +328,68 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   }
 
   const { cliRoot, templatesRoot } = resolvePackageRoots();
-  const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
-  const hooksRead = readHooksFile(hooksPath);
-  if (!hooksRead.ok) {
-    // Race: file changed after preflight; still fail closed.
-    return { ok: false, error: hooksRead.error };
+  // Fail closed on corrupt hooks before any mutate.
+  const hooksPre = readHooksFile(hooksPath);
+  if (!hooksPre.ok) {
+    return { ok: false, error: hooksPre.error };
   }
 
+  const plansNorm = normalizePlansDir(opts.plansDir);
+  if (!plansNorm.ok) {
+    return { ok: false, error: plansNorm.error };
+  }
+  const plansDir = plansNorm.value;
+  const verifyEnabled = Boolean(opts.verifyEnabled);
+  const writeQs = opts.writeQuickstart !== false;
+
+  let createdConfig = false;
   try {
     const written: string[] = [];
     fs.mkdirSync(autopilotDir, { recursive: true });
 
-    // Only write config on first init — never clobber user config on --force
+    // Only write config on first init — never clobber user config on --force.
+    // wx: fail closed if another process created config.yml between check and write.
     if (!configExists) {
       const locale = opts.locale as InitLocale;
-      fs.writeFileSync(
-        configPath,
-        defaultConfigYaml({
-          platform: opts.platform,
-          surface: opts.surface,
-          locale,
-        }),
-        "utf8",
-      );
+      try {
+        fs.writeFileSync(
+          configPath,
+          defaultConfigYaml({
+            platform: opts.platform,
+            surface: opts.surface,
+            locale,
+            plansDir,
+            verifyEnabled,
+          }),
+          { encoding: "utf8", flag: "wx" },
+        );
+      } catch (err) {
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? String((err as { code: unknown }).code)
+            : "";
+        if (code === "EEXIST") {
+          return {
+            ok: false,
+            error:
+              "Project already initialized (.autopilot/config.yml exists). Re-run with --force to refresh (config.yml kept; hooks merge; plans untouched).",
+          };
+        }
+        throw err;
+      }
+      createdConfig = true;
       written.push(path.relative(projectRoot, configPath));
     }
+
+    const rollbackFreshConfig = (): void => {
+      if (!createdConfig) return;
+      try {
+        fs.unlinkSync(configPath);
+        createdConfig = false;
+      } catch {
+        // Best-effort: leave crumbs rather than mask the root error.
+      }
+    };
 
     const version =
       typeof opts.packageVersion === "string" && opts.packageVersion.trim()
@@ -318,16 +415,59 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     written.push(...installSkills(templatesRoot, projectRoot));
     written.push(...installWorkflows(templatesRoot, projectRoot));
 
-    const plansReadme = ensurePlansReadme(projectRoot);
-    if (plansReadme) written.push(plansReadme);
+    // Fresh init only: plans tree / plans gitignore / quickstart follow wizard.
+    // Force refresh must not create a second plans dir or rewrite docs.
+    if (!configExists) {
+      const plansReadme = ensurePlansReadme(projectRoot, plansDir);
+      if (plansReadme) written.push(plansReadme);
+    }
 
+    const runtimeGi = applyAutopilotRuntimeGitignore(projectRoot);
+    if (runtimeGi && !written.includes(runtimeGi)) written.push(runtimeGi);
+
+    if (!configExists && opts.plansGit === "local-only") {
+      const gi = applyPlansGitignore(projectRoot, plansDir);
+      if (gi && !written.includes(gi)) written.push(gi);
+    }
+
+    if (!configExists && writeQs) {
+      const qsRel = writeQuickstart(
+        projectRoot,
+        opts.locale as InitLocale,
+        plansDir,
+      );
+      if (qsRel && !written.includes(qsRel)) written.push(qsRel);
+    }
+
+    // Re-read hooks immediately before write to shrink TOCTOU with other tools.
+    const hooksFresh = readHooksFile(hooksPath);
+    if (!hooksFresh.ok) {
+      rollbackFreshConfig();
+      return { ok: false, error: hooksFresh.error };
+    }
+    try {
+      assertNotSymlink(cursorDir, ".cursor/");
+      assertNotSymlink(hooksPath, ".cursor/hooks.json");
+    } catch (err) {
+      rollbackFreshConfig();
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
     fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
-    const merged = mergeHooksJson(hooksRead.value);
+    assertRealpathInside(projectRoot, path.dirname(hooksPath), ".cursor/");
+    const merged = mergeHooksJson(hooksFresh.value);
     fs.writeFileSync(hooksPath, JSON.stringify(merged, null, 2) + "\n", "utf8");
     written.push(path.relative(projectRoot, hooksPath));
 
     return { ok: true, written };
   } catch (err) {
+    if (createdConfig) {
+      try {
+        fs.unlinkSync(configPath);
+      } catch {
+        // best-effort
+      }
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `init failed: ${msg}` };
   }

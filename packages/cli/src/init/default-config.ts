@@ -1,44 +1,50 @@
 import type { InitLocale } from "./types.js";
+import { normalizePlansDir } from "./wizard-helpers.js";
 
-/** Default `.autopilot/config.yml` body for `init --yes` (v0.1). */
+/** Default `.autopilot/config.yml` body for init (v0.1). */
 export function defaultConfigYaml(opts: {
   platform: string;
   surface: string;
   locale: InitLocale;
+  plansDir?: string;
+  verifyEnabled?: boolean;
 }): string {
-  const onTriggers =
+  const plansNorm = normalizePlansDir(opts.plansDir);
+  const plansDir = plansNorm.ok ? plansNorm.value : "plans";
+  const verifyEnabled = Boolean(opts.verifyEnabled);
+  const on =
     opts.locale === "zh-CN"
       ? `["Autopilot ON", "开启自动驾驶"]`
       : `["Autopilot ON"]`;
-  const runTriggers =
+  const run =
     opts.locale === "zh-CN"
       ? `["Autopilot RUN", "开始执行"]`
       : `["Autopilot RUN"]`;
-  const offTriggers =
+  const off =
     opts.locale === "zh-CN"
       ? `["Autopilot OFF", "关闭自动驾驶"]`
       : `["Autopilot OFF"]`;
-  const resumeTriggers =
+  const resume =
     opts.locale === "zh-CN"
       ? `["Autopilot RESUME", "继续执行"]`
       : `["Autopilot RESUME"]`;
-  const replanTriggers =
+  const replan =
     opts.locale === "zh-CN"
       ? `["Autopilot REPLAN", "修改方案"]`
       : `["Autopilot REPLAN"]`;
-  const resumeReviewTriggers =
+  const resumeReview =
     opts.locale === "zh-CN"
       ? `["继续自审", "Resume review"]`
       : `["Resume review"]`;
 
-  return `# Autopilot Harness — project config (init --yes defaults)
+  return `# Autopilot Harness — project config (init defaults)
 platform: ${opts.platform}
 surface: ${opts.surface}
 integration: hook
 locale: ${opts.locale}
 
 artifacts:
-  plans_dir: plans
+  plans_dir: ${plansDir}
   files:
     brief: brief.md
     plan: plan.md
@@ -55,18 +61,18 @@ concurrency:
 review:
   confirm_rounds: 5
   verify:
-    enabled: false
+    enabled: ${verifyEnabled}
   stuck:
     max_idle_stops: 5
 
 triggers:
   match: line_start
-  on: ${onTriggers}
-  run: ${runTriggers}
-  off: ${offTriggers}
-  resume: ${resumeTriggers}
-  replan: ${replanTriggers}
-  resume_review: ${resumeReviewTriggers}
+  on: ${on}
+  run: ${run}
+  off: ${off}
+  resume: ${resume}
+  replan: ${replan}
+  resume_review: ${resumeReview}
 
 security:
   require_token: false

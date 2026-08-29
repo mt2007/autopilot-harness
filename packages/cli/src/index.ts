@@ -19,3 +19,24 @@ export {
   mergeMissingKeys,
   readConfigInstallHints,
 } from "./init/config-merge.js";
+export {
+  collectWizardAnswers,
+  runInteractiveInit,
+} from "./init/tui.js";
+export type { InitPrompts, InteractiveInitOptions } from "./init/tui.js";
+export {
+  probeProject,
+  applyPlansGitignore,
+  applyAutopilotRuntimeGitignore,
+  answersToInstallOptions,
+  formatCheatSheet,
+  writeQuickstart,
+  normalizePlansDir,
+  assertNotSymlink,
+  assertRealpathInside,
+} from "./init/wizard-helpers.js";
+export type {
+  InitWizardAnswers,
+  PlansGitPolicy,
+  ShellAliasTarget,
+} from "./init/wizard-helpers.js";

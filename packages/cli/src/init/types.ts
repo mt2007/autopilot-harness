@@ -4,6 +4,8 @@ export type InitPlatform = "cursor";
 export type InitSurface = "ide";
 export type InitLocale = "en" | "zh-CN";
 
+export type PlansGitPolicy = "commit" | "local-only" | "leave";
+
 export interface InitYesOptions {
   projectRoot: string;
   platform: string;
@@ -11,6 +13,14 @@ export interface InitYesOptions {
   locale: string;
   force: boolean;
   packageVersion?: string;
+  /** Artifact root under project (default `plans`). */
+  plansDir?: string;
+  /** How to treat plans/ in git (default commit = do not gitignore). */
+  plansGit?: PlansGitPolicy;
+  /** Write review.verify.enabled (default false). */
+  verifyEnabled?: boolean;
+  /** Also write docs/autopilot/quickstart.md (default true for fresh init). */
+  writeQuickstart?: boolean;
 }
 
 export interface InitOk {

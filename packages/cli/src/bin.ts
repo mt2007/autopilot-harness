@@ -7,6 +7,7 @@ import {
   PACKAGE_VERSION,
   PREFERRED_NAME,
   runDoctor,
+  runInteractiveInit,
   upgradeProject,
 } from "./index.js";
 
@@ -30,7 +31,7 @@ program
     "Refresh hook/skills/pin + merge hooks (keeps existing config.yml)",
   )
   .action(
-    (opts: {
+    async (opts: {
       platform: string;
       harness?: string;
       surface: string;
@@ -38,18 +39,24 @@ program
       yes?: boolean;
       force?: boolean;
     }) => {
+      const platform = opts.harness ?? opts.platform;
+
       if (!opts.yes) {
-        console.log(
-          `${PREFERRED_NAME} interactive TUI init is not in this build yet.`,
-        );
-        console.log(`Use:  ${CLI_NAME} init --yes --platform cursor`);
-        process.exitCode = 1;
+        const code = await runInteractiveInit({
+          projectRoot: process.cwd(),
+          force: Boolean(opts.force),
+          packageVersion: PACKAGE_VERSION,
+          locale: opts.locale,
+          platform,
+          surface: opts.surface,
+        });
+        process.exitCode = code;
         return;
       }
 
       const result = installInitYes({
         projectRoot: process.cwd(),
-        platform: opts.harness ?? opts.platform,
+        platform,
         surface: opts.surface,
         locale: opts.locale,
         force: Boolean(opts.force),
@@ -137,4 +144,8 @@ program
     process.exitCode = ok ? 0 : 1;
   });
 
-program.parse();
+program.parseAsync(process.argv).catch((err: unknown) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(msg);
+  process.exitCode = 1;
+});
