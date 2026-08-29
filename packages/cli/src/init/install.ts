@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,11 +15,23 @@ import {
   applyPlansGitignore,
   applyAutopilotRuntimeGitignore,
   assertNotSymlink,
+  assertParentDirInProject,
   assertRealpathInside,
+  assertRegularFileInsideProject,
+  assertWrittenInsideProject,
+  mkdirRealDirSync,
   normalizePlansDir,
   writeQuickstart,
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
+import {
+  MAX_UNTRUSTED_TEXT_BYTES,
+  readUntrustedUtf8File,
+  copyFileReplaceSync,
+  copyFileNoFollowExclSync,
+  writeFileReplaceSync,
+  renameReplaceSync,
+} from "../read-untrusted-file.js";
 
 export {
   mergeHooksJson,
@@ -88,68 +101,11 @@ function resolveVendorRoot(cliRoot: string): string | null {
   return null;
 }
 
-/** Rename staged tmp into place (keeps prior dest until rename succeeds). */
-function renameIntoPlace(tmp: string, dest: string): void {
-  try {
-    fs.renameSync(tmp, dest);
-    return;
-  } catch (first) {
-    const code =
-      first && typeof first === "object" && "code" in first
-        ? String((first as { code: unknown }).code)
-        : "";
-    // Cross-device: same-dir temps should not hit this, but copy is safe.
-    if (code === "EXDEV") {
-      fs.copyFileSync(tmp, dest);
-      try {
-        fs.unlinkSync(tmp);
-      } catch {
-        /* dest is good; tmp leak is OK */
-      }
-      return;
-    }
-    // Windows may refuse rename-over-existing (EPERM/EEXIST).
-    // Park dest aside so a failed/partial replace can restore (no hole/corrupt).
-    const replaceOver = code === "EPERM" || code === "EEXIST";
-    if (!replaceOver || !fs.existsSync(tmp) || !fs.existsSync(dest)) {
-      throw first;
-    }
-    const bak = `${dest}.${process.pid}.${Date.now()}.bak`;
-    fs.renameSync(dest, bak);
-    try {
-      try {
-        fs.renameSync(tmp, dest);
-      } catch {
-        fs.copyFileSync(tmp, dest);
-        try {
-          fs.unlinkSync(tmp);
-        } catch {
-          /* dest is good; tmp leak is OK */
-        }
-      }
-    } catch (err) {
-      // Drop any partial dest, then put the prior file back.
-      try {
-        fs.unlinkSync(dest);
-      } catch {
-        /* may not exist */
-      }
-      try {
-        fs.renameSync(bak, dest);
-      } catch {
-        /* leave bak for manual recovery */
-      }
-      throw err;
-    }
-    try {
-      fs.unlinkSync(bak);
-    } catch {
-      /* best-effort cleanup */
-    }
-  }
-}
-
-function copyVendorDir(cliRoot: string, destBin: string): void {
+function copyVendorDir(
+  cliRoot: string,
+  destBin: string,
+  projectRoot: string,
+): void {
   const vendorRoot = resolveVendorRoot(cliRoot);
   if (!vendorRoot) {
     throw new Error(
@@ -160,33 +116,50 @@ function copyVendorDir(cliRoot: string, destBin: string): void {
   const migSrc = path.join(vendorRoot, "migrations", "001_initial.sql");
 
   const destVendor = path.join(destBin, "vendor");
-  assertNotSymlink(destVendor, ".autopilot/bin/vendor/");
-  fs.mkdirSync(destVendor, { recursive: true });
+  mkdirRealDirSync(destVendor, ".autopilot/bin/vendor/", projectRoot);
   const runtimeDest = path.join(destVendor, "runtime.mjs");
   assertNotSymlink(runtimeDest, ".autopilot/bin/vendor/runtime.mjs");
 
   const migDestDir = path.join(destVendor, "migrations");
-  assertNotSymlink(migDestDir, ".autopilot/bin/vendor/migrations/");
-  fs.mkdirSync(migDestDir, { recursive: true });
+  mkdirRealDirSync(
+    migDestDir,
+    ".autopilot/bin/vendor/migrations/",
+    projectRoot,
+  );
   const migDest = path.join(migDestDir, "001_initial.sql");
   assertNotSymlink(migDest, ".autopilot/bin/vendor/migrations/001_initial.sql");
 
   // Stage both temps first so a mid-stage failure does not wipe a good prior pair.
   // Commit migration before runtime: a torn upgrade then keeps old runtime + new
   // SQL (still loadable); the reverse (new runtime + old SQL) is worse for migrate.
-  const runtimeTmp = path.join(
-    destVendor,
-    `.runtime.mjs.${process.pid}.${Date.now()}.tmp`,
+  // Exclusive staging: COPYFILE_EXCL refuses a pre-planted symlink (no write-through).
+  assertParentDirInProject(
+    projectRoot,
+    runtimeDest,
+    ".autopilot/bin/vendor/",
   );
-  const migTmp = path.join(
-    migDestDir,
-    `.001_initial.sql.${process.pid}.${Date.now()}.tmp`,
+  assertParentDirInProject(
+    projectRoot,
+    migDest,
+    ".autopilot/bin/vendor/migrations/",
   );
+  const runtimeTmp = `${runtimeDest}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  const migTmp = `${migDest}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
   try {
-    fs.copyFileSync(runtimeSrc, runtimeTmp);
-    fs.copyFileSync(migSrc, migTmp);
-    renameIntoPlace(migTmp, migDest);
-    renameIntoPlace(runtimeTmp, runtimeDest);
+    // Package assets: still nofollow — a swapped symlink at src must not
+    // read-through into project vendor files.
+    copyFileNoFollowExclSync(
+      runtimeSrc,
+      runtimeTmp,
+      "vendor/runtime.mjs",
+    );
+    copyFileNoFollowExclSync(
+      migSrc,
+      migTmp,
+      "vendor/migrations/001_initial.sql",
+    );
+    renameReplaceSync(migTmp, migDest);
+    renameReplaceSync(runtimeTmp, runtimeDest);
   } catch (err) {
     try {
       fs.unlinkSync(runtimeTmp);
@@ -200,19 +173,58 @@ function copyVendorDir(cliRoot: string, destBin: string): void {
     }
     throw err;
   }
+  // Post-write: parent symlink race may have landed files outside the project.
+  // Verify both (regular file + inside) before unlinking — a partial unlink
+  // would leave torn vendor (new migration + missing runtime).
+  const vendorPair = [
+    [migDest, ".autopilot/bin/vendor/migrations/001_initial.sql"],
+    [runtimeDest, ".autopilot/bin/vendor/runtime.mjs"],
+  ] as const;
+  const verifyErrors: unknown[] = [];
+  for (const [dest, label] of vendorPair) {
+    try {
+      assertRegularFileInsideProject(projectRoot, dest, label);
+    } catch (err) {
+      verifyErrors.push(err);
+    }
+  }
+  if (verifyErrors.length > 0) {
+    for (const [dest] of vendorPair) {
+      try {
+        fs.unlinkSync(dest);
+      } catch {
+        /* best-effort remove escaped / torn pair */
+      }
+    }
+    throw verifyErrors[0];
+  }
 }
 
-function copyHookAsset(cliRoot: string, destBin: string): void {
+function copyHookAsset(
+  cliRoot: string,
+  destBin: string,
+  projectRoot: string,
+): void {
   const src = resolveHookAsset(cliRoot);
   if (!src) {
     throw new Error("Missing autopilot-harness-hook.mjs asset in CLI package");
   }
-  fs.mkdirSync(destBin, { recursive: true });
+  mkdirRealDirSync(destBin, ".autopilot/bin/", projectRoot);
   // Vendor first: if this fails, leave the previous hook intact.
-  copyVendorDir(cliRoot, destBin);
+  copyVendorDir(cliRoot, destBin, projectRoot);
   const hookDest = path.join(destBin, "autopilot-harness-hook.mjs");
   assertNotSymlink(hookDest, ".autopilot/bin/autopilot-harness-hook.mjs");
-  fs.copyFileSync(src, hookDest);
+  assertParentDirInProject(
+    projectRoot,
+    hookDest,
+    ".autopilot/bin/",
+  );
+  copyFileReplaceSync(src, hookDest);
+  assertWrittenInsideProject(
+    projectRoot,
+    hookDest,
+    ".autopilot/bin/autopilot-harness-hook.mjs",
+  );
 }
 
 type HooksRead =
@@ -221,11 +233,20 @@ type HooksRead =
 
 /** Read hooks.json; refuse to clobber an existing unreadable file. */
 function readHooksFile(filePath: string): HooksRead {
-  if (!fs.existsSync(filePath)) return { ok: true, value: null };
   let raw: string;
   try {
-    raw = fs.readFileSync(filePath, "utf8");
+    // Do not use existsSync first: dangling symlinks look "missing" there,
+    // but O_NOFOLLOW open fails with ELOOP — fail closed before mutate.
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".cursor/hooks.json",
+    );
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
   }
@@ -266,23 +287,15 @@ function readHooksFile(filePath: string): HooksRead {
   }
 }
 
-function writeFileAtomic(filePath: string, contents: string): void {
-  const dir = path.dirname(filePath);
-  const tmp = path.join(
-    dir,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  try {
-    fs.writeFileSync(tmp, contents, "utf8");
-    fs.renameSync(tmp, filePath);
-  } catch (err) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* ignore cleanup */
-    }
-    throw err;
-  }
+function writeFileAtomic(
+  filePath: string,
+  contents: string,
+  projectRoot: string,
+  parentLabel: string,
+): void {
+  assertParentDirInProject(projectRoot, filePath, parentLabel);
+  writeFileReplaceSync(filePath, contents);
+  assertWrittenInsideProject(projectRoot, filePath, path.basename(filePath));
 }
 
 function renderSkill(template: string, description: string): string {
@@ -326,8 +339,7 @@ function installSkills(
       throw new Error(`Missing skill template: ${tplPath}`);
     }
     const destDir = path.join(skillsRoot, name);
-    assertNotSymlink(destDir, `.cursor/skills/${name}/`);
-    fs.mkdirSync(destDir, { recursive: true });
+    mkdirRealDirSync(destDir, `.cursor/skills/${name}/`, projectRoot);
     assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
     const body = renderSkill(
       fs.readFileSync(tplPath, "utf8"),
@@ -335,7 +347,12 @@ function installSkills(
     );
     const dest = path.join(destDir, "SKILL.md");
     assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
-    writeFileAtomic(dest, body);
+    writeFileAtomic(
+      dest,
+      body,
+      projectRoot,
+      `.cursor/skills/${name}/`,
+    );
     written.push(path.relative(projectRoot, dest));
   }
   return written;
@@ -349,7 +366,7 @@ function installWorkflows(templatesRoot: string, projectRoot: string): string[] 
   assertNotSymlink(docsDir, "docs/");
   assertNotSymlink(autopilotDocs, "docs/autopilot/");
   assertNotSymlink(destDir, "docs/autopilot/workflows/");
-  fs.mkdirSync(destDir, { recursive: true });
+  mkdirRealDirSync(destDir, "docs/autopilot/workflows/", projectRoot);
   assertRealpathInside(projectRoot, destDir, "docs/autopilot/workflows/");
   for (const name of WORKFLOW_FILES) {
     const src = path.join(templatesRoot, "workflows", name);
@@ -358,7 +375,17 @@ function installWorkflows(templatesRoot: string, projectRoot: string): string[] 
     }
     const dest = path.join(destDir, name);
     assertNotSymlink(dest, `docs/autopilot/workflows/${name}`);
-    fs.copyFileSync(src, dest);
+    assertParentDirInProject(
+      projectRoot,
+      dest,
+      "docs/autopilot/workflows/",
+    );
+    copyFileReplaceSync(src, dest);
+    assertWrittenInsideProject(
+      projectRoot,
+      dest,
+      `docs/autopilot/workflows/${name}`,
+    );
     written.push(path.relative(projectRoot, dest));
   }
   return written;
@@ -368,13 +395,16 @@ function ensurePlansReadme(
   projectRoot: string,
   plansDir = "plans",
 ): string | null {
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    throw new Error("projectRoot must be a non-empty string");
+  }
   const normalized = normalizePlansDir(plansDir);
   if (!normalized.ok) {
     throw new Error(normalized.error);
   }
   const safePlansDir = normalized.value;
-  const plansRoot = path.join(projectRoot, safePlansDir);
-  const resolvedRoot = path.resolve(projectRoot);
+  const resolvedRoot = path.resolve(projectRoot.trim());
+  const plansRoot = path.join(resolvedRoot, safePlansDir);
   const resolvedPlans = path.resolve(plansRoot);
   if (
     resolvedPlans !== resolvedRoot &&
@@ -383,20 +413,24 @@ function ensurePlansReadme(
     throw new Error("plansDir resolves outside the project root");
   }
 
-  // Refuse symlink escapes (path.resolve does not follow links; write would).
-  if (fs.existsSync(plansRoot)) {
-    assertNotSymlink(plansRoot, "plansDir");
-  }
+  // Refuse symlink/file occupying plansDir (existsSync lies on dangling).
+  mkdirRealDirSync(plansRoot, "plansDir", resolvedRoot);
+  assertRealpathInside(resolvedRoot, plansRoot, "plansDir");
 
   const readme = path.join(plansRoot, "README.md");
-  if (fs.existsSync(readme)) {
-    assertNotSymlink(readme, "plans README");
-    return null;
+  try {
+    const st = fs.lstatSync(readme);
+    if (st.isSymbolicLink()) {
+      throw new Error("plans README is a symlink; refusing to open");
+    }
+    if (st.isFile()) return null;
+    throw new Error("plans README exists and is not a regular file");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") throw err;
   }
-  fs.mkdirSync(plansRoot, { recursive: true });
-  assertRealpathInside(projectRoot, plansRoot, "plansDir");
 
-  fs.writeFileSync(
+  writeFileAtomic(
     readme,
     `# Plans
 
@@ -410,9 +444,10 @@ ${safePlansDir}/<slug>/checklist.md
 
 Start with \`/autopilot-on\`, then \`/autopilot-run\` when the checklist is ready.
 `,
-    "utf8",
+    resolvedRoot,
+    "plansDir",
   );
-  return path.relative(projectRoot, readme);
+  return path.relative(resolvedRoot, readme);
 }
 
 export type PreflightResult = { ok: true } | { ok: false; error: string };
@@ -422,7 +457,10 @@ export type PreflightResult = { ok: true } | { ok: false; error: string };
  * Ensures templates, hook asset, and hooks.json are merge-safe (fail closed).
  */
 export function preflightForceRefresh(projectRoot: string): PreflightResult {
-  const root = path.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    return { ok: false, error: "projectRoot must be a non-empty string" };
+  }
+  const root = path.resolve(projectRoot.trim());
   const { cliRoot, templatesRoot } = resolvePackageRoots();
   if (!fs.existsSync(path.join(templatesRoot, "skills"))) {
     return {
@@ -469,12 +507,16 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
  * an existing config.yml (append-keys / reset-config come later).
  */
 export function installInitYes(opts: InitYesOptions): InitResult {
+  if (typeof opts.projectRoot !== "string" || opts.projectRoot.trim() === "") {
+    return { ok: false, error: "projectRoot must be a non-empty string" };
+  }
+
   const unsupported = assertSupported(opts.platform, opts.surface, opts.locale);
   if (unsupported) {
     return { ok: false, error: unsupported };
   }
 
-  const projectRoot = path.resolve(opts.projectRoot);
+  const projectRoot = path.resolve(opts.projectRoot.trim());
   const autopilotDir = path.join(projectRoot, ".autopilot");
   const configPath = path.join(autopilotDir, "config.yml");
   const cursorDir = path.join(projectRoot, ".cursor");
@@ -490,7 +532,26 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     return { ok: false, error: msg };
   }
 
-  const configExists = fs.existsSync(configPath);
+  // Prefer lstat: existsSync is false for dangling symlinks (already refused
+  // above) and true for non-files; only a regular file counts as initialized.
+  let configExists = false;
+  try {
+    const st = fs.lstatSync(configPath);
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: ".autopilot/config.yml exists and is not a regular file",
+      };
+    }
+    configExists = true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `Cannot access config.yml: ${msg}` };
+    }
+    configExists = false;
+  }
 
   if (configExists && !opts.force) {
     return {
@@ -523,13 +584,18 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   let createdConfig = false;
   try {
     const written: string[] = [];
-    fs.mkdirSync(autopilotDir, { recursive: true });
+    mkdirRealDirSync(autopilotDir, ".autopilot/", projectRoot);
 
     // Only write config on first init — never clobber user config on --force.
     // wx: fail closed if another process created config.yml between check and write.
     if (!configExists) {
       const locale = opts.locale as InitLocale;
       try {
+        // Re-check immediately before wx: earlier `configExists` / mkdir leave a window
+        // where a symlink (or non-file) can appear and make wx fail with EEXIST —
+        // that must not be reported as "already initialized".
+        assertParentDirInProject(projectRoot, configPath, ".autopilot/");
+        assertNotSymlink(configPath, ".autopilot/config.yml");
         fs.writeFileSync(
           configPath,
           defaultConfigYaml({
@@ -541,12 +607,38 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           }),
           { encoding: "utf8", flag: "wx" },
         );
+        assertWrittenInsideProject(
+          projectRoot,
+          configPath,
+          ".autopilot/config.yml",
+        );
       } catch (err) {
         const code =
           err && typeof err === "object" && "code" in err
             ? String((err as { code: unknown }).code)
             : "";
         if (code === "EEXIST") {
+          try {
+            const raced = fs.lstatSync(configPath);
+            if (raced.isSymbolicLink()) {
+              return {
+                ok: false,
+                error: ".autopilot/config.yml is a symlink; refusing to open",
+              };
+            }
+            if (!raced.isFile()) {
+              return {
+                ok: false,
+                error:
+                  ".autopilot/config.yml exists and is not a regular file; refusing to open",
+              };
+            }
+          } catch (stErr) {
+            if (stErr instanceof Error && /symlink/i.test(stErr.message)) {
+              return { ok: false, error: stErr.message };
+            }
+            // Gone again — treat as contended init rather than success.
+          }
           return {
             ok: false,
             error:
@@ -574,18 +666,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ? opts.packageVersion.trim()
         : PACKAGE_VERSION;
     const pinPath = path.join(autopilotDir, "pin.json");
-    fs.writeFileSync(
+    assertNotSymlink(pinPath, ".autopilot/pin.json");
+    writeFileAtomic(
       pinPath,
       JSON.stringify({ "autopilot-harness": version }, null, 2) + "\n",
-      "utf8",
+      projectRoot,
+      ".autopilot/",
     );
     written.push(path.relative(projectRoot, pinPath));
 
     const binDir = path.join(autopilotDir, "bin");
-    assertNotSymlink(binDir, ".autopilot/bin/");
-    fs.mkdirSync(binDir, { recursive: true });
+    mkdirRealDirSync(binDir, ".autopilot/bin/", projectRoot);
     assertRealpathInside(projectRoot, binDir, ".autopilot/bin/");
-    copyHookAsset(cliRoot, binDir);
+    copyHookAsset(cliRoot, binDir, projectRoot);
     written.push(
       path.relative(
         projectRoot,
@@ -634,10 +727,15 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg };
     }
-    fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
+    mkdirRealDirSync(path.dirname(hooksPath), ".cursor/", projectRoot);
     assertRealpathInside(projectRoot, path.dirname(hooksPath), ".cursor/");
     const merged = mergeHooksJson(hooksFresh.value);
-    fs.writeFileSync(hooksPath, JSON.stringify(merged, null, 2) + "\n", "utf8");
+    writeFileAtomic(
+      hooksPath,
+      JSON.stringify(merged, null, 2) + "\n",
+      projectRoot,
+      ".cursor/",
+    );
     written.push(path.relative(projectRoot, hooksPath));
 
     return { ok: true, written };

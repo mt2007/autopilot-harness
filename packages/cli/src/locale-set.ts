@@ -11,7 +11,12 @@ import {
   type SkillFolderName,
   type TriggerKey,
 } from "@autopilot-harness/i18n";
-import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
+import { assertNotSymlink, assertRealpathInside, mkdirRealDirSync, assertParentDirInProject, assertWrittenInsideProject } from "./init/wizard-helpers.js";
+import {
+  MAX_UNTRUSTED_TEXT_BYTES,
+  readUntrustedUtf8File,
+  writeFileReplaceSync,
+} from "./read-untrusted-file.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +38,7 @@ const TRIGGER_KEYS: TriggerKey[] = [
 ];
 
 /** Refuse absurd configs (DoS / accidental paste). */
-const MAX_CONFIG_BYTES = 1_000_000;
+const MAX_CONFIG_BYTES = MAX_UNTRUSTED_TEXT_BYTES;
 
 /**
  * Pre-i18n init defaults (en / zh-CN). Treat as stock so locale set still
@@ -151,8 +156,7 @@ function rewriteSkills(projectRoot: string, locale: LocaleCode): string[] {
       throw new Error(`Missing skill template: ${tplPath}`);
     }
     const destDir = path.join(skillsRoot, name);
-    assertNotSymlink(destDir, `.cursor/skills/${name}/`);
-    fs.mkdirSync(destDir, { recursive: true });
+    mkdirRealDirSync(destDir, `.cursor/skills/${name}/`, projectRoot);
     assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
     const dest = path.join(destDir, "SKILL.md");
     assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
@@ -160,7 +164,7 @@ function rewriteSkills(projectRoot: string, locale: LocaleCode): string[] {
       fs.readFileSync(tplPath, "utf8"),
       descriptions[name],
     );
-    writeFileAtomic(dest, body);
+    writeFileAtomic(dest, body, projectRoot, `.cursor/skills/${name}/`);
     written.push(path.relative(projectRoot, dest));
   }
   return written;
@@ -176,23 +180,15 @@ function isStockTriggerList(current: unknown, key: TriggerKey): boolean {
   return false;
 }
 
-function writeFileAtomic(filePath: string, contents: string): void {
-  const dir = path.dirname(filePath);
-  const tmp = path.join(
-    dir,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  try {
-    fs.writeFileSync(tmp, contents, "utf8");
-    fs.renameSync(tmp, filePath);
-  } catch (err) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      // best-effort cleanup
-    }
-    throw err;
-  }
+function writeFileAtomic(
+  filePath: string,
+  contents: string,
+  projectRoot: string,
+  parentLabel: string,
+): void {
+  assertParentDirInProject(projectRoot, filePath, parentLabel);
+  writeFileReplaceSync(filePath, contents);
+  assertWrittenInsideProject(projectRoot, filePath, path.basename(filePath));
 }
 
 /**
@@ -221,17 +217,9 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
 
   const projectRoot = path.resolve(opts.projectRoot.trim());
   const configPath = path.join(projectRoot, ".autopilot", "config.yml");
-  if (!fs.existsSync(configPath)) {
-    return {
-      ok: false,
-      error:
-        "Project is not initialized (.autopilot/config.yml missing). Run init first.",
-    };
-  }
 
   try {
     assertNotSymlink(path.join(projectRoot, ".autopilot"), ".autopilot/");
-    assertNotSymlink(configPath, ".autopilot/config.yml");
     assertNotSymlink(path.join(projectRoot, ".cursor"), ".cursor/");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -240,18 +228,24 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
 
   let raw: string;
   try {
-    raw = fs.readFileSync(configPath, "utf8");
+    // Avoid existsSync: dangling symlinks look missing but must fail closed.
+    raw = readUntrustedUtf8File(
+      configPath,
+      MAX_CONFIG_BYTES,
+      ".autopilot/config.yml",
+    );
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return {
+        ok: false,
+        error:
+          "Project is not initialized (.autopilot/config.yml missing). Run init first.",
+      };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `Cannot read config.yml: ${msg}` };
   }
-  if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) {
-    return {
-      ok: false,
-      error: `config.yml is too large (>${MAX_CONFIG_BYTES} bytes)`,
-    };
-  }
-
   let doc: ReturnType<typeof parseDocument>;
   try {
     // yaml@2.9+: maxAliasCount is a toJS option, not a parse option.
@@ -323,8 +317,7 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
     assertTemplatesReady();
     // Ensure skills tree is creatable *before* rewriting config.yml.
     const skillsRoot = path.join(projectRoot, ".cursor", "skills");
-    assertNotSymlink(skillsRoot, ".cursor/skills/");
-    fs.mkdirSync(skillsRoot, { recursive: true });
+    mkdirRealDirSync(skillsRoot, ".cursor/skills/", projectRoot);
     assertRealpathInside(projectRoot, skillsRoot, ".cursor/skills/");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -334,7 +327,7 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
   const written: string[] = [];
   try {
     // Config first so a later skill failure can be fixed by re-running locale set.
-    writeFileAtomic(configPath, String(doc));
+    writeFileAtomic(configPath, String(doc), projectRoot, ".autopilot/");
     written.push(path.relative(projectRoot, configPath));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

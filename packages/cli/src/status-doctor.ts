@@ -16,6 +16,10 @@ import {
 } from "./init/hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside, normalizePlansDir } from "./init/wizard-helpers.js";
+import {
+  MAX_UNTRUSTED_TEXT_BYTES,
+  readUntrustedUtf8File,
+} from "./read-untrusted-file.js";
 import { formatSessionDisplayName, shortSessionId } from "./session.js";
 
 const VALID_PHASES = new Set<Phase>([
@@ -42,7 +46,7 @@ const SKILL_NAMES = [
 
 const YAML_TO_JS_OPTS = { maxAliasCount: 64 } as const;
 /** Refuse absurd configs (DoS / accidental paste) — same cap as locale-set. */
-const MAX_CONFIG_BYTES = 1_000_000;
+const MAX_CONFIG_BYTES = MAX_UNTRUSTED_TEXT_BYTES;
 
 /** In-flight marker — never auto-purge. */
 function isProtectedFromPrune(row: SessionRow): boolean {
@@ -115,50 +119,6 @@ export type DoctorResult = {
 /** pin.json is tiny (version string); refuse absurd blobs before parse. */
 const MAX_PIN_BYTES = 64_000;
 
-/**
- * Đọc file text không tin cậy: không follow symlink, giới hạn size (fstat + readSync).
- * Ném Error khi symlink / không phải file thường / quá lớn.
- */
-function readUntrustedUtf8File(
-  filePath: string,
-  maxBytes: number,
-  label: string,
-): string {
-  const nofollow =
-    typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
-  if (nofollow === 0) {
-    assertNotSymlink(filePath, label);
-  }
-
-  let fd: number;
-  try {
-    fd = fs.openSync(filePath, fs.constants.O_RDONLY | nofollow);
-  } catch (err) {
-    if (nofollow !== 0 && (err as NodeJS.ErrnoException)?.code === "ELOOP") {
-      throw new Error(`${label} is a symlink; refusing to modify`);
-    }
-    throw err;
-  }
-  try {
-    const st = fs.fstatSync(fd);
-    if (!st.isFile()) {
-      throw new Error(`${label} is not a regular file`);
-    }
-    if (st.size > maxBytes) {
-      throw new Error(`${label} is too large (>${maxBytes} bytes)`);
-    }
-    const buf = Buffer.alloc(st.size);
-    const n = fs.readSync(fd, buf, 0, st.size, 0);
-    const raw = buf.subarray(0, n).toString("utf8");
-    if (Buffer.byteLength(raw, "utf8") > maxBytes) {
-      throw new Error(`${label} is too large (>${maxBytes} bytes)`);
-    }
-    return raw;
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
 /** True when user-level Cursor hooks still run a legacy global self-review script. */
 export function hasGlobalSelfReviewHooks(homeDir: string): boolean {
   // homeDir inject được (tests) — chỉ chấp nhận absolute để chặn path lung tung.
@@ -182,7 +142,14 @@ export function hasGlobalSelfReviewHooks(homeDir: string): boolean {
 }
 
 export function readPinVersion(projectRoot: string): string | null {
-  const pinPath = path.join(projectRoot, ".autopilot", "pin.json");
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    return null;
+  }
+  const pinPath = path.join(
+    path.resolve(projectRoot.trim()),
+    ".autopilot",
+    "pin.json",
+  );
   try {
     const raw = readUntrustedUtf8File(pinPath, MAX_PIN_BYTES, ".autopilot/pin.json");
     const pin = JSON.parse(raw) as { "autopilot-harness"?: string };
@@ -294,14 +261,18 @@ function readStatusConfig(configYaml: string): {
 
 /** Read `session.stale_after_hours` (0 = disabled). Missing file → default 72; bad/invalid config → 0. */
 export function readStaleAfterHours(projectRoot: string): number {
-  const root = path.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    return 0;
+  }
+  const root = path.resolve(projectRoot.trim());
   const configPath = path.join(root, ".autopilot", "config.yml");
   try {
-    if (!fs.existsSync(configPath)) return DEFAULT_STALE_HOURS;
     const cfg = readStatusConfig(readProjectConfigYaml(configPath));
     if (!cfg.configOk || cfg.staleHoursInvalid) return 0;
     return cfg.staleAfterHours;
-  } catch {
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") return DEFAULT_STALE_HOURS;
     return 0;
   }
 }
@@ -327,8 +298,21 @@ function openStateStore(
   projectRoot: string,
 ): { ok: true; store: StateStore } | { ok: false; error: string } {
   const dbPath = path.join(projectRoot, ".autopilot", "state.db");
-  if (!fs.existsSync(dbPath)) {
-    return { ok: false, error: "missing" };
+  try {
+    const st = fs.lstatSync(dbPath);
+    if (st.isSymbolicLink()) {
+      return { ok: false, error: "symlink" };
+    }
+    if (!st.isFile()) {
+      return { ok: false, error: "not a regular file" };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: false, error: "missing" };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: safeDisplayToken(msg, "error") };
   }
   try {
     assertNotSymlink(path.join(projectRoot, ".autopilot"), ".autopilot/");
@@ -341,15 +325,19 @@ function openStateStore(
 }
 
 export function formatStatus(projectRoot: string): string {
-  const root = path.resolve(projectRoot);
-  const configPath = path.join(root, ".autopilot", "config.yml");
-  if (!fs.existsSync(configPath)) {
-    return "Autopilot status: not initialized (no .autopilot/config.yml)";
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    return "Autopilot status: projectRoot must be a non-empty string";
   }
+  const root = path.resolve(projectRoot.trim());
+  const configPath = path.join(root, ".autopilot", "config.yml");
   let cfg: ReturnType<typeof readStatusConfig>;
   try {
     cfg = readStatusConfig(readProjectConfigYaml(configPath));
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return "Autopilot status: not initialized (no .autopilot/config.yml)";
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return `Autopilot status: cannot read config.yml (${safeDisplayToken(msg, "error")})`;
   }
@@ -405,7 +393,13 @@ export function runDoctor(
   projectRoot: string,
   opts: DoctorOptions = {},
 ): DoctorResult {
-  const root = path.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    return {
+      ok: false,
+      lines: ["FAIL  projectRoot must be a non-empty string"],
+    };
+  }
+  const root = path.resolve(projectRoot.trim());
   const lines: string[] = [];
   let ok = true;
   let pruned: number | undefined;
@@ -413,17 +407,18 @@ export function runDoctor(
   const packageVersion = opts.packageVersion ?? PACKAGE_VERSION;
 
   const configPath = path.join(root, ".autopilot", "config.yml");
-  if (!fs.existsSync(configPath)) {
-    lines.push("FAIL  .autopilot/config.yml missing — run init");
-    return { ok: false, lines };
-  }
   let cfg: ReturnType<typeof readStatusConfig>;
   try {
     cfg = readStatusConfig(readProjectConfigYaml(configPath));
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      lines.push("FAIL  .autopilot/config.yml missing — run init");
+      return { ok: false, lines };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     lines.push(
-      `FAIL  config.yml unreadable (${safeDisplayToken(msg, "error")})`,
+      `FAIL  .autopilot/config.yml unreadable (${safeDisplayToken(msg, "error")})`,
     );
     return { ok: false, lines };
   }
@@ -458,8 +453,14 @@ export function runDoctor(
   let binTrusted = true;
   try {
     assertNotSymlink(binDir, ".autopilot/bin/");
-    if (fs.existsSync(binDir)) {
-      assertRealpathInside(root, binDir, ".autopilot/bin/");
+    try {
+      const binSt = fs.lstatSync(binDir);
+      if (binSt.isDirectory() && !binSt.isSymbolicLink()) {
+        assertRealpathInside(root, binDir, ".autopilot/bin/");
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") throw err;
     }
   } catch (err) {
     binTrusted = false;
@@ -467,11 +468,31 @@ export function runDoctor(
     lines.push(`FAIL  hook bin — ${safeDisplayToken(msg, "unreadable")}`);
     ok = false;
   }
-  if (!fs.existsSync(hook)) {
-    lines.push("FAIL  hook binary missing");
-    ok = false;
-  } else if (binTrusted) {
-    lines.push("OK    autopilot-harness-hook.mjs");
+  if (!binTrusted) {
+    // bin path already FAILed above
+  } else {
+    try {
+      // lstat/assert — existsSync misses dangling hook symlinks.
+      assertNotSymlink(hook, ".autopilot/bin/autopilot-harness-hook.mjs");
+      const st = fs.lstatSync(hook);
+      if (!st.isFile()) {
+        lines.push("FAIL  hook binary is not a regular file");
+        ok = false;
+      } else {
+        lines.push("OK    autopilot-harness-hook.mjs");
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push("FAIL  hook binary missing");
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  hook binary — ${safeDisplayToken(msg, "unreadable")}`,
+        );
+      }
+      ok = false;
+    }
   }
 
   const vendorDir = path.join(binDir, "vendor");
@@ -486,10 +507,30 @@ export function runDoctor(
       vendorMig,
       ".autopilot/bin/vendor/migrations/001_initial.sql",
     );
-    if (fs.existsSync(vendorDir)) {
-      assertRealpathInside(root, vendorDir, ".autopilot/bin/vendor/");
+    try {
+      const vendSt = fs.lstatSync(vendorDir);
+      if (vendSt.isDirectory() && !vendSt.isSymbolicLink()) {
+        assertRealpathInside(root, vendorDir, ".autopilot/bin/vendor/");
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") throw err;
     }
-    if (!fs.existsSync(vendorRuntime) || !fs.existsSync(vendorMig)) {
+    // lstat isFile: existsSync follows pointing symlinks and lies on dangling.
+    let vendorPresent = false;
+    try {
+      const rt = fs.lstatSync(vendorRuntime);
+      const mig = fs.lstatSync(vendorMig);
+      if (rt.isSymbolicLink() || mig.isSymbolicLink()) {
+        throw new Error("hook vendor path is a symlink; refusing to open");
+      }
+      vendorPresent = rt.isFile() && mig.isFile();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") throw err;
+      vendorPresent = false;
+    }
+    if (!vendorPresent) {
       lines.push(
         "FAIL  hook vendor runtime missing — run upgrade (or init --force)",
       );
@@ -506,47 +547,49 @@ export function runDoctor(
   }
 
   const hooksPath = path.join(root, ".cursor", "hooks.json");
-  if (!fs.existsSync(hooksPath)) {
-    lines.push("FAIL  .cursor/hooks.json missing");
-    ok = false;
-  } else {
-    try {
-      const raw = readUntrustedUtf8File(
-        hooksPath,
-        MAX_CONFIG_BYTES,
-        ".cursor/hooks.json",
+  try {
+    // Avoid existsSync: dangling symlinks look missing but must FAIL as unreadable.
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_CONFIG_BYTES,
+      ".cursor/hooks.json",
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      lines.push("FAIL  hooks.json is not a JSON object");
+      ok = false;
+    } else {
+      const hooks = parsed as HooksFile;
+      const shapeError = validateHooksShape(
+        hooks.hooks ? hooks : { version: 1, hooks: {} },
       );
-      const parsed: unknown = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        lines.push("FAIL  hooks.json is not a JSON object");
+      if (shapeError) {
+        lines.push(`FAIL  ${safeDisplayToken(shapeError, "invalid hooks.json")}`);
         ok = false;
       } else {
-        const hooks = parsed as HooksFile;
-        const shapeError = validateHooksShape(
-          hooks.hooks ? hooks : { version: 1, hooks: {} },
-        );
-        if (shapeError) {
-          lines.push(`FAIL  ${safeDisplayToken(shapeError, "invalid hooks.json")}`);
+        const { missingEvents, duplicates } = summarizeAutopilotHooks(hooks);
+        if (missingEvents.length > 0) {
+          lines.push(
+            `FAIL  hooks.json missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+          );
           ok = false;
-        } else {
-          const { missingEvents, duplicates } = summarizeAutopilotHooks(hooks);
-          if (missingEvents.length > 0) {
-            lines.push(
-              `FAIL  hooks.json missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
-            );
-            ok = false;
-          }
-          if (duplicates > 0) {
-            lines.push(
-              `WARN  hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
-            );
-          }
-          if (missingEvents.length === 0 && duplicates === 0) {
-            lines.push("OK    hooks.json Autopilot entries");
-          }
+        }
+        if (duplicates > 0) {
+          lines.push(
+            `WARN  hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
+          );
+        }
+        if (missingEvents.length === 0 && duplicates === 0) {
+          lines.push("OK    hooks.json Autopilot entries");
         }
       }
-    } catch (err) {
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      lines.push("FAIL  .cursor/hooks.json missing");
+      ok = false;
+    } else {
       const msg = err instanceof Error ? err.message : String(err);
       lines.push(
         `FAIL  hooks.json unreadable (${safeDisplayToken(msg, "error")})`,
@@ -580,29 +623,48 @@ export function runDoctor(
     ok = false;
   } else {
     try {
-      if (!fs.existsSync(plansRoot)) {
-        lines.push(
-          `WARN  plans dir missing (${cfg.plansDir}/) — run init or mkdir`,
-        );
-      } else if (!fs.statSync(plansRoot).isDirectory()) {
+      const st = fs.lstatSync(plansRoot);
+      if (st.isSymbolicLink()) {
+        lines.push(`FAIL  plans path is a symlink (${cfg.plansDir})`);
+        ok = false;
+      } else if (!st.isDirectory()) {
         lines.push(`FAIL  plans path is not a directory (${cfg.plansDir})`);
         ok = false;
       } else {
+        assertRealpathInside(root, plansRoot, `plans (${cfg.plansDir})`);
         lines.push(`OK    plans (${cfg.plansDir}/)`);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      lines.push(
-        `FAIL  plans path unreadable (${cfg.plansDir}): ${safeDisplayToken(msg, "error")}`,
-      );
-      ok = false;
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(
+          `WARN  plans dir missing (${cfg.plansDir}/) — run init or mkdir`,
+        );
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  plans path unreadable (${cfg.plansDir}): ${safeDisplayToken(msg, "error")}`,
+        );
+        ok = false;
+      }
     }
   }
 
   let missingSkills = 0;
   for (const name of SKILL_NAMES) {
     const skillPath = path.join(root, ".cursor", "skills", name, "SKILL.md");
-    if (!fs.existsSync(skillPath)) missingSkills += 1;
+    try {
+      const st = fs.lstatSync(skillPath);
+      // existsSync follows pointing symlinks / lies on dangling — require a real file.
+      if (st.isSymbolicLink() || !st.isFile()) {
+        missingSkills += 1;
+        continue;
+      }
+      // Skill dir itself may be a symlink escape; realpath must stay in-project.
+      assertRealpathInside(root, skillPath, `.cursor/skills/${name}/SKILL.md`);
+    } catch {
+      missingSkills += 1;
+    }
   }
   if (missingSkills > 0) {
     lines.push(

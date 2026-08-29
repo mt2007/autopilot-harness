@@ -55,6 +55,18 @@ describe("init --yes install", () => {
     }
   });
 
+  it("rejects empty projectRoot (does not resolve to cwd)", () => {
+    const r = installInitYes({
+      projectRoot: "   ",
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/projectRoot must be a non-empty string/);
+  });
+
   it("writes config, pin, hook, skills, workflows and merges hooks", () => {
     root = tmpProject();
     // pre-existing user hook
@@ -151,6 +163,7 @@ describe("init --yes install", () => {
     expect(config).toMatch(/platform:\s*cursor/);
     expect(config).toMatch(/locale:\s*en/);
     expect(config).toMatch(/confirm_rounds:\s*5/);
+    expect(config).toMatch(/# When enabled[\s\S]*#\s*commands:/);
     expect(config).toMatch(/enabled:\s*false/);
   });
 
@@ -204,6 +217,169 @@ describe("init --yes install", () => {
     expect(fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8")).toBe(
       "{not-json",
     );
+  });
+
+  it("refuses when hooks.json is a symlink", () => {
+    root = tmpProject();
+    const cursorDir = path.join(root, ".cursor");
+    fs.mkdirSync(cursorDir, { recursive: true });
+    const hooksPath = path.join(cursorDir, "hooks.json");
+    const outside = path.join(root, "outside-hooks.json");
+    fs.writeFileSync(
+      outside,
+      JSON.stringify({ version: 1, hooks: {} }),
+      "utf8",
+    );
+    fs.symlinkSync(outside, hooksPath);
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/symlink/i);
+    expect(fs.readFileSync(outside, "utf8")).toMatch(/"version"\s*:\s*1/);
+  });
+
+  it("refuses when hooks.json is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    const cursorDir = path.join(root, ".cursor");
+    fs.mkdirSync(cursorDir, { recursive: true });
+    const hooksPath = path.join(cursorDir, "hooks.json");
+    fs.symlinkSync(path.join(root, "missing-hooks.json"), hooksPath);
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/symlink/i);
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
+    );
+  });
+
+  it("refuses when plansDir is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    fs.symlinkSync(path.join(root, "missing-plans"), path.join(root, "plans"));
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/symlink|plansDir/i);
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
+    );
+  });
+
+  it("refuses when plansDir is a regular file (not a directory)", () => {
+    root = tmpProject();
+    fs.writeFileSync(path.join(root, "plans"), "not-a-dir\n", "utf8");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/not a directory|plansDir/i);
+    }
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
+    );
+  });
+
+  it("refuses when an intermediate plansDir segment is a symlink (no mkdir escape)", () => {
+    root = tmpProject();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-plans-esc-"));
+    try {
+      fs.symlinkSync(outside, path.join(root, "docs"));
+      const result = installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        plansDir: "docs/plans",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/symlink/i);
+      expect(fs.existsSync(path.join(outside, "plans"))).toBe(false);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses when .autopilot parent chain would escape via symlink after mkdir", () => {
+    root = tmpProject();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ap-esc-"));
+    try {
+      // Pre-create .autopilot as a pointing symlink so mkdirRealDirSync
+      // assertNotSymlink / realpath check fails closed before writes.
+      fs.symlinkSync(outside, path.join(root, ".autopilot"));
+      const result = installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/symlink/i);
+      expect(fs.existsSync(path.join(outside, "config.yml"))).toBe(false);
+      expect(fs.existsSync(path.join(outside, "pin.json"))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses when config.yml path is a directory", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".autopilot", "config.yml"), {
+      recursive: true,
+    });
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/not a regular file/i);
+    }
+  });
+
+  it("refuses when hooks.json is too large", () => {
+    root = tmpProject();
+    const cursorDir = path.join(root, ".cursor");
+    fs.mkdirSync(cursorDir, { recursive: true });
+    const hooksPath = path.join(cursorDir, "hooks.json");
+    // Cap is 1_000_000; write slightly over to fail closed before parse.
+    fs.writeFileSync(hooksPath, "x".repeat(1_000_001), "utf8");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/too large|Cannot read/i);
   });
 
   it("refuses non-array hook event values without wiping", () => {

@@ -31,12 +31,32 @@ function resolveProjectRoot(
 
 function assertInitialized(projectRoot: string): SessionCmdFail | null {
   const configPath = path.join(projectRoot, ".autopilot", "config.yml");
-  if (!fs.existsSync(configPath)) {
-    return {
-      ok: false,
-      error:
-        "Project is not initialized (.autopilot/config.yml missing). Run init first.",
-    };
+  try {
+    // Prefer lstat over existsSync: dangling symlinks look "missing" to existsSync.
+    const st = fs.lstatSync(configPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: ".autopilot/config.yml is a symlink; refusing to open",
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: ".autopilot/config.yml is not a regular file",
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return {
+        ok: false,
+        error:
+          "Project is not initialized (.autopilot/config.yml missing). Run init first.",
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access config.yml: ${msg}` };
   }
   return null;
 }
@@ -48,8 +68,28 @@ function openStore(projectRoot: string): StateStore | SessionCmdFail {
   const initErr = assertInitialized(root);
   if (initErr) return initErr;
   const dbPath = path.join(root, ".autopilot", "state.db");
-  if (!fs.existsSync(dbPath)) {
-    return { ok: false, error: "No state.db yet (no sessions)." };
+  try {
+    const st = fs.lstatSync(dbPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error:
+          "Cannot open state.db: .autopilot/state.db is a symlink; refusing to open",
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: "Cannot open state.db: .autopilot/state.db is not a regular file",
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: false, error: "No state.db yet (no sessions)." };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot open state.db: ${msg}` };
   }
   try {
     assertNotSymlink(path.join(root, ".autopilot"), ".autopilot/");

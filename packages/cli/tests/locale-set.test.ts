@@ -46,6 +46,49 @@ describe("locale set", () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
+  it("refuses when config.yml is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const outside = path.join(root, "outside-config.yml");
+    fs.renameSync(configPath, outside);
+    fs.symlinkSync(outside, configPath);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/Cannot read config\.yml|symlink/i);
+    expect(fs.readFileSync(outside, "utf8")).toMatch(/locale:\s*en/);
+  });
+
+  it("refuses when config.yml is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    fs.rmSync(configPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-config.yml"), configPath);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/symlink/i);
+      expect(r.error).not.toMatch(/not initialized/i);
+    }
+  });
+
   it("fails when projectRoot is empty", () => {
     const r = setProjectLocale({ projectRoot: "  ", locale: "zh-CN" });
     expect(r.ok).toBe(false);

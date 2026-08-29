@@ -198,6 +198,31 @@ describe("hook vendor runtime", () => {
     expect(lines.join("\n")).toMatch(/symlink|hook vendor/i);
   });
 
+  it("doctor FAILs when hook binary is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    fs.rmSync(hook, { force: true });
+    fs.symlinkSync(path.join(root, "missing-hook.mjs"), hook);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/symlink|hook binary/i);
+    expect(lines.join("\n")).not.toMatch(/hook binary missing/i);
+  });
+
   it("init --force refuses when .autopilot/bin is a symlink", () => {
     root = tmpProject();
     expect(

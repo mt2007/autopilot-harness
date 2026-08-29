@@ -147,6 +147,12 @@ describe("upgradeProject", () => {
     }
   });
 
+  it("rejects empty projectRoot (does not resolve to cwd)", () => {
+    const r = upgradeProject({ projectRoot: "" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/projectRoot must be a non-empty string/);
+  });
+
   it("fails when project is not initialized", () => {
     root = tmpProject();
     const r = upgradeProject({ projectRoot: root });
@@ -304,6 +310,151 @@ review:
     const r = upgradeProject({ projectRoot: root });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.length).toBeGreaterThan(0);
+  });
+
+  it("fails closed when config.yml is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const outside = path.join(root, "outside-config.yml");
+    const before = fs.readFileSync(configPath, "utf8");
+    fs.renameSync(configPath, outside);
+    fs.symlinkSync(outside, configPath);
+    const r = upgradeProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/symlink/i);
+    expect(fs.readFileSync(outside, "utf8")).toBe(before);
+  });
+
+  it("fails closed when config.yml is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    fs.rmSync(configPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-config.yml"), configPath);
+    const r = upgradeProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/symlink/i);
+      expect(r.error).not.toMatch(/not initialized/i);
+    }
+  });
+
+  it("fails closed when state.db is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    fs.writeFileSync(dbPath, "");
+    fs.rmSync(dbPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing.db"), dbPath);
+    const r = upgradeProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/state\.db.*symlink|symlink/i);
+      expect(r.error).not.toMatch(/no state\.db yet/i);
+    }
+    const bak = fs
+      .readdirSync(path.join(root, ".autopilot"))
+      .filter((n) => n.startsWith("state.db.bak."));
+    expect(bak).toEqual([]);
+  });
+
+  it("fails closed when state.db is a pointing symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "c-symlink-db",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+    });
+    store.close();
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    const outside = path.join(root, "outside.db");
+    const before = fs.readFileSync(dbPath);
+    fs.renameSync(dbPath, outside);
+    fs.symlinkSync(outside, dbPath);
+    const r = upgradeProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/state\.db.*symlink|symlink/i);
+    expect(fs.readFileSync(outside)).toEqual(before);
+    const bak = fs
+      .readdirSync(path.join(root, ".autopilot"))
+      .filter((n) => n.startsWith("state.db.bak."));
+    expect(bak).toEqual([]);
+  });
+
+  it("fails closed before backup when hooks.json is a dangling symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "c-dang",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+    });
+    store.close();
+
+    const hooksPath = path.join(root, ".cursor", "hooks.json");
+    fs.rmSync(hooksPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-hooks.json"), hooksPath);
+
+    const beforeDb = fs.readFileSync(
+      path.join(root, ".autopilot", "state.db"),
+    );
+    const r = upgradeProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/symlink|Cannot read/i);
+    // No state.db.bak.* — preflight must fail before backup/migrate.
+    const bak = fs
+      .readdirSync(path.join(root, ".autopilot"))
+      .filter((n) => n.startsWith("state.db.bak."));
+    expect(bak).toEqual([]);
+    expect(fs.readFileSync(path.join(root, ".autopilot", "state.db"))).toEqual(
+      beforeDb,
+    );
   });
 
   it("does not mutate config/db backup when hooks fail closed", () => {

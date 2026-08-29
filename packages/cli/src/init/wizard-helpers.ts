@@ -2,6 +2,66 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import type { InitLocale, InitYesOptions, PlansGitPolicy } from "./types.js";
+import {
+  assertNotSymlink,
+  MAX_UNTRUSTED_TEXT_BYTES,
+  readUntrustedUtf8File,
+  writeFileReplaceSync,
+} from "../read-untrusted-file.js";
+
+export { assertNotSymlink };
+
+/** Cap for .gitignore / shell rc text when appending Autopilot lines. */
+const MAX_APPEND_TEXT_BYTES = MAX_UNTRUSTED_TEXT_BYTES;
+
+/**
+ * Write text via tmp+rename so a raced symlink is replaced, not followed
+ * (writeFileSync would create/write through the link target).
+ */
+function writeTextFileReplace(
+  filePath: string,
+  contents: string,
+  projectRoot?: string,
+): void {
+  const dir = path.dirname(filePath);
+  if (projectRoot) {
+    mkdirRealDirSync(dir, path.basename(dir) || dir, projectRoot);
+    // Re-check immediately before write (mkdir→write TOCTOU on parent symlink).
+    assertParentDirInProject(projectRoot, filePath, path.basename(dir) || dir);
+  } else {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  writeFileReplaceSync(filePath, contents);
+  if (projectRoot) {
+    assertWrittenInsideProject(
+      projectRoot,
+      filePath,
+      path.basename(filePath) || filePath,
+    );
+  }
+}
+
+/** Parent of filePath must be a real in-project directory (no symlink). */
+export function assertParentDirInProject(
+  projectRoot: string,
+  filePath: string,
+  label: string,
+): void {
+  const dir = path.dirname(path.resolve(filePath));
+  assertNotSymlink(dir, label);
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) {
+      throw new Error(`${label} is not a directory`);
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      throw new Error(`${label} is missing`);
+    }
+    throw err;
+  }
+  assertRealpathInside(projectRoot, dir, label);
+}
 
 export type { PlansGitPolicy };
 export type ShellAliasTarget = "skip" | "zshrc" | "bashrc";
@@ -29,11 +89,12 @@ export interface ProjectProbe {
 
 const PLANS_DIR_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
-/** Refuse writing through a symlink (stat follows links; lstat does not). */
-export function assertNotSymlink(filePath: string, label: string): void {
-  if (fs.existsSync(filePath) && fs.lstatSync(filePath).isSymbolicLink()) {
-    throw new Error(`${label} is a symlink; refusing to modify`);
+/** Resolve project root; refuse empty/blank (path.resolve("") → cwd). */
+export function resolveProjectRootOrThrow(projectRoot: string): string {
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    throw new Error("projectRoot must be a non-empty string");
   }
+  return path.resolve(projectRoot.trim());
 }
 
 /** After mkdir/resolve, ensure realpath stays under project root. */
@@ -42,13 +103,113 @@ export function assertRealpathInside(
   targetPath: string,
   label: string,
 ): void {
-  const realRoot = fs.realpathSync(path.resolve(projectRoot));
+  const realRoot = fs.realpathSync(resolveProjectRootOrThrow(projectRoot));
   const realTarget = fs.realpathSync(path.resolve(targetPath));
   if (
     realTarget !== realRoot &&
     !realTarget.startsWith(realRoot + path.sep)
   ) {
     throw new Error(`${label} realpath escapes the project root`);
+  }
+}
+
+/**
+ * Written path must be a regular in-project file (no symlink / non-file).
+ * Does not unlink — callers that need fail-closed cleanup use
+ * assertWrittenInsideProject or handle pairs themselves.
+ */
+export function assertRegularFileInsideProject(
+  projectRoot: string,
+  filePath: string,
+  label: string,
+): void {
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(filePath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      throw new Error(`${label} disappeared after write`);
+    }
+    throw err;
+  }
+  if (st.isSymbolicLink()) {
+    throw new Error(`${label} is a symlink; refusing to open`);
+  }
+  if (!st.isFile()) {
+    throw new Error(`${label} is not a regular file`);
+  }
+  assertRealpathInside(projectRoot, filePath, label);
+}
+
+/**
+ * Post-write check: if a parent-dir symlink race wrote outside the project,
+ * unlink the escaped path (best-effort) and fail closed.
+ * Also refuses a raced symlink / non-file at filePath.
+ */
+export function assertWrittenInsideProject(
+  projectRoot: string,
+  filePath: string,
+  label: string,
+): void {
+  try {
+    assertRegularFileInsideProject(projectRoot, filePath, label);
+  } catch (err) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      /* best-effort remove escaped write */
+    }
+    throw err;
+  }
+}
+
+/**
+ * mkdir -p with symlink/file fail-closed.
+ * Also refuses symlink *parents* under projectRoot — recursive mkdir follows
+ * intermediate symlinks and would otherwise create dirs outside the project
+ * before a later assertRealpathInside can run.
+ * When projectRoot is set, verifies realpath after mkdir (closes check→mkdir race).
+ */
+export function mkdirRealDirSync(
+  dirPath: string,
+  label: string,
+  projectRoot?: string,
+): void {
+  const resolved = path.resolve(dirPath);
+  assertNotSymlink(resolved, label);
+
+  const root =
+    typeof projectRoot === "string" && projectRoot.trim() !== ""
+      ? path.resolve(projectRoot.trim())
+      : null;
+
+  if (root) {
+    let parent = path.dirname(resolved);
+    while (parent.startsWith(root + path.sep)) {
+      assertNotSymlink(parent, label);
+      parent = path.dirname(parent);
+    }
+  }
+
+  try {
+    fs.mkdirSync(resolved, { recursive: true });
+  } catch (err) {
+    assertNotSymlink(resolved, label);
+    try {
+      if (!fs.lstatSync(resolved).isDirectory()) {
+        throw new Error(`${label} exists and is not a directory`);
+      }
+    } catch (inner) {
+      const code = (inner as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") throw err;
+      throw inner;
+    }
+    throw err;
+  }
+  assertNotSymlink(resolved, label);
+  if (root) {
+    assertRealpathInside(root, resolved, label);
   }
 }
 
@@ -92,7 +253,15 @@ export function normalizePlansDir(
 }
 
 export function probeProject(projectRoot: string): ProjectProbe {
-  const root = path.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    return {
+      projectRoot: "",
+      hasGit: false,
+      branch: null,
+      alreadyInitialized: false,
+    };
+  }
+  const root = path.resolve(projectRoot.trim());
   let hasGit = false;
   let branch: string | null = null;
   try {
@@ -119,13 +288,20 @@ export function probeProject(projectRoot: string): ProjectProbe {
       branch = null;
     }
   }
+  let alreadyInitialized = false;
+  try {
+    const cfg = path.join(root, ".autopilot", "config.yml");
+    const st = fs.lstatSync(cfg);
+    // Dangling/pointing symlinks are not a real init.
+    alreadyInitialized = st.isFile() && !st.isSymbolicLink();
+  } catch {
+    alreadyInitialized = false;
+  }
   return {
     projectRoot: root,
     hasGit,
     branch,
-    alreadyInitialized: fs.existsSync(
-      path.join(root, ".autopilot", "config.yml"),
-    ),
+    alreadyInitialized,
   };
 }
 
@@ -134,17 +310,20 @@ function appendGitignoreLines(
   comment: string,
   lines: string[],
 ): string | null {
-  const gi = path.join(projectRoot, ".gitignore");
-  if (fs.existsSync(gi)) {
-    const st = fs.lstatSync(gi);
-    if (st.isSymbolicLink()) {
-      throw new Error(".gitignore is a symlink; refusing to modify");
-    }
-    if (!st.isFile()) {
-      throw new Error(".gitignore exists and is not a regular file");
+  const root = resolveProjectRootOrThrow(projectRoot);
+  const gi = path.join(root, ".gitignore");
+  let body = "";
+  try {
+    // O_NOFOLLOW read — existsSync/lstat+readFileSync can race or miss dangling.
+    body = readUntrustedUtf8File(gi, MAX_APPEND_TEXT_BYTES, ".gitignore");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      body = "";
+    } else {
+      throw err;
     }
   }
-  let body = fs.existsSync(gi) ? fs.readFileSync(gi, "utf8") : "";
   const existing = new Set(
     body
       .split(/\r?\n/)
@@ -155,8 +334,9 @@ function appendGitignoreLines(
   if (toAdd.length === 0) return null;
   if (body.length > 0 && !body.endsWith("\n")) body += "\n";
   body += `\n# ${comment}\n${toAdd.map((l) => `${l}\n`).join("")}`;
-  fs.writeFileSync(gi, body, "utf8");
-  return path.relative(projectRoot, gi);
+  assertNotSymlink(gi, ".gitignore");
+  writeTextFileReplace(gi, body, root);
+  return path.relative(root, gi);
 }
 
 /** Append plans dir to .gitignore once (dedupe). */
@@ -219,22 +399,24 @@ export function appendShellAlias(
     target === "zshrc"
       ? path.join(home, ".zshrc")
       : path.join(home, ".bashrc");
-  if (fs.existsSync(file)) {
-    const st = fs.lstatSync(file);
-    if (st.isSymbolicLink()) {
-      throw new Error(`${file} is a symlink; refusing to modify`);
-    }
-    if (!st.isFile()) {
-      throw new Error(`${file} exists and is not a regular file`);
+  let body = "";
+  try {
+    body = readUntrustedUtf8File(file, MAX_APPEND_TEXT_BYTES, path.basename(file));
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      body = "";
+    } else {
+      throw err;
     }
   }
-  let body = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
   if (body.includes("alias autopilot=")) {
     return { path: file, added: false };
   }
   if (body.length > 0 && !body.endsWith("\n")) body += "\n";
   body += `\n# Autopilot Harness\n${ALIAS_LINE}\n`;
-  fs.writeFileSync(file, body, "utf8");
+  assertNotSymlink(file, path.basename(file));
+  writeTextFileReplace(file, body);
   return { path: file, added: true };
 }
 
@@ -243,18 +425,30 @@ export function writeQuickstart(
   locale: InitLocale,
   plansDir = "plans",
 ): string | null {
+  const root = resolveProjectRootOrThrow(projectRoot);
   const normalized = normalizePlansDir(plansDir);
   const plansLabel = normalized.ok ? normalized.value : "plans";
-  const docsDir = path.join(projectRoot, "docs");
+  const docsDir = path.join(root, "docs");
   const destDir = path.join(docsDir, "autopilot");
   assertNotSymlink(docsDir, "docs/");
   assertNotSymlink(destDir, "docs/autopilot/");
-  fs.mkdirSync(destDir, { recursive: true });
-  assertRealpathInside(projectRoot, destDir, "docs/autopilot/");
+  mkdirRealDirSync(destDir, "docs/autopilot/", root);
+  assertRealpathInside(root, destDir, "docs/autopilot/");
   const dest = path.join(destDir, "quickstart.md");
-  if (fs.existsSync(dest)) {
-    assertNotSymlink(dest, "docs/autopilot/quickstart.md");
-    return null;
+  try {
+    const st = fs.lstatSync(dest);
+    if (st.isSymbolicLink()) {
+      throw new Error(
+        "docs/autopilot/quickstart.md is a symlink; refusing to open",
+      );
+    }
+    if (st.isFile()) return null;
+    throw new Error(
+      "docs/autopilot/quickstart.md exists and is not a regular file",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") throw err;
   }
   const body =
     locale === "zh-CN"
@@ -318,8 +512,9 @@ npx autopilot-harness upgrade --dry-run
 
 Artifacts live under \`${plansLabel}/<slug>/\`.
 `;
-  fs.writeFileSync(dest, body, "utf8");
-  return path.relative(projectRoot, dest);
+  assertNotSymlink(dest, "docs/autopilot/quickstart.md");
+  writeTextFileReplace(dest, body, root);
+  return path.relative(root, dest);
 }
 
 export function formatCheatSheet(

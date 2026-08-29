@@ -46,9 +46,15 @@ concurrency:
   worktrees_dir: .autopilot/worktrees
 
 review:
+  # 5 = full lenses; 3 = light mode (lenses 1→2→5 only)
   confirm_rounds: 5
   verify:
     enabled: ${verifyEnabled}
+    # When enabled, Agent runs these and writes .autopilot/verify-last.json:
+    # commands:
+    #   - id: test
+    #     run: "pnpm test"
+    #     required: true
   stuck:
     max_idle_stops: 5
 

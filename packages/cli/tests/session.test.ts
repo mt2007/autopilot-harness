@@ -36,6 +36,28 @@ describe("session CLI helpers", () => {
     if (!r.ok) expect(r.error).toMatch(/not initialized/i);
   });
 
+  it("fails when config.yml is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    fs.rmSync(configPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-config.yml"), configPath);
+    const r = formatSessionList({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/symlink/i);
+      expect(r.error).not.toMatch(/not initialized/i);
+    }
+  });
+
   it("rejects empty projectRoot and empty title", () => {
     expect(
       formatSessionList({ projectRoot: "   " }).ok,
@@ -115,6 +137,29 @@ describe("session CLI helpers", () => {
     expect(listed.ok).toBe(false);
     if (!listed.ok) expect(listed.error).toMatch(/symlink/i);
   });
+
+  it("refuses dangling symlink state.db (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    fs.rmSync(dbPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing.db"), dbPath);
+    const listed = formatSessionList({ projectRoot: root });
+    expect(listed.ok).toBe(false);
+    if (!listed.ok) {
+      expect(listed.error).toMatch(/symlink/i);
+      expect(listed.error).not.toMatch(/no state\.db yet/i);
+    }
+  });
+
   it("reports missing state.db after init with no sessions", () => {
     root = tmpProject();
     expect(

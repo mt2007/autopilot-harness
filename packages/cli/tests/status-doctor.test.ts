@@ -7,6 +7,7 @@ import { installInitYes } from "../src/init/install.js";
 import {
   formatStatus,
   hasGlobalSelfReviewHooks,
+  readPinVersion,
   readStaleAfterHours,
   runDoctor,
   shortSessionId,
@@ -27,6 +28,12 @@ describe("formatStatus", () => {
   it("reports not initialized", () => {
     root = tmpProject();
     expect(formatStatus(root)).toMatch(/not initialized/i);
+  });
+
+  it("rejects empty projectRoot (does not resolve to cwd)", () => {
+    expect(formatStatus("")).toMatch(/projectRoot must be a non-empty string/);
+    expect(readStaleAfterHours("   ")).toBe(0);
+    expect(readPinVersion("")).toBeNull();
   });
 
   it("shows preferred_name, config, and active session from state.db", () => {
@@ -76,6 +83,12 @@ describe("runDoctor", () => {
     if (root && fs.existsSync(root)) {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("rejects empty projectRoot (does not resolve to cwd)", () => {
+    const { ok, lines } = runDoctor("  ");
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/projectRoot must be a non-empty string/);
   });
 
   it("passes after init with schema and plans checks", () => {
@@ -852,6 +865,29 @@ describe("runDoctor", () => {
     expect(readStaleAfterHours(root)).toBe(0);
   });
 
+  it("FAILs when config.yml is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    fs.rmSync(configPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-config.yml"), configPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/symlink|unreadable/i);
+    expect(lines.join("\n")).not.toMatch(/missing — run init/i);
+    expect(formatStatus(root)).toMatch(/cannot read config|symlink/i);
+    expect(formatStatus(root)).not.toMatch(/not initialized/i);
+    expect(readStaleAfterHours(root)).toBe(0);
+  });
+
   it("treats oversized pin.json as missing/invalid", () => {
     root = tmpProject();
     expect(
@@ -911,6 +947,94 @@ describe("runDoctor", () => {
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(false);
     expect(lines.join("\n")).toMatch(/hooks\.json unreadable|symlink/i);
+  });
+
+  it("FAILs when project hooks.json is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".cursor", "hooks.json");
+    fs.rmSync(hooksPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-hooks.json"), hooksPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/hooks\.json unreadable|symlink/i);
+    expect(lines.join("\n")).not.toMatch(/hooks\.json missing/i);
+  });
+
+  it("FAILs when plans dir is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const plansDir = path.join(root, "plans");
+    fs.rmSync(plansDir, { recursive: true, force: true });
+    fs.symlinkSync(path.join(root, "missing-plans"), plansDir);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/plans path is a symlink/i);
+    expect(lines.join("\n")).not.toMatch(/plans dir missing/i);
+  });
+
+  it("WARNs when a skill path is a dangling symlink (not counted as present)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const skillPath = path.join(
+      root,
+      ".cursor",
+      "skills",
+      "autopilot-on",
+      "SKILL.md",
+    );
+    fs.rmSync(skillPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-skill.md"), skillPath);
+    const { lines } = runDoctor(root);
+    expect(lines.join("\n")).toMatch(/skill\(s\) missing/i);
+  });
+
+  it("WARNs when skill directory is a symlink escape (realpath outside project)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const skillDir = path.join(root, ".cursor", "skills", "autopilot-on");
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "ah-skill-esc-"));
+    try {
+      fs.writeFileSync(path.join(outsideDir, "SKILL.md"), "# outside\n", "utf8");
+      fs.rmSync(skillDir, { recursive: true, force: true });
+      fs.symlinkSync(outsideDir, skillDir);
+      const { lines } = runDoctor(root);
+      expect(lines.join("\n")).toMatch(/skill\(s\) missing/i);
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it("FAILs when project .cursor/hooks.json is too large", () => {

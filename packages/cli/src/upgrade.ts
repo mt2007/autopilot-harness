@@ -10,6 +10,19 @@ import {
 import { installInitYes, preflightForceRefresh } from "./init/install.js";
 import { PACKAGE_VERSION } from "./init/types.js";
 import type { InitLocale } from "./init/types.js";
+import {
+  MAX_UNTRUSTED_TEXT_BYTES,
+  readUntrustedUtf8File,
+  writeFileReplaceSync,
+  assertNotSymlink,
+  copyFileNoFollowExclSync,
+} from "./read-untrusted-file.js";
+import {
+  assertParentDirInProject,
+  assertRealpathInside,
+  assertWrittenInsideProject,
+  mkdirRealDirSync,
+} from "./init/wizard-helpers.js";
 import { runDoctor } from "./status-doctor.js";
 
 const require = createRequire(import.meta.url);
@@ -38,28 +51,35 @@ export interface UpgradeFail {
 
 export type UpgradeResult = UpgradeOk | UpgradeFail;
 
-function writeFileAtomic(filePath: string, contents: string): void {
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = path.join(
-    dir,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  try {
-    fs.writeFileSync(tmp, contents, "utf8");
-    fs.renameSync(tmp, filePath);
-  } catch (err) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* ignore cleanup */
-    }
-    throw err;
-  }
+function writeFileAtomic(
+  filePath: string,
+  contents: string,
+  projectRoot: string,
+): void {
+  mkdirRealDirSync(path.dirname(filePath), ".autopilot/", projectRoot);
+  assertParentDirInProject(projectRoot, filePath, ".autopilot/");
+  writeFileReplaceSync(filePath, contents);
+  assertWrittenInsideProject(projectRoot, filePath, path.basename(filePath));
 }
 
-function trySerializeDb(dbPath: string): Uint8Array | null {
+function trySerializeDb(projectRoot: string, dbPath: string): Uint8Array | null {
   try {
+    // DatabaseSync opens by path (follows symlinks). Probe with O_NOFOLLOW and
+    // realpath-inside first; if either fails, fall through to nofollow copy bak.
+    assertNotSymlink(dbPath, ".autopilot/state.db");
+    assertRealpathInside(projectRoot, dbPath, ".autopilot/state.db");
+    const nofollow =
+      typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+    if (nofollow === 0) {
+      assertNotSymlink(dbPath, ".autopilot/state.db");
+    } else {
+      const probeFd = fs.openSync(dbPath, fs.constants.O_RDONLY | nofollow);
+      try {
+        if (!fs.fstatSync(probeFd).isFile()) return null;
+      } finally {
+        fs.closeSync(probeFd);
+      }
+    }
     const { DatabaseSync } = require("node:sqlite") as {
       DatabaseSync: new (
         path: string,
@@ -92,9 +112,24 @@ function backupStateDbByCopy(projectRoot: string, stamp: string): string[] {
     { src: `${dbPath}-shm`, destName: `state.db-shm.bak.${stamp}` },
   ];
   for (const { src, destName: name } of pairs) {
-    if (!fs.existsSync(src)) continue;
+    try {
+      const st = fs.lstatSync(src);
+      if (st.isSymbolicLink()) {
+        throw new Error(
+          `${path.basename(src)} is a symlink; refusing to open`,
+        );
+      }
+      if (!st.isFile()) continue;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") continue;
+      throw err;
+    }
     const out = path.join(projectRoot, ".autopilot", name);
-    fs.copyFileSync(src, out, fs.constants.COPYFILE_EXCL);
+    assertParentDirInProject(projectRoot, out, ".autopilot/");
+    // Never copyFileSync(src): it follows a raced source symlink (read-through).
+    copyFileNoFollowExclSync(src, out, path.basename(src));
+    assertWrittenInsideProject(projectRoot, out, name);
     written.push(path.relative(projectRoot, out));
   }
   return written;
@@ -107,13 +142,29 @@ function backupStateDbByCopy(projectRoot: string, stamp: string): string[] {
  */
 function backupStateDb(projectRoot: string): string[] {
   const dbPath = path.join(projectRoot, ".autopilot", "state.db");
-  if (!fs.existsSync(dbPath)) return [];
+  assertNotSymlink(dbPath, ".autopilot/state.db");
+  try {
+    const st = fs.lstatSync(dbPath);
+    if (!st.isFile()) {
+      throw new Error(".autopilot/state.db is not a regular file");
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") return [];
+    throw err;
+  }
   const stamp = `${new Date().toISOString().replaceAll(":", "-")}.p${process.pid}`;
 
-  const snapshot = trySerializeDb(dbPath);
+  const snapshot = trySerializeDb(projectRoot, dbPath);
   if (snapshot) {
     const dest = path.join(projectRoot, ".autopilot", `state.db.bak.${stamp}`);
+    assertParentDirInProject(projectRoot, dest, ".autopilot/");
     fs.writeFileSync(dest, snapshot, { flag: "wx" });
+    assertWrittenInsideProject(
+      projectRoot,
+      dest,
+      path.basename(dest),
+    );
     return [path.relative(projectRoot, dest)];
   }
 
@@ -135,15 +186,12 @@ function migrateStateDb(projectRoot: string): number {
  * keys, backs up + migrates state.db. Never touches plans/**.
  */
 export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
-  const projectRoot = path.resolve(opts.projectRoot);
-  const configPath = path.join(projectRoot, ".autopilot", "config.yml");
-  if (!fs.existsSync(configPath)) {
-    return {
-      ok: false,
-      error:
-        "Project is not initialized (.autopilot/config.yml missing). Run init --yes first.",
-    };
+  if (typeof opts.projectRoot !== "string" || opts.projectRoot.trim() === "") {
+    return { ok: false, error: "projectRoot must be a non-empty string" };
   }
+
+  const projectRoot = path.resolve(opts.projectRoot.trim());
+  const configPath = path.join(projectRoot, ".autopilot", "config.yml");
 
   const version =
     typeof opts.packageVersion === "string" && opts.packageVersion.trim()
@@ -154,7 +202,26 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
   const written: string[] = [];
 
   try {
-    const existingConfig = fs.readFileSync(configPath, "utf8");
+    let existingConfig: string;
+    try {
+      // Avoid existsSync: dangling symlinks look missing but must fail closed
+      // before backup/migrate.
+      existingConfig = readUntrustedUtf8File(
+        configPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        ".autopilot/config.yml",
+      );
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        return {
+          ok: false,
+          error:
+            "Project is not initialized (.autopilot/config.yml missing). Run init --yes first.",
+        };
+      }
+      throw err;
+    }
     const hints = readConfigInstallHints(existingConfig);
     const locale: InitLocale = hints.locale === "zh-CN" ? "zh-CN" : "en";
     // v0.1 refresh always uses the supported cursor/ide pair.
@@ -173,7 +240,30 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
 
     const dbPath = path.join(projectRoot, ".autopilot", "state.db");
-    if (fs.existsSync(dbPath)) {
+    let stateDbKind: "missing" | "present" = "missing";
+    try {
+      const st = fs.lstatSync(dbPath);
+      if (st.isSymbolicLink()) {
+        return {
+          ok: false,
+          error: ".autopilot/state.db is a symlink; refusing to open",
+        };
+      }
+      if (!st.isFile()) {
+        return {
+          ok: false,
+          error: ".autopilot/state.db is not a regular file",
+        };
+      }
+      stateDbKind = "present";
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot access state.db: ${msg}` };
+      }
+    }
+    if (stateDbKind === "present") {
       actions.push("backup state.db → state.db.bak.<timestamp> (snapshot)");
       actions.push("migrate state.db (idempotent)");
     } else {
@@ -212,7 +302,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     // Backup before any StateStore open (migrate).
     written.push(...backupStateDb(projectRoot));
 
-    if (fs.existsSync(dbPath)) {
+    if (stateDbKind === "present") {
       migrateStateDb(projectRoot);
     }
 
@@ -236,7 +326,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     written.push(...refresh.written);
 
     if (configAdded.length > 0) {
-      writeFileAtomic(configPath, merged.yaml);
+      writeFileAtomic(configPath, merged.yaml, projectRoot);
       written.push(path.relative(projectRoot, configPath));
     }
 

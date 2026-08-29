@@ -21,8 +21,11 @@ describe("P1 workflow templates", () => {
   });
 
   it("executing requires checkoff before next item and obeys lenses", () => {
-    expect(
-      fs.readFileSync(path.join(root, "autopilot-executing.md"), "utf8"),
-    ).toMatch(/Mark the \*\*current\*\* item|checkoff|\[x\]/i);
+    const text = fs.readFileSync(
+      path.join(root, "autopilot-executing.md"),
+      "utf8",
+    );
+    expect(text).toMatch(/Mark the \*\*current\*\* item|checkoff|\[x\]/i);
+    expect(text).toMatch(/review\.verify\.commands/);
   });
 });
