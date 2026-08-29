@@ -1,0 +1,69 @@
+{
+  "preferred_name": "Autopilot",
+  "cli": {
+    "help": "Autopilot Harness — 两阶段 Agent 外骨骼：规划 → 执行"
+  },
+  "triggers": {
+    "on": ["Autopilot ON", "开启自动驾驶"],
+    "run": ["Autopilot RUN", "开始执行"],
+    "off": ["Autopilot OFF", "关闭自动驾驶"],
+    "resume": ["Autopilot RESUME", "继续执行"],
+    "replan": ["Autopilot REPLAN", "修改方案"],
+    "resume_review": ["继续自审", "Resume review"]
+  },
+  "skill": {
+    "autopilot_on": {
+      "description": "开始规划 — 讨论要做什么"
+    },
+    "autopilot_run": {
+      "description": "开始执行 — 跑 checklist"
+    },
+    "autopilot_off": {
+      "description": "暂停 Autopilot"
+    },
+    "autopilot_resume": {
+      "description": "恢复当前会话"
+    },
+    "autopilot_replan": {
+      "description": "修改方案"
+    }
+  },
+  "followup": {
+    "review": {
+      "fix": "自审修复第 {round} 轮：检查完整 diff，修复 CRITICAL/HIGH，跑相关测试。不要 commit。",
+      "confirm": "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。只审本角。不要 commit。",
+      "confirm_final": "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。只读终审，不要改代码、不要 commit。"
+    },
+    "advance": "推进下一项：勾选当前项 [x]，按范围 conventional commit（若有改动），然后实现下一项。",
+    "done": "全部完成。勾选最后一项 [x]，必要时 scoped commit，然后停止。",
+    "recover": "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
+    "stuck": "卡住：连续多轮无进展。请换策略，或修好后发送 Autopilot RESUME。",
+    "track_pick": "请用数字或 slug 选择要执行的 plan。"
+  },
+  "error": {
+    "one_executor_busy": "已有其他会话在执行（{track}）。请先 OFF 或等待后再试。",
+    "on_while_executing": "当前正在执行。请先发送 Autopilot OFF、REPLAN 或 RESUME，再 ON。"
+  },
+  "lens": {
+    "scope-correctness": {
+      "title": "范围与正确性",
+      "focus": "仅在当前 checklist 项范围内：逻辑、不变量、与 plan.md 一致。"
+    },
+    "boundaries": {
+      "title": "边界与错误路径",
+      "focus": "空值、边界、错误路径、失败回滚。"
+    },
+    "security": {
+      "title": "安全",
+      "focus": "鉴权/越权、注入、敏感数据、信任边界。"
+    },
+    "concurrency": {
+      "title": "并发",
+      "focus": "竞态、事务、部分失败；不适用则 N/A。"
+    },
+    "tests-regression": {
+      "title": "测试与回归",
+      "focus": "缺测、断言弱、契约漂移；只读。"
+    }
+  }
+}

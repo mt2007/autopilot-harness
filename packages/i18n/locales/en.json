@@ -1,0 +1,69 @@
+{
+  "preferred_name": "Autopilot",
+  "cli": {
+    "help": "Autopilot Harness — Planning → Executing agent harness"
+  },
+  "triggers": {
+    "on": ["Autopilot ON", "Enable autopilot"],
+    "run": ["Autopilot RUN", "Start execution"],
+    "off": ["Autopilot OFF", "Disable autopilot"],
+    "resume": ["Autopilot RESUME"],
+    "replan": ["Autopilot REPLAN"],
+    "resume_review": ["Resume review"]
+  },
+  "skill": {
+    "autopilot_on": {
+      "description": "Start Planning — discuss what to build"
+    },
+    "autopilot_run": {
+      "description": "Start Executing — run checklist"
+    },
+    "autopilot_off": {
+      "description": "Pause Autopilot"
+    },
+    "autopilot_resume": {
+      "description": "Resume this conversation"
+    },
+    "autopilot_replan": {
+      "description": "Revise plan"
+    }
+  },
+  "followup": {
+    "review": {
+      "fix": "Review fix round {round}: inspect the full diff, fix CRITICAL/HIGH issues, run relevant tests. Do not commit.",
+      "confirm": "Review confirm {n}/{total} — Lens ({lensTitle}): {lensFocus}. Stay on this lens only. Do not commit.",
+      "confirm_final": "Review confirm {n}/{total} — Lens ({lensTitle}): {lensFocus}. Read-only final lens; do not change code or commit."
+    },
+    "advance": "Advance checklist: mark current item [x], scoped conventional commit if dirty, then implement the next item.",
+    "done": "All checklist items done. Mark the last item [x], scoped commit if needed, then stop.",
+    "recover": "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
+    "stuck": "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
+    "track_pick": "Select a plan by number or slug."
+  },
+  "error": {
+    "one_executor_busy": "Another session is already executing ({track}). OFF or wait, then retry.",
+    "on_while_executing": "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON."
+  },
+  "lens": {
+    "scope-correctness": {
+      "title": "Scope & correctness",
+      "focus": "Within the current checklist item scope: logic, invariants, alignment with plan.md."
+    },
+    "boundaries": {
+      "title": "Boundaries & errors",
+      "focus": "Null/empty, bounds, error paths, failure rollback."
+    },
+    "security": {
+      "title": "Security",
+      "focus": "Authz, injection, sensitive data, trust boundaries."
+    },
+    "concurrency": {
+      "title": "Concurrency",
+      "focus": "Races, transactions, partial failure; N/A if inapplicable."
+    },
+    "tests-regression": {
+      "title": "Tests & regression",
+      "focus": "Missing tests, weak asserts, contract drift; read-only."
+    }
+  }
+}
