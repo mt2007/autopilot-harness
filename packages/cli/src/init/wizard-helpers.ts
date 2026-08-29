@@ -3,13 +3,33 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import type { InitLocale, InitYesOptions, PlansGitPolicy } from "./types.js";
 import {
-  assertNotSymlink,
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
   writeFileReplaceSync,
 } from "../read-untrusted-file.js";
+import {
+  assertNotSymlink,
+  assertParentDirInProject,
+  assertRealpathInside,
+  assertWrittenInsideProject,
+  mkdirRealDirSync,
+  resolveProjectRootOrThrow,
+} from "../project-fs.js";
 
-export { assertNotSymlink };
+export {
+  assertNotSymlink,
+  assertParentDirInProject,
+  assertRealpathInside,
+  assertRegularFileInsideProject,
+  assertWrittenInsideProject,
+  assertPairInsideOrUnlinkAll,
+  assertPresentRealFile,
+  mkdirRealDirSync,
+  resolveProjectRootOrThrow,
+  isRealRegularFile,
+  isRealDirectory,
+  resolveNofollowFlag,
+} from "../project-fs.js";
 
 /** Cap for .gitignore / shell rc text when appending Autopilot lines. */
 const MAX_APPEND_TEXT_BYTES = MAX_UNTRUSTED_TEXT_BYTES;
@@ -24,43 +44,25 @@ function writeTextFileReplace(
   projectRoot?: string,
 ): void {
   const dir = path.dirname(filePath);
-  if (projectRoot) {
-    mkdirRealDirSync(dir, path.basename(dir) || dir, projectRoot);
+  // Match mkdirRealDirSync: if projectRoot is passed (incl. ""), validate —
+  // never treat blank as "no root" and skip bounds checks.
+  let root: string | undefined;
+  if (projectRoot !== undefined) {
+    root = resolveProjectRootOrThrow(projectRoot);
+    mkdirRealDirSync(dir, path.basename(dir) || dir, root);
     // Re-check immediately before write (mkdir→write TOCTOU on parent symlink).
-    assertParentDirInProject(projectRoot, filePath, path.basename(dir) || dir);
+    assertParentDirInProject(root, filePath, path.basename(dir) || dir);
   } else {
     fs.mkdirSync(dir, { recursive: true });
   }
   writeFileReplaceSync(filePath, contents);
-  if (projectRoot) {
+  if (root !== undefined) {
     assertWrittenInsideProject(
-      projectRoot,
+      root,
       filePath,
       path.basename(filePath) || filePath,
     );
   }
-}
-
-/** Parent of filePath must be a real in-project directory (no symlink). */
-export function assertParentDirInProject(
-  projectRoot: string,
-  filePath: string,
-  label: string,
-): void {
-  const dir = path.dirname(path.resolve(filePath));
-  assertNotSymlink(dir, label);
-  try {
-    if (!fs.lstatSync(dir).isDirectory()) {
-      throw new Error(`${label} is not a directory`);
-    }
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") {
-      throw new Error(`${label} is missing`);
-    }
-    throw err;
-  }
-  assertRealpathInside(projectRoot, dir, label);
 }
 
 export type { PlansGitPolicy };
@@ -88,130 +90,6 @@ export interface ProjectProbe {
 }
 
 const PLANS_DIR_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
-
-/** Resolve project root; refuse empty/blank (path.resolve("") → cwd). */
-export function resolveProjectRootOrThrow(projectRoot: string): string {
-  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
-    throw new Error("projectRoot must be a non-empty string");
-  }
-  return path.resolve(projectRoot.trim());
-}
-
-/** After mkdir/resolve, ensure realpath stays under project root. */
-export function assertRealpathInside(
-  projectRoot: string,
-  targetPath: string,
-  label: string,
-): void {
-  const realRoot = fs.realpathSync(resolveProjectRootOrThrow(projectRoot));
-  const realTarget = fs.realpathSync(path.resolve(targetPath));
-  if (
-    realTarget !== realRoot &&
-    !realTarget.startsWith(realRoot + path.sep)
-  ) {
-    throw new Error(`${label} realpath escapes the project root`);
-  }
-}
-
-/**
- * Written path must be a regular in-project file (no symlink / non-file).
- * Does not unlink — callers that need fail-closed cleanup use
- * assertWrittenInsideProject or handle pairs themselves.
- */
-export function assertRegularFileInsideProject(
-  projectRoot: string,
-  filePath: string,
-  label: string,
-): void {
-  let st: fs.Stats;
-  try {
-    st = fs.lstatSync(filePath);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") {
-      throw new Error(`${label} disappeared after write`);
-    }
-    throw err;
-  }
-  if (st.isSymbolicLink()) {
-    throw new Error(`${label} is a symlink; refusing to open`);
-  }
-  if (!st.isFile()) {
-    throw new Error(`${label} is not a regular file`);
-  }
-  assertRealpathInside(projectRoot, filePath, label);
-}
-
-/**
- * Post-write check: if a parent-dir symlink race wrote outside the project,
- * unlink the escaped path (best-effort) and fail closed.
- * Also refuses a raced symlink / non-file at filePath.
- */
-export function assertWrittenInsideProject(
-  projectRoot: string,
-  filePath: string,
-  label: string,
-): void {
-  try {
-    assertRegularFileInsideProject(projectRoot, filePath, label);
-  } catch (err) {
-    try {
-      fs.unlinkSync(filePath);
-    } catch {
-      /* best-effort remove escaped write */
-    }
-    throw err;
-  }
-}
-
-/**
- * mkdir -p with symlink/file fail-closed.
- * Also refuses symlink *parents* under projectRoot — recursive mkdir follows
- * intermediate symlinks and would otherwise create dirs outside the project
- * before a later assertRealpathInside can run.
- * When projectRoot is set, verifies realpath after mkdir (closes check→mkdir race).
- */
-export function mkdirRealDirSync(
-  dirPath: string,
-  label: string,
-  projectRoot?: string,
-): void {
-  const resolved = path.resolve(dirPath);
-  assertNotSymlink(resolved, label);
-
-  const root =
-    typeof projectRoot === "string" && projectRoot.trim() !== ""
-      ? path.resolve(projectRoot.trim())
-      : null;
-
-  if (root) {
-    let parent = path.dirname(resolved);
-    while (parent.startsWith(root + path.sep)) {
-      assertNotSymlink(parent, label);
-      parent = path.dirname(parent);
-    }
-  }
-
-  try {
-    fs.mkdirSync(resolved, { recursive: true });
-  } catch (err) {
-    assertNotSymlink(resolved, label);
-    try {
-      if (!fs.lstatSync(resolved).isDirectory()) {
-        throw new Error(`${label} exists and is not a directory`);
-      }
-    } catch (inner) {
-      const code = (inner as NodeJS.ErrnoException)?.code;
-      if (code === "ENOENT") throw err;
-      throw inner;
-    }
-    throw err;
-  }
-  assertNotSymlink(resolved, label);
-  if (root) {
-    assertRealpathInside(root, resolved, label);
-  }
-}
 
 /**
  * Normalize + validate plans directory (relative, no traversal, YAML-safe).

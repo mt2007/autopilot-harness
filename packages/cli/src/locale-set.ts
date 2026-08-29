@@ -11,7 +11,7 @@ import {
   type SkillFolderName,
   type TriggerKey,
 } from "@autopilot-harness/i18n";
-import { assertNotSymlink, assertRealpathInside, mkdirRealDirSync, assertParentDirInProject, assertWrittenInsideProject } from "./init/wizard-helpers.js";
+import { assertNotSymlink, assertRealpathInside, mkdirRealDirSync, assertParentDirInProject, assertWrittenInsideProject, isRealDirectory, assertPresentRealFile } from "./init/wizard-helpers.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
@@ -91,7 +91,7 @@ function resolveTemplatesRoot(): string {
     path.resolve(cliRoot, "node_modules/@autopilot-harness/templates"),
   ];
   return (
-    candidates.find((p) => fs.existsSync(path.join(p, "skills"))) ??
+    candidates.find((p) => isRealDirectory(path.join(p, "skills"))) ??
     candidates[0]!
   );
 }
@@ -99,14 +99,12 @@ function resolveTemplatesRoot(): string {
 /** Fail closed before mutating the project when templates are unavailable. */
 function assertTemplatesReady(): void {
   const templatesRoot = resolveTemplatesRoot();
-  if (!fs.existsSync(path.join(templatesRoot, "skills"))) {
+  if (!isRealDirectory(path.join(templatesRoot, "skills"))) {
     throw new Error(`Templates package not found at ${templatesRoot}`);
   }
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
-    if (!fs.existsSync(tplPath)) {
-      throw new Error(`Missing skill template: ${tplPath}`);
-    }
+    assertPresentRealFile(tplPath, `skill template ${name}`);
   }
 }
 
@@ -152,16 +150,18 @@ function rewriteSkills(projectRoot: string, locale: LocaleCode): string[] {
 
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
-    if (!fs.existsSync(tplPath)) {
-      throw new Error(`Missing skill template: ${tplPath}`);
-    }
+    assertPresentRealFile(tplPath, `skill template ${name}`);
     const destDir = path.join(skillsRoot, name);
     mkdirRealDirSync(destDir, `.cursor/skills/${name}/`, projectRoot);
     assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
     const dest = path.join(destDir, "SKILL.md");
     assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
     const body = renderSkill(
-      fs.readFileSync(tplPath, "utf8"),
+      readUntrustedUtf8File(
+        tplPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        `skill template ${name}`,
+      ),
       descriptions[name],
     );
     writeFileAtomic(dest, body, projectRoot, `.cursor/skills/${name}/`);

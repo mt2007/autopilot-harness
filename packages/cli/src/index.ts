@@ -35,6 +35,10 @@ export {
   normalizePlansDir,
   assertNotSymlink,
   assertRealpathInside,
+  assertPairInsideOrUnlinkAll,
+  isRealRegularFile,
+  isRealDirectory,
+  resolveProjectRootOrThrow,
 } from "./init/wizard-helpers.js";
 export type {
   InitWizardAnswers,

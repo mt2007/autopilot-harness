@@ -43,7 +43,17 @@ pnpm bundle-vendor # refresh .autopilot hook runtime (core + port-cursor)
 pnpm build
 ```
 
-`init` / `upgrade` copy `assets/vendor/runtime.mjs` next to the project hook so Cursor can run Autopilot **without** installing `@autopilot-harness/*` into the consumer `node_modules`.
+`init` / `upgrade` copy `packages/cli/assets/vendor/` into the project at
+`.autopilot/bin/vendor/` so Cursor can run Autopilot **without** installing
+`@autopilot-harness/*` into the consumer `node_modules`.
+
+| Location | Role |
+|----------|------|
+| `packages/cli/assets/vendor/runtime.mjs` | Bundled hook runtime (`core` + `port-cursor`); produced by `pnpm bundle-vendor` |
+| `packages/cli/assets/vendor/migrations/001_initial.sql` | SQLite schema applied by the vendor runtime |
+| `.autopilot/bin/vendor/` (in a project) | Installed copy next to `autopilot-harness-hook.mjs` |
+
+On Windows, `O_NOFOLLOW` is unavailable: untrusted opens use `assertNotSymlink` plus post-open inode/dev checks (`nofollow: 0` path). CI runs the suite on `ubuntu-latest` and `windows-latest`.
 
 SQLite: v0.1 uses `node:sqlite` (`DatabaseSync`) so hooks run without native addons. `better-sqlite3` may return as an optional fast path when prebuilds cover your Node version.
 

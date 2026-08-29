@@ -235,14 +235,14 @@ export function applyRun(
   // RUNs cannot both pass the gate, and a mid-write crash does not leave a
   // half-armed executing session without a matching track/chain update.
   try {
-    return store.exclusiveWrite(() => {
+    return store.exclusiveWrite<PhaseActionResult>(() => {
       if (concurrencyMode === "one_executor") {
         const other = store.findExecutingSession(conversationId);
         if (other) {
           return {
             commit: false,
             value: {
-              ok: false as const,
+              ok: false,
               userMessage: `Another session is already executing (${other.track_id}). Send Autopilot OFF there or wait, then retry.`,
             },
           };
@@ -269,7 +269,7 @@ export function applyRun(
 
       store.ensureReviewChain(conversationId);
 
-      return { commit: true, value: { ok: true as const, session: updated } };
+      return { commit: true, value: { ok: true, session: updated } };
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

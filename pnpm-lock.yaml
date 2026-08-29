@@ -26,6 +26,9 @@ importers:
       '@autopilot-harness/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@autopilot-harness/port-cursor':
+        specifier: workspace:*
+        version: link:../ports/cursor
       '@clack/prompts':
         specifier: ^0.10.0
         version: 0.10.1

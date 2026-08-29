@@ -4,6 +4,24 @@ import fs from "node:fs";
 /** Default size cap for untrusted project text files (config.yml, hooks.json, …). */
 export const MAX_UNTRUSTED_TEXT_BYTES = 1_000_000;
 
+/**
+ * O_NOFOLLOW when the platform provides it; 0 on Windows (callers must
+ * assertNotSymlink + post-open identity checks). Override for tests.
+ */
+export function resolveNofollowFlag(override?: number): number {
+  const platform =
+    typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  if (override !== undefined) {
+    // Test-only: allow simulating Windows (0) or forcing the platform flag.
+    // Reject arbitrary bitmasks — `O_RDONLY | weird` can change open mode.
+    if (!Number.isInteger(override) || (override !== 0 && override !== platform)) {
+      throw new Error("invalid nofollow override");
+    }
+    return override;
+  }
+  return platform;
+}
+
 /** Refuse writing through a symlink (incl. dangling — existsSync lies). */
 export function assertNotSymlink(filePath: string, label: string): void {
   try {
@@ -37,7 +55,7 @@ function pathPresentViaLstat(p: string): boolean {
  */
 function parkAndRename(tmp: string, dest: string, first: unknown): void {
   if (!pathPresentViaLstat(dest) || !pathPresentViaLstat(tmp)) {
-    throw first;
+    throw first instanceof Error ? first : new Error(String(first));
   }
   const bak = exclusiveSiblingPath(dest, "bak");
   fs.renameSync(dest, bak);
@@ -184,9 +202,9 @@ export function copyFileNoFollowExclSync(
   src: string,
   dest: string,
   label: string,
+  opts?: { nofollow?: number },
 ): void {
-  const nofollow =
-    typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  const nofollow = resolveNofollowFlag(opts?.nofollow);
   if (nofollow === 0) {
     assertNotSymlink(src, label);
   }
@@ -285,12 +303,12 @@ export function readUntrustedUtf8File(
   filePath: string,
   maxBytes: number,
   label: string,
+  opts?: { nofollow?: number },
 ): string {
   if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
     throw new Error(`${label}: invalid maxBytes`);
   }
-  const nofollow =
-    typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  const nofollow = resolveNofollowFlag(opts?.nofollow);
   if (nofollow === 0) {
     assertNotSymlink(filePath, label);
   }

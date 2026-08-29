@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
@@ -17,6 +17,7 @@ describe("readUntrustedUtf8File", () => {
   afterEach(() => {
     if (root) fs.rmSync(root, { recursive: true, force: true });
     root = undefined;
+    vi.restoreAllMocks();
   });
 
   it("reads a regular UTF-8 file under the size cap", () => {
@@ -32,9 +33,9 @@ describe("readUntrustedUtf8File", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ruf-"));
     const file = path.join(root, "empty.txt");
     fs.writeFileSync(file, "", "utf8");
-    expect(readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "empty.txt")).toBe(
-      "",
-    );
+    expect(
+      readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "empty.txt"),
+    ).toBe("");
   });
 
   it("rejects oversize files before allocating a huge buffer", () => {
@@ -50,9 +51,15 @@ describe("readUntrustedUtf8File", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ruf-"));
     const file = path.join(root, "a.txt");
     fs.writeFileSync(file, "a", "utf8");
-    expect(() => readUntrustedUtf8File(file, 0, "a.txt")).toThrow(/invalid maxBytes/);
-    expect(() => readUntrustedUtf8File(file, -1, "a.txt")).toThrow(/invalid maxBytes/);
-    expect(() => readUntrustedUtf8File(file, 1.5, "a.txt")).toThrow(/invalid maxBytes/);
+    expect(() => readUntrustedUtf8File(file, 0, "a.txt")).toThrow(
+      /invalid maxBytes/,
+    );
+    expect(() => readUntrustedUtf8File(file, -1, "a.txt")).toThrow(
+      /invalid maxBytes/,
+    );
+    expect(() => readUntrustedUtf8File(file, 1.5, "a.txt")).toThrow(
+      /invalid maxBytes/,
+    );
     expect(() => readUntrustedUtf8File(file, Number.NaN, "a.txt")).toThrow(
       /invalid maxBytes/,
     );
@@ -61,7 +68,7 @@ describe("readUntrustedUtf8File", () => {
   it("rejects directories", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ruf-"));
     expect(() =>
-      readUntrustedUtf8File(root, MAX_UNTRUSTED_TEXT_BYTES, "dir"),
+      readUntrustedUtf8File(root!, MAX_UNTRUSTED_TEXT_BYTES, "dir"),
     ).toThrow(/not a regular file/);
   });
 
@@ -75,6 +82,60 @@ describe("readUntrustedUtf8File", () => {
       readUntrustedUtf8File(link, MAX_UNTRUSTED_TEXT_BYTES, "link.txt"),
     ).toThrow(/symlink.*refusing to open/);
   });
+
+  it("Windows-style nofollow=0 still refuses symlinks via assertNotSymlink", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ruf-win-"));
+    const target = path.join(root, "target.txt");
+    const link = path.join(root, "link.txt");
+    fs.writeFileSync(target, "secret", "utf8");
+    fs.symlinkSync(target, link);
+    expect(() =>
+      readUntrustedUtf8File(link, MAX_UNTRUSTED_TEXT_BYTES, "link.txt", {
+        nofollow: 0,
+      }),
+    ).toThrow(/symlink.*refusing to open/);
+  });
+
+  it("Windows-style nofollow=0 still reads a regular file", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ruf-win-ok-"));
+    const file = path.join(root, "ok.txt");
+    fs.writeFileSync(file, "payload", "utf8");
+    expect(
+      readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "ok.txt", {
+        nofollow: 0,
+      }),
+    ).toBe("payload");
+  });
+
+  it("rejects invalid nofollow override (NaN / negative / float / arbitrary bits)", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-ruf-nf-"));
+    const file = path.join(root, "ok.txt");
+    fs.writeFileSync(file, "x", "utf8");
+    expect(() =>
+      readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "ok.txt", {
+        nofollow: Number.NaN,
+      }),
+    ).toThrow(/invalid nofollow/);
+    expect(() =>
+      readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "ok.txt", {
+        nofollow: -1,
+      }),
+    ).toThrow(/invalid nofollow/);
+    expect(() =>
+      readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "ok.txt", {
+        nofollow: 1.5,
+      }),
+    ).toThrow(/invalid nofollow/);
+    // Not 0 and not platform O_NOFOLLOW — reject open-mode bitmasks.
+    const platform =
+      typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+    const weird = platform === 1 ? 2 : 1;
+    expect(() =>
+      readUntrustedUtf8File(file, MAX_UNTRUSTED_TEXT_BYTES, "ok.txt", {
+        nofollow: weird,
+      }),
+    ).toThrow(/invalid nofollow/);
+  });
 });
 
 describe("renameReplaceSync", () => {
@@ -83,6 +144,7 @@ describe("renameReplaceSync", () => {
   afterEach(() => {
     if (root) fs.rmSync(root, { recursive: true, force: true });
     root = undefined;
+    vi.restoreAllMocks();
   });
 
   it("replaces a dangling symlink without writing through", () => {
@@ -96,6 +158,62 @@ describe("renameReplaceSync", () => {
     expect(fs.lstatSync(dest).isSymbolicLink()).toBe(false);
     expect(fs.readFileSync(dest, "utf8")).toBe("safe\n");
     expect(fs.existsSync(outside)).toBe(false);
+  });
+
+  it("EXDEV fallback stages via same-dir copy then rename (no copy onto dest)", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-rr-exdev-"));
+    const dest = path.join(root, "dest.txt");
+    const tmp = path.join(root, "dest.txt.tmp");
+    fs.writeFileSync(dest, "old\n", "utf8");
+    fs.writeFileSync(tmp, "new\n", "utf8");
+
+    const realRename = fs.renameSync.bind(fs);
+    let first = true;
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (first && String(from) === tmp && String(to) === dest) {
+        first = false;
+        const err = new Error("cross-device link") as NodeJS.ErrnoException;
+        err.code = "EXDEV";
+        throw err;
+      }
+      return realRename(from, to);
+    });
+
+    renameReplaceSync(tmp, dest);
+    expect(fs.readFileSync(dest, "utf8")).toBe("new\n");
+    expect(fs.existsSync(tmp)).toBe(false);
+  });
+
+  it("parkAndRename restores bak when second rename fails", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-rr-bak-"));
+    const dest = path.join(root, "dest.txt");
+    const tmp = path.join(root, "dest.txt.tmp");
+    fs.writeFileSync(dest, "original\n", "utf8");
+    fs.writeFileSync(tmp, "incoming\n", "utf8");
+
+    const realRename = fs.renameSync.bind(fs);
+    let phase: "first" | "park" | "commit" = "first";
+    vi.spyOn(fs, "renameSync").mockImplementation((from, to) => {
+      if (phase === "first" && String(from) === tmp && String(to) === dest) {
+        phase = "park";
+        const err = new Error("busy") as NodeJS.ErrnoException;
+        err.code = "EEXIST";
+        throw err;
+      }
+      if (phase === "park" && String(from) === dest) {
+        phase = "commit";
+        return realRename(from, to);
+      }
+      if (phase === "commit" && String(from) === tmp && String(to) === dest) {
+        const err = new Error("commit failed") as NodeJS.ErrnoException;
+        err.code = "EPERM";
+        throw err;
+      }
+      return realRename(from, to);
+    });
+
+    expect(() => renameReplaceSync(tmp, dest)).toThrow(/commit failed|EPERM/);
+    expect(fs.readFileSync(dest, "utf8")).toBe("original\n");
   });
 
   it("writeFileReplaceSync replaces dest without write-through", () => {
@@ -162,6 +280,7 @@ describe("copyFileNoFollowExclSync", () => {
   afterEach(() => {
     if (root) fs.rmSync(root, { recursive: true, force: true });
     root = undefined;
+    vi.restoreAllMocks();
   });
 
   it("copies a regular file with O_EXCL dest", () => {
@@ -195,6 +314,19 @@ describe("copyFileNoFollowExclSync", () => {
     expect(fs.existsSync(dest)).toBe(false);
   });
 
+  it("Windows-style nofollow=0 refuses symlink source", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-cnf-win-"));
+    const secret = path.join(root, "secret.txt");
+    const link = path.join(root, "link.txt");
+    const dest = path.join(root, "out.txt");
+    fs.writeFileSync(secret, "classified\n", "utf8");
+    fs.symlinkSync(secret, link);
+    expect(() =>
+      copyFileNoFollowExclSync(link, dest, "link.txt", { nofollow: 0 }),
+    ).toThrow(/symlink.*refusing to open/);
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+
   it("refuses when dest already exists", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-cnf-ex-"));
     const src = path.join(root, "src.txt");
@@ -205,5 +337,31 @@ describe("copyFileNoFollowExclSync", () => {
       /EEXIST|already exists/i,
     );
     expect(fs.readFileSync(dest, "utf8")).toBe("b\n");
+  });
+
+  it("refuses when source size changes mid-copy", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ah-cnf-race-"));
+    const src = path.join(root, "src.txt");
+    const dest = path.join(root, "dest.txt");
+    fs.writeFileSync(src, "abcdefghijklmnop", "utf8");
+
+    const realFstat = fs.fstatSync.bind(fs);
+    let calls = 0;
+    vi.spyOn(fs, "fstatSync").mockImplementation((fd, options) => {
+      const st = realFstat(fd, options as never);
+      calls += 1;
+      if (calls === 1) {
+        return { ...st, size: 16, isFile: () => true } as fs.Stats;
+      }
+      if (calls >= 2) {
+        return { ...st, size: 4, isFile: () => true } as fs.Stats;
+      }
+      return st;
+    });
+
+    expect(() => copyFileNoFollowExclSync(src, dest, "src.txt")).toThrow(
+      /changed during read|read incomplete/,
+    );
+    expect(fs.existsSync(dest)).toBe(false);
   });
 });

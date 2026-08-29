@@ -17,11 +17,14 @@ import {
   assertNotSymlink,
   assertParentDirInProject,
   assertRealpathInside,
-  assertRegularFileInsideProject,
+  assertPairInsideOrUnlinkAll,
   assertWrittenInsideProject,
+  isRealDirectory,
+  isRealRegularFile,
   mkdirRealDirSync,
   normalizePlansDir,
   writeQuickstart,
+  assertPresentRealFile,
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
 import {
@@ -65,7 +68,7 @@ function resolvePackageRoots(): { cliRoot: string; templatesRoot: string } {
     path.resolve(cliRoot, "node_modules/@autopilot-harness/templates"),
   ];
   const templatesRoot =
-    candidates.find((p) => fs.existsSync(path.join(p, "skills"))) ??
+    candidates.find((p) => isRealDirectory(path.join(p, "skills"))) ??
     candidates[0]!;
   return { cliRoot, templatesRoot };
 }
@@ -75,7 +78,7 @@ function resolveHookAsset(cliRoot: string): string | null {
     path.join(cliRoot, "assets", "autopilot-harness-hook.mjs"),
     path.join(cliRoot, "dist", "assets", "autopilot-harness-hook.mjs"),
   ];
-  return candidates.find((p) => fs.existsSync(p)) ?? null;
+  return candidates.find((p) => isRealRegularFile(p)) ?? null;
 }
 
 function resolveVendorRoot(cliRoot: string): string | null {
@@ -87,7 +90,10 @@ function resolveVendorRoot(cliRoot: string): string | null {
   for (const dir of candidates) {
     const runtime = path.join(dir, "runtime.mjs");
     const mig = path.join(dir, "migrations", "001_initial.sql");
-    if (!fs.existsSync(runtime) || !fs.existsSync(mig)) continue;
+    if (!isRealRegularFile(runtime) || !isRealRegularFile(mig)) continue;
+    if (!isRealDirectory(dir) || !isRealDirectory(path.join(dir, "migrations"))) {
+      continue;
+    }
     try {
       assertNotSymlink(dir, "vendor/");
       assertNotSymlink(runtime, "vendor/runtime.mjs");
@@ -176,28 +182,10 @@ function copyVendorDir(
   // Post-write: parent symlink race may have landed files outside the project.
   // Verify both (regular file + inside) before unlinking — a partial unlink
   // would leave torn vendor (new migration + missing runtime).
-  const vendorPair = [
+  assertPairInsideOrUnlinkAll(projectRoot, [
     [migDest, ".autopilot/bin/vendor/migrations/001_initial.sql"],
     [runtimeDest, ".autopilot/bin/vendor/runtime.mjs"],
-  ] as const;
-  const verifyErrors: unknown[] = [];
-  for (const [dest, label] of vendorPair) {
-    try {
-      assertRegularFileInsideProject(projectRoot, dest, label);
-    } catch (err) {
-      verifyErrors.push(err);
-    }
-  }
-  if (verifyErrors.length > 0) {
-    for (const [dest] of vendorPair) {
-      try {
-        fs.unlinkSync(dest);
-      } catch {
-        /* best-effort remove escaped / torn pair */
-      }
-    }
-    throw verifyErrors[0];
-  }
+  ]);
 }
 
 function copyHookAsset(
@@ -335,14 +323,16 @@ function installSkills(
   assertNotSymlink(skillsRoot, ".cursor/skills/");
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
-    if (!fs.existsSync(tplPath)) {
-      throw new Error(`Missing skill template: ${tplPath}`);
-    }
+    assertPresentRealFile(tplPath, `skill template ${name}`);
     const destDir = path.join(skillsRoot, name);
     mkdirRealDirSync(destDir, `.cursor/skills/${name}/`, projectRoot);
     assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
     const body = renderSkill(
-      fs.readFileSync(tplPath, "utf8"),
+      readUntrustedUtf8File(
+        tplPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        `skill template ${name}`,
+      ),
       descriptions[name] ?? name,
     );
     const dest = path.join(destDir, "SKILL.md");
@@ -370,9 +360,7 @@ function installWorkflows(templatesRoot: string, projectRoot: string): string[] 
   assertRealpathInside(projectRoot, destDir, "docs/autopilot/workflows/");
   for (const name of WORKFLOW_FILES) {
     const src = path.join(templatesRoot, "workflows", name);
-    if (!fs.existsSync(src)) {
-      throw new Error(`Missing workflow template: ${src}`);
-    }
+    assertPresentRealFile(src, `workflow template ${name}`);
     const dest = path.join(destDir, name);
     assertNotSymlink(dest, `docs/autopilot/workflows/${name}`);
     assertParentDirInProject(
@@ -462,7 +450,7 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
   }
   const root = path.resolve(projectRoot.trim());
   const { cliRoot, templatesRoot } = resolvePackageRoots();
-  if (!fs.existsSync(path.join(templatesRoot, "skills"))) {
+  if (!isRealDirectory(path.join(templatesRoot, "skills"))) {
     return {
       ok: false,
       error: `Templates package not found at ${templatesRoot}`,
@@ -470,14 +458,20 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
   }
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
-    if (!fs.existsSync(tplPath)) {
-      return { ok: false, error: `Missing skill template: ${tplPath}` };
+    try {
+      assertPresentRealFile(tplPath, `skill template ${name}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
     }
   }
   for (const name of WORKFLOW_FILES) {
     const src = path.join(templatesRoot, "workflows", name);
-    if (!fs.existsSync(src)) {
-      return { ok: false, error: `Missing workflow template: ${src}` };
+    try {
+      assertPresentRealFile(src, `workflow template ${name}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
     }
   }
   if (!resolveHookAsset(cliRoot)) {

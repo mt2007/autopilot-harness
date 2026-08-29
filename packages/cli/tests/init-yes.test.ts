@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { installInitYes, mergeHooksJson } from "../src/init/install.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { installInitYes, mergeHooksJson, preflightForceRefresh } from "../src/init/install.js";
 import { runDoctor } from "../src/status-doctor.js";
 
 function tmpProject(): string {
@@ -50,6 +50,7 @@ describe("hooks.json merge", () => {
 describe("init --yes install", () => {
   let root: string;
   afterEach(() => {
+    vi.restoreAllMocks();
     if (root && fs.existsSync(root)) {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -63,6 +64,12 @@ describe("init --yes install", () => {
       locale: "en",
       force: false,
     });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/projectRoot must be a non-empty string/);
+  });
+
+  it("preflightForceRefresh rejects empty projectRoot", () => {
+    const r = preflightForceRefresh("  ");
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/projectRoot must be a non-empty string/);
   });
@@ -181,6 +188,40 @@ describe("init --yes install", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatch(/already initialized/i);
+    }
+  });
+
+  it("wx EEXIST on raced symlink is not reported as already initialized", () => {
+    root = tmpProject();
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const outside = path.join(root, "outside-config.yml");
+    const realWrite = fs.writeFileSync.bind(fs);
+    vi.spyOn(fs, "writeFileSync").mockImplementation((file, data, options) => {
+      const opts =
+        typeof options === "object" && options !== null
+          ? (options as { flag?: string })
+          : undefined;
+      if (String(file) === configPath && opts?.flag === "wx") {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        fs.symlinkSync(outside, configPath);
+        const err = new Error("file already exists") as NodeJS.ErrnoException;
+        err.code = "EEXIST";
+        throw err;
+      }
+      return realWrite(file, data as never, options as never);
+    });
+
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/symlink/i);
+      expect(result.error).not.toMatch(/already initialized/i);
     }
   });
 
