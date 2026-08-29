@@ -37,6 +37,9 @@ artifacts:
 cli:
   preferred_name: Autopilot
 
+session:
+  stale_after_hours: 72
+
 concurrency:
   mode: one_executor
   worktree: false

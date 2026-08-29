@@ -179,6 +179,28 @@ describe("StateStore session ops", () => {
     store.close();
   });
 
+  it("purgeSession ifRow guard skips delete when predicate fails", () => {
+    const store = StateStore.openMemory("/tmp/ap-sess-purge-if");
+    const id = "pif-1111-2222-3333-444455556666";
+    seed(store, id);
+    store.upsertSession({
+      conversation_id: id,
+      project_root: store.projectRoot,
+      code_root: store.projectRoot,
+      armed: 1,
+      phase: "executing",
+    });
+    expect(
+      store.purgeSession(id, (row) => row.armed !== 1),
+    ).toBe(false);
+    expect(store.getSession(id)).not.toBeNull();
+    expect(
+      store.purgeSession(id, (row) => row.armed === 1),
+    ).toBe(true);
+    expect(store.getSession(id)).toBeNull();
+    store.close();
+  });
+
   it("resetReviewChain clears review fields like REPLAN", () => {
     const store = StateStore.openMemory("/tmp/ap-sess-reset");
     const id = "rst-1111-2222-3333-444455556666";

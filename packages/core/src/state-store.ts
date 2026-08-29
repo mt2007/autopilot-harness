@@ -210,9 +210,20 @@ export class StateStore {
   }
 
   /** Delete session row and its review_chains row (atomic). */
-  purgeSession(conversationId: string): boolean {
+  purgeSession(
+    conversationId: string,
+    /**
+     * Optional guard evaluated inside the write transaction (re-check after races).
+     * Return false to skip delete without error.
+     */
+    ifRow?: (row: SessionRow) => boolean,
+  ): boolean {
     return this.exclusiveWrite(() => {
-      if (!this.getSession(conversationId)) {
+      const row = this.getSession(conversationId);
+      if (!row) {
+        return { commit: false, value: false };
+      }
+      if (ifRow && !ifRow(row)) {
         return { commit: false, value: false };
       }
       this.db

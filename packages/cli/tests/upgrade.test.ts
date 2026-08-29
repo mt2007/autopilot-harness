@@ -43,6 +43,15 @@ describe("config missing-key merge", () => {
     expect(addedPaths).not.toContain("review.confirm_rounds");
   });
 
+  it("appends session.stale_after_hours when missing from older configs", () => {
+    const { yaml, addedPaths } = mergeConfigYamlMissingKeys(
+      "platform: cursor\nlocale: en\n",
+      "platform: cursor\nlocale: en\nsession:\n  stale_after_hours: 72\n",
+    );
+    expect(addedPaths).toContain("session");
+    expect(yaml).toMatch(/stale_after_hours:\s*72/);
+  });
+
   it("round-trips yaml text", () => {
     const { yaml, addedPaths } = mergeConfigYamlMissingKeys(
       "platform: cursor\nlocale: zh-CN\n",

@@ -13,6 +13,12 @@ function isAutopilotCommand(cmd: string | undefined): boolean {
   );
 }
 
+/** Collapse controls before reflecting untrusted hooks keys into CLI errors. */
+function safeHooksKeyLabel(key: string): string {
+  const cleaned = key.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/ +/g, " ").trim();
+  return cleaned || "?";
+}
+
 /** Ensure hooks.json shape is merge-safe; otherwise refuse (do not wipe). */
 export function validateHooksShape(hooks: HooksFile): string | null {
   if (Array.isArray(hooks.hooks)) {
@@ -22,19 +28,20 @@ export function validateHooksShape(hooks: HooksFile): string | null {
     return 'hooks.json "hooks" must be an object.';
   }
   for (const [key, value] of Object.entries(hooks.hooks)) {
+    const label = safeHooksKeyLabel(key);
     if (value == null) continue;
     if (!Array.isArray(value)) {
-      return `hooks.json hooks.${key} must be an array of { command } entries.`;
+      return `hooks.json hooks.${label} must be an array of { command } entries.`;
     }
     for (const entry of value) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-        return `hooks.json hooks.${key} contains a non-object entry.`;
+        return `hooks.json hooks.${label} contains a non-object entry.`;
       }
       if (
         (entry as HookCommand).command != null &&
         typeof (entry as HookCommand).command !== "string"
       ) {
-        return `hooks.json hooks.${key} has a non-string command.`;
+        return `hooks.json hooks.${label} has a non-string command.`;
       }
     }
   }

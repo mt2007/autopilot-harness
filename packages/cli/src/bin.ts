@@ -13,6 +13,7 @@ import {
   runDoctor,
   runInteractiveInit,
   setProjectLocale,
+  readStaleAfterHours,
   upgradeProject,
 } from "./index.js";
 import { loadLocale } from "@autopilot-harness/i18n";
@@ -144,8 +145,11 @@ program
 program
   .command("doctor")
   .description("Diagnose Autopilot installation")
-  .action(() => {
-    const { ok, lines } = runDoctor(process.cwd());
+  .option("--prune-stale", "Purge sessions older than session.stale_after_hours")
+  .action((opts: { pruneStale?: boolean }) => {
+    const { ok, lines } = runDoctor(process.cwd(), {
+      pruneStale: Boolean(opts.pruneStale),
+    });
     for (const line of lines) console.log(line);
     process.exitCode = ok ? 0 : 1;
   });
@@ -190,7 +194,10 @@ sessionCmd
   .command("list")
   .description("List sessions (human-readable titles)")
   .action(() => {
-    const result = formatSessionList({ projectRoot: process.cwd() });
+    const result = formatSessionList({
+      projectRoot: process.cwd(),
+      staleAfterHours: readStaleAfterHours(process.cwd()),
+    });
     if (!result.ok) {
       console.error(`session list failed: ${result.error}`);
       process.exitCode = 1;

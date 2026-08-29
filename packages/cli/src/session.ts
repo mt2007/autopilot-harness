@@ -105,6 +105,7 @@ function formatRelativeAge(iso: string, nowMs = Date.now()): string {
 }
 
 function isStale(row: SessionRow, staleAfterHours: number, nowMs = Date.now()): boolean {
+  if (!(staleAfterHours > 0)) return false;
   const t = Date.parse(row.last_active_at);
   if (Number.isNaN(t)) return false;
   return nowMs - t > staleAfterHours * 3600 * 1000;
