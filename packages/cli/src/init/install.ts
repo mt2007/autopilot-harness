@@ -30,6 +30,11 @@ const SKILL_NAMES = [
   "autopilot-replan",
 ] as const;
 
+const WORKFLOW_FILES = [
+  "autopilot-planning.md",
+  "autopilot-executing.md",
+] as const;
+
 function resolvePackageRoots(): { cliRoot: string; templatesRoot: string } {
   // src/init → ../../ = packages/cli; dist/init → ../../ = packages/cli
   const cliRoot = path.resolve(__dirname, "../..");
@@ -41,6 +46,14 @@ function resolvePackageRoots(): { cliRoot: string; templatesRoot: string } {
     candidates.find((p) => fs.existsSync(path.join(p, "skills"))) ??
     candidates[0]!;
   return { cliRoot, templatesRoot };
+}
+
+function resolveHookAsset(cliRoot: string): string | null {
+  const candidates = [
+    path.join(cliRoot, "assets", "autopilot-harness-hook.mjs"),
+    path.join(cliRoot, "dist", "assets", "autopilot-harness-hook.mjs"),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) ?? null;
 }
 
 function assertSupported(
@@ -116,11 +129,7 @@ function renderSkill(template: string, description: string): string {
 }
 
 function copyHookAsset(cliRoot: string, destBin: string): void {
-  const candidates = [
-    path.join(cliRoot, "assets", "autopilot-harness-hook.mjs"),
-    path.join(cliRoot, "dist", "assets", "autopilot-harness-hook.mjs"),
-  ];
-  const src = candidates.find((p) => fs.existsSync(p));
+  const src = resolveHookAsset(cliRoot);
   if (!src) {
     throw new Error("Missing autopilot-harness-hook.mjs asset in CLI package");
   }
@@ -152,7 +161,7 @@ function installWorkflows(templatesRoot: string, projectRoot: string): string[] 
   const written: string[] = [];
   const destDir = path.join(projectRoot, "docs", "autopilot", "workflows");
   fs.mkdirSync(destDir, { recursive: true });
-  for (const name of ["autopilot-planning.md", "autopilot-executing.md"]) {
+  for (const name of WORKFLOW_FILES) {
     const src = path.join(templatesRoot, "workflows", name);
     if (!fs.existsSync(src)) {
       throw new Error(`Missing workflow template: ${src}`);
@@ -188,6 +197,47 @@ Start with \`/autopilot-on\`, then \`/autopilot-run\` when the checklist is read
   return path.relative(projectRoot, readme);
 }
 
+export type PreflightResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Read-only checks before force-refresh / upgrade mutates the project.
+ * Ensures templates, hook asset, and hooks.json are merge-safe (fail closed).
+ */
+export function preflightForceRefresh(projectRoot: string): PreflightResult {
+  const root = path.resolve(projectRoot);
+  const { cliRoot, templatesRoot } = resolvePackageRoots();
+  if (!fs.existsSync(path.join(templatesRoot, "skills"))) {
+    return {
+      ok: false,
+      error: `Templates package not found at ${templatesRoot}`,
+    };
+  }
+  for (const name of SKILL_NAMES) {
+    const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
+    if (!fs.existsSync(tplPath)) {
+      return { ok: false, error: `Missing skill template: ${tplPath}` };
+    }
+  }
+  for (const name of WORKFLOW_FILES) {
+    const src = path.join(templatesRoot, "workflows", name);
+    if (!fs.existsSync(src)) {
+      return { ok: false, error: `Missing workflow template: ${src}` };
+    }
+  }
+  if (!resolveHookAsset(cliRoot)) {
+    return {
+      ok: false,
+      error: "Missing autopilot-harness-hook.mjs asset in CLI package",
+    };
+  }
+  const hooksPath = path.join(root, ".cursor", "hooks.json");
+  const hooksRead = readHooksFile(hooksPath);
+  if (!hooksRead.ok) {
+    return { ok: false, error: hooksRead.error };
+  }
+  return { ok: true };
+}
+
 /**
  * Non-interactive init (`--yes`). Writes .autopilot + merges .cursor/hooks.json.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
@@ -212,17 +262,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     };
   }
 
-  const { cliRoot, templatesRoot } = resolvePackageRoots();
-  if (!fs.existsSync(path.join(templatesRoot, "skills"))) {
-    return {
-      ok: false,
-      error: `Templates package not found at ${templatesRoot}`,
-    };
+  const preflight = preflightForceRefresh(projectRoot);
+  if (!preflight.ok) {
+    return { ok: false, error: preflight.error };
   }
 
+  const { cliRoot, templatesRoot } = resolvePackageRoots();
   const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
   const hooksRead = readHooksFile(hooksPath);
   if (!hooksRead.ok) {
+    // Race: file changed after preflight; still fail closed.
     return { ok: false, error: hooksRead.error };
   }
 
@@ -245,7 +294,10 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       written.push(path.relative(projectRoot, configPath));
     }
 
-    const version = opts.packageVersion ?? PACKAGE_VERSION;
+    const version =
+      typeof opts.packageVersion === "string" && opts.packageVersion.trim()
+        ? opts.packageVersion.trim()
+        : PACKAGE_VERSION;
     const pinPath = path.join(autopilotDir, "pin.json");
     fs.writeFileSync(
       pinPath,

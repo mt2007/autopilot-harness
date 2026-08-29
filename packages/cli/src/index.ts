@@ -1,6 +1,7 @@
 export { CLI_NAME, PREFERRED_NAME } from "./names.js";
 export {
   installInitYes,
+  preflightForceRefresh,
   mergeHooksJson,
   countAutopilotDuplicates,
   validateHooksShape,
@@ -8,5 +9,13 @@ export {
   summarizeAutopilotHooks,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
+export type { PreflightResult } from "./init/install.js";
 export { PACKAGE_VERSION } from "./init/types.js";
 export { formatStatus, runDoctor, readPinVersion } from "./status-doctor.js";
+export { upgradeProject } from "./upgrade.js";
+export type { UpgradeOptions, UpgradeResult } from "./upgrade.js";
+export {
+  mergeConfigYamlMissingKeys,
+  mergeMissingKeys,
+  readConfigInstallHints,
+} from "./init/config-merge.js";

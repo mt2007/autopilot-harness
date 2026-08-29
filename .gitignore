@@ -5,6 +5,8 @@ dist/
 # Autopilot runtime (consumer projects; also ignore if present here)
 .autopilot/state.db
 .autopilot/state.db-*
+.autopilot/state.db.bak.*
+.autopilot/.*.tmp
 .autopilot/verify-last.json
 .autopilot/worktrees/
 .autopilot/logs/

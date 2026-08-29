@@ -29,6 +29,9 @@ importers:
       commander:
         specifier: ^13.1.0
         version: 13.1.0
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
     devDependencies:
       typescript:
         specifier: ^5.8.2
@@ -50,6 +53,8 @@ importers:
         specifier: ^5.8.2
         version: 5.9.3
 
+  packages/ports/claude-code: {}
+
   packages/ports/cursor:
     dependencies:
       '@autopilot-harness/core':
@@ -59,6 +64,10 @@ importers:
       typescript:
         specifier: ^5.8.2
         version: 5.9.3
+
+  packages/ports/kimi-code: {}
+
+  packages/ports/runner: {}
 
   packages/templates: {}
 

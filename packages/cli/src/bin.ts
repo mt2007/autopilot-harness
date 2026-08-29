@@ -7,6 +7,7 @@ import {
   PACKAGE_VERSION,
   PREFERRED_NAME,
   runDoctor,
+  upgradeProject,
 } from "./index.js";
 
 const program = new Command();
@@ -73,6 +74,52 @@ program
       console.log(`  ${CLI_NAME} doctor`);
     },
   );
+
+program
+  .command("upgrade")
+  .description(
+    "Upgrade Autopilot files in this project to the current CLI version",
+  )
+  .option("--dry-run", "Preview actions without writing")
+  .option(
+    "--target <version>",
+    "Reserved; v0.1 pins to the running CLI version",
+  )
+  .action((opts: { dryRun?: boolean; target?: string }) => {
+    const result = upgradeProject({
+      projectRoot: process.cwd(),
+      dryRun: Boolean(opts.dryRun),
+      packageVersion: PACKAGE_VERSION,
+      target: opts.target,
+    });
+    if (!result.ok) {
+      console.error(`upgrade failed: ${result.error}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      result.dryRun
+        ? `${PREFERRED_NAME} upgrade dry-run:`
+        : `${PREFERRED_NAME} upgraded to ${PACKAGE_VERSION}:`,
+    );
+    for (const a of result.actions) {
+      console.log(`  · ${a}`);
+    }
+    if (!result.dryRun) {
+      for (const f of result.written) {
+        console.log(`  + ${f}`);
+      }
+      console.log("");
+      console.log("── doctor ──────────────────────────────");
+      for (const line of result.doctorLines) console.log(line);
+      if (!result.doctorOk) {
+        console.error(
+          "upgrade wrote files but doctor reported failures (exit 1)",
+        );
+        process.exitCode = 1;
+      }
+    }
+  });
 
 program
   .command("status")
