@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultConfigYaml, SKILL_DESCRIPTIONS } from "./default-config.js";
+import { defaultConfigYaml } from "./default-config.js";
 import { mergeHooksJson, validateHooksShape } from "./hooks-merge.js";
 import type {
   HooksFile,
@@ -18,6 +18,7 @@ import {
   normalizePlansDir,
   writeQuickstart,
 } from "./wizard-helpers.js";
+import { skillDescriptions } from "@autopilot-harness/i18n";
 
 export {
   mergeHooksJson,
@@ -132,8 +133,32 @@ function readHooksFile(filePath: string): HooksRead {
   }
 }
 
+function writeFileAtomic(filePath: string, contents: string): void {
+  const dir = path.dirname(filePath);
+  const tmp = path.join(
+    dir,
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  try {
+    fs.writeFileSync(tmp, contents, "utf8");
+    fs.renameSync(tmp, filePath);
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore cleanup */
+    }
+    throw err;
+  }
+}
+
 function renderSkill(template: string, description: string): string {
-  return template.replaceAll("{{description}}", description);
+  const escaped = description
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
+  return template.replaceAll("{{description}}", escaped);
 }
 
 function copyHookAsset(cliRoot: string, destBin: string): void {
@@ -145,8 +170,13 @@ function copyHookAsset(cliRoot: string, destBin: string): void {
   fs.copyFileSync(src, path.join(destBin, "autopilot-harness-hook.mjs"));
 }
 
-function installSkills(templatesRoot: string, projectRoot: string): string[] {
+function installSkills(
+  templatesRoot: string,
+  projectRoot: string,
+  locale: InitLocale,
+): string[] {
   const written: string[] = [];
+  const descriptions = skillDescriptions(locale);
   const skillsRoot = path.join(projectRoot, ".cursor", "skills");
   assertNotSymlink(skillsRoot, ".cursor/skills/");
   for (const name of SKILL_NAMES) {
@@ -160,11 +190,11 @@ function installSkills(templatesRoot: string, projectRoot: string): string[] {
     assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
     const body = renderSkill(
       fs.readFileSync(tplPath, "utf8"),
-      SKILL_DESCRIPTIONS[name] ?? name,
+      descriptions[name] ?? name,
     );
     const dest = path.join(destDir, "SKILL.md");
     assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
-    fs.writeFileSync(dest, body, "utf8");
+    writeFileAtomic(dest, body);
     written.push(path.relative(projectRoot, dest));
   }
   return written;
@@ -412,7 +442,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       ),
     );
 
-    written.push(...installSkills(templatesRoot, projectRoot));
+    written.push(...installSkills(templatesRoot, projectRoot, opts.locale as InitLocale));
     written.push(...installWorkflows(templatesRoot, projectRoot));
 
     // Fresh init only: plans tree / plans gitignore / quickstart follow wizard.

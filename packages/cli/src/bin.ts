@@ -8,14 +8,16 @@ import {
   PREFERRED_NAME,
   runDoctor,
   runInteractiveInit,
+  setProjectLocale,
   upgradeProject,
 } from "./index.js";
+import { loadLocale } from "@autopilot-harness/i18n";
 
 const program = new Command();
 
 program
   .name(CLI_NAME)
-  .description(`${PREFERRED_NAME} Harness — Planning → Executing agent harness`)
+  .description(loadLocale("en").cli.help)
   .version(PACKAGE_VERSION);
 
 program
@@ -142,6 +144,38 @@ program
     const { ok, lines } = runDoctor(process.cwd());
     for (const line of lines) console.log(line);
     process.exitCode = ok ? 0 : 1;
+  });
+
+program
+  .command("locale")
+  .description("Manage project locale (skill descriptions + config)")
+  .command("set")
+  .description("Set locale to en or zh-CN (keeps custom triggers)")
+  .argument("<locale>", "en | zh-CN")
+  .action((locale: string) => {
+    const result = setProjectLocale({
+      projectRoot: process.cwd(),
+      locale,
+    });
+    if (!result.ok) {
+      console.error(`locale set failed: ${result.error}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      `${PREFERRED_NAME} locale: ${result.previousLocale} → ${result.locale}`,
+    );
+    for (const f of result.written) {
+      console.log(`  + ${f}`);
+    }
+    if (result.triggersUpdated.length > 0) {
+      console.log(`  triggers updated: ${result.triggersUpdated.join(", ")}`);
+    }
+    if (result.triggersPreserved.length > 0) {
+      console.log(
+        `  triggers kept (custom): ${result.triggersPreserved.join(", ")}`,
+      );
+    }
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {

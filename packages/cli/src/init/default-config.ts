@@ -1,3 +1,4 @@
+import { stockTriggers } from "@autopilot-harness/i18n";
 import type { InitLocale } from "./types.js";
 import { normalizePlansDir } from "./wizard-helpers.js";
 
@@ -12,30 +13,13 @@ export function defaultConfigYaml(opts: {
   const plansNorm = normalizePlansDir(opts.plansDir);
   const plansDir = plansNorm.ok ? plansNorm.value : "plans";
   const verifyEnabled = Boolean(opts.verifyEnabled);
-  const on =
-    opts.locale === "zh-CN"
-      ? `["Autopilot ON", "开启自动驾驶"]`
-      : `["Autopilot ON"]`;
-  const run =
-    opts.locale === "zh-CN"
-      ? `["Autopilot RUN", "开始执行"]`
-      : `["Autopilot RUN"]`;
-  const off =
-    opts.locale === "zh-CN"
-      ? `["Autopilot OFF", "关闭自动驾驶"]`
-      : `["Autopilot OFF"]`;
-  const resume =
-    opts.locale === "zh-CN"
-      ? `["Autopilot RESUME", "继续执行"]`
-      : `["Autopilot RESUME"]`;
-  const replan =
-    opts.locale === "zh-CN"
-      ? `["Autopilot REPLAN", "修改方案"]`
-      : `["Autopilot REPLAN"]`;
-  const resumeReview =
-    opts.locale === "zh-CN"
-      ? `["继续自审", "Resume review"]`
-      : `["Resume review"]`;
+  const triggers = stockTriggers(opts.locale);
+  const on = JSON.stringify(triggers.on);
+  const run = JSON.stringify(triggers.run);
+  const off = JSON.stringify(triggers.off);
+  const resume = JSON.stringify(triggers.resume);
+  const replan = JSON.stringify(triggers.replan);
+  const resumeReview = JSON.stringify(triggers.resume_review);
 
   return `# Autopilot Harness — project config (init defaults)
 platform: ${opts.platform}
@@ -78,14 +62,3 @@ security:
   require_token: false
 `;
 }
-
-export const SKILL_DESCRIPTIONS: Record<string, string> = {
-  "autopilot-on":
-    "Start Autopilot planning: grill frontier, write plans/<slug> artifacts",
-  "autopilot-run":
-    "Enter Autopilot executing for a track checklist (after planning)",
-  "autopilot-off": "Pause Autopilot (human gate) without wiping review state",
-  "autopilot-resume": "Resume a paused Autopilot session in this conversation",
-  "autopilot-replan":
-    "Return to planning for the current track; reset review chain",
-};

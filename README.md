@@ -10,11 +10,12 @@ Install with `npx autopilot-harness init` (interactive) or `init --yes`, then us
 npx autopilot-harness init                  # interactive TUI
 npx autopilot-harness init --platform cursor --yes
 npx autopilot-harness doctor
+npx autopilot-harness locale set zh-CN
 npx autopilot-harness upgrade --dry-run
 npx autopilot-harness upgrade
 ```
 
-`init` writes `.autopilot/`, merges `.cursor/hooks.json`, installs skills/workflows, and prints a cheat sheet. `upgrade` refreshes those files, appends missing config keys, and migrates `state.db` (with backup).
+`init` writes `.autopilot/`, merges `.cursor/hooks.json`, installs skills/workflows, and prints a cheat sheet. `locale set` rewrites skill descriptions and stock triggers (custom triggers kept). `upgrade` refreshes those files, appends missing config keys, and migrates `state.db` (with backup).
 
 ## Monorepo packages
 

@@ -40,3 +40,8 @@ export type {
   PlansGitPolicy,
   ShellAliasTarget,
 } from "./init/wizard-helpers.js";
+export { setProjectLocale } from "./locale-set.js";
+export type {
+  LocaleSetOptions,
+  LocaleSetResult,
+} from "./locale-set.js";

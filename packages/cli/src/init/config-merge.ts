@@ -1,7 +1,15 @@
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { parseDocument, stringify as stringifyYaml } from "yaml";
 
-/** Cap YAML aliases to mitigate billion-laughs style expansion. */
-const YAML_PARSE_OPTS = { maxAliasCount: 64 } as const;
+/** Cap YAML aliases on toJS (yaml@2.9+: not a parse-time option). */
+const YAML_TO_JS_OPTS = { maxAliasCount: 64 } as const;
+
+function parseYamlSafe(text: string): unknown {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) {
+    throw doc.errors[0]!;
+  }
+  return doc.toJS(YAML_TO_JS_OPTS);
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
@@ -70,8 +78,8 @@ export function mergeConfigYamlMissingKeys(
   existingYaml: string,
   defaultsYaml: string,
 ): { yaml: string; addedPaths: string[] } {
-  const existingRaw: unknown = parseYaml(existingYaml, YAML_PARSE_OPTS) ?? {};
-  const defaultsRaw: unknown = parseYaml(defaultsYaml, YAML_PARSE_OPTS) ?? {};
+  const existingRaw: unknown = parseYamlSafe(existingYaml) ?? {};
+  const defaultsRaw: unknown = parseYamlSafe(defaultsYaml) ?? {};
   if (!isPlainObject(existingRaw)) {
     throw new Error("config.yml root must be a mapping");
   }
@@ -92,7 +100,7 @@ export function readConfigInstallHints(configYaml: string): {
   locale: string;
 } {
   try {
-    const parsed: unknown = parseYaml(configYaml, YAML_PARSE_OPTS);
+    const parsed: unknown = parseYamlSafe(configYaml);
     if (!isPlainObject(parsed)) {
       return { platform: "cursor", surface: "ide", locale: "en" };
     }

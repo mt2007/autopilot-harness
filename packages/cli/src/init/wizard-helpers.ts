@@ -346,6 +346,7 @@ export function formatCheatSheet(
       "── 终端 ─────────────────────────────────",
       `  ${cliName} status`,
       `  ${cliName} doctor`,
+      `  ${cliName} locale set en`,
       "",
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
@@ -366,6 +367,7 @@ export function formatCheatSheet(
     "── Terminal ─────────────────────────────",
     `  ${cliName} status`,
     `  ${cliName} doctor`,
+    `  ${cliName} locale set zh-CN`,
     "",
     `  See: docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
   ];

@@ -104,6 +104,12 @@ describe("wizard helpers", () => {
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /Planning/,
     );
+    expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
+      /locale set zh-CN/,
+    );
+    expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
+      /locale set en/,
+    );
   });
 
   it("normalizePlansDir rejects traversal and injection", () => {
