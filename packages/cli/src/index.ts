@@ -45,3 +45,15 @@ export type {
   LocaleSetOptions,
   LocaleSetResult,
 } from "./locale-set.js";
+export {
+  formatSessionDisplayName,
+  formatSessionList,
+  purgeProjectSession,
+  renameProjectSession,
+  resetProjectSessionReview,
+  shortSessionId,
+} from "./session.js";
+export type {
+  SessionCmdResult,
+  SessionListResult,
+} from "./session.js";

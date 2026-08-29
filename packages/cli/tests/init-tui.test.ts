@@ -105,6 +105,9 @@ describe("wizard helpers", () => {
       /Planning/,
     );
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
+      /session list/,
+    );
+    expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /locale set zh-CN/,
     );
     expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(

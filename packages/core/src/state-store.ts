@@ -46,6 +46,41 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Stable short id for CLI tables (first 8 chars of dehyphenated conversation_id). */
+export function shortConversationId(conversationId: string): string {
+  return conversationId.replace(/-/g, "").slice(0, 8);
+}
+
+/** Max length for user/platform session titles (characters). */
+export const SESSION_TITLE_MAX_LENGTH = 200;
+
+const TITLE_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** Normalize and validate a session title; throws on empty/too long/controls. */
+export function normalizeSessionTitle(title: string): string {
+  if (typeof title !== "string") {
+    throw new Error("Title must be a non-empty string");
+  }
+  const trimmed = title.trim();
+  if (!trimmed) {
+    throw new Error("Title must be a non-empty string");
+  }
+  if (TITLE_CONTROL_CHARS.test(trimmed)) {
+    throw new Error("Title must not contain control characters");
+  }
+  if (trimmed.length > SESSION_TITLE_MAX_LENGTH) {
+    throw new Error(
+      `Title exceeds ${SESSION_TITLE_MAX_LENGTH} characters`,
+    );
+  }
+  return trimmed;
+}
+
+/** Collapse controls for single-line CLI table cells (platform titles may be dirty). */
+export function sanitizeSessionDisplayText(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/ +/g, " ").trim();
+}
+
 export class StateStore {
   readonly db: SqlDatabase;
   readonly projectRoot: string;
@@ -112,6 +147,104 @@ export class StateStore {
     );
   }
 
+  listSessions(): SessionRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM sessions ORDER BY last_active_at DESC, conversation_id ASC",
+      )
+      .all() as SessionRow[];
+  }
+
+  /**
+   * Resolve a full conversation_id or a unique prefix / short id (first 8 hex-ish chars).
+   */
+  resolveSessionId(
+    query: string,
+  ): { ok: true; id: string } | { ok: false; error: string } {
+    const q = query.trim();
+    if (!q) {
+      return { ok: false, error: "Session id required" };
+    }
+    if (/[\u0000-\u001f\u007f]/.test(q)) {
+      return {
+        ok: false,
+        error: "Session id must not contain control characters",
+      };
+    }
+    if (this.getSession(q)) {
+      return { ok: true, id: q };
+    }
+    const matches = this.listSessions().filter((s) => {
+      const id = s.conversation_id;
+      return id.startsWith(q) || shortConversationId(id) === q;
+    });
+    if (matches.length === 1) {
+      return { ok: true, id: matches[0]!.conversation_id };
+    }
+    if (matches.length === 0) {
+      return { ok: false, error: `No session matching "${q}"` };
+    }
+    return {
+      ok: false,
+      error: `Ambiguous id "${q}" matches ${matches.length} sessions; use a longer prefix`,
+    };
+  }
+
+  renameSession(conversationId: string, title: string): SessionRow | null {
+    const trimmed = normalizeSessionTitle(title);
+    return this.exclusiveWrite(() => {
+      if (!this.getSession(conversationId)) {
+        return { commit: false, value: null };
+      }
+      const ts = nowIso();
+      this.db
+        .prepare(
+          `UPDATE sessions SET
+            session_title = ?, session_title_source = 'user', title_updated_at = ?,
+            updated_at = ?
+           WHERE conversation_id = ?`,
+        )
+        .run(trimmed, ts, ts, conversationId);
+      return { commit: true, value: this.getSession(conversationId) };
+    });
+  }
+
+  /** Delete session row and its review_chains row (atomic). */
+  purgeSession(conversationId: string): boolean {
+    return this.exclusiveWrite(() => {
+      if (!this.getSession(conversationId)) {
+        return { commit: false, value: false };
+      }
+      this.db
+        .prepare("DELETE FROM review_chains WHERE conversation_id = ?")
+        .run(conversationId);
+      this.db
+        .prepare("DELETE FROM sessions WHERE conversation_id = ?")
+        .run(conversationId);
+      return { commit: true, value: true };
+    });
+  }
+
+  /**
+   * Reset review chain fields (same as REPLAN review reset). Session row kept.
+   * Atomic: refuses to create an orphan review_chains row if the session was purged.
+   */
+  resetReviewChain(conversationId: string): boolean {
+    return this.exclusiveWrite(() => {
+      if (!this.getSession(conversationId)) {
+        return { commit: false, value: false };
+      }
+      this.updateReviewChain(conversationId, {
+        fix_round: 0,
+        confirm_left: null,
+        chain_pending: 0,
+        code_edited: 0,
+        item_confirm_complete: 0,
+      });
+      return { commit: true, value: true };
+    });
+  }
+
   upsertSession(
     partial: Partial<SessionRow> & {
       conversation_id: string;
@@ -122,18 +255,28 @@ export class StateStore {
     const ts = nowIso();
     const existing = this.getSession(partial.conversation_id);
     if (!existing) {
+      // Only renameSession may grant source=user (validated title). Upsert must not.
+      const insertSource =
+        partial.session_title_source === "user"
+          ? "platform"
+          : (partial.session_title_source ?? null);
       this.db
         .prepare(
           `INSERT INTO sessions (
-            conversation_id, platform, track_id, checklist_path, phase, armed, paused,
+            conversation_id, platform, session_title, session_title_source, title_updated_at,
+            track_id, track_title, checklist_path, phase, armed, paused,
             paused_reason, pending_action, track_candidates_json,
             project_root, code_root, last_active_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           partial.conversation_id,
           partial.platform ?? "cursor",
+          partial.session_title ?? null,
+          insertSource,
+          partial.title_updated_at ?? null,
           partial.track_id ?? "_pending",
+          partial.track_title ?? null,
           partial.checklist_path ?? "",
           partial.phase ?? "idle",
           partial.armed ?? 0,
@@ -148,10 +291,22 @@ export class StateStore {
         );
     } else {
       const merged = { ...existing, ...partial, updated_at: ts, last_active_at: ts };
+      // Preserve user titles at UPDATE time (not via a stale in-memory read):
+      // concurrent renameSession can flip source to 'user' between getSession and
+      // this write; CASE keeps the row's current user title fields atomically.
+      // Upsert must not elevate source to 'user' either (ELSE bind coerced).
+      const upsertSource =
+        merged.session_title_source === "user"
+          ? "platform"
+          : merged.session_title_source;
       this.db
         .prepare(
           `UPDATE sessions SET
-            platform = ?, session_title = ?, track_id = ?, track_title = ?, checklist_path = ?,
+            platform = ?,
+            session_title = CASE WHEN session_title_source = 'user' THEN session_title ELSE ? END,
+            session_title_source = CASE WHEN session_title_source = 'user' THEN session_title_source ELSE ? END,
+            title_updated_at = CASE WHEN session_title_source = 'user' THEN title_updated_at ELSE ? END,
+            track_id = ?, track_title = ?, checklist_path = ?,
             phase = ?, armed = ?, paused = ?, paused_reason = ?, pending_action = ?,
             track_candidates_json = ?, project_root = ?, code_root = ?,
             error_count = ?, idle_stop_count = ?, last_active_at = ?, updated_at = ?
@@ -160,6 +315,8 @@ export class StateStore {
         .run(
           merged.platform,
           merged.session_title,
+          upsertSource,
+          merged.title_updated_at,
           merged.track_id,
           merged.track_title,
           merged.checklist_path,
