@@ -652,6 +652,8 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true], // install here, ready
         selects: [
           "en",
+          "cursor",
+          "ide",
           "plans",
           "commit",
           "skip",
@@ -684,6 +686,8 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "zh-CN",
+          "cursor",
+          "ide",
           "custom",
           "local-only",
           "enable",
@@ -707,6 +711,8 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "en",
+          "cursor",
+          "ide",
           "plans",
           "commit",
           "skip",

@@ -103,26 +103,6 @@ function cancelOut(p: InitPrompts, message: string): null {
   return null;
 }
 
-/** Skip the prompt when only one choice exists (still logs the selection). */
-async function selectOrOnly<T>(
-  p: InitPrompts,
-  opts: {
-    message: string;
-    options: SelectOption<T>[];
-    initialValue?: T;
-  },
-): Promise<T | symbol> {
-  if (opts.options.length === 0) {
-    throw new Error(`selectOrOnly: no options for "${opts.message}"`);
-  }
-  if (opts.options.length === 1) {
-    const only = opts.options[0]!;
-    p.log.info(`${opts.message}: ${only.label}`);
-    return only.value;
-  }
-  return p.select(opts);
-}
-
 function readProjectLocale(projectRoot: string): InitLocale {
   const configPath = path.join(projectRoot, ".autopilot", "config.yml");
   try {
@@ -275,7 +255,7 @@ export async function collectWizardAnswers(
     return cancelOut(p, "Cancelled.");
   }
 
-  const platform = await selectOrOnly<"cursor">(p, {
+  const platform = await p.select<"cursor">({
     message: "AI platform",
     options: [{ value: "cursor", label: "Cursor" }],
     initialValue: "cursor",
@@ -284,7 +264,7 @@ export async function collectWizardAnswers(
     return cancelOut(p, "Cancelled.");
   }
 
-  const surface = await selectOrOnly<"ide">(p, {
+  const surface = await p.select<"ide">({
     message: "Surface",
     options: [
       {
