@@ -2025,15 +2025,26 @@ var HARNESS_FOLLOWUP_PREFIXES = [
   "\u81EA\u5BA1\u4FEE\u590D",
   "\u81EA\u5BA1\u786E\u8BA4",
   "\u63A8\u8FDB\u4E0B\u4E00\u9879",
-  "\u5168\u90E8\u5B8C\u6210"
+  "\u5168\u90E8\u5B8C\u6210",
+  // Match zh recover/stuck templates (fullwidth colon) — bare「恢复」is too broad.
+  "\u6062\u590D\uFF1A",
+  "\u5361\u4F4F\uFF1A",
+  // External usage-limit continue (account-pool); must not clear Autopilot chain.
+  "\u3010Hook\xB7\u7EED\u8DD1\u3011"
 ];
-function isHarnessFollowupMessage(text) {
-  const line = text.trim().split(/\r?\n/)[0] ?? "";
-  return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
-}
 function stripUserQuery(prompt) {
   const m = prompt.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
   return (m?.[1] ?? prompt).trim();
+}
+function isHarnessFollowupMessage(text) {
+  const body = stripUserQuery(text);
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("<") && line.includes(">")) continue;
+    return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
+  }
+  return false;
 }
 function firstLine(text) {
   return text.trim().split(/\r?\n/)[0]?.trim() ?? "";

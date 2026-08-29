@@ -60,16 +60,28 @@ export const HARNESS_FOLLOWUP_PREFIXES = [
   "自审确认",
   "推进下一项",
   "全部完成",
+  // Match zh recover/stuck templates (fullwidth colon) — bare「恢复」is too broad.
+  "恢复：",
+  "卡住：",
+  // External usage-limit continue (account-pool); must not clear Autopilot chain.
+  "Briefly inform the user about the task result.",
 ];
-
-export function isHarnessFollowupMessage(text: string): boolean {
-  const line = text.trim().split(/\r?\n/)[0] ?? "";
-  return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
-}
 
 function stripUserQuery(prompt: string): string {
   const m = prompt.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
   return (m?.[1] ?? prompt).trim();
+}
+
+export function isHarnessFollowupMessage(text: string): boolean {
+  // Cursor may wrap the prompt in <user_query> and/or a leading <timestamp> line.
+  const body = stripUserQuery(text);
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("<") && line.includes(">")) continue;
+    return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
+  }
+  return false;
 }
 
 function firstLine(text: string): string {
