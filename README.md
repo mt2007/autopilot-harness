@@ -16,9 +16,12 @@ npx autopilot-harness session list
 npx autopilot-harness locale set zh-CN
 npx autopilot-harness upgrade --dry-run
 npx autopilot-harness upgrade
+npx autopilot-harness uninstall --dry-run
+npx autopilot-harness uninstall
+npx autopilot-harness uninstall --purge-all
 ```
 
-`init` writes `.autopilot/`, merges `.cursor/hooks.json`, installs skills/workflows, and prints a cheat sheet. `status` / `doctor` report pin, sessions, schema, and hooks (`doctor --prune-stale` purges old sessions). `session list|rename|purge|reset-review` manages SQLite sessions. `locale set` rewrites skill descriptions and stock triggers (custom triggers kept). `upgrade` refreshes those files, appends missing config keys, and migrates `state.db` (with backup). Autopilot **stop** is written with `"loop_limit": null` for Cursor’s default auto-followup cap (5); other hosts (Claude Code block cap, Runner budgets, …) have different breakers — see `docs/architecture.md`.
+`init` writes `.autopilot/`, merges `.cursor/hooks.json`, installs skills/workflows, and prints a cheat sheet. `status` / `doctor` report pin, sessions, schema, and hooks (`doctor --prune-stale` purges old sessions). `session list|rename|purge|reset-review` manages SQLite sessions. `locale set` rewrites skill descriptions and stock triggers (custom triggers kept). `upgrade` refreshes those files, appends missing config keys, and migrates `state.db` (with backup). `uninstall` strips Autopilot hooks and removes skills/workflows/bin/pin (keeps `plans/` and, by default, `config.yml` / `state.db`; `--purge-all` removes `.autopilot/` too). Autopilot **stop** is written with `"loop_limit": null` for Cursor’s default auto-followup cap (5); other hosts (Claude Code block cap, Runner budgets, …) have different breakers — see `docs/architecture.md`.
 
 ## Monorepo packages
 

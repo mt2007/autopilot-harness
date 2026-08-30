@@ -39,6 +39,8 @@ import {
 
 export {
   mergeHooksJson,
+  stripAutopilotHooks,
+  isAutopilotCommand,
   countAutopilotDuplicates,
   validateHooksShape,
   hasCompleteAutopilotHooks,
@@ -50,7 +52,8 @@ export type { InitYesOptions, InitResult, HooksFile } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const SKILL_NAMES = [
+/** Skills written by init; uninstall must remove the same set. */
+export const AUTOPILOT_SKILL_NAMES = [
   "autopilot-on",
   "autopilot-run",
   "autopilot-off",
@@ -58,10 +61,14 @@ const SKILL_NAMES = [
   "autopilot-replan",
 ] as const;
 
-const WORKFLOW_FILES = [
+/** Workflow docs written by init; uninstall must remove the same set. */
+export const AUTOPILOT_WORKFLOW_FILES = [
   "autopilot-planning.md",
   "autopilot-executing.md",
 ] as const;
+
+const SKILL_NAMES = AUTOPILOT_SKILL_NAMES;
+const WORKFLOW_FILES = AUTOPILOT_WORKFLOW_FILES;
 
 function resolvePackageRoots(): { cliRoot: string; templatesRoot: string } {
   // src/init → ../../ = packages/cli; dist/init → ../../ = packages/cli

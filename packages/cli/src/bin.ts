@@ -17,6 +17,7 @@ import {
   setProjectLocale,
   readStaleAfterHours,
   upgradeProject,
+  uninstallProject,
 } from "./index.js";
 import { loadLocale } from "@autopilot-harness/i18n";
 
@@ -94,6 +95,49 @@ program
       }
     },
   );
+
+program
+  .command("uninstall")
+  .description(
+    "Remove Autopilot wiring from this project (keeps plans/; config/state by default)",
+  )
+  .option("--dry-run", "Preview actions without deleting")
+  .option(
+    "--purge-all",
+    "Also remove .autopilot/ (config.yml + state.db). Never deletes plans/",
+  )
+  .action((opts: { dryRun?: boolean; purgeAll?: boolean }) => {
+    const result = uninstallProject({
+      projectRoot: process.cwd(),
+      dryRun: Boolean(opts.dryRun),
+      purgeAll: Boolean(opts.purgeAll),
+    });
+    if (!result.ok) {
+      console.error(`uninstall failed: ${result.error}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(
+      result.dryRun
+        ? `${PREFERRED_NAME} uninstall dry-run:`
+        : `${PREFERRED_NAME} uninstall:`,
+    );
+    for (const a of result.actions) {
+      console.log(`  · ${a}`);
+    }
+    if (!result.dryRun) {
+      for (const f of result.removed) {
+        console.log(`  − ${f}`);
+      }
+    }
+    if (result.kept.length > 0) {
+      console.log("");
+      console.log("── kept ────────────────────────────────");
+      for (const k of result.kept) {
+        console.log(`  · ${k}`);
+      }
+    }
+  });
 
 program
   .command("upgrade")

@@ -3,6 +3,7 @@ export {
   installInitYes,
   preflightForceRefresh,
   mergeHooksJson,
+  stripAutopilotHooks,
   countAutopilotDuplicates,
   validateHooksShape,
   hasCompleteAutopilotHooks,
@@ -17,6 +18,11 @@ export { formatStatus, runDoctor, readPinVersion, readStaleAfterHours, hasGlobal
 export type { DoctorOptions, DoctorResult } from "./status-doctor.js";
 export { upgradeProject } from "./upgrade.js";
 export type { UpgradeOptions, UpgradeResult } from "./upgrade.js";
+export { uninstallProject } from "./uninstall.js";
+export type {
+  UninstallOptions,
+  UninstallResult,
+} from "./uninstall.js";
 export {
   mergeConfigYamlMissingKeys,
   mergeMissingKeys,

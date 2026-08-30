@@ -29,7 +29,8 @@ export function autopilotStopHasUnlimitedLoop(hooks: HooksFile): boolean {
   });
 }
 
-function isAutopilotCommand(cmd: string | undefined): boolean {
+/** True when a hook command belongs to Autopilot (merge/strip/uninstall). */
+export function isAutopilotCommand(cmd: string | undefined): boolean {
   return (
     typeof cmd === "string" && cmd.includes("autopilot-harness-hook.mjs")
   );
@@ -94,6 +95,27 @@ export function mergeHooksJson(existing: HooksFile | null): HooksFile {
     base.hooks[event] = kept;
   }
 
+  return base;
+}
+
+/**
+ * Remove Autopilot hook entries from every event list; keep foreign hooks.
+ * Does not delete the hooks.json file — caller decides write/unlink.
+ */
+export function stripAutopilotHooks(existing: HooksFile): HooksFile {
+  const base: HooksFile = {
+    version: existing.version ?? 1,
+    hooks: { ...(existing.hooks ?? {}) },
+  };
+  const shapeError = validateHooksShape(base);
+  if (shapeError) {
+    throw new Error(shapeError);
+  }
+
+  for (const [event, value] of Object.entries(base.hooks)) {
+    if (!Array.isArray(value)) continue;
+    base.hooks[event] = value.filter((h) => !isAutopilotCommand(h?.command));
+  }
   return base;
 }
 
