@@ -11,13 +11,16 @@ import {
   countUnchecked,
   evaluateVerifyReport,
   firstUnchecked,
+  getCurrentSchemaVersion,
   isHarnessFollowupMessage,
   isLastUnchecked,
   isProductCodeEdit,
+  isRealpathInsideProject,
   isRunnableTrack,
   listTracks,
   migrate,
   parseChecklist,
+  parseSchemaVersionValue,
   parseTrigger,
   ReviewEngine,
   StateStore,
@@ -69,6 +72,7 @@ function engine(store: StateStore, root: string, overrides?: Partial<Constructor
     verifyEnabled: false,
     verifyCommands: [],
     maxIdleStops: 5,
+    maxErrorsBeforePause: 3,
     projectRoot: root,
     ...overrides,
   });
@@ -252,13 +256,38 @@ describe("F-CED code-edit-detector", () => {
 });
 
 describe("F-MIG migrate", () => {
-  it("empty db runs 001 → version 1; migrate is idempotent", () => {
+  it("empty db runs migrations → latest; migrate is idempotent", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
-    expect(store.getSchemaVersion()).toBe(1);
-    expect(migrate(store.db)).toBe(1);
-    expect(store.getSchemaVersion()).toBe(1);
+    expect(store.getSchemaVersion()).toBe(2);
+    expect(migrate(store.db)).toBe(2);
+    expect(store.getSchemaVersion()).toBe(2);
     store.close();
+  });
+
+  it("corrupt schema_version is read as 0 (not NaN / not treated as latest)", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    store.db
+      .prepare(
+        "INSERT OR REPLACE INTO _schema_meta (key, value) VALUES ('schema_version', ?)",
+      )
+      .run("nope");
+    expect(store.getSchemaVersion()).toBe(0);
+    expect(getCurrentSchemaVersion(store.db)).toBe(0);
+    store.close();
+  });
+
+  it("parseSchemaVersionValue rejects partial / non-integer tokens", () => {
+    expect(parseSchemaVersionValue(null)).toBe(0);
+    expect(parseSchemaVersionValue("")).toBe(0);
+    expect(parseSchemaVersionValue("nope")).toBe(0);
+    expect(parseSchemaVersionValue("-1")).toBe(0);
+    expect(parseSchemaVersionValue("2.9")).toBe(0);
+    expect(parseSchemaVersionValue("2abc")).toBe(0);
+    expect(parseSchemaVersionValue(" 2 ")).toBe(2);
+    expect(parseSchemaVersionValue("0")).toBe(0);
+    expect(parseSchemaVersionValue(2)).toBe(2);
   });
 });
 
@@ -330,6 +359,79 @@ describe("review-engine P0 matrix", () => {
     });
     // loopCount 0 and no pending → E0
     expect(eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })).toBeNull();
+  });
+
+  it("RESUME / checklist parse ignore poisoned session.project_root", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-poison-root-"));
+    try {
+      // Bypass upsert sanitizer — simulate a legacy DB row.
+      store.db
+        .prepare(
+          `UPDATE sessions SET project_root = ?, code_root = ?, paused = 1,
+            phase = 'executing', armed = 0 WHERE conversation_id = ?`,
+        )
+        .run(outside, outside, "c1");
+      expect(store.getSession("c1")!.project_root).toBe(outside);
+      // Checklist still under the real project — must re-arm using store root.
+      const sess = applyResume(store, "c1");
+      expect(sess?.paused).toBe(0);
+      expect(sess?.armed).toBe(1);
+
+      // Outside checklist + poisoned root must not count as in-project work.
+      const evilCp = path.join(outside, "checklist.md");
+      fs.writeFileSync(evilCp, `- [ ] x — X\n`);
+      store.db
+        .prepare(
+          `UPDATE sessions SET project_root = ?, checklist_path = ?, paused = 1,
+            phase = 'executing', armed = 0 WHERE conversation_id = ?`,
+        )
+        .run(outside, evilCp, "c1");
+      const blocked = applyResume(store, "c1");
+      expect(blocked?.armed).toBe(0);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("checklist containment prefers store root over mismatched config.projectRoot", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-cfg-root-"));
+    try {
+      const evilCp = path.join(outside, "checklist.md");
+      fs.writeFileSync(evilCp, `- [ ] secret — Secret\n`);
+      // Engine config points outside; store stays on real project.
+      const eng = engine(store, outside);
+      store.db
+        .prepare(
+          `UPDATE sessions SET checklist_path = ?, armed = 1, phase = 'executing',
+            paused = 0 WHERE conversation_id = ?`,
+        )
+        .run(evilCp, "c1");
+      store.updateReviewChain("c1", {
+        code_edited: 0,
+        chain_pending: 1,
+        confirm_left: 0,
+        item_confirm_complete: 0,
+      });
+      // E5 must not advance/done from outside checklist under evil config root.
+      expect(stop(eng, "c1")).toBeNull();
+
+      // In-project checklist still works despite evil config root.
+      store.db
+        .prepare(
+          `UPDATE sessions SET checklist_path = ? WHERE conversation_id = ?`,
+        )
+        .run(cp, "c1");
+      store.updateReviewChain("c1", {
+        code_edited: 0,
+        chain_pending: 1,
+        confirm_left: 0,
+        item_confirm_complete: 0,
+      });
+      const ok = stop(eng, "c1");
+      expect(ok?.kind).toBe("advance");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("F-ICC: E5c FAIL sets item_confirm_complete; fix skips E3; PASS advances", () => {
@@ -407,7 +509,7 @@ describe("review-engine P0 matrix", () => {
     expect(stop(eng, "c1")).toBeNull();
   });
 
-  it("F-ERR: error×3 → repeated_errors; completed/RESUME clear error_count", () => {
+  it("F-ERR: error×N (maxErrorsBeforePause) → repeated_errors; completed/RESUME clear error_count", () => {
     const eng = engine(store, root);
     eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
     eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
@@ -426,6 +528,35 @@ describe("review-engine P0 matrix", () => {
     store.updateReviewChain("c1", { code_edited: 1 });
     stop(eng, "c1"); // completed fix → noteCompletedOk
     expect(store.getSession("c1")!.error_count).toBe(0);
+  });
+
+  it("F-ERR-UNLIMITED: maxErrorsBeforePause=0 never pauses on errors", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    for (let i = 0; i < 10; i++) {
+      const action = eng.handleStop({
+        conversationId: "c1",
+        status: "error",
+        loopCount: 0,
+      });
+      expect(action?.kind).toBe("recover");
+    }
+    expect(store.getSession("c1")!.paused).toBe(0);
+    expect(store.getSession("c1")!.armed).toBe(1);
+    expect(store.getSession("c1")!.error_count).toBe(10);
+  });
+
+  it("F-ERR-5: maxErrorsBeforePause=5 pauses on 5th error", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 5 });
+    for (let i = 0; i < 4; i++) {
+      expect(
+        eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 })
+          ?.kind,
+      ).toBe("recover");
+    }
+    expect(store.getSession("c1")!.paused).toBe(0);
+    eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
+    expect(store.getSession("c1")!.paused_reason).toBe("repeated_errors");
+    expect(store.getSession("c1")!.error_count).toBe(5);
   });
 
   it("F-ITEM: E5b advance zeroes error_count", () => {
@@ -575,9 +706,146 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
     expect(isRunnableTrack(runnable[0]!)).toBe(true);
 
     expect(
-      canEnterExecuting({ slug: "_pending", checklistPath: "", paused: false }).ok,
+      canEnterExecuting({
+        slug: "_pending",
+        checklistPath: "",
+        paused: false,
+        projectRoot: root,
+      }).ok,
     ).toBe(false);
     store.close();
+  });
+
+  it("listTracks: symlinked plan.md falls back to slug; symlinked checklist counts 0", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const trackDir = path.join(root, "plans", "auth");
+    fs.mkdirSync(trackDir, { recursive: true });
+    const realPlan = path.join(root, "real-plan.md");
+    fs.writeFileSync(realPlan, `# Secret Title\n`);
+    fs.symlinkSync(realPlan, path.join(trackDir, "plan.md"));
+    const realCl = path.join(root, "real-cl.md");
+    fs.writeFileSync(realCl, `- [ ] a — A\n`);
+    fs.symlinkSync(realCl, path.join(trackDir, "checklist.md"));
+    const tracks = listTracks(root, store, "all");
+    const auth = tracks.find((t) => t.slug === "auth");
+    expect(auth).toBeTruthy();
+    expect(auth!.title).toBe("auth");
+    expect(auth!.checklistTotal).toBe(0);
+    expect(auth!.checklistDone).toBe(0);
+    expect(
+      canEnterExecuting({
+        slug: "auth",
+        checklistPath: path.join(trackDir, "checklist.md"),
+        paused: false,
+        projectRoot: root,
+      }).ok,
+    ).toBe(false);
+    store.close();
+  });
+
+  it("listTracks: refuses plansDir that is a symlink escape", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-out-"));
+    try {
+      const evilTrack = path.join(outside, "leaked");
+      fs.mkdirSync(evilTrack, { recursive: true });
+      fs.writeFileSync(path.join(evilTrack, "plan.md"), `# Outside Secret\n`);
+      fs.writeFileSync(path.join(evilTrack, "checklist.md"), `- [ ] x — X\n`);
+      fs.symlinkSync(outside, path.join(root, "plans"));
+      const tracks = listTracks(root, store, "all");
+      expect(tracks).toEqual([]);
+      expect(tracks.some((t) => t.title.includes("Outside"))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+    store.close();
+  });
+
+  it("listTracks: refuses plansDir relative path that escapes the project", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const sibling = fs.mkdtempSync(path.join(os.tmpdir(), "ap-sib-"));
+    try {
+      const evilTrack = path.join(sibling, "leaked");
+      fs.mkdirSync(evilTrack, { recursive: true });
+      fs.writeFileSync(path.join(evilTrack, "plan.md"), `# Sibling Secret\n`);
+      fs.writeFileSync(path.join(evilTrack, "checklist.md"), `- [ ] y — Y\n`);
+      // plansDir = ../<siblingBasename> relative to root
+      const rel = path.relative(root, sibling);
+      expect(rel.startsWith("..")).toBe(true);
+      const tracks = listTracks(root, store, "all", rel);
+      expect(tracks).toEqual([]);
+    } finally {
+      fs.rmSync(sibling, { recursive: true, force: true });
+    }
+    store.close();
+  });
+
+  it("listTracks: refuses absolute / backslash / tilde plansDir", () => {
+    const root = tmpRoot();
+    expect(listTracks(root, undefined, "all", "/tmp/plans")).toEqual([]);
+    expect(listTracks(root, undefined, "all", "~/.plans")).toEqual([]);
+    expect(listTracks(root, undefined, "all", "plans\\evil")).toEqual([]);
+    expect(listTracks(root, undefined, "all", "plans\nfoo")).toEqual([]);
+  });
+
+  it("canEnterExecuting: refuses checklist whose realpath escapes the project", () => {
+    const root = tmpRoot();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-cl-"));
+    try {
+      const cp = path.join(outside, "checklist.md");
+      fs.writeFileSync(cp, `- [ ] z — Z\n`);
+      expect(
+        canEnterExecuting({
+          slug: "auth",
+          checklistPath: cp,
+          paused: false,
+          projectRoot: root,
+        }),
+      ).toEqual({ ok: false, reason: "checklist outside project" });
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("listTracks: padded projectRoot still lists in-project tracks", () => {
+    const root = tmpRoot();
+    const trackDir = path.join(root, "plans", "auth");
+    fs.mkdirSync(trackDir, { recursive: true });
+    fs.writeFileSync(path.join(trackDir, "checklist.md"), `- [ ] a — A\n`);
+    fs.writeFileSync(path.join(trackDir, "plan.md"), `# Auth\n`);
+    const tracks = listTracks(`  ${root}  `, undefined, "all");
+    expect(tracks.map((t) => t.slug)).toEqual(["auth"]);
+  });
+
+  it("isRealpathInsideProject: relative target resolves against projectRoot not cwd", () => {
+    const root = tmpRoot();
+    const trackDir = path.join(root, "plans", "auth");
+    fs.mkdirSync(trackDir, { recursive: true });
+    const cp = path.join(trackDir, "checklist.md");
+    fs.writeFileSync(cp, `- [ ] a — A\n`);
+    const prev = process.cwd();
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "ap-cwd-"));
+    try {
+      process.chdir(other);
+      // Relative to project — must succeed even when cwd is elsewhere.
+      expect(isRealpathInsideProject(root, "plans/auth/checklist.md")).toBe(
+        true,
+      );
+      // Padded projectRoot should still resolve (trim).
+      expect(
+        isRealpathInsideProject(`  ${root}  `, "plans/auth/checklist.md"),
+      ).toBe(true);
+      // Absolute outside still refused.
+      const evil = path.join(other, "evil.md");
+      fs.writeFileSync(evil, "x");
+      expect(isRealpathInsideProject(root, evil)).toBe(false);
+    } finally {
+      process.chdir(prev);
+      fs.rmSync(other, { recursive: true, force: true });
+    }
   });
 
   it("F-E8: RUN/ON do not clear chain; normal message clears chain_pending", () => {
@@ -585,7 +853,12 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
     const store = StateStore.openMemory(root);
     const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
     sessionExecuting(store, root, "c1", cp);
-    store.updateReviewChain("c1", { chain_pending: 1, confirm_left: 2 });
+    store.updateReviewChain("c1", {
+      chain_pending: 1,
+      confirm_left: 2,
+      pending_followup: "Review confirm 3/5 undelivered",
+      pending_followup_at: new Date().toISOString(),
+    });
 
     handleBeforeSubmitPrompt(
       store,
@@ -599,7 +872,11 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
       { conversation_id: "c1", prompt: "hello world ordinary chat" },
       root,
     );
-    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+    const afterChat = store.getReviewChain("c1")!;
+    expect(afterChat.chain_pending).toBe(0);
+    // Must keep undelivered pending — wiping it would let the next stop skip a lens.
+    expect(afterChat.pending_followup).toBe("Review confirm 3/5 undelivered");
+    expect(afterChat.confirm_left).toBe(2);
 
     expect(isHarnessFollowupMessage("Review fix round 1: ...")).toBe(true);
     expect(isHarnessFollowupMessage("Briefly inform the user about the task result.继续")).toBe(true);
@@ -668,6 +945,35 @@ describe("F-HOOK port-cursor", () => {
     });
     expect(out.loop).toBe(true);
     expect(out.followup_message).toBeTruthy();
+
+    // Pause-threshold upsert failure → stuck text without loop (must not spin).
+    store.clearPendingFollowup("c1");
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      error_count: 2,
+    });
+    const engPause = engine(store, root, { maxErrorsBeforePause: 3 });
+    const origUpsert = store.upsertSession.bind(store);
+    store.upsertSession = (() => {
+      throw new Error("database is locked");
+    }) as typeof store.upsertSession;
+    try {
+      const halted = handleStop(engPause, {
+        conversation_id: "c1",
+        status: "error",
+        loop_count: 0,
+      });
+      expect(halted.followup_message).toBeTruthy();
+      expect(halted.loop).toBeUndefined();
+      expect(store.getReviewChain("c1")?.pending_followup ?? null).toBeNull();
+    } finally {
+      store.upsertSession = origUpsert;
+    }
 
     const blocked = handleBeforeSubmitPrompt(
       store,

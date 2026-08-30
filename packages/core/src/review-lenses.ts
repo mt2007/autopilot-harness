@@ -1,4 +1,6 @@
-/** Confirm lenses (v0.1). Indices are 1-based. Light mode (rounds=3) uses [1,2,5]. */
+/** Confirm lenses (v0.1). Indices are 1-based. Light mode (rounds=3) uses [1,2,5].
+ * Default lens order: correctness → boundaries → concurrency → security → tests.
+ */
 
 export interface ConfirmLens {
   key: string;
@@ -9,29 +11,33 @@ export interface ConfirmLens {
 export const CONFIRM_LENSES: Record<number, ConfirmLens> = {
   1: {
     key: "scope-correctness",
-    title: "Scope & correctness",
+    title: "Correctness & invariants",
     focus:
-      "Within the current checklist item scope: logic, invariants, alignment with plan.md; out-of-scope staging is HIGH.",
+      "Focus on logic, state-machine/flow coherence, pre/post-conditions and business invariants; do not turn this round into a null/concurrency/security/tests mix.",
   },
   2: {
     key: "boundaries",
-    title: "Boundaries & errors",
-    focus: "Null/empty, bounds, error paths, failure rollback.",
+    title: "Nulls, boundaries & error paths",
+    focus:
+      "Focus on null/empty collections, bounds, illegal input, timeout/failure returns, idempotency and safe retries; do not repeat the prior pure-logic walkthrough.",
   },
   3: {
-    key: "security",
-    title: "Security",
-    focus: "Authz, injection, sensitive data, trust boundaries.",
+    key: "concurrency",
+    title: "Concurrency, races & partial failure",
+    focus:
+      "Focus on multi-thread/multi-instance, locks/leases, races, transaction boundaries, dirty state after mid-failure and compensation; do not repeat null or security checklists.",
   },
   4: {
-    key: "concurrency",
-    title: "Concurrency",
-    focus: "Races, transactions, partial failure; N/A if inapplicable.",
+    key: "security",
+    title: "Security & trust boundaries",
+    focus:
+      "Focus on authz/privilege, injection, sensitive data leaks, secrets/config, untrusted input, and over-exposed errors; do not make this another correctness re-read.",
   },
   5: {
     key: "tests-regression",
-    title: "Tests & regression",
-    focus: "Missing tests, weak asserts, contract drift; read-only, no code changes.",
+    title: "Test gaps & regression",
+    focus:
+      "Focus on missing critical-path tests, weak asserts, contract drift vs existing behavior/APIs, and likely regression points; read-only — record gaps, do not change code to add tests; do not vaguely claim full coverage.",
   },
 };
 

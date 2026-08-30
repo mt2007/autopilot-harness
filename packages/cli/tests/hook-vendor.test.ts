@@ -149,7 +149,112 @@ describe("hook vendor runtime", () => {
     expect(out.loop).toBe(true);
     expect(out.followup_message).toBeTruthy();
     expect(out.followup_message).toMatch(/1\/3/);
-    expect(out.followup_message).toMatch(/自审确认|范围与正确性/);
+    expect(out.followup_message).toMatch(/自审确认|正确性与不变量/);
+  });
+
+  it("beforeSubmitPrompt ordinary chat keeps pending_followup (E8 vendor)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const cid = "hook-e8-aaaa-bbbb-cccc-ddddeeee0003";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    store.updateReviewChain(cid, {
+      chain_pending: 1,
+      confirm_left: 2,
+      pending_followup: "Review confirm 3/5 undelivered vendor-e8",
+      pending_followup_at: new Date().toISOString(),
+    });
+    store.close();
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const proc = spawnSync(
+      process.execPath,
+      [hook, "--event", "beforeSubmitPrompt"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          prompt: "hello ordinary chat",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(proc.status).toBe(0);
+
+    const store2 = new StateStore(root);
+    const chain = store2.getReviewChain(cid)!;
+    expect(chain.chain_pending).toBe(0);
+    expect(chain.pending_followup).toBe(
+      "Review confirm 3/5 undelivered vendor-e8",
+    );
+    expect(chain.confirm_left).toBe(2);
+    store2.close();
+  });
+
+  it("shipped vendor savePendingFollowup rejects NUL pending", () => {
+    const runtime = path.join(
+      process.cwd(),
+      "packages/cli/assets/vendor/runtime.mjs",
+    );
+    const src = fs.readFileSync(runtime, "utf8");
+    expect(src).toMatch(/msg\.includes\("\\0"\)/);
+    expect(src).toMatch(/pending_followup\.includes\("\\0"\)/);
+    // ensureReviewChain must re-read chain after session check (not stale pre-check row).
+    expect(src).toMatch(
+      /NOT EXISTS \(SELECT 1 FROM sessions WHERE conversation_id = \?\)[\s\S]*?let ensured = this\.getReviewChain\(conversationId\)/,
+    );
+    expect(src).toMatch(
+      /upsertSession\(partial\) \{\s*if \(this\.isInvalidConversationId\(partial\.conversation_id\)\)/,
+    );
+    expect(src).toMatch(/isConversationIdOk\(input\.conversationId\)/);
+    expect(src).toMatch(/msg\.includes\("No session for conversation"\)/);
+    expect(src).toMatch(/msg\.includes\("Invalid conversation id"\)/);
+    expect(src).toMatch(/afterFollowupCommitted/);
+    // handleErrorStop: pause-threshold upsert failure → column pause + neutralize.
+    expect(src).toMatch(/pauseSessionForRepeatedErrors\(/);
+    expect(src).toMatch(/neutralizeReviewChain\(session\.conversation_id\)/);
+    expect(src).toMatch(/disarmSession\(session\.conversation_id\)/);
+    // Halt package: atomic exclusiveWrite first; per-step try only in catch fallback.
+    expect(src).toMatch(
+      /exclusiveWrite\(\(\) => \{\s*this\.store\.pauseSessionForRepeatedErrors/,
+    );
+    expect(src).toMatch(
+      /paused_reason = COALESCE\(paused_reason, 'repeated_errors'\)/,
+    );
+    expect(src).toMatch(
+      /pending_redeliver_at = \?, chain_pending = 1, updated_at = \?[\s\S]*?AND pending_followup IS NOT NULL[\s\S]*?AND trim\(pending_followup\) != ''/,
+    );
+    expect(src).toMatch(
+      /kind: "stuck",\s*message: this\.render\("stuck", \{\}\),\s*loop: false/,
+    );
+    expect(src).toMatch(
+      /if \(!action\.loop\) \{\s*return \{ followup_message: action\.message \};/,
+    );
   });
 
   it("doctor FAILs when vendor runtime is missing", () => {

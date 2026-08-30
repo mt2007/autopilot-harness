@@ -37,6 +37,8 @@ export interface CursorStopPayload {
   status?: string;
   loop_count?: number;
   loopCount?: number;
+  transcript_path?: string;
+  transcriptPath?: string;
 }
 
 export interface CursorPortConfig {
@@ -126,7 +128,7 @@ export function handleBeforeSubmitPrompt(
     return { continue: true };
   }
 
-  // E8: non-harness user message clears chain_pending only
+  // E8: non-harness user message clears chain_pending only (keep pending_followup).
   if (!isHarnessFollowupMessage(prompt)) {
     store.clearChainPending(conversationId);
   }
@@ -156,13 +158,19 @@ export function handleStop(
   const status =
     statusRaw === "error" || statusRaw === "aborted" ? statusRaw : "completed";
   const loopCount = payload.loop_count ?? payload.loopCount ?? 0;
+  const transcriptPath = payload.transcript_path ?? payload.transcriptPath;
 
   const action: FollowupAction | null = engine.handleStop({
     conversationId,
     status,
     loopCount,
+    transcriptPath,
   });
 
   if (!action) return {};
+  // Honor loop:false (e.g. pause-threshold upsert failed → stuck halt text).
+  if (!action.loop) {
+    return { followup_message: action.message };
+  }
   return { followup_message: action.message, loop: true };
 }

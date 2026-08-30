@@ -120,7 +120,14 @@ function copyVendorDir(
     );
   }
   const runtimeSrc = path.join(vendorRoot, "runtime.mjs");
-  const migSrc = path.join(vendorRoot, "migrations", "001_initial.sql");
+  const migSrcDir = path.join(vendorRoot, "migrations");
+  const migFiles = fs
+    .readdirSync(migSrcDir)
+    .filter((f) => /^\d{3}_.+\.sql$/.test(f))
+    .sort();
+  if (!migFiles.includes("001_initial.sql")) {
+    throw new Error("Missing vendor/migrations/001_initial.sql");
+  }
 
   const destVendor = path.join(destBin, "vendor");
   mkdirRealDirSync(destVendor, ".autopilot/bin/vendor/", projectRoot);
@@ -133,13 +140,10 @@ function copyVendorDir(
     ".autopilot/bin/vendor/migrations/",
     projectRoot,
   );
-  const migDest = path.join(migDestDir, "001_initial.sql");
-  assertNotSymlink(migDest, ".autopilot/bin/vendor/migrations/001_initial.sql");
 
-  // Stage both temps first so a mid-stage failure does not wipe a good prior pair.
-  // Commit migration before runtime: a torn upgrade then keeps old runtime + new
+  // Stage temps first so a mid-stage failure does not wipe a good prior pair.
+  // Commit migrations before runtime: a torn upgrade then keeps old runtime + new
   // SQL (still loadable); the reverse (new runtime + old SQL) is worse for migrate.
-  // Exclusive staging: COPYFILE_EXCL refuses a pre-planted symlink (no write-through).
   assertParentDirInProject(
     projectRoot,
     runtimeDest,
@@ -147,25 +151,35 @@ function copyVendorDir(
   );
   assertParentDirInProject(
     projectRoot,
-    migDest,
+    path.join(migDestDir, "001_initial.sql"),
     ".autopilot/bin/vendor/migrations/",
   );
-  const runtimeTmp = `${runtimeDest}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
-  const migTmp = `${migDest}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+
+  const token = `${process.pid}.${randomBytes(8).toString("hex")}`;
+  const runtimeTmp = `${runtimeDest}.${token}.tmp`;
+  const migTmps: { tmp: string; dest: string; label: string }[] = [];
+  for (const f of migFiles) {
+    const dest = path.join(migDestDir, f);
+    assertNotSymlink(dest, `.autopilot/bin/vendor/migrations/${f}`);
+    migTmps.push({
+      tmp: `${dest}.${token}.tmp`,
+      dest,
+      label: `vendor/migrations/${f}`,
+    });
+  }
+
   try {
-    // Package assets: still nofollow — a swapped symlink at src must not
-    // read-through into project vendor files.
-    copyFileNoFollowExclSync(
-      runtimeSrc,
-      runtimeTmp,
-      "vendor/runtime.mjs",
-    );
-    copyFileNoFollowExclSync(
-      migSrc,
-      migTmp,
-      "vendor/migrations/001_initial.sql",
-    );
-    renameReplaceSync(migTmp, migDest);
+    copyFileNoFollowExclSync(runtimeSrc, runtimeTmp, "vendor/runtime.mjs");
+    for (const m of migTmps) {
+      copyFileNoFollowExclSync(
+        path.join(migSrcDir, path.basename(m.dest)),
+        m.tmp,
+        m.label,
+      );
+    }
+    for (const m of migTmps) {
+      renameReplaceSync(m.tmp, m.dest);
+    }
     renameReplaceSync(runtimeTmp, runtimeDest);
   } catch (err) {
     try {
@@ -173,18 +187,24 @@ function copyVendorDir(
     } catch {
       /* ignore */
     }
-    try {
-      fs.unlinkSync(migTmp);
-    } catch {
-      /* ignore */
+    for (const m of migTmps) {
+      try {
+        fs.unlinkSync(m.tmp);
+      } catch {
+        /* ignore */
+      }
     }
     throw err;
   }
   // Post-write: parent symlink race may have landed files outside the project.
-  // Verify both (regular file + inside) before unlinking — a partial unlink
-  // would leave torn vendor (new migration + missing runtime).
   assertPairInsideOrUnlinkAll(projectRoot, [
-    [migDest, ".autopilot/bin/vendor/migrations/001_initial.sql"],
+    ...migTmps.map(
+      (m) =>
+        [m.dest, `.autopilot/bin/vendor/migrations/${path.basename(m.dest)}`] as [
+          string,
+          string,
+        ],
+    ),
     [runtimeDest, ".autopilot/bin/vendor/runtime.mjs"],
   ]);
 }
@@ -597,6 +617,12 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   }
   const plansDir = plansNorm.value;
   const verifyEnabled = Boolean(opts.verifyEnabled);
+  const maxErrorsBeforePause =
+    typeof opts.maxErrorsBeforePause === "number" &&
+    Number.isInteger(opts.maxErrorsBeforePause) &&
+    opts.maxErrorsBeforePause >= 0
+      ? opts.maxErrorsBeforePause
+      : 0;
   const writeQs = opts.writeQuickstart !== false;
   const locale = resolveInstallLocale(
     opts.locale,
@@ -627,6 +653,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
             locale,
             plansDir,
             verifyEnabled,
+            maxErrorsBeforePause,
           }),
           { encoding: "utf8", flag: "wx" },
         );

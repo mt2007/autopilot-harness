@@ -5,6 +5,7 @@ import {
   normalizeProjectReviewConfig,
   type ProjectReviewConfig,
 } from "./project-config.js";
+import { normalizeProjectRoot } from "./project-path.js";
 import {
   createRenderFollowup,
   createResolveLens,
@@ -23,18 +24,25 @@ export function createConfiguredReviewEngine(
   localeBundle?: FollowupLocaleBundle,
   preloaded?: ProjectReviewConfig,
 ): ReviewEngine {
-  // preloaded cũng normalize — không bypass kẹp 1..5 / commands.
+  // Store is authoritative for FS trust; arg only fills in if store root is unusable.
+  const safeRoot =
+    normalizeProjectRoot(store.projectRoot) ??
+    normalizeProjectRoot(projectRoot) ??
+    "";
+  // preloaded is also normalized — no bypass of 1..5 / commands clamps.
   const cfg = normalizeProjectReviewConfig(
-    preloaded ?? loadProjectReviewConfig(projectRoot),
+    preloaded ??
+      (safeRoot ? loadProjectReviewConfig(safeRoot) : undefined),
   );
   const usableLocale = Boolean(localeBundle?.followup?.review?.fix);
   return new ReviewEngine(store, {
     confirmRounds: cfg.confirmRounds,
     verifyEnabled: cfg.verifyEnabled,
-    // bản sao nông — caller mutate preloaded.verifyCommands không ảnh hưởng engine
+    // shallow copy — caller mutating preloaded.verifyCommands must not affect engine
     verifyCommands: cfg.verifyCommands.map((c) => ({ ...c })),
     maxIdleStops: cfg.maxIdleStops,
-    projectRoot,
+    maxErrorsBeforePause: cfg.maxErrorsBeforePause,
+    projectRoot: safeRoot,
     ...(usableLocale && localeBundle
       ? {
           renderFollowup: createRenderFollowup(localeBundle),

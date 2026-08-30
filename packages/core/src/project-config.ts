@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
 import type { VerifyCommandConfig } from "./verify-report.js";
 
 const MAX_CONFIG_BYTES = 1_000_000;
@@ -9,6 +10,11 @@ export interface ProjectReviewConfig {
   verifyEnabled: boolean;
   verifyCommands: VerifyCommandConfig[];
   maxIdleStops: number;
+  /**
+   * Consecutive turn errors/aborts before `repeated_errors` pause.
+   * `0` = never pause on errors (unlimited recoveries).
+   */
+  maxErrorsBeforePause: number;
   locale: string;
 }
 
@@ -18,6 +24,7 @@ export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
   // freeze: chặn mutate hằng số mặc định làm bẩn mọi clone sau này
   verifyCommands: Object.freeze([]) as unknown as VerifyCommandConfig[],
   maxIdleStops: 5,
+  maxErrorsBeforePause: 0,
   locale: "en",
 };
 
@@ -28,6 +35,7 @@ function cloneDefaultProjectReviewConfig(): ProjectReviewConfig {
     verifyEnabled: DEFAULT_PROJECT_REVIEW_CONFIG.verifyEnabled,
     verifyCommands: [],
     maxIdleStops: DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
+    maxErrorsBeforePause: DEFAULT_PROJECT_REVIEW_CONFIG.maxErrorsBeforePause,
     locale: DEFAULT_PROJECT_REVIEW_CONFIG.locale,
   };
 }
@@ -40,7 +48,10 @@ function coerceIntInRange(
 ): number {
   if (raw == null || !raw.trim()) return fallback;
   const n = Number(raw.trim());
-  if (!Number.isInteger(n) || n < min || n > max) return fallback;
+  // Non-integer / below min → default. Above max → clamp (e.g. max_before_pause
+  // 1001 must not fail-open to 0/unlimited and disable the pause gate).
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < min) return fallback;
+  if (n > max) return max;
   return n;
 }
 
@@ -212,12 +223,17 @@ function parseVerifyCommands(raw: unknown): VerifyCommandConfig[] {
 export function loadProjectReviewConfig(
   projectRoot: string,
 ): ProjectReviewConfig {
-  const configPath = path.join(projectRoot, ".autopilot", "config.yml");
+  // Fail closed on unusable roots before any open (empty/blank/NUL → cwd-relative join).
+  const root = normalizeProjectRoot(projectRoot);
+  if (!root) {
+    return cloneDefaultProjectReviewConfig();
+  }
+  const configPath = path.join(root, ".autopilot", "config.yml");
   try {
     const nofollow =
       typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
 
-    // Thiếu O_NOFOLLOW: lstat trước open — tránh follow symlink.
+    // Without O_NOFOLLOW: lstat before open — refuse leaf symlink follow.
     if (nofollow === 0) {
       if (!fs.existsSync(configPath)) return cloneDefaultProjectReviewConfig();
       if (fs.lstatSync(configPath).isSymbolicLink()) {
@@ -227,7 +243,7 @@ export function loadProjectReviewConfig(
 
     let fd: number;
     try {
-      // O_NOFOLLOW + fstat: chặn symlink TOCTOU và đọc file quá lớn sau stat.
+      // O_NOFOLLOW + fstat: block leaf-symlink TOCTOU and oversized reads after stat.
       fd = fs.openSync(configPath, fs.constants.O_RDONLY | nofollow);
     } catch {
       return cloneDefaultProjectReviewConfig();
@@ -238,7 +254,18 @@ export function loadProjectReviewConfig(
       if (!st.isFile() || st.size > MAX_CONFIG_BYTES) {
         return cloneDefaultProjectReviewConfig();
       }
-      // Chỉ đọc đúng size lúc fstat — tránh file phình sau fstat làm OOM.
+      // Bind fd to path identity always (intermediate-dir swap-back TOCTOU).
+      const lst = fs.lstatSync(configPath);
+      if (lst.isSymbolicLink() || !lst.isFile()) {
+        return cloneDefaultProjectReviewConfig();
+      }
+      if (lst.ino !== st.ino || lst.dev !== st.dev) {
+        return cloneDefaultProjectReviewConfig();
+      }
+      if (!isRealpathInsideProject(root, configPath)) {
+        return cloneDefaultProjectReviewConfig();
+      }
+      // Read exactly the fstat size — avoid OOM if the file grows after fstat.
       const buf = Buffer.alloc(st.size);
       const n = fs.readSync(fd, buf, 0, st.size, 0);
       raw = buf.subarray(0, n).toString("utf8");
@@ -257,6 +284,7 @@ export function loadProjectReviewConfig(
     const review = isPlainObject(parsed.review) ? parsed.review : {};
     const verify = isPlainObject(review.verify) ? review.verify : {};
     const stuck = isPlainObject(review.stuck) ? review.stuck : {};
+    const errors = isPlainObject(review.errors) ? review.errors : {};
 
     // Một đường normalize — tránh load vs normalize lệch kẹp biên / bool.
     return normalizeProjectReviewConfig({
@@ -264,6 +292,7 @@ export function loadProjectReviewConfig(
       verifyEnabled: verify.enabled,
       verifyCommands: verify.commands,
       maxIdleStops: stuck.max_idle_stops,
+      maxErrorsBeforePause: errors.max_before_pause,
       locale: parsed.locale,
     });
   } catch {
@@ -294,6 +323,15 @@ export function normalizeProjectReviewConfig(raw: unknown): ProjectReviewConfig 
       1,
       100,
       DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
+    ),
+    // 0 = unlimited; clamp 0..1000 (invalid → default unlimited)
+    maxErrorsBeforePause: coerceIntInRange(
+      o.maxErrorsBeforePause != null
+        ? String(o.maxErrorsBeforePause)
+        : undefined,
+      0,
+      1000,
+      DEFAULT_PROJECT_REVIEW_CONFIG.maxErrorsBeforePause,
     ),
     locale:
       typeof o.locale === "string" && o.locale.trim()

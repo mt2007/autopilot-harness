@@ -17,6 +17,7 @@ import {
   probeProject,
   resolveCliCommand,
   shellSingleQuote,
+  isTrustedCliEntrypoint,
   writeQuickstart,
 } from "../src/init/wizard-helpers.js";
 import { installInitYes } from "../src/init/install.js";
@@ -232,7 +233,8 @@ describe("wizard helpers", () => {
   it("resolveCliCommand and alias prefer running bin when available", () => {
     root = tmpProject();
     const prev = process.argv[1];
-    const fakeBin = path.join(root, "fake-bin.js");
+    const fakeBin = path.join(root, "packages", "cli", "dist", "bin.js");
+    fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
     fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
     process.argv[1] = fakeBin;
     try {
@@ -247,10 +249,83 @@ describe("wizard helpers", () => {
     }
   });
 
+  it("resolveCliCommand accepts npm-installed package dist/bin.js", () => {
+    root = tmpProject();
+    const prev = process.argv[1];
+    const fakeBin = path.join(
+      root,
+      "node_modules",
+      "autopilot-harness",
+      "dist",
+      "bin.js",
+    );
+    fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
+    fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = fakeBin;
+    try {
+      const abs = fs.realpathSync(fakeBin);
+      expect(resolveCliCommand()).toBe(`node ${shellSingleQuote(abs)}`);
+    } finally {
+      process.argv[1] = prev;
+    }
+  });
+
+  it("isTrustedCliEntrypoint accepts Windows-style separators", () => {
+    expect(
+      isTrustedCliEntrypoint(
+        "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\autopilot-harness\\dist\\bin.js",
+      ),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(
+        "C:\\Users\\dev\\workspaces\\autopilot-harness\\packages\\cli\\dist\\bin.js",
+      ),
+    ).toBe(true);
+    expect(isTrustedCliEntrypoint("")).toBe(false);
+    expect(
+      isTrustedCliEntrypoint("C:\\tmp\\evil-autopilot-harness\\bin.js"),
+    ).toBe(false);
+  });
+
+  it("resolveCliCommand ignores non-CLI argv[1] (e.g. test runners)", () => {
+    root = tmpProject();
+    const prev = process.argv[1];
+    const decoy = path.join(root, "process.js");
+    fs.writeFileSync(decoy, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = decoy;
+    try {
+      expect(resolveCliCommand()).toBe(`npx autopilot-harness`);
+      expect(autopilotShellAliasLine()).toBe(
+        `autopilot() { command npx autopilot-harness "$@"; }`,
+      );
+    } finally {
+      process.argv[1] = prev;
+    }
+  });
+
+  it("resolveCliCommand ignores unrelated bin.js outside the package", () => {
+    root = tmpProject();
+    const prev = process.argv[1];
+    const decoy = path.join(root, "bin.js");
+    fs.writeFileSync(decoy, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = decoy;
+    try {
+      expect(resolveCliCommand()).toBe(`npx autopilot-harness`);
+    } finally {
+      process.argv[1] = prev;
+    }
+  });
+
   it("autopilotShellAliasLine survives quotes, $, backticks, and spaces in path", () => {
     root = tmpProject();
     const prev = process.argv[1];
-    const nastyDir = path.join(root, `dir " $(\`id\`) o'hara space`);
+    const nastyDir = path.join(
+      root,
+      `dir " $(\`id\`) o'hara space`,
+      "packages",
+      "cli",
+      "dist",
+    );
     fs.mkdirSync(nastyDir, { recursive: true });
     const fakeBin = path.join(nastyDir, "bin.js");
     fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
@@ -657,6 +732,7 @@ describe("interactive init (scripted prompts)", () => {
           "plans",
           "commit",
           "skip",
+          "unlimited",
           "skip",
         ],
       }),
@@ -666,6 +742,7 @@ describe("interactive init (scripted prompts)", () => {
     expect(answers!.plansDir).toBe("plans");
     expect(answers!.plansGit).toBe("commit");
     expect(answers!.verifyEnabled).toBe(false);
+    expect(answers!.maxErrorsBeforePause).toBe(0);
     expect(answers!.shellAlias).toBe("skip");
   });
 
@@ -691,6 +768,7 @@ describe("interactive init (scripted prompts)", () => {
           "custom",
           "local-only",
           "enable",
+          "5",
           "skip",
         ],
         texts: ["docs/plans"],
@@ -701,6 +779,30 @@ describe("interactive init (scripted prompts)", () => {
     expect(answers!.plansDir).toBe("docs/plans");
     expect(answers!.plansGit).toBe("local-only");
     expect(answers!.verifyEnabled).toBe(true);
+    expect(answers!.maxErrorsBeforePause).toBe(5);
+  });
+
+  it("collectWizardAnswers custom error pause threshold", async () => {
+    root = tmpProject();
+    const answers = await collectWizardAnswers({
+      projectRoot: root,
+      prompts: scriptedPrompts({
+        confirms: [true, true],
+        selects: [
+          "en",
+          "cursor",
+          "ide",
+          "plans",
+          "commit",
+          "skip",
+          "custom",
+          "skip",
+        ],
+        texts: ["12"],
+      }),
+    });
+    expect(answers).not.toBeNull();
+    expect(answers!.maxErrorsBeforePause).toBe(12);
   });
 
   it("runInteractiveInit installs via answers", async () => {
@@ -716,6 +818,7 @@ describe("interactive init (scripted prompts)", () => {
           "plans",
           "commit",
           "skip",
+          "unlimited",
           "skip",
         ],
       }),
@@ -724,6 +827,11 @@ describe("interactive init (scripted prompts)", () => {
     expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
       true,
     );
+    const config = fs.readFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "utf8",
+    );
+    expect(config).toMatch(/max_before_pause:\s*0/);
     expect(
       fs.existsSync(path.join(root, "docs", "autopilot", "quickstart.md")),
     ).toBe(true);
@@ -738,12 +846,14 @@ describe("interactive init (scripted prompts)", () => {
       plansDir: "plans",
       plansGit: "leave",
       verifyEnabled: false,
+      maxErrorsBeforePause: 0,
       shellAlias: "skip",
       force: false,
       packageVersion: "0.1.0",
     };
     expect(answersToInstallOptions(answers)).toMatchObject({
       plansGit: "leave",
+      maxErrorsBeforePause: 0,
       writeQuickstart: true,
     });
   });

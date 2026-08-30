@@ -26,6 +26,7 @@ describe("loadProjectReviewConfig", () => {
     expect(cfg.verifyEnabled).toBe(false);
     expect(cfg.verifyCommands).toEqual([]);
     expect(cfg.maxIdleStops).toBe(5);
+    expect(cfg.maxErrorsBeforePause).toBe(0);
     expect(cfg.locale).toBe("en");
   });
 
@@ -46,7 +47,43 @@ describe("loadProjectReviewConfig", () => {
     }
   });
 
-  it("reads confirm_rounds, verify, stuck, locale from config.yml", () => {
+  it("refuses when .autopilot dir symlink escapes the project", () => {
+    const root = tmpRoot();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-cfg-dir-"));
+    try {
+      fs.writeFileSync(
+        path.join(outside, "config.yml"),
+        "review:\n  confirm_rounds: 3\n",
+      );
+      fs.symlinkSync(outside, path.join(root, ".autopilot"));
+      const cfg = loadProjectReviewConfig(root);
+      expect(cfg.confirmRounds).toBe(5);
+      expect(cfg.verifyEnabled).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses empty or NUL projectRoot (fail-open defaults, no open)", () => {
+    expect(loadProjectReviewConfig("").confirmRounds).toBe(5);
+    expect(loadProjectReviewConfig("   ").confirmRounds).toBe(5);
+    expect(loadProjectReviewConfig("bad\0root").confirmRounds).toBe(5);
+  });
+
+  it("trims projectRoot before reading config.yml", () => {
+    const root = tmpRoot();
+    writeConfig(
+      root,
+      `
+review:
+  confirm_rounds: 3
+`,
+    );
+    expect(loadProjectReviewConfig(`  ${root}  `).confirmRounds).toBe(3);
+  });
+
+  it("reads confirm_rounds, verify, stuck, errors, locale from config.yml", () => {
     const root = tmpRoot();
     writeConfig(
       root,
@@ -62,6 +99,8 @@ review:
         required: true
   stuck:
     max_idle_stops: 7
+  errors:
+    max_before_pause: 5
 `,
     );
     const cfg = loadProjectReviewConfig(root);
@@ -71,10 +110,11 @@ review:
       { id: "test", run: "cargo test", required: true },
     ]);
     expect(cfg.maxIdleStops).toBe(7);
+    expect(cfg.maxErrorsBeforePause).toBe(5);
     expect(cfg.locale).toBe("zh-CN");
   });
 
-  it("clamps invalid confirm_rounds / max_idle_stops to defaults", () => {
+  it("clamps invalid confirm_rounds / max_idle_stops / max_before_pause to defaults", () => {
     const root = tmpRoot();
     writeConfig(
       root,
@@ -83,11 +123,31 @@ review:
   confirm_rounds: 99
   stuck:
     max_idle_stops: 0
+  errors:
+    max_before_pause: -3
 `,
     );
     const cfg = loadProjectReviewConfig(root);
     expect(cfg.confirmRounds).toBe(5);
     expect(cfg.maxIdleStops).toBe(5);
+    expect(cfg.maxErrorsBeforePause).toBe(0);
+  });
+
+  it("clamps max_before_pause / max_idle_stops above max (not fail-open to default)", () => {
+    const root = tmpRoot();
+    writeConfig(
+      root,
+      `
+review:
+  stuck:
+    max_idle_stops: 999
+  errors:
+    max_before_pause: 1001
+`,
+    );
+    const cfg = loadProjectReviewConfig(root);
+    expect(cfg.maxIdleStops).toBe(100);
+    expect(cfg.maxErrorsBeforePause).toBe(1000);
   });
 
   it("fail-opens on corrupt YAML", () => {
@@ -180,6 +240,20 @@ review:
     }
   });
 
+  it("createConfiguredReviewEngine sanitizes blank/NUL projectRoot", () => {
+    const root = tmpRoot();
+    const store = new StateStore(root);
+    try {
+      const engine = createConfiguredReviewEngine(store, "   ");
+      expect(engine).toBeTruthy();
+      // Empty safeRoot → containment fail-closed; engine still constructs.
+      const engineNul = createConfiguredReviewEngine(store, "bad\0root");
+      expect(engineNul).toBeTruthy();
+    } finally {
+      store.close();
+    }
+  });
+
   it("default verifyCommands is a fresh array (no shared mutable default)", () => {
     const root = tmpRoot();
     const a = loadProjectReviewConfig(root);
@@ -236,6 +310,7 @@ review:
         verifyEnabled: false,
         verifyCommands: [],
         maxIdleStops: 5,
+        maxErrorsBeforePause: 0,
         locale: "en",
       });
       const action = engine.handleStop({
@@ -279,6 +354,7 @@ review:
         verifyEnabled: false,
         verifyCommands: [],
         maxIdleStops: 5,
+        maxErrorsBeforePause: 0,
         locale: "en",
       });
       const action = engine.handleStop({

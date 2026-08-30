@@ -1,5 +1,11 @@
+import fs from "node:fs";
 import path from "node:path";
-import { migrate, getLatestSchemaVersion } from "./migrate.js";
+import { migrate, getLatestSchemaVersion, parseSchemaVersionValue } from "./migrate.js";
+import {
+  isLexicallyInsideProject,
+  isRealpathInsideProject,
+  normalizeProjectRoot,
+} from "./project-path.js";
 import { openDatabase, type SqlDatabase } from "./sqlite.js";
 
 export type Phase = "idle" | "planning" | "executing" | "done";
@@ -39,6 +45,9 @@ export interface ReviewChainRow {
   chain_pending: number;
   code_edited: number;
   item_confirm_complete: number;
+  pending_followup: string | null;
+  pending_followup_at: string | null;
+  pending_redeliver_at: string | null;
   updated_at: string;
 }
 
@@ -87,7 +96,12 @@ export class StateStore {
   private writeDepth = 0;
 
   constructor(projectRoot: string, dbPath?: string) {
-    this.projectRoot = path.resolve(projectRoot);
+    // Trim before resolve — padded absolute roots become cwd-relative otherwise.
+    const root = normalizeProjectRoot(projectRoot);
+    if (!root) {
+      throw new Error("Invalid project root");
+    }
+    this.projectRoot = path.resolve(root);
     const resolved = dbPath ?? path.join(this.projectRoot, ".autopilot", "state.db");
     this.db = openDatabase(resolved);
     try {
@@ -114,29 +128,83 @@ export class StateStore {
   getSchemaVersion(): number {
     const row = this.db
       .prepare("SELECT value FROM _schema_meta WHERE key = 'schema_version'")
-      .get() as { value: string };
-    return Number.parseInt(row.value, 10);
+      .get() as { value: string } | undefined;
+    return parseSchemaVersionValue(row?.value);
   }
 
   ensureReviewChain(conversationId: string): ReviewChainRow {
-    const existing = this.getReviewChain(conversationId);
-    if (existing) return existing;
+    if (this.isInvalidConversationId(conversationId)) {
+      throw new Error("Invalid conversation id");
+    }
     const ts = nowIso();
+    // INSERT OR IGNORE + EXISTS: refuse orphans without a session; concurrent
+    // creators are idempotent (plain INSERT would UNIQUE-fail on the PK).
+    this.insertReviewChainIfSession(conversationId, ts);
+
+    // Covers: no session, purge race after insert, and stale orphan chain rows.
+    if (!this.getSession(conversationId)) {
+      // Only delete while still session-less (avoids wiping a concurrent recreate).
+      this.db
+        .prepare(
+          `DELETE FROM review_chains
+           WHERE conversation_id = ?
+             AND NOT EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
+        )
+        .run(conversationId, conversationId);
+      throw new Error("No session for conversation");
+    }
+    // Re-read after session check so a concurrent INSERT is not missed.
+    let ensured = this.getReviewChain(conversationId);
+    if (!ensured) {
+      // Session present but chain gone (e.g. purge deleted chain first) — retry once.
+      this.insertReviewChainIfSession(conversationId, ts);
+      ensured = this.getReviewChain(conversationId);
+    }
+    if (!ensured) {
+      throw new Error("No session for conversation");
+    }
+    return ensured;
+  }
+
+  /** Reject blank, padded, or control-bearing conversation ids (align resolveSessionId). */
+  private isInvalidConversationId(conversationId: unknown): boolean {
+    return (
+      typeof conversationId !== "string" ||
+      !conversationId.trim() ||
+      conversationId !== conversationId.trim() ||
+      /[\u0000-\u001f\u007f]/.test(conversationId)
+    );
+  }
+
+  /** Public gate for hooks / stop handlers (fail-soft before any mutation). */
+  isConversationIdOk(conversationId: unknown): boolean {
+    return !this.isInvalidConversationId(conversationId);
+  }
+
+  private insertReviewChainIfSession(
+    conversationId: string,
+    ts: string,
+  ): void {
     this.db
       .prepare(
-        `INSERT INTO review_chains (conversation_id, fix_round, confirm_left, chain_pending, code_edited, item_confirm_complete, updated_at)
-         VALUES (?, 0, NULL, 0, 0, 0, ?)`,
+        `INSERT OR IGNORE INTO review_chains (conversation_id, fix_round, confirm_left, chain_pending, code_edited, item_confirm_complete, updated_at)
+         SELECT ?, 0, NULL, 0, 0, 0, ?
+         WHERE EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
       )
-      .run(conversationId, ts);
-    return this.getReviewChain(conversationId)!;
+      .run(conversationId, ts, conversationId);
   }
 
   getReviewChain(conversationId: string): ReviewChainRow | null {
-    return (
-      (this.db
-        .prepare("SELECT * FROM review_chains WHERE conversation_id = ?")
-        .get(conversationId) as ReviewChainRow | undefined) ?? null
-    );
+    const row = this.db
+      .prepare("SELECT * FROM review_chains WHERE conversation_id = ?")
+      .get(conversationId) as ReviewChainRow | undefined;
+    if (!row) return null;
+    return {
+      ...row,
+      pending_followup: row.pending_followup ?? null,
+      pending_followup_at: row.pending_followup_at ?? null,
+      pending_redeliver_at: row.pending_redeliver_at ?? null,
+    };
   }
 
   getSession(conversationId: string): SessionRow | null {
@@ -191,6 +259,9 @@ export class StateStore {
   }
 
   renameSession(conversationId: string, title: string): SessionRow | null {
+    if (this.isInvalidConversationId(conversationId)) {
+      return null;
+    }
     const trimmed = normalizeSessionTitle(title);
     return this.exclusiveWrite(() => {
       if (!this.getSession(conversationId)) {
@@ -237,8 +308,10 @@ export class StateStore {
   }
 
   /**
-   * Reset review chain fields (same as REPLAN review reset). Session row kept.
-   * Atomic: refuses to create an orphan review_chains row if the session was purged.
+   * Reset review chain fields (same as REPLAN / fresh applyRun review reset).
+   * Clears pending_followup* so a later stop cannot redeliver a stale prompt and
+   * resurrect chain_pending after the caller believed the chain was wiped.
+   * Session row kept. Atomic: refuses orphan review_chains if session was purged.
    */
   resetReviewChain(conversationId: string): boolean {
     return this.exclusiveWrite(() => {
@@ -251,9 +324,63 @@ export class StateStore {
         chain_pending: 0,
         code_edited: 0,
         item_confirm_complete: 0,
+        pending_followup: null,
+        pending_followup_at: null,
+        pending_redeliver_at: null,
       });
       return { commit: true, value: true };
     });
+  }
+
+  /**
+   * Pin untrusted session roots to this store's projectRoot.
+   * Otherwise a caller could write project_root=/evil and later containment
+   * checks that trust session.project_root would pass for outside files.
+   * code_root may be a descendant (future worktree); project_root must match.
+   * Relative paths resolve against the store root (not process.cwd()).
+   */
+  private sanitizeSessionRoot(
+    raw: string,
+    opts?: { allowDescendant?: boolean },
+  ): string {
+    const n = normalizeProjectRoot(raw);
+    if (!n) return this.projectRoot;
+    const resolved = path.isAbsolute(n)
+      ? path.resolve(n)
+      : path.resolve(this.projectRoot, n);
+    if (resolved === this.projectRoot) return this.projectRoot;
+    if (
+      opts?.allowDescendant &&
+      isLexicallyInsideProject(this.projectRoot, resolved)
+    ) {
+      return resolved;
+    }
+    return this.projectRoot;
+  }
+
+  /**
+   * Refuse checklist_path that escapes the store project (absolute outside or
+   * relative that resolves outside). Missing paths kept only if lexically inside.
+   * Relative inputs stay relative when allowed (callers/tests rely on that form).
+   */
+  private sanitizeChecklistPath(raw: string | undefined | null): string {
+    if (typeof raw !== "string" || !raw || raw.includes("\0")) return "";
+    if (path.isAbsolute(raw)) {
+      const abs = path.resolve(raw);
+      try {
+        fs.lstatSync(abs);
+        return isRealpathInsideProject(this.projectRoot, abs) ? abs : "";
+      } catch {
+        return isLexicallyInsideProject(this.projectRoot, abs) ? abs : "";
+      }
+    }
+    const abs = path.resolve(this.projectRoot, raw);
+    try {
+      fs.lstatSync(abs);
+      return isRealpathInsideProject(this.projectRoot, abs) ? raw : "";
+    } catch {
+      return isLexicallyInsideProject(this.projectRoot, abs) ? raw : "";
+    }
   }
 
   upsertSession(
@@ -263,7 +390,19 @@ export class StateStore {
       code_root: string;
     },
   ): SessionRow {
+    if (this.isInvalidConversationId(partial.conversation_id)) {
+      throw new Error("Invalid conversation id");
+    }
     const ts = nowIso();
+    // Heal padded/NUL + refuse roots that escape this store's project.
+    const projectRoot = this.sanitizeSessionRoot(partial.project_root);
+    const codeRoot = this.sanitizeSessionRoot(partial.code_root, {
+      allowDescendant: true,
+    });
+    const checklistPath =
+      partial.checklist_path !== undefined
+        ? this.sanitizeChecklistPath(partial.checklist_path)
+        : undefined;
     const existing = this.getSession(partial.conversation_id);
     if (!existing) {
       // Only renameSession may grant source=user (validated title). Upsert must not.
@@ -288,15 +427,15 @@ export class StateStore {
           partial.title_updated_at ?? null,
           partial.track_id ?? "_pending",
           partial.track_title ?? null,
-          partial.checklist_path ?? "",
+          checklistPath ?? "",
           partial.phase ?? "idle",
           partial.armed ?? 0,
           partial.paused ?? 0,
           partial.paused_reason ?? null,
           partial.pending_action ?? null,
           partial.track_candidates_json ?? null,
-          partial.project_root,
-          partial.code_root,
+          projectRoot,
+          codeRoot,
           ts,
           ts,
         );
@@ -310,6 +449,11 @@ export class StateStore {
         merged.session_title_source === "user"
           ? "platform"
           : merged.session_title_source;
+      const nextProjectRoot = this.sanitizeSessionRoot(merged.project_root);
+      const nextCodeRoot = this.sanitizeSessionRoot(merged.code_root, {
+        allowDescendant: true,
+      });
+      const nextChecklistPath = this.sanitizeChecklistPath(merged.checklist_path);
       this.db
         .prepare(
           `UPDATE sessions SET
@@ -330,15 +474,15 @@ export class StateStore {
           merged.title_updated_at,
           merged.track_id,
           merged.track_title,
-          merged.checklist_path,
+          nextChecklistPath,
           merged.phase,
           merged.armed,
           merged.paused,
           merged.paused_reason,
           merged.pending_action,
           merged.track_candidates_json,
-          merged.project_root,
-          merged.code_root,
+          nextProjectRoot,
+          nextCodeRoot,
           merged.error_count,
           merged.idle_stop_count,
           merged.last_active_at,
@@ -350,15 +494,29 @@ export class StateStore {
   }
 
   updateReviewChain(conversationId: string, patch: Partial<ReviewChainRow>): ReviewChainRow {
-    this.ensureReviewChain(conversationId);
-    const current = this.getReviewChain(conversationId)!;
+    // Use ensure's return — avoids a second read that can race to null mid-purge.
+    const current = this.ensureReviewChain(conversationId);
     const merged = { ...current, ...patch, updated_at: nowIso() };
-    this.db
+    // Align with savePendingFollowup: blank/NUL must not stay redeliverable.
+    // Also drop chain_pending so a rejected pending cannot leave the review loop armed.
+    if (
+      typeof merged.pending_followup === "string" &&
+      (!merged.pending_followup.trim() || merged.pending_followup.includes("\0"))
+    ) {
+      merged.pending_followup = null;
+      merged.pending_followup_at = null;
+      merged.pending_redeliver_at = null;
+      merged.chain_pending = 0;
+    }
+    const result = this.db
       .prepare(
         `UPDATE review_chains SET
           fix_round = ?, confirm_left = ?, chain_pending = ?, code_edited = ?,
-          item_confirm_complete = ?, updated_at = ?
-         WHERE conversation_id = ?`,
+          item_confirm_complete = ?,
+          pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = ?,
+          updated_at = ?
+         WHERE conversation_id = ?
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
       )
       .run(
         merged.fix_round,
@@ -366,25 +524,232 @@ export class StateStore {
         merged.chain_pending,
         merged.code_edited,
         merged.item_confirm_complete,
+        merged.pending_followup,
+        merged.pending_followup_at,
+        merged.pending_redeliver_at,
         merged.updated_at,
         conversationId,
+        conversationId,
       );
-    return this.getReviewChain(conversationId)!;
+    // Purge race after ensure: do not leave a silently-updated orphan chain.
+    if (result.changes === 0) {
+      throw new Error("No session for conversation");
+    }
+    const updated = this.getReviewChain(conversationId);
+    if (!updated) {
+      throw new Error("No session for conversation");
+    }
+    return updated;
   }
 
   markCodeEdited(conversationId: string): void {
-    this.ensureReviewChain(conversationId);
-    this.updateReviewChain(conversationId, { code_edited: 1 });
+    this.withSessionChainWrite(conversationId, () => {
+      this.ensureReviewChain(conversationId);
+      // Column-only update — avoid read-merge-write clobbering concurrent E4/pending.
+      this.db
+        .prepare(
+          `UPDATE review_chains SET code_edited = 1, updated_at = ?
+           WHERE conversation_id = ?
+             AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
+        )
+        .run(nowIso(), conversationId, conversationId);
+    });
   }
 
+  /**
+   * E8: user ordinary chat clears the in-chain flag only.
+   * Do NOT wipe pending_followup* — undelivered automation must still redeliver;
+   * clearing pending here would let the next stop advance confirm_left (skip a lens).
+   * Column-only UPDATE (no ensure/merge): missing chain → no-op; concurrent stop
+   * cannot lose confirm_left/pending via stale read-merge-write.
+   */
   clearChainPending(conversationId: string): void {
-    this.ensureReviewChain(conversationId);
-    this.updateReviewChain(conversationId, { chain_pending: 0 });
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE review_chains SET chain_pending = 0, updated_at = ? WHERE conversation_id = ?`,
+      )
+      .run(nowIso(), conversationId);
   }
 
   setChainPending(conversationId: string): void {
-    this.ensureReviewChain(conversationId);
-    this.updateReviewChain(conversationId, { chain_pending: 1 });
+    this.withSessionChainWrite(conversationId, () => {
+      this.ensureReviewChain(conversationId);
+      this.db
+        .prepare(
+          `UPDATE review_chains SET chain_pending = 1, updated_at = ?
+           WHERE conversation_id = ?
+             AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
+        )
+        .run(nowIso(), conversationId, conversationId);
+    });
+  }
+
+  savePendingFollowup(conversationId: string, message: string): void {
+    const msg = typeof message === "string" ? message.trim() : "";
+    // Blank or NUL-poisoned text must not become a redeliverable pending.
+    if (!msg || msg.includes("\0")) return;
+    this.withSessionChainWrite(conversationId, () => {
+      this.ensureReviewChain(conversationId);
+      const ts = nowIso();
+      this.db
+        .prepare(
+          `UPDATE review_chains SET
+          pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = NULL,
+          chain_pending = 1, updated_at = ?
+         WHERE conversation_id = ?
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
+        )
+        .run(msg, ts, ts, conversationId, conversationId);
+    });
+  }
+
+  clearPendingFollowup(conversationId: string): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE review_chains SET
+          pending_followup = NULL, pending_followup_at = NULL, pending_redeliver_at = NULL,
+          updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(nowIso(), conversationId);
+  }
+
+  /**
+   * Column-only: neutralize fix/confirm/pending re-entry without ensure/session.
+   * Used when pause-threshold upsert failed but the session is still armed — a
+   * later completed stop must not resume the review loop via code_edited/pending
+   * or loopCount>0→E3 (fix_round cleared so bare loopCount cannot re-arm).
+   */
+  neutralizeReviewChain(conversationId: string): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE review_chains SET
+          code_edited = 0,
+          confirm_left = NULL,
+          chain_pending = 0,
+          item_confirm_complete = 0,
+          fix_round = 0,
+          pending_followup = NULL,
+          pending_followup_at = NULL,
+          pending_redeliver_at = NULL,
+          updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(nowIso(), conversationId);
+  }
+
+  /**
+   * Column-only pause/disarm when the full upsertSession pause write failed.
+   * Without this, loopCount>0 completed stops can still hit E3 while armed.
+   */
+  pauseSessionForRepeatedErrors(
+    conversationId: string,
+    errorCount: number,
+    lastError: string | null,
+  ): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    const count =
+      typeof errorCount === "number" && Number.isFinite(errorCount)
+        ? Math.max(0, Math.floor(errorCount))
+        : 0;
+    const err =
+      typeof lastError === "string" && !lastError.includes("\0")
+        ? lastError
+        : null;
+    const ts = nowIso();
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+          armed = 0,
+          paused = 1,
+          paused_reason = 'repeated_errors',
+          error_count = ?,
+          last_error = ?,
+          last_active_at = ?,
+          updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(count, err, ts, ts, conversationId);
+  }
+
+  /**
+   * Fallback halt when richer pause UPDATE threw/no-op'd.
+   * Always drops armed; ensures paused=1. Preserves an existing paused_reason
+   * (e.g. concurrent stuck/human_gate, or richer pause already wrote) via
+   * COALESCE — only fills repeated_errors when reason was null.
+   * Leaves error_count/last_error to the richer pause path.
+   */
+  disarmSession(conversationId: string): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE sessions SET
+          armed = 0,
+          paused = 1,
+          paused_reason = COALESCE(paused_reason, 'repeated_errors'),
+          updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(nowIso(), conversationId);
+  }
+
+  touchPendingRedeliver(conversationId: string): void {
+    this.withSessionChainWrite(conversationId, () => {
+      this.ensureReviewChain(conversationId);
+      const ts = nowIso();
+      // Require live pending — after neutralize/clear, must not resurrect
+      // chain_pending=1 (would E3 on RESUME with no undelivered message).
+      this.db
+        .prepare(
+          `UPDATE review_chains SET
+          pending_redeliver_at = ?, chain_pending = 1, updated_at = ?
+         WHERE conversation_id = ?
+           AND pending_followup IS NOT NULL
+           AND trim(pending_followup) != ''
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
+        )
+        .run(ts, ts, conversationId, conversationId);
+    });
+  }
+
+  /**
+   * Run fn only when session exists. Uses exclusiveWrite when not already in one
+   * (serialize vs purge); if already nested in a write txn, runs inline — nesting
+   * exclusiveWrite would throw.
+   */
+  private withSessionChainWrite(
+    conversationId: string,
+    fn: () => void,
+  ): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    const run = (): boolean => {
+      if (!this.getSession(conversationId)) return false;
+      fn();
+      return true;
+    };
+    if (this.writeDepth > 0) {
+      run();
+      return;
+    }
+    this.exclusiveWrite(() => {
+      const ok = run();
+      return { commit: ok, value: undefined };
+    });
   }
 
   findExecutingSession(excludeConversationId: string): SessionRow | null {

@@ -164,6 +164,7 @@ async function main() {
                 verifyEnabled: false,
                 verifyCommands: [],
                 maxIdleStops: 5,
+                maxErrorsBeforePause: 0,
                 projectRoot,
               });
         const result = port.handleStop(engine, payload);

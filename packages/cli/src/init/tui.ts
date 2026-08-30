@@ -128,60 +128,73 @@ export async function collectWizardAnswers(
   const projectRoot = opts.projectRoot;
   const probe = probeProject(projectRoot);
 
-  p.intro(`${PREFERRED_NAME} Harness`);
+  p.intro(`Welcome to ${PREFERRED_NAME}`);
   p.note(
     [
-      "Two-phase agent harness:",
-      "① Planning — discuss, design, break into a checklist",
-      "② Executing — advance after self-review passes",
+      "A small harness that keeps agents honest across two phases:",
       "",
-      `Docs say ${PREFERRED_NAME} · package ${CLI_NAME}`,
+      "  1. Plan  — shape the work into a checklist",
+      "  2. Run   — implement item by item, with self-review between steps",
+      "",
+      `You'll get Cursor hooks, slash skills, and a project config under .autopilot/.`,
+      `CLI package: ${CLI_NAME}`,
     ].join("\n"),
-    "Welcome",
+    "What this installs",
   );
 
   const gitLine = probe.hasGit
-    ? `Git: yes · branch: ${probe.branch ?? "(detached)"}`
-    : "Git: no (recommended to install at a git root)";
+    ? `git · ${probe.branch ?? "detached HEAD"}`
+    : "no git repo (works, but a git root is nicer)";
   if (!probe.hasGit) {
-    p.log.warn("No git repository detected — continue only if intentional.");
+    p.log.warn(
+      "This folder isn't a git repository. That's fine if you meant it — otherwise cd to your project root first.",
+    );
   }
 
   const installHere = await p.confirm({
-    message: `Install in this project?\n  Path: ${probe.projectRoot}\n  ${gitLine}`,
+    message: [
+      "Install Autopilot here?",
+      "",
+      `  ${probe.projectRoot}`,
+      `  ${gitLine}`,
+    ].join("\n"),
     initialValue: true,
   });
   if (p.isCancel(installHere) || !installHere) {
     return cancelOut(
       p,
-      `Cancelled. cd to the project root, then re-run: ${CLI_NAME} init`,
+      `No problem. cd to the project you want, then run: ${resolveCliCommand()} init`,
     );
   }
 
   let force = Boolean(opts.force);
   if (probe.alreadyInitialized) {
-    p.log.warn(".autopilot/config.yml already exists.");
+    p.log.warn("Looks like Autopilot is already set up (.autopilot/config.yml found).");
     if (!force) {
+      p.note(
+        [
+          "A refresh updates hooks, skills, workflows, and the pin —",
+          "your existing config.yml is left alone (plans, verify, triggers stay as-is).",
+        ].join("\n"),
+        "Already installed",
+      );
       const useForce = await p.confirm({
-        message:
-          "Refresh hook/skills/pin + merge hooks? (keeps existing config.yml)",
+        message: "Refresh the install files without touching config.yml?",
         initialValue: false,
       });
       if (p.isCancel(useForce) || !useForce) {
         return cancelOut(
           p,
-          `Cancelled. Use ${CLI_NAME} init --force to refresh without the prompt.`,
+          `Left as-is. Tip: ${resolveCliCommand()} init --force skips this question next time.`,
         );
       }
       force = true;
     }
 
     // Force refresh: config/plans/verify are not rewritten — skip those prompts.
-    p.log.info(
-      "Refresh keeps config.yml (plans dir, verify, triggers unchanged).",
-    );
+    p.log.info("Keeping your config.yml; only wiring/skills will be refreshed.");
     const locale = readProjectLocale(probe.projectRoot);
-    p.log.info(`Locale (from config.yml): ${locale}`);
+    p.log.info(`Locale from config: ${locale}`);
     const shellDefault: ShellAliasTarget =
       (process.env.SHELL ?? "").includes("zsh")
         ? "zshrc"
@@ -190,43 +203,44 @@ export async function collectWizardAnswers(
           : "skip";
     const cliCmd = resolveCliCommand();
     const shellAlias = await p.select<ShellAliasTarget>({
-      message: "Shell shortcut",
+      message: "Want a shell helper so you can type `autopilot` anywhere?",
       options: [
         {
           value: "zshrc",
-          label: "Add autopilot() to ~/.zshrc",
+          label: "Yes — add autopilot() to ~/.zshrc",
           hint: cliCmd,
         },
         {
           value: "bashrc",
-          label: "Add autopilot() to ~/.bashrc",
+          label: "Yes — add autopilot() to ~/.bashrc",
           hint: cliCmd,
         },
         {
           value: "skip",
-          label: `Skip — run via: ${cliCmd}`,
+          label: "No thanks — I'll call the CLI directly",
+          hint: cliCmd,
         },
       ],
       initialValue: shellDefault,
     });
     if (p.isCancel(shellAlias)) {
-      return cancelOut(p, "Cancelled.");
+      return cancelOut(p, "Cancelled — nothing was changed.");
     }
 
     const summary = [
-      `Project:   ${probe.projectRoot}`,
-      `Mode:      force refresh (keep config.yml)`,
-      `Locale:    ${locale} (from config.yml; skills refresh)`,
-      `CLI:       ${cliCmd}${shellAlias === "skip" ? "" : ` (+ ~/.${shellAlias})`}`,
+      `Project:  ${probe.projectRoot}`,
+      `Mode:     refresh (keep config.yml)`,
+      `Locale:   ${locale}`,
+      `CLI:      ${cliCmd}${shellAlias === "skip" ? "" : ` · alias → ~/.${shellAlias}`}`,
       "",
       "Will refresh: hook, skills, workflows, pin, hooks.json merge",
     ].join("\n");
     const ready = await p.confirm({
-      message: `Ready to refresh?\n${summary}`,
+      message: `Sound good?\n\n${summary}`,
       initialValue: true,
     });
     if (p.isCancel(ready) || !ready) {
-      return cancelOut(p, "Cancelled.");
+      return cancelOut(p, "Cancelled — nothing was changed.");
     }
 
     return {
@@ -237,63 +251,103 @@ export async function collectWizardAnswers(
       plansDir: "plans",
       plansGit: "commit",
       verifyEnabled: false,
+      maxErrorsBeforePause: 0,
       shellAlias,
       force: true,
       packageVersion: opts.packageVersion ?? PACKAGE_VERSION,
     };
   }
 
+  p.note(
+    [
+      "Agent replies and stock trigger phrases will follow this locale.",
+      `You can switch later with: ${resolveCliCommand()} locale set en`,
+      "(use zh-CN for Simplified Chinese)",
+    ].join("\n"),
+    "Language",
+  );
   const locale = await p.select<InitLocale>({
-    message: "Language / 语言",
+    message: "Which language should Autopilot speak in this project?",
     options: [
-      { value: "en", label: "English" },
-      { value: "zh-CN", label: "中文（简体）" },
+      { value: "en", label: "English", hint: "default for most OSS repos" },
+      {
+        value: "zh-CN",
+        label: "Chinese (Simplified)",
+        hint: "followups & skill blurbs in Simplified Chinese",
+      },
     ],
     initialValue: opts.locale === "zh-CN" ? "zh-CN" : "en",
   });
   if (p.isCancel(locale)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
+  p.note(
+    "v0.1 ships Cursor IDE hooks. More platforms may land later.",
+    "Platform",
+  );
   const platform = await p.select<"cursor">({
-    message: "AI platform",
-    options: [{ value: "cursor", label: "Cursor" }],
+    message: "Which agent host are you using?",
+    options: [
+      {
+        value: "cursor",
+        label: "Cursor",
+        hint: "hooks + /autopilot-* skills",
+      },
+    ],
     initialValue: "cursor",
   });
   if (p.isCancel(platform)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
   const surface = await p.select<"ide">({
-    message: "Surface",
+    message: "How should Autopilot plug in?",
     options: [
       {
         value: "ide",
-        label: "IDE — hook integration (recommended)",
+        label: "IDE hooks (recommended)",
+        hint: "stop / edit / submit hooks drive the loop",
       },
     ],
     initialValue: "ide",
   });
   if (p.isCancel(surface)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
+  p.note(
+    [
+      "Plans live as ordinary markdown in your repo:",
+      "  <dir>/<slug>/{brief,plan,checklist}.md",
+      "Most people keep them at plans/ next to the code.",
+    ].join("\n"),
+    "Plans",
+  );
   const plansChoice = await p.select<"plans" | "custom">({
-    message: "Plans directory",
+    message: "Where should plan files live?",
     options: [
-      { value: "plans", label: "plans/ at repo root (recommended)" },
-      { value: "custom", label: "Custom path…" },
+      {
+        value: "plans",
+        label: "plans/ at the repo root",
+        hint: "simple & visible — recommended",
+      },
+      {
+        value: "custom",
+        label: "Somewhere else…",
+        hint: "e.g. docs/plans",
+      },
     ],
     initialValue: "plans",
   });
   if (p.isCancel(plansChoice)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
   let plansDir = "plans";
   if (plansChoice === "custom") {
     const custom = await p.text({
-      message: "Plans directory (relative to project root)",
+      message: "Relative path from the project root:",
       placeholder: "docs/plans",
       initialValue: "docs/plans",
       validate: (v) => {
@@ -302,7 +356,7 @@ export async function collectWizardAnswers(
       },
     });
     if (p.isCancel(custom)) {
-      return cancelOut(p, "Cancelled.");
+      return cancelOut(p, "Cancelled — nothing was changed.");
     }
     const n = normalizePlansDir(custom);
     if (!n.ok) {
@@ -312,49 +366,122 @@ export async function collectWizardAnswers(
   }
 
   const plansGit = await p.select<PlansGitPolicy>({
-    message: "Track plans in git?",
+    message: "Should those plan files be committed with the project?",
     options: [
       {
         value: "commit",
-        label: "Yes — commit plans/ (recommended)",
+        label: "Yes — keep them in git",
+        hint: "best for teams & reviewable history",
       },
       {
         value: "local-only",
-        label: "Local only — add plans/ to .gitignore",
+        label: "No — gitignore the plans dir",
+        hint: "handy for personal scratchpads",
       },
       {
         value: "leave",
-        label: "I'll configure .gitignore myself",
+        label: "Don't touch .gitignore",
+        hint: "I'll decide later",
       },
     ],
     initialValue: "commit",
   });
   if (p.isCancel(plansGit)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
+  p.note(
+    [
+      "Optional: after self-review, Autopilot can require machine checks",
+      "(tests, lint, …) before advancing. You can wire commands in config.yml",
+      "anytime — this only flips the enabled flag.",
+    ].join("\n"),
+    "Verify (optional)",
+  );
   const verifyChoice = await p.select<"skip" | "enable">({
-    message: "Machine verify commands (optional)",
+    message: "Enable the verify layer now?",
     options: [
-      { value: "skip", label: "Skip — no verify layer (default)" },
+      {
+        value: "skip",
+        label: "Skip for now",
+        hint: "you can turn it on later — default",
+      },
       {
         value: "enable",
-        label: "Enable verify flag (edit commands in config later)",
+        label: "Enable the flag",
+        hint: "add commands under review.verify in config.yml",
       },
     ],
     initialValue: "skip",
   });
   if (p.isCancel(verifyChoice)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
   p.note(
     [
-      "Triggers are text fallbacks (line-start). Prefer /autopilot-on skills.",
-      "Slash skill names are fixed; stock phrases follow the selected locale.",
-      "Customize later via .autopilot/config.yml (or locale set).",
+      "When a turn fails (usage limit, HTTP 500, abort, …), Autopilot can",
+      "keep recovering — or pause after N failures so you can take a look.",
+      "Paused sessions resume with: Autopilot RESUME  /  /autopilot-resume",
+      "",
+      "Written to config as review.errors.max_before_pause (0 = never pause).",
     ].join("\n"),
-    "Triggers",
+    "Turn errors",
+  );
+  const errorPauseChoice = await p.select<"unlimited" | "5" | "custom">({
+    message: "How should consecutive turn errors be handled?",
+    options: [
+      {
+        value: "unlimited",
+        label: "Keep going — never auto-pause",
+        hint: "best default for overnight / long runs",
+      },
+      {
+        value: "5",
+        label: "Pause after 5 errors",
+        hint: "a sensible safety net",
+      },
+      {
+        value: "custom",
+        label: "Pick my own number…",
+        hint: "1–1000",
+      },
+    ],
+    initialValue: "unlimited",
+  });
+  if (p.isCancel(errorPauseChoice)) {
+    return cancelOut(p, "Cancelled — nothing was changed.");
+  }
+
+  let maxErrorsBeforePause = 0;
+  if (errorPauseChoice === "5") {
+    maxErrorsBeforePause = 5;
+  } else if (errorPauseChoice === "custom") {
+    const custom = await p.text({
+      message: "Pause after how many consecutive turn errors?",
+      placeholder: "5",
+      initialValue: "5",
+      validate: (v) => {
+        const n = Number((v ?? "").trim());
+        if (!Number.isInteger(n) || n < 1 || n > 1000) {
+          return "Please enter a whole number between 1 and 1000";
+        }
+        return undefined;
+      },
+    });
+    if (p.isCancel(custom)) {
+      return cancelOut(p, "Cancelled — nothing was changed.");
+    }
+    maxErrorsBeforePause = Number(String(custom).trim());
+  }
+
+  p.note(
+    [
+      "Day to day, prefer the slash skills: /autopilot-on, /autopilot-run, …",
+      "Plain-text triggers (\"Autopilot ON\", …) still work as a fallback.",
+      "Phrases follow your locale; tweak anytime in .autopilot/config.yml.",
+    ].join("\n"),
+    "How you'll start it",
   );
 
   const cliCmd = resolveCliCommand();
@@ -365,48 +492,59 @@ export async function collectWizardAnswers(
         ? "bashrc"
         : "skip";
   const shellAlias = await p.select<ShellAliasTarget>({
-    message: "Shell shortcut",
+    message: "Want a shell helper so you can type `autopilot` anywhere?",
     options: [
       {
         value: "zshrc",
-        label: "Add autopilot() to ~/.zshrc",
+        label: "Yes — add autopilot() to ~/.zshrc",
         hint: cliCmd,
       },
       {
         value: "bashrc",
-        label: "Add autopilot() to ~/.bashrc",
+        label: "Yes — add autopilot() to ~/.bashrc",
         hint: cliCmd,
       },
       {
         value: "skip",
-        label: `Skip — run via: ${cliCmd}`,
+        label: "No thanks — I'll call the CLI directly",
+        hint: cliCmd,
       },
     ],
     initialValue: shellDefault,
   });
   if (p.isCancel(shellAlias)) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
   const summary = [
-    `Project:   ${probe.projectRoot}`,
-    `Platform:  ${platform} (${surface}, hook)`,
-    `Locale:    ${locale}`,
-    `Plans:     ${plansDir}/<slug>/checklist.md`,
-    `Plans git: ${plansGit}`,
-    `Verify:    ${verifyChoice === "skip" ? "skipped" : "enabled (flag)"}`,
-    `CLI:       ${cliCmd}${shellAlias === "skip" ? "" : ` (+ ~/.${shellAlias})`}`,
-    `Force:     ${force ? "yes (keep config.yml)" : "no"}`,
+    `Project:  ${probe.projectRoot}`,
+    `Host:     ${platform} (${surface})`,
+    `Locale:   ${locale}`,
+    `Plans:    ${plansDir}/<slug>/checklist.md`,
+    `In git:   ${
+      plansGit === "commit"
+        ? "yes"
+        : plansGit === "local-only"
+          ? "no (gitignore)"
+          : "unchanged"
+    }`,
+    `Verify:   ${verifyChoice === "skip" ? "off" : "flag on — add commands later"}`,
+    `Errors:   ${
+      maxErrorsBeforePause === 0
+        ? "never auto-pause"
+        : `pause after ${maxErrorsBeforePause}`
+    }`,
+    `CLI:      ${cliCmd}${shellAlias === "skip" ? "" : ` · alias → ~/.${shellAlias}`}`,
     "",
     "Will write: .autopilot/, .cursor/hooks.json, skills, workflows, quickstart",
   ].join("\n");
 
   const ready = await p.confirm({
-    message: `Ready to install?\n${summary}`,
+    message: `Ready to install?\n\n${summary}`,
     initialValue: true,
   });
   if (p.isCancel(ready) || !ready) {
-    return cancelOut(p, "Cancelled.");
+    return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
   return {
@@ -417,6 +555,7 @@ export async function collectWizardAnswers(
     plansDir,
     plansGit,
     verifyEnabled: verifyChoice === "enable",
+    maxErrorsBeforePause,
     shellAlias,
     force,
     packageVersion: opts.packageVersion ?? PACKAGE_VERSION,
@@ -432,7 +571,7 @@ export async function runInteractiveInit(
   // Injected prompts (tests) skip the TTY gate; real CLI needs a terminal.
   if (!opts.prompts && !process.stdin.isTTY) {
     console.error(
-      `Interactive init requires a TTY. Use: ${CLI_NAME} init --yes`,
+      `Interactive init requires a TTY. Use: ${resolveCliCommand()} init --yes`,
     );
     return 1;
   }
@@ -453,14 +592,14 @@ export async function runInteractiveInit(
     spin.stop("Install failed");
     const msg = err instanceof Error ? err.message : String(err);
     p.log.warn(msg);
-    p.outro("Init failed.");
+    p.outro("Something went wrong — see the message above.");
     return 1;
   }
 
   if (!result.ok) {
     spin.stop("Install failed");
     p.log.warn(result.error);
-    p.outro("Init failed.");
+    p.outro("Something went wrong — see the message above.");
     return 1;
   }
 
@@ -473,14 +612,14 @@ export async function runInteractiveInit(
     try {
       const shortcut = appendShellAlias(answers.shellAlias);
       if (shortcut.added) {
-        p.log.step(`shell shortcut → ${shortcut.path}`);
-        p.log.info(`Run: source ${shortcut.path}   then: autopilot status`);
+        p.log.step(`shell helper → ${shortcut.path}`);
+        p.log.info(`Open a new shell, or: source ${shortcut.path}`);
       } else {
-        p.log.info(`Shell shortcut already present in ${shortcut.path}`);
+        p.log.info(`Shell helper already present in ${shortcut.path}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      p.log.warn(`Could not write shell shortcut: ${msg}`);
+      p.log.warn(`Could not write shell helper: ${msg}`);
     }
   }
 
@@ -490,6 +629,6 @@ export async function runInteractiveInit(
     answers.plansDir,
   );
   p.note(cheat.join("\n"), `${PREFERRED_NAME} is ready`);
-  p.outro("Done.");
+  p.outro("You're all set — try /autopilot-on in Cursor.");
   return 0;
 }

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
 
 export interface ChecklistItem {
   id: string;
@@ -13,6 +14,9 @@ export interface ChecklistMd {
   path: string;
   items: ChecklistItem[];
 }
+
+/** Hard cap — stop-hook / track listing must not OOM on hostile checklist paths. */
+export const MAX_CHECKLIST_BYTES = 1_048_576;
 
 const ITEM_RE = /^-\s*\[([ xX])\]\s*(.+)$/;
 /** Prefer em/en dash; ASCII hyphen only when surrounded by spaces. */
@@ -56,8 +60,11 @@ function parseItemLine(line: string, lineNumber: number): ChecklistItem | null {
   };
 }
 
-export function parseChecklist(checklistPath: string): ChecklistMd {
-  const content = fs.readFileSync(checklistPath, "utf8");
+/** Parse checklist markdown text (no FS). */
+export function parseChecklistMarkdown(
+  content: string,
+  checklistPath: string,
+): ChecklistMd {
   const lines = content.split(/\r?\n/);
   const items: ChecklistItem[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -65,6 +72,71 @@ export function parseChecklist(checklistPath: string): ChecklistMd {
     if (item) items.push(item);
   }
   return { path: checklistPath, items };
+}
+
+/**
+ * Read + parse a checklist file.
+ * Refuses NUL paths, symlinks (O_NOFOLLOW / lstat), non-files, and oversized bodies.
+ * When projectRoot is set, re-checks realpath containment after open (same TOCTOU
+ * class as readVerifyReport: intermediate dir symlink escape).
+ */
+export function parseChecklist(
+  checklistPath: string,
+  opts?: { projectRoot?: string },
+): ChecklistMd {
+  if (!checklistPath || checklistPath.includes("\0")) {
+    throw new Error("Invalid checklist path");
+  }
+  const projectRoot = opts?.projectRoot;
+  if (projectRoot !== undefined && projectRoot !== null) {
+    if (
+      typeof projectRoot !== "string" ||
+      !normalizeProjectRoot(projectRoot)
+    ) {
+      throw new Error("Invalid project root");
+    }
+  }
+  const root =
+    typeof projectRoot === "string"
+      ? normalizeProjectRoot(projectRoot) ?? undefined
+      : undefined;
+  const nofollow =
+    typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
+  // Platforms without O_NOFOLLOW: refuse symlinks before open (still a small TOCTOU window).
+  if (nofollow === 0) {
+    const st = fs.lstatSync(checklistPath);
+    if (st.isSymbolicLink() || !st.isFile()) {
+      throw new Error("Checklist must be a regular file");
+    }
+  }
+  const fd = fs.openSync(checklistPath, fs.constants.O_RDONLY | nofollow);
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > MAX_CHECKLIST_BYTES) {
+      throw new Error("Checklist unreadable or too large");
+    }
+    // Bind fd to the path's current identity. Always — not only when O_NOFOLLOW
+    // is missing (same intermediate-dir swap-back TOCTOU as verify-report).
+    const lst = fs.lstatSync(checklistPath);
+    if (lst.isSymbolicLink() || !lst.isFile()) {
+      throw new Error("Checklist must be a regular file");
+    }
+    if (lst.ino !== st.ino || lst.dev !== st.dev) {
+      throw new Error("Checklist path changed during open");
+    }
+    if (root && !isRealpathInsideProject(root, checklistPath)) {
+      throw new Error("Checklist outside project");
+    }
+    const buf = Buffer.alloc(st.size);
+    const n = fs.readSync(fd, buf, 0, st.size, 0);
+    const content = buf.subarray(0, n).toString("utf8");
+    if (Buffer.byteLength(content, "utf8") > MAX_CHECKLIST_BYTES) {
+      throw new Error("Checklist too large");
+    }
+    return parseChecklistMarkdown(content, checklistPath);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 export function countUnchecked(checklist: ChecklistMd): number {

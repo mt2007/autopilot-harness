@@ -9,10 +9,18 @@ export function defaultConfigYaml(opts: {
   locale: InitLocale;
   plansDir?: string;
   verifyEnabled?: boolean;
+  /** 0 = unlimited (default). */
+  maxErrorsBeforePause?: number;
 }): string {
   const plansNorm = normalizePlansDir(opts.plansDir);
   const plansDir = plansNorm.ok ? plansNorm.value : "plans";
   const verifyEnabled = Boolean(opts.verifyEnabled);
+  const maxErrors =
+    typeof opts.maxErrorsBeforePause === "number" &&
+    Number.isInteger(opts.maxErrorsBeforePause) &&
+    opts.maxErrorsBeforePause >= 0
+      ? opts.maxErrorsBeforePause
+      : 0;
   const triggers = stockTriggers(opts.locale);
   const on = JSON.stringify(triggers.on);
   const run = JSON.stringify(triggers.run);
@@ -57,6 +65,10 @@ review:
     #     required: true
   stuck:
     max_idle_stops: 5
+  errors:
+    # Consecutive turn errors/aborts before pause (repeated_errors).
+    # 0 = never pause (unlimited recoveries); e.g. 5 = pause after 5.
+    max_before_pause: ${maxErrors}
 
 triggers:
   match: line_start

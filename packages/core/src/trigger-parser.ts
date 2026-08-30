@@ -56,10 +56,12 @@ export const HARNESS_FOLLOWUP_PREFIXES = [
   "All checklist items done",
   "Stuck:",
   "Recover:",
+  "Verify failed",
   "自审修复",
   "自审确认",
   "推进下一项",
   "全部完成",
+  "校验失败",
   // Match zh recover/stuck templates (fullwidth colon) — bare「恢复」is too broad.
   "恢复：",
   "卡住：",

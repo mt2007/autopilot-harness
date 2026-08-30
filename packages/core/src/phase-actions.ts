@@ -6,6 +6,12 @@ import {
   listTracks,
   type TrackSummary,
 } from "./list-tracks.js";
+import {
+  isLexicallyInsideProject,
+  isRealpathInsideProject,
+  normalizeInProjectPlansDir,
+  normalizeProjectRoot,
+} from "./project-path.js";
 import type { SessionRow, StateStore } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
 
@@ -37,7 +43,76 @@ function checklistPathFor(
   slug: string,
   plansDir: string,
 ): string {
-  return path.join(projectRoot, plansDir, slug, "checklist.md");
+  const root = normalizeProjectRoot(projectRoot);
+  // Unusable root → relative path that fails later containment (no cwd-abs escape).
+  if (!root) return path.join(plansDir, slug, "checklist.md");
+  return path.join(root, plansDir, slug, "checklist.md");
+}
+
+/** Same checklist binding despite relative vs absolute spelling under projectRoot. */
+function sameChecklistBinding(
+  stored: string,
+  rebuilt: string,
+  projectRoot: string,
+): boolean {
+  if (stored === rebuilt) return true;
+  if (!stored || !rebuilt || stored.includes("\0") || rebuilt.includes("\0")) {
+    return false;
+  }
+  const root = normalizeProjectRoot(projectRoot);
+  if (!root) return false;
+  try {
+    const absStored = path.isAbsolute(stored)
+      ? path.resolve(stored)
+      : path.resolve(root, stored);
+    const absRebuilt = path.isAbsolute(rebuilt)
+      ? path.resolve(rebuilt)
+      : path.resolve(root, rebuilt);
+    return absStored === absRebuilt;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prefer a stored checklist_path only when it is still allowed in-project.
+ * Otherwise rebuild from plansDir/slug — blocks poisoned absolute/escaped session paths.
+ * Never accept stored===rebuilt by string equality alone (plans dir may be a symlink escape).
+ */
+function trustedChecklistPath(
+  projectRoot: string,
+  plansDir: string,
+  slug: string,
+  storedPath: string | null | undefined,
+  boundTrackId: string | null | undefined,
+): string {
+  const rebuilt = checklistPathFor(projectRoot, slug, plansDir);
+  if (storedPath && boundTrackId === slug) {
+    if (isChecklistPathAllowed(projectRoot, storedPath)) {
+      return storedPath;
+    }
+  }
+  return rebuilt;
+}
+
+/** Existing path → realpath inside; missing → lexical inside projectRoot. */
+function isChecklistPathAllowed(
+  projectRoot: string,
+  checklistPath: string,
+): boolean {
+  if (!checklistPath || checklistPath.includes("\0")) return false;
+  const root = normalizeProjectRoot(projectRoot);
+  if (!root) return false;
+  try {
+    fs.lstatSync(
+      path.isAbsolute(checklistPath)
+        ? checklistPath
+        : path.resolve(root, checklistPath),
+    );
+    return isRealpathInsideProject(root, checklistPath);
+  } catch {
+    return isLexicallyInsideProject(root, checklistPath);
+  }
 }
 
 function ensureSession(
@@ -68,8 +143,10 @@ function upsertTrack(
   projectRoot: string,
 ): void {
   const ts = nowIso();
-  const planPath = path.join(projectRoot, plansDir, slug, "plan.md");
-  const briefPath = path.join(projectRoot, plansDir, slug, "brief.md");
+  const root = normalizeProjectRoot(projectRoot);
+  if (!root) return;
+  const planPath = path.join(root, plansDir, slug, "plan.md");
+  const briefPath = path.join(root, plansDir, slug, "brief.md");
   store.db
     .prepare(
       `INSERT INTO tracks (track_id, slug, checklist_path, plan_path, brief_path, updated_at)
@@ -161,6 +238,28 @@ function resolveRunSlug(
   return { kind: "pick", candidates: runnable };
 }
 
+function requireProjectRoot(
+  store: StateStore,
+  projectRoot: string,
+): string | null {
+  // Store is authoritative — caller arg must not redirect plans/checklist FS roots.
+  return (
+    normalizeProjectRoot(store.projectRoot) ??
+    normalizeProjectRoot(projectRoot)
+  );
+}
+
+/**
+ * plansDir must stay a relative in-project directory (no absolute, no ..).
+ * Otherwise path.join(root, plansDir, …) can escape before checklist containment.
+ */
+function requirePlansDir(
+  projectRoot: string,
+  plansDir: string | undefined,
+): string | null {
+  return normalizeInProjectPlansDir(projectRoot, plansDir);
+}
+
 /** Enter executing for a concrete track (RUN gate). */
 export function applyRun(
   store: StateStore,
@@ -171,7 +270,15 @@ export function applyRun(
     config?: PhaseActionConfig;
   },
 ): PhaseActionResult {
-  const plansDir = opts?.config?.plansDir ?? "plans";
+  const root = requireProjectRoot(store, projectRoot);
+  if (!root) {
+    return { ok: false, userMessage: "Invalid project root." };
+  }
+  projectRoot = root;
+  const plansDir = requirePlansDir(projectRoot, opts?.config?.plansDir);
+  if (!plansDir) {
+    return { ok: false, userMessage: "Invalid plans directory." };
+  }
   const concurrencyMode = opts?.config?.concurrencyMode ?? "one_executor";
   const session = ensureSession(store, conversationId, projectRoot);
 
@@ -223,6 +330,7 @@ export function applyRun(
     slug,
     checklistPath,
     paused: session.paused === 1,
+    projectRoot,
   });
   if (!gate.ok) {
     return {
@@ -249,6 +357,18 @@ export function applyRun(
         }
       }
 
+      // Re-read inside the lock: idempotent re-RUN on the *same* armed track
+      // (same checklist binding) preserves review chain (F-E8). Switching tracks,
+      // plansDir/checklist path, or freshly entering must reset — otherwise
+      // confirm_left/pending from track A (or an old checklist) leak onto B.
+      const fresh = store.getSession(conversationId);
+      const alreadyExecutingSameTrack =
+        fresh?.phase === "executing" &&
+        fresh.armed === 1 &&
+        fresh.paused === 0 &&
+        fresh.track_id === slug &&
+        sameChecklistBinding(fresh.checklist_path, checklistPath, projectRoot);
+
       upsertTrack(store, slug, checklistPath, plansDir, projectRoot);
 
       const updated = store.upsertSession({
@@ -267,7 +387,21 @@ export function applyRun(
         idle_stop_count: 0,
       });
 
-      store.ensureReviewChain(conversationId);
+      if (!alreadyExecutingSameTrack) {
+        // Fresh enter or track switch: drop stale pending / chain from prior work.
+        store.updateReviewChain(conversationId, {
+          fix_round: 0,
+          confirm_left: null,
+          chain_pending: 0,
+          code_edited: 0,
+          item_confirm_complete: 0,
+          pending_followup: null,
+          pending_followup_at: null,
+          pending_redeliver_at: null,
+        });
+      } else {
+        store.ensureReviewChain(conversationId);
+      }
 
       return { commit: true, value: { ok: true, session: updated } };
     });
@@ -291,7 +425,15 @@ export function applyReplan(
   projectRoot: string,
   opts?: { slug?: string; config?: PhaseActionConfig },
 ): PhaseActionResult {
-  const plansDir = opts?.config?.plansDir ?? "plans";
+  const root = requireProjectRoot(store, projectRoot);
+  if (!root) {
+    return { ok: false, userMessage: "Invalid project root." };
+  }
+  projectRoot = root;
+  const plansDir = requirePlansDir(projectRoot, opts?.config?.plansDir);
+  if (!plansDir) {
+    return { ok: false, userMessage: "Invalid plans directory." };
+  }
   const session = ensureSession(store, conversationId, projectRoot);
 
   let slug = opts?.slug ?? session.track_id;
@@ -333,10 +475,13 @@ export function applyReplan(
     }
   }
 
-  const checklistPath =
-    session.checklist_path && session.track_id === slug
-      ? session.checklist_path
-      : checklistPathFor(projectRoot, slug, plansDir);
+  const checklistPath = trustedChecklistPath(
+    projectRoot,
+    plansDir,
+    slug,
+    session.checklist_path,
+    session.track_id,
+  );
 
   const updated = store.upsertSession({
     conversation_id: conversationId,
@@ -358,6 +503,9 @@ export function applyReplan(
     chain_pending: 0,
     code_edited: 0,
     item_confirm_complete: 0,
+    pending_followup: null,
+    pending_followup_at: null,
+    pending_redeliver_at: null,
   });
 
   return { ok: true, session: updated };
@@ -371,6 +519,11 @@ export function applyTrackPick(
   pick: string,
   opts?: { config?: PhaseActionConfig },
 ): PhaseActionResult {
+  const root = requireProjectRoot(store, projectRoot);
+  if (!root) {
+    return { ok: false, userMessage: "Invalid project root." };
+  }
+  projectRoot = root;
   const session = store.getSession(conversationId);
   if (!session?.pending_action) {
     return {

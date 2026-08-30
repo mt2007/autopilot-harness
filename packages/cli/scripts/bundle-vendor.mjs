@@ -13,13 +13,7 @@ const cliRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(cliRoot, "../..");
 const outDir = path.join(cliRoot, "assets", "vendor");
 const entry = path.join(cliRoot, "src", "vendor-entry.ts");
-const migrationSrc = path.join(
-  repoRoot,
-  "packages",
-  "core",
-  "migrations",
-  "001_initial.sql",
-);
+const migrationSrcDir = path.join(repoRoot, "packages", "core", "migrations");
 
 fs.mkdirSync(outDir, { recursive: true });
 
@@ -62,9 +56,20 @@ await esbuild.build({
 
 const migDir = path.join(outDir, "migrations");
 fs.mkdirSync(migDir, { recursive: true });
-if (!fs.existsSync(migrationSrc)) {
-  throw new Error(`Missing migration: ${migrationSrc}`);
+if (!fs.existsSync(migrationSrcDir)) {
+  throw new Error(`Missing migrations dir: ${migrationSrcDir}`);
 }
-fs.copyFileSync(migrationSrc, path.join(migDir, "001_initial.sql"));
+const sqlFiles = fs
+  .readdirSync(migrationSrcDir)
+  .filter((f) => /^\d{3}_.+\.sql$/.test(f))
+  .sort();
+if (sqlFiles.length === 0) {
+  throw new Error(`No migration SQL in ${migrationSrcDir}`);
+}
+for (const f of sqlFiles) {
+  fs.copyFileSync(path.join(migrationSrcDir, f), path.join(migDir, f));
+}
 
-console.log("vendor: wrote assets/vendor/runtime.mjs + migrations/");
+console.log(
+  `vendor: wrote assets/vendor/runtime.mjs + migrations/ (${sqlFiles.join(", ")})`,
+);

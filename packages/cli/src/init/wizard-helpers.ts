@@ -78,6 +78,8 @@ export interface InitWizardAnswers {
   plansDir: string;
   plansGit: PlansGitPolicy;
   verifyEnabled: boolean;
+  /** 0 = unlimited. */
+  maxErrorsBeforePause: number;
   shellAlias: ShellAliasTarget;
   force: boolean;
   packageVersion?: string;
@@ -260,6 +262,7 @@ export function answersToInstallOptions(
     plansDir: answers.plansDir,
     plansGit: answers.plansGit,
     verifyEnabled: answers.verifyEnabled,
+    maxErrorsBeforePause: answers.maxErrorsBeforePause,
     writeQuickstart: true,
   };
 }
@@ -281,10 +284,37 @@ export function tryResolveRunningCliScript(): string | null {
     if (!fs.statSync(abs).isFile()) return null;
     // Refuse control chars that break shell rc lines.
     if (/[\0\n\r]/.test(abs)) return null;
+    if (!isTrustedCliEntrypoint(abs)) return null;
     return abs;
   } catch {
     return null;
   }
+}
+
+/**
+ * argv[1] is often some other .js under test runners / wrappers.
+ * Only accept known Autopilot CLI entry names (and bin.js under our package paths).
+ */
+export function isTrustedCliEntrypoint(absPath: string): boolean {
+  if (typeof absPath !== "string" || !absPath.trim()) return false;
+  // Normalize before basename — on POSIX, path.basename ignores `\`, so a
+  // Windows-style path would otherwise never look like `bin.js`.
+  const norm = absPath.split(/[/\\]+/).filter(Boolean).join("/");
+  const base = path.posix.basename(norm);
+  if (
+    base === "autopilot-harness" ||
+    base === "autopilot-harness.js" ||
+    base === "autopilot-harness.mjs"
+  ) {
+    return true;
+  }
+  if (base !== "bin.js") return false;
+  // Local monorepo, scoped package, or npm-installed package root.
+  return (
+    /(^|\/)packages\/cli\/(dist|src)\/bin\.js$/.test(norm) ||
+    /(^|\/)@autopilot-harness\/cli\/(dist|src)\/bin\.js$/.test(norm) ||
+    /(^|\/)autopilot-harness\/(dist|src)\/bin\.js$/.test(norm)
+  );
 }
 
 /**

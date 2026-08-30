@@ -30,12 +30,12 @@
   },
   "followup": {
     "review": {
-      "fix": "自审修复第 {round} 轮：检查完整 diff，修复 CRITICAL/HIGH，跑相关测试。不要 commit。",
-      "confirm": "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。只审本角。不要 commit。",
-      "confirm_final": "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。只读终审，不要改代码、不要 commit。"
+      "fix": "自审修复第 {round} 轮（无硬顶；确认阶段需连续 {total} 轮无改动）。本轮改过代码。请立刻对本轮 diff 做缺陷优先自审并直接修复：1) 用 git diff / git status 看完整改动；2) 查正确性、空值/边界、并发、安全、回归、缺测；3) CRITICAL/HIGH 必须改，MEDIUM 尽量改；4) 跑相关测试；5) 修完后简短说明审了什么、改了什么（或「自审无问题」）。不要 commit/push。若本轮未再改代码，下一轮会进入确认审查（每轮不同审查角度）。",
+      "confirm": "自审确认 {n}/{total}（会话第 {sessionRound} 轮；连续无改动确认，计入修复轮计数）。本轮审查角度：【{lensTitle}】（通用多角度确认，非同一清单复读）。{lensFocus} 上一轮未再改代码。请按本角度复核：1) 用 git diff / git status 确认相对上一轮无新改动或仅有已审改动；2) 只深挖本角度；禁止用「全面复核无问题」敷衍；3) 本角度若有 CRITICAL/HIGH 必须改；MEDIUM 尽量改；4) 有改动则直接修复并跑相关测试；5) 结尾写：「本角度（{lensTitle}）：自审无问题」或简述已修项；无问题则不要再改代码。不要 commit/push。",
+      "confirm_final": "自审确认 {n}/{total}（会话第 {sessionRound} 轮；连续无改动确认，计入修复轮计数）。本轮审查角度：【{lensTitle}】（通用多角度确认，非同一清单复读）。{lensFocus} 上一轮未再改代码。请按本角度复核：1) 用 git diff / git status 确认相对上一轮无新改动或仅有已审改动；2) 只深挖本角度；禁止用「全面复核无问题」敷衍；3) 本轮只读：发现 CRITICAL/HIGH/缺测只记录，不要改代码、不要补测、不要 commit；若已经改了文件，接受回到修复轮，本轮绝不 commit；4) 不要跑会改动仓库的命令；5) 结尾写：「本角度（{lensTitle}）：自审无问题」或列出问题（不修复）；无问题则不要再改代码。不要 commit/push。交卷（commit）与下一项由链结束后的推进/完成处理，本轮不做。"
     },
-    "advance": "推进下一项：勾选当前项 [x]，按范围 conventional commit（若有改动），然后实现下一项：{nextId} — {nextTitle}。",
-    "done": "全部完成。勾选最后一项 [x]，必要时 scoped commit，然后停止。",
+    "advance": "推进下一项：自审确认已干净通过（确认轮不 commit）。若 working tree 仍有本项未提交改动，按安全清单本地 commit（无改动则跳过）：git status/diff → 只 stage 本 checklist 项相关路径；禁止 git add -A、stage .env/密钥/.autopilot 运行时；一次 conventional commit；禁止 push/--no-verify/amend/force（仅用户明确要求才可 push）。已干净则跳过 commit。然后勾选当前项 [x]，实现下一项：{nextId} — {nextTitle}。",
+    "done": "全部完成。自审确认已干净通过（确认轮不 commit）。勾选最后一项 [x]。若 working tree 仍有本项未提交改动，按安全清单本地 commit（勿 stage .env/密钥/.autopilot 运行时；勿 push，除非用户明确要求）；已干净则只简短确认即可。然后停止。",
     "recover": "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
     "stuck": "卡住：连续多轮无进展。请换策略，或修好后发送 Autopilot RESUME。",
     "verify_fix": "校验失败（{reason}）。请修复 verify 命令并重写 verify-last.json；不要推进。",
@@ -47,24 +47,24 @@
   },
   "lens": {
     "scope-correctness": {
-      "title": "范围与正确性",
-      "focus": "仅在当前 checklist 项范围内：逻辑、不变量、与 plan.md 一致。"
+      "title": "正确性与不变量",
+      "focus": "聚焦逻辑对错、状态机/流程是否自洽、前后条件与业务不变量是否被破坏；不要把本轮做成空值/并发/安全/测试的大杂烩。"
     },
     "boundaries": {
-      "title": "边界与错误路径",
-      "focus": "空值、边界、错误路径、失败回滚。"
-    },
-    "security": {
-      "title": "安全",
-      "focus": "鉴权/越权、注入、敏感数据、信任边界。"
+      "title": "空值、边界与错误路径",
+      "focus": "聚焦 null/空集合、上下界、非法输入、超时/失败返回、幂等与重试是否安全；不要重复上一轮的纯逻辑走查。"
     },
     "concurrency": {
-      "title": "并发",
-      "focus": "竞态、事务、部分失败；不适用则 N/A。"
+      "title": "并发、竞态与部分失败",
+      "focus": "聚焦多线程/多实例、锁与租约、竞态、事务边界、中途失败留下的脏状态与补偿；不要重复空值清单或安全清单。"
+    },
+    "security": {
+      "title": "安全与信任边界",
+      "focus": "聚焦鉴权/越权、注入、敏感数据泄露、密钥与配置、不可信输入、错误信息是否过曝；不要做成又一轮正确性复读。"
     },
     "tests-regression": {
-      "title": "测试与回归",
-      "focus": "缺测、断言弱、契约漂移；只读。"
+      "title": "测试缺口与回归",
+      "focus": "聚焦关键路径是否缺测、断言是否薄弱、与既有行为/接口契约是否漂移、最可能的回归点；本轮只读记录缺口，不要为补测改代码；不要空泛说「已全面覆盖」。"
     }
   }
 }

@@ -171,6 +171,7 @@ describe("init --yes install", () => {
     expect(config).toMatch(/platform:\s*cursor/);
     expect(config).toMatch(/locale:\s*en/);
     expect(config).toMatch(/confirm_rounds:\s*5/);
+    expect(config).toMatch(/max_before_pause:\s*0/);
     expect(config).toMatch(/# When enabled[\s\S]*#\s*commands:/);
     expect(config).toMatch(/enabled:\s*false/);
   });

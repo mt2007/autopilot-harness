@@ -19,6 +19,11 @@ export interface InitYesOptions {
   plansGit?: PlansGitPolicy;
   /** Write review.verify.enabled (default false). */
   verifyEnabled?: boolean;
+  /**
+   * Consecutive turn errors before pause.
+   * `0` = unlimited (default). Written to review.errors.max_before_pause.
+   */
+  maxErrorsBeforePause?: number;
   /** Also write docs/autopilot/quickstart.md (default true for fresh init). */
   writeQuickstart?: boolean;
 }

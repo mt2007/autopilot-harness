@@ -4,13 +4,16 @@ import {
   createResolveLens,
   type FollowupLocaleBundle,
 } from "../src/review-i18n.js";
+import { getLens, lensNumberForRound } from "../src/review-lenses.js";
 
 const zhBundle: FollowupLocaleBundle = {
   followup: {
     review: {
-      fix: "自审修复第 {round} 轮：检查完整 diff。",
-      confirm: "自审确认 {n}/{total} — 角度（{lensTitle}）：{lensFocus}。",
-      confirm_final: "自审确认 {n}/{total} — 终审（{lensTitle}）：{lensFocus}。",
+      fix: "自审修复第 {round} 轮（无硬顶；确认阶段需连续 {total} 轮无改动）。",
+      confirm:
+        "自审确认 {n}/{total}（会话第 {sessionRound} 轮）— 角度（{lensTitle}）：{lensFocus}。",
+      confirm_final:
+        "自审确认 {n}/{total}（会话第 {sessionRound} 轮）— 终审（{lensTitle}）：{lensFocus}。",
     },
     advance: "推进：{nextId} — {nextTitle}",
     done: "全部完成。",
@@ -19,27 +22,40 @@ const zhBundle: FollowupLocaleBundle = {
     verify_fix: "校验失败（{reason}）。",
   },
   lens: {
-    "scope-correctness": { title: "范围与正确性", focus: "逻辑与不变量。" },
-    boundaries: { title: "边界", focus: "空值。" },
-    security: { title: "安全", focus: "注入。" },
-    concurrency: { title: "并发", focus: "竞态。" },
-    "tests-regression": { title: "测试", focus: "缺测。" },
+    "scope-correctness": { title: "正确性与不变量", focus: "逻辑与不变量。" },
+    boundaries: { title: "空值、边界与错误路径", focus: "空值。" },
+    concurrency: { title: "并发、竞态与部分失败", focus: "竞态。" },
+    security: { title: "安全与信任边界", focus: "注入。" },
+    "tests-regression": { title: "测试缺口与回归", focus: "缺测。" },
   },
 };
 
 describe("review-i18n", () => {
   it("renders followups from locale templates", () => {
     const render = createRenderFollowup(zhBundle);
-    expect(render("review.fix", { round: 2 })).toContain("第 2 轮");
+    expect(render("review.fix", { round: 2, total: 5 })).toContain("第 2 轮");
+    expect(render("review.confirm", { n: 1, total: 5, sessionRound: 3, lensTitle: "X", lensFocus: "Y" })).toContain(
+      "会话第 3 轮",
+    );
     expect(render("verify_fix", { reason: "missing" })).toContain("missing");
     expect(render("advance", { nextId: "a", nextTitle: "A" })).toContain("a — A");
   });
 
   it("resolves localized lenses for light mode (3 rounds → 1,2,5)", () => {
     const resolve = createResolveLens(zhBundle);
-    expect(resolve(1, 3).title).toBe("范围与正确性");
-    expect(resolve(2, 3).title).toBe("边界");
-    expect(resolve(3, 3).title).toBe("测试");
+    expect(resolve(1, 3).title).toBe("正确性与不变量");
+    expect(resolve(2, 3).title).toBe("空值、边界与错误路径");
+    expect(resolve(3, 3).title).toBe("测试缺口与回归");
+  });
+
+  it("full mode lens order: correctness → boundaries → concurrency → security → tests", () => {
+    expect(lensNumberForRound(3, 5)).toBe(3);
+    expect(getLens(3, 5).key).toBe("concurrency");
+    expect(getLens(4, 5).key).toBe("security");
+    expect(getLens(5, 5).key).toBe("tests-regression");
+    const resolve = createResolveLens(zhBundle);
+    expect(resolve(3, 5).title).toBe("并发、竞态与部分失败");
+    expect(resolve(4, 5).title).toBe("安全与信任边界");
   });
 
   it("createResolveLens falls back when lens map is missing", () => {
