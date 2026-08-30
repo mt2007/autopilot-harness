@@ -7,6 +7,8 @@ export {
   validateHooksShape,
   hasCompleteAutopilotHooks,
   summarizeAutopilotHooks,
+  autopilotStopHasUnlimitedLoop,
+  autopilotHookCommand,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
 export type { PreflightResult } from "./init/install.js";

@@ -11,6 +11,7 @@ import {
 } from "@autopilot-harness/core";
 import { parseDocument } from "yaml";
 import {
+  autopilotStopHasUnlimitedLoop,
   summarizeAutopilotHooks,
   validateHooksShape,
 } from "./init/hooks-merge.js";
@@ -579,7 +580,21 @@ export function runDoctor(
             `WARN  hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
           );
         }
-        if (missingEvents.length === 0 && duplicates === 0) {
+        // Warn even when other events are missing/duplicated — stop can still
+        // be present without loop_limit:null and get Cursor-capped mid-chain.
+        if (
+          !missingEvents.includes("stop") &&
+          !autopilotStopHasUnlimitedLoop(hooks)
+        ) {
+          lines.push(
+            "WARN  Autopilot stop missing loop_limit:null — Cursor defaults to 5 and may skip mid review chain; run upgrade",
+          );
+        }
+        if (
+          missingEvents.length === 0 &&
+          duplicates === 0 &&
+          autopilotStopHasUnlimitedLoop(hooks)
+        ) {
           lines.push("OK    hooks.json Autopilot entries");
         }
       }

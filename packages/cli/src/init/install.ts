@@ -43,6 +43,8 @@ export {
   validateHooksShape,
   hasCompleteAutopilotHooks,
   summarizeAutopilotHooks,
+  autopilotStopHasUnlimitedLoop,
+  autopilotHookCommand,
 } from "./hooks-merge.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./types.js";
 

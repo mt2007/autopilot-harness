@@ -114,6 +114,94 @@ describe("runDoctor", () => {
     expect(joined).toMatch(/OK\s+plans/);
   });
 
+  it("WARNs when Autopilot stop omits loop_limit null", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    const hooksPath = path.join(root, ".cursor", "hooks.json");
+    fs.writeFileSync(
+      hooksPath,
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          beforeSubmitPrompt: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event beforeSubmitPrompt",
+            },
+          ],
+          afterFileEdit: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event afterFileEdit",
+            },
+          ],
+          stop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+            },
+          ],
+        },
+      }),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/loop_limit:null/i);
+    expect(joined).not.toMatch(/OK\s+hooks\.json Autopilot entries/);
+  });
+
+  it("WARNs loop_limit even when another Autopilot event is missing", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    fs.writeFileSync(
+      path.join(root, ".cursor", "hooks.json"),
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          beforeSubmitPrompt: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event beforeSubmitPrompt",
+            },
+          ],
+          // afterFileEdit intentionally missing
+          stop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+            },
+          ],
+        },
+      }),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing Autopilot.*afterFileEdit/i);
+    expect(joined).toMatch(/loop_limit:null/i);
+  });
+
   it("WARNs when ~/.cursor still has global self-review hooks", () => {
     root = tmpProject();
     expect(

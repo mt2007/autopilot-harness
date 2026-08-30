@@ -42,6 +42,14 @@ export type InitResult = InitOk | InitFail;
 
 export interface HookCommand {
   command: string;
+  /**
+   * Cursor stop-hook auto-followup cap. Default is 5 when omitted.
+   * Autopilot stop must use `null` (unlimited) so fix+confirm chains
+   * longer than 5 loops are not silently skipped.
+   */
+  loop_limit?: number | null;
+  timeout?: number;
+  description?: string;
 }
 
 export interface HooksFile {

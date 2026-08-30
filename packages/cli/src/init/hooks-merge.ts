@@ -2,9 +2,31 @@ import type { HookCommand, HooksFile } from "./types.js";
 import { AUTOPILOT_EVENTS } from "./types.js";
 
 export function autopilotHookCommand(event: string): HookCommand {
-  return {
+  const base: HookCommand = {
     command: `node .autopilot/bin/autopilot-harness-hook.mjs --event ${event}`,
   };
+  // Cursor defaults loop_limit to 5 for stop hooks that omit the field.
+  // Autopilot's fix + multi-angle confirm chain routinely exceeds 5
+  // auto-followups in one streak; without null the stop hook is skipped
+  // mid-chain (e.g. after confirm 3/5) and pending_followup stalls.
+  if (event === "stop") {
+    return { ...base, loop_limit: null };
+  }
+  return base;
+}
+
+/** True when project Autopilot stop entry disables Cursor's default loop cap. */
+export function autopilotStopHasUnlimitedLoop(hooks: HooksFile): boolean {
+  const stops = hooks.hooks?.stop;
+  if (!Array.isArray(stops)) return false;
+  return stops.some((h) => {
+    if (!h || typeof h !== "object" || Array.isArray(h)) return false;
+    return (
+      isAutopilotCommand(h.command) &&
+      Object.prototype.hasOwnProperty.call(h, "loop_limit") &&
+      h.loop_limit === null
+    );
+  });
 }
 
 function isAutopilotCommand(cmd: string | undefined): boolean {

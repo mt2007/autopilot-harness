@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillDescription } from "@autopilot-harness/i18n";
 import { installInitYes, mergeHooksJson, preflightForceRefresh } from "../src/init/install.js";
+import { autopilotStopHasUnlimitedLoop } from "../src/init/hooks-merge.js";
 import { runDoctor } from "../src/status-doctor.js";
 
 function tmpProject(): string {
@@ -17,6 +18,37 @@ describe("hooks.json merge", () => {
     expect(JSON.stringify(merged)).toMatch(/autopilot-harness/);
     expect(merged.hooks.afterFileEdit).toHaveLength(1);
     expect(merged.hooks.stop).toHaveLength(1);
+  });
+
+  it("sets stop loop_limit null so Cursor does not cap Autopilot chains at 5", () => {
+    const merged = mergeHooksJson(null);
+    const stop = merged.hooks.stop?.find((h) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(stop).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(stop, "loop_limit")).toBe(true);
+    expect(stop?.loop_limit).toBeNull();
+    const submit = merged.hooks.beforeSubmitPrompt?.[0];
+    expect(submit && "loop_limit" in submit).toBe(false);
+  });
+
+  it("replaces legacy Autopilot stop (no loop_limit) with unlimited stop", () => {
+    const existing = {
+      version: 1,
+      hooks: {
+        stop: [
+          {
+            command: "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+          },
+        ],
+      },
+    };
+    const merged = mergeHooksJson(existing);
+    const stops = (merged.hooks.stop ?? []).filter((h) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(stops).toHaveLength(1);
+    expect(stops[0]?.loop_limit).toBeNull();
   });
 
   it("preserves user hooks and replaces Autopilot entries", () => {
@@ -45,6 +77,64 @@ describe("hooks.json merge", () => {
     expect(
       merged.hooks.stop?.some((h) => h.command.includes("autopilot-harness")),
     ).toBe(true);
+    expect(
+      merged.hooks.stop?.find((h) => h.command.includes("autopilot-harness"))
+        ?.loop_limit,
+    ).toBeNull();
+  });
+});
+
+describe("autopilotStopHasUnlimitedLoop", () => {
+  it("is true only for Autopilot stop with own loop_limit null", () => {
+    expect(
+      autopilotStopHasUnlimitedLoop({
+        hooks: {
+          stop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+              loop_limit: null,
+            },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when loop_limit omitted, numeric, or stop missing", () => {
+    expect(autopilotStopHasUnlimitedLoop({ hooks: {} })).toBe(false);
+    expect(
+      autopilotStopHasUnlimitedLoop({
+        hooks: {
+          stop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      autopilotStopHasUnlimitedLoop({
+        hooks: {
+          stop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+              loop_limit: 5,
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      autopilotStopHasUnlimitedLoop({
+        hooks: {
+          stop: [{ command: "echo other", loop_limit: null }],
+        },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -163,6 +253,13 @@ describe("init --yes install", () => {
         h.command.includes("autopilot-harness"),
       ),
     ).toBe(true);
+    const stopAp = hooks.hooks.stop.find((h: { command: string }) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(stopAp?.loop_limit).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(stopAp, "loop_limit")).toBe(
+      true,
+    );
 
     const config = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),
