@@ -2,6 +2,7 @@ import {
   countUnchecked,
   firstUnchecked,
   parseChecklist,
+  secondUnchecked,
   type ChecklistItem,
 } from "./checklist-md.js";
 import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
@@ -102,15 +103,17 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
     case "advance":
       return (
         `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). ` +
-        `If the working tree still has uncommitted changes for this item, local conventional commit only: ` +
+        `First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item ` +
+        `(including checklist.md when plans/ is committed), local conventional commit only: ` +
         `git status/diff → stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; ` +
         `one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. ` +
-        `If already clean, skip commit. Then mark current item [x] and implement next: ${vars.nextId ?? ""} — ${vars.nextTitle ?? ""}.`
+        `If already clean after marking, skip commit. Then implement next: ${vars.nextId ?? ""} — ${vars.nextTitle ?? ""}.`
       );
     case "done":
       return (
         `All checklist items done. Confirm chain passed (confirm rounds do not commit). ` +
-        `Mark the last item [x]. If the working tree still has uncommitted changes for this item, local conventional commit only ` +
+        `Mark the last item [x]. If the working tree still has uncommitted changes for this item ` +
+        `(including checklist.md when plans/ is committed), local conventional commit only ` +
         `(never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.`
       );
     case "recover":
@@ -158,6 +161,8 @@ export class ReviewEngine {
   private parseSessionChecklist(session: SessionRow): {
     unchecked: number;
     currentItem: ChecklistItem | null;
+    /** Following unchecked item (after current); used by advance followup text. */
+    followingItem: ChecklistItem | null;
   } | null {
     const checklistPath = session.checklist_path;
     if (!checklistPath) return null;
@@ -172,6 +177,7 @@ export class ReviewEngine {
       return {
         unchecked: countUnchecked(cl),
         currentItem: firstUnchecked(cl),
+        followingItem: secondUnchecked(cl),
       };
     } catch {
       return null;
@@ -845,6 +851,7 @@ export class ReviewEngine {
       // unchecked/next from before BEGIN IMMEDIATE (same class as E5c fail).
       let unchecked = checklist.unchecked;
       let next = checklist.next;
+      let following: ChecklistItem | null = null;
       const path = lockedSession.checklist_path;
       if (path) {
         const refreshed = this.parseSessionChecklist(lockedSession);
@@ -853,9 +860,11 @@ export class ReviewEngine {
         }
         unchecked = refreshed.unchecked;
         next = refreshed.currentItem;
+        following = refreshed.followingItem;
       } else {
         unchecked = 0;
         next = null;
+        following = null;
       }
 
       // When verify is armed (enabled + required cmds):
@@ -880,10 +889,16 @@ export class ReviewEngine {
       }
 
       const isAdvance = unchecked > 1;
+      // Invariant: >1 unchecked ⇒ secondUnchecked exists; abort rather than
+      // emit advance pointing at the item about to be marked [x].
+      if (isAdvance && !following) {
+        return { commit: false, value: null };
+      }
+      // nextId/Title = item after marking current [x], not firstUnchecked.
       const message = isAdvance
         ? this.render("advance", {
-            nextId: next?.id ?? "",
-            nextTitle: next?.title ?? "",
+            nextId: following?.id ?? "",
+            nextTitle: following?.title ?? "",
           })
         : this.render("done", {});
       const action: FollowupAction = {

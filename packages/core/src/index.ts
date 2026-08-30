@@ -4,6 +4,7 @@ export {
   MAX_CHECKLIST_BYTES,
   countUnchecked,
   firstUnchecked,
+  secondUnchecked,
   isLastUnchecked,
   itemsMissingSeparatorId,
   slugify,

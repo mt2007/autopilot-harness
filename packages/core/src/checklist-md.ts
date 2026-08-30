@@ -147,6 +147,17 @@ export function firstUnchecked(checklist: ChecklistMd): ChecklistItem | null {
   return checklist.items.find((i) => !i.checked) ?? null;
 }
 
+/** Second unchecked item — the one to implement after marking current [x]. */
+export function secondUnchecked(checklist: ChecklistMd): ChecklistItem | null {
+  let seen = 0;
+  for (const item of checklist.items) {
+    if (item.checked) continue;
+    seen += 1;
+    if (seen === 2) return item;
+  }
+  return null;
+}
+
 export function isLastUnchecked(checklist: ChecklistMd): boolean {
   return countUnchecked(checklist) === 1;
 }

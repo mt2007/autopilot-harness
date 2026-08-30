@@ -4,8 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_CHECKLIST_BYTES,
+  firstUnchecked,
   parseChecklist,
   parseChecklistMarkdown,
+  secondUnchecked,
 } from "../src/index.js";
 
 describe("parseChecklist hardening", () => {
@@ -81,5 +83,24 @@ describe("parseChecklist hardening", () => {
     fs.ftruncateSync(fd, MAX_CHECKLIST_BYTES + 1);
     fs.closeSync(fd);
     expect(() => parseChecklist(cp)).toThrow(/too large|unreadable/i);
+  });
+});
+
+describe("secondUnchecked", () => {
+  it("returns the item after firstUnchecked among unchecked rows", () => {
+    const cl = parseChecklistMarkdown(
+      `- [x] done — Done\n- [ ] a — First\n- [ ] b — Second\n- [ ] c — Third\n`,
+      "/virtual.md",
+    );
+    expect(firstUnchecked(cl)?.id).toBe("a");
+    expect(secondUnchecked(cl)?.id).toBe("b");
+    expect(secondUnchecked(cl)?.title).toBe("Second");
+  });
+
+  it("returns null when fewer than two unchecked", () => {
+    const one = parseChecklistMarkdown(`- [ ] only — One\n`, "/v.md");
+    expect(secondUnchecked(one)).toBeNull();
+    const none = parseChecklistMarkdown(`- [x] done — Done\n`, "/v.md");
+    expect(secondUnchecked(none)).toBeNull();
   });
 });

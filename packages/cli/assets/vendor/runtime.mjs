@@ -35,8 +35,8 @@ var en_default = {
       confirm: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; 4) if you edit, fix and run related tests; 5) close with: "Lens ({lensTitle}): self-review clean" or a short list of fixes; if clean, do not edit further. Do not commit/push.',
       confirm_final: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens ({lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.'
     },
-    advance: "Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). If the working tree still has uncommitted changes for this item, local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean, skip commit. Then mark current item [x] and implement next: {nextId} \u2014 {nextTitle}.",
-    done: "All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item, local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.",
+    advance: "Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: {nextId} \u2014 {nextTitle}.",
+    done: "All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.",
     recover: "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
     stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
@@ -107,8 +107,8 @@ var zh_CN_default = {
       confirm: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u89D2\u5EA6\u82E5\u6709 CRITICAL/HIGH \u5FC5\u987B\u6539\uFF1BMEDIUM \u5C3D\u91CF\u6539\uFF1B4) \u6709\u6539\u52A8\u5219\u76F4\u63A5\u4FEE\u590D\u5E76\u8DD1\u76F8\u5173\u6D4B\u8BD5\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u7B80\u8FF0\u5DF2\u4FEE\u9879\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002",
       confirm_final: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u8F6E\u53EA\u8BFB\uFF1A\u53D1\u73B0 CRITICAL/HIGH/\u7F3A\u6D4B\u53EA\u8BB0\u5F55\uFF0C\u4E0D\u8981\u6539\u4EE3\u7801\u3001\u4E0D\u8981\u8865\u6D4B\u3001\u4E0D\u8981 commit\uFF1B\u82E5\u5DF2\u7ECF\u6539\u4E86\u6587\u4EF6\uFF0C\u63A5\u53D7\u56DE\u5230\u4FEE\u590D\u8F6E\uFF0C\u672C\u8F6E\u7EDD\u4E0D commit\uFF1B4) \u4E0D\u8981\u8DD1\u4F1A\u6539\u52A8\u4ED3\u5E93\u7684\u547D\u4EE4\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u5217\u51FA\u95EE\u9898\uFF08\u4E0D\u4FEE\u590D\uFF09\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002\u4EA4\u5377\uFF08commit\uFF09\u4E0E\u4E0B\u4E00\u9879\u7531\u94FE\u7ED3\u675F\u540E\u7684\u63A8\u8FDB/\u5B8C\u6210\u5904\u7406\uFF0C\u672C\u8F6E\u4E0D\u505A\u3002"
     },
-    advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u65E0\u6539\u52A8\u5219\u8DF3\u8FC7\uFF09\uFF1Agit status/diff \u2192 \u53EA stage \u672C checklist \u9879\u76F8\u5173\u8DEF\u5F84\uFF1B\u7981\u6B62 git add -A\u3001stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u4E00\u6B21 conventional commit\uFF1B\u7981\u6B62 push/--no-verify/amend/force\uFF08\u4EC5\u7528\u6237\u660E\u786E\u8981\u6C42\u624D\u53EF push\uFF09\u3002\u5DF2\u5E72\u51C0\u5219\u8DF3\u8FC7 commit\u3002\u7136\u540E\u52FE\u9009\u5F53\u524D\u9879 [x]\uFF0C\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
-    done: "\u5168\u90E8\u5B8C\u6210\u3002\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002\u7136\u540E\u505C\u6B62\u3002",
+    advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u5148\u52FE\u9009\u5F53\u524D\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u65E0\u6539\u52A8\u5219\u8DF3\u8FC7\uFF09\uFF1Agit status/diff \u2192 \u53EA stage \u672C checklist \u9879\u76F8\u5173\u8DEF\u5F84\uFF1B\u7981\u6B62 git add -A\u3001stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u4E00\u6B21 conventional commit\uFF1B\u7981\u6B62 push/--no-verify/amend/force\uFF08\u4EC5\u7528\u6237\u660E\u786E\u8981\u6C42\u624D\u53EF push\uFF09\u3002\u52FE\u9009\u540E\u5DF2\u5E72\u51C0\u5219\u8DF3\u8FC7 commit\u3002\u7136\u540E\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
+    done: "\u5168\u90E8\u5B8C\u6210\u3002\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002\u7136\u540E\u505C\u6B62\u3002",
     recover: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D checklist \u9879\uFF0C\u4E0D\u8981\u63A8\u8FDB\u3002",
     stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
@@ -315,6 +315,15 @@ function countUnchecked(checklist) {
 }
 function firstUnchecked(checklist) {
   return checklist.items.find((i) => !i.checked) ?? null;
+}
+function secondUnchecked(checklist) {
+  let seen = 0;
+  for (const item of checklist.items) {
+    if (item.checked) continue;
+    seen += 1;
+    if (seen === 2) return item;
+  }
+  return null;
 }
 
 // ../core/src/verify-report.ts
@@ -1439,9 +1448,9 @@ function defaultRender(kind, vars) {
     case "review.confirm_final":
       return `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010${vars.lensTitle}\u3011 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens (${vars.lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.`;
     case "advance":
-      return `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). If the working tree still has uncommitted changes for this item, local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean, skip commit. Then mark current item [x] and implement next: ${vars.nextId ?? ""} \u2014 ${vars.nextTitle ?? ""}.`;
+      return `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: ${vars.nextId ?? ""} \u2014 ${vars.nextTitle ?? ""}.`;
     case "done":
-      return `All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item, local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.`;
+      return `All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.`;
     case "recover":
       return `Recover: the previous turn ended with an error. Continue the current checklist item without advancing.`;
     case "stuck":
@@ -1487,7 +1496,8 @@ var ReviewEngine = class {
       const cl = parseChecklist(checklistPath, { projectRoot: root });
       return {
         unchecked: countUnchecked(cl),
-        currentItem: firstUnchecked(cl)
+        currentItem: firstUnchecked(cl),
+        followingItem: secondUnchecked(cl)
       };
     } catch {
       return null;
@@ -1994,6 +2004,7 @@ var ReviewEngine = class {
       }
       let unchecked = checklist.unchecked;
       let next = checklist.next;
+      let following = null;
       const path9 = lockedSession.checklist_path;
       if (path9) {
         const refreshed = this.parseSessionChecklist(lockedSession);
@@ -2002,9 +2013,11 @@ var ReviewEngine = class {
         }
         unchecked = refreshed.unchecked;
         next = refreshed.currentItem;
+        following = refreshed.followingItem;
       } else {
         unchecked = 0;
         next = null;
+        following = null;
       }
       const verifyArmed = this.config.verifyEnabled && this.config.verifyCommands.some((c) => c.required === true);
       if (verifyArmed) {
@@ -2017,9 +2030,12 @@ var ReviewEngine = class {
         }
       }
       const isAdvance = unchecked > 1;
+      if (isAdvance && !following) {
+        return { commit: false, value: null };
+      }
       const message = isAdvance ? this.render("advance", {
-        nextId: next?.id ?? "",
-        nextTitle: next?.title ?? ""
+        nextId: following?.id ?? "",
+        nextTitle: following?.title ?? ""
       }) : this.render("done", {});
       const action = {
         kind: isAdvance ? "advance" : "done",

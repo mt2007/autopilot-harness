@@ -34,8 +34,8 @@
       "confirm": "自审确认 {n}/{total}（会话第 {sessionRound} 轮；连续无改动确认，计入修复轮计数）。本轮审查角度：【{lensTitle}】（通用多角度确认，非同一清单复读）。{lensFocus} 上一轮未再改代码。请按本角度复核：1) 用 git diff / git status 确认相对上一轮无新改动或仅有已审改动；2) 只深挖本角度；禁止用「全面复核无问题」敷衍；3) 本角度若有 CRITICAL/HIGH 必须改；MEDIUM 尽量改；4) 有改动则直接修复并跑相关测试；5) 结尾写：「本角度（{lensTitle}）：自审无问题」或简述已修项；无问题则不要再改代码。不要 commit/push。",
       "confirm_final": "自审确认 {n}/{total}（会话第 {sessionRound} 轮；连续无改动确认，计入修复轮计数）。本轮审查角度：【{lensTitle}】（通用多角度确认，非同一清单复读）。{lensFocus} 上一轮未再改代码。请按本角度复核：1) 用 git diff / git status 确认相对上一轮无新改动或仅有已审改动；2) 只深挖本角度；禁止用「全面复核无问题」敷衍；3) 本轮只读：发现 CRITICAL/HIGH/缺测只记录，不要改代码、不要补测、不要 commit；若已经改了文件，接受回到修复轮，本轮绝不 commit；4) 不要跑会改动仓库的命令；5) 结尾写：「本角度（{lensTitle}）：自审无问题」或列出问题（不修复）；无问题则不要再改代码。不要 commit/push。交卷（commit）与下一项由链结束后的推进/完成处理，本轮不做。"
     },
-    "advance": "推进下一项：自审确认已干净通过（确认轮不 commit）。若 working tree 仍有本项未提交改动，按安全清单本地 commit（无改动则跳过）：git status/diff → 只 stage 本 checklist 项相关路径；禁止 git add -A、stage .env/密钥/.autopilot 运行时；一次 conventional commit；禁止 push/--no-verify/amend/force（仅用户明确要求才可 push）。已干净则跳过 commit。然后勾选当前项 [x]，实现下一项：{nextId} — {nextTitle}。",
-    "done": "全部完成。自审确认已干净通过（确认轮不 commit）。勾选最后一项 [x]。若 working tree 仍有本项未提交改动，按安全清单本地 commit（勿 stage .env/密钥/.autopilot 运行时；勿 push，除非用户明确要求）；已干净则只简短确认即可。然后停止。",
+    "advance": "推进下一项：自审确认已干净通过（确认轮不 commit）。先勾选当前项 [x]。若 working tree 仍有本项未提交改动（含 checklist.md，且 plans/ 纳入提交时一并 stage），按安全清单本地 commit（无改动则跳过）：git status/diff → 只 stage 本 checklist 项相关路径；禁止 git add -A、stage .env/密钥/.autopilot 运行时；一次 conventional commit；禁止 push/--no-verify/amend/force（仅用户明确要求才可 push）。勾选后已干净则跳过 commit。然后实现下一项：{nextId} — {nextTitle}。",
+    "done": "全部完成。自审确认已干净通过（确认轮不 commit）。勾选最后一项 [x]。若 working tree 仍有本项未提交改动（含 checklist.md，且 plans/ 纳入提交时一并 stage），按安全清单本地 commit（勿 stage .env/密钥/.autopilot 运行时；勿 push，除非用户明确要求）；已干净则只简短确认即可。然后停止。",
     "recover": "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
     "stuck": "卡住：连续多轮无进展。请换策略，或修好后发送 Autopilot RESUME。",
     "verify_fix": "校验失败（{reason}）。请修复 verify 命令并重写 verify-last.json；不要推进。",

@@ -475,14 +475,33 @@ describe("review-engine P0 matrix", () => {
   it("F-LAST: countUnchecked===1 → done; >1 → advance", () => {
     const eng = engine(store, root);
     store.updateReviewChain("c1", { confirm_left: 0, code_edited: 0 });
-    expect(stop(eng, "c1")?.kind).toBe("advance");
+    const advance = stop(eng, "c1");
+    expect(advance?.kind).toBe("advance");
+    // defaultRender (no locale): mark [x] before commit instruction.
+    const advMsg = advance?.message ?? "";
+    const advMark = advMsg.search(/First mark the current item \[x\]/i);
+    const advCommit = advMsg.search(/conventional commit/i);
+    expect(advMark).toBeGreaterThanOrEqual(0);
+    expect(advCommit).toBeGreaterThan(advMark);
+    expect(advMsg).not.toMatch(/Then mark current item \[x\]/);
+    // After marking current (item-a), "implement next" must be the following
+    // unchecked item — not firstUnchecked / the item just completed.
+    expect(advMsg).toMatch(/item-b/);
+    expect(advMsg).toMatch(/Second/);
+    expect(advMsg).not.toMatch(/implement next: item-a/i);
 
     const cp2 = writeChecklist(root, "last", `- [ ] only — One\n`);
     sessionExecuting(store, root, "c2", cp2);
     store.ensureReviewChain("c2");
     store.updateReviewChain("c2", { confirm_left: 0, code_edited: 0 });
     const eng2 = engine(store, root);
-    expect(stop(eng2, "c2")?.kind).toBe("done");
+    const done = stop(eng2, "c2");
+    expect(done?.kind).toBe("done");
+    const doneMsg = done?.message ?? "";
+    const doneMark = doneMsg.search(/Mark the last item \[x\]/i);
+    const doneCommit = doneMsg.search(/conventional commit/i);
+    expect(doneMark).toBeGreaterThanOrEqual(0);
+    expect(doneCommit).toBeGreaterThan(doneMark);
     expect(store.getSession("c2")!.phase).toBe("done");
     expect(store.getSession("c2")!.armed).toBe(0);
   });

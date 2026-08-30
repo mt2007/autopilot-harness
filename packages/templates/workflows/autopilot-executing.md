@@ -22,7 +22,7 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 When followup is advance or done:
 
 1. Mark the **current** item `[x]` in `checklist.md`.
-2. Scoped conventional commit if the working tree has this item's changes (no `git add -A`, no secrets / `.autopilot/state.db`).
+2. Scoped conventional commit if the working tree has this item's changes — **include `checklist.md`** when `plans/` is committed (no `git add -A`, no secrets / `.autopilot/state.db`).
 3. **Then** start the next unchecked item (next turn is OK for large code).
 
 If you write next-item code before checking off, `itemId` / verify binding will be wrong.
