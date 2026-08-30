@@ -13,6 +13,10 @@ import {
   autopilotShellAliasLine,
   appendShellAlias,
   formatCheatSheet,
+  formatHostDisplayName,
+  formatHostActivationTips,
+  formatPostInstallOutro,
+  formatPostInstallFooter,
   normalizePlansDir,
   probeProject,
   resolveCliCommand,
@@ -216,6 +220,8 @@ describe("wizard helpers", () => {
     const qs = fs.readFileSync(path.join(root, rel!), "utf8");
     expect(qs).toMatch(/快速开始/);
     expect(qs).toMatch(/status/);
+    expect(qs).toMatch(/在 Cursor 中/);
+    expect(qs).toMatch(/Reload Window/);
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /Planning/,
     );
@@ -225,8 +231,65 @@ describe("wizard helpers", () => {
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /locale set zh-CN/,
     );
+    expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
+      /in Cursor/,
+    );
+    expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
+      /After install/,
+    );
     expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
       /locale set en/,
+    );
+    expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
+      /生效提示/,
+    );
+  });
+
+  it("host-aware post-install tips stay English and follow platform", () => {
+    expect(formatHostDisplayName("cursor")).toBe("Cursor");
+    expect(formatHostDisplayName("claude-code")).toBe("Claude Code");
+    expect(formatPostInstallOutro("cursor")).toBe(
+      "You're all set — try /autopilot-on in Cursor.",
+    );
+    expect(formatPostInstallOutro("claude-code")).toBe(
+      "You're all set — try /autopilot-on in Claude Code.",
+    );
+    const cursorTips = formatHostActivationTips("cursor").join("\n");
+    expect(cursorTips).toMatch(/Reload Window/);
+    expect(cursorTips).toMatch(/Agent chat/);
+    expect(formatHostActivationTips("claude-code").join("\n")).toMatch(
+      /Claude Code/,
+    );
+    const footer = formatPostInstallFooter("cursor").join("\n");
+    expect(footer).toMatch(/You're all set/);
+    expect(footer).toMatch(/Reload Window/);
+    expect(
+      formatCheatSheet("en", "cmd", "plans", "claude-code").join("\n"),
+    ).toMatch(/in Claude Code/);
+    // Hostile platform ids must not leak C0 controls into terminal tips.
+    expect(formatHostDisplayName("cur\nsor")).toBe("Cursor");
+    expect(formatHostDisplayName("claude-\x00code")).toBe("Claude Code");
+    expect(formatHostDisplayName("\n\t")).toBe("your agent host");
+    const scrubbedTip = formatHostActivationTips("claude\n-code")[0]!;
+    expect(scrubbedTip).toContain("Claude Code");
+    expect(scrubbedTip).not.toMatch(/[\u0000-\u001f\u007f]/);
+    const truncated = formatHostDisplayName(`cursor${"x".repeat(200)}`);
+    expect(truncated.length).toBeLessThanOrEqual(64);
+    expect(truncated.startsWith("Cursor")).toBe(true);
+    expect(formatHostDisplayName("cursor!!!")).toBe("Cursor");
+    expect(formatPostInstallOutro("cursor!!!")).toBe(
+      "You're all set — try /autopilot-on in Cursor.",
+    );
+    // Hand-edited YAML may use different casing.
+    expect(formatHostDisplayName("CURSOR")).toBe("Cursor");
+    expect(formatHostDisplayName("Claude-Code")).toBe("Claude Code");
+    expect(formatHostActivationTips("Cursor").join("\n")).toMatch(
+      /Reload Window/,
+    );
+    // Junk prefixes must not truncate away a real host id.
+    expect(formatHostDisplayName(`${"*".repeat(80)}cursor`)).toBe("Cursor");
+    expect(formatHostActivationTips(`${"*".repeat(80)}CURSOR`).join("\n")).toMatch(
+      /Reload Window/,
     );
   });
 

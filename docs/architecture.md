@@ -30,25 +30,26 @@ upgrade keeps a loadable (old runtime + new SQL) pair rather than the reverse.
 Hostile-workspace I/O helpers live in `packages/cli/src/read-untrusted-file.ts`
 (open/copy/replace) and `packages/cli/src/project-fs.ts` (mkdir / assert / package probes).
 
-### Cursor `stop` hook `loop_limit` (port gotcha)
+### Host followup / stop-loop caps (port gotcha)
 
-Cursor caps **auto-followup** stop hooks at **`loop_limit` default 5** when the
-field is omitted. Each `followup_message` + `loop: true` increments
-`loop_count`; when `loop_count` reaches the limit, Cursor **skips** that hook
-entirely (`Hook skipped due to loop limit`).
+Autopilot’s fix + multi-angle confirm routinely needs **many consecutive**
+stop continuations in one streak. Each **host** enforces its own circuit
+breaker; ports must disable or raise it, or the chain stalls mid-confirm
+(pending followup left in DB).
 
-Autopilot’s fix rounds + multi-angle confirm (e.g. 5/5) routinely need **more
-than 5** consecutive stop followups in one streak. Without
-`"loop_limit": null` on the project Autopilot **stop** entry, the chain can
-stall mid-confirm (pending followup left in DB, no next confirm injected).
+| Host (planned) | Mechanism | Default | Autopilot mitigation |
+| --- | --- | --- | --- |
+| **Cursor** (v0.1) | `hooks.json` `loop_limit` on **stop** / **subagentStop** | `5` if omitted | Write `"loop_limit": null` on Autopilot stop (`mergeHooksJson` / init / upgrade). `doctor` WARNs if missing. |
+| **Claude Code** (v0.2) | Stop `decision: "block"` consecutive **block cap** | **8**; override `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (`≤0` disables) | Port install/docs must set/raise the env (or document required shell profile). Not a Cursor-style `loop_limit` field. |
+| **Codex** (later) | Stop continuation / `stop_hook_active`; caps still evolving | Research at port time | Do not assume Cursor’s `loop_limit`; verify current Codex Stop semantics. |
+| **Runner** ports | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. |
 
-**Harness rule:** `mergeHooksJson` / `init` / `upgrade` always write Autopilot
-stop as `{ command: "… --event stop", loop_limit: null }`. `doctor` WARNs if
-a project still has Autopilot stop without unlimited loop.
+`beforeSubmitPrompt` / `afterFileEdit` (and Claude `UserPromptSubmit` analogues)
+are **not** subject to Cursor’s stop `loop_limit`; they do not emit Autopilot
+followup loops.
 
-**Other Cursor ports / harnesses** that emit long stop followup chains must set
-the same; a human nudge (e.g. 「继续」) resets `loop_count` but is not a
-substitute for correct hook config. Global Cursor self-review hooks already
-used `loop_limit: null` for this reason.
+A human nudge (e.g. 「继续」) may reset some host counters but is **not** a
+substitute for correct port install. Global Cursor self-review hooks
+already used `loop_limit: null` for this reason.
 
 See the v0.1 plan for full FSM (E2–E5 review chain, OFF/ON/RESUME side effects).

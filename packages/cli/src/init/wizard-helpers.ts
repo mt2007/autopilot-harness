@@ -383,10 +383,125 @@ export function appendShellAlias(
   return { path: file, added: true };
 }
 
+/**
+ * Strip C0 controls / DEL and cap length so a hostile config.yml `platform`
+ * cannot inject control chars or megabyte strings into terminal tips.
+ * Allowlist first, then lowercase + length cap, so junk prefixes do not
+ * truncate away a real id (e.g. "***…***cursor" → "cursor").
+ */
+function sanitizePlatformId(platform: string): string {
+  if (typeof platform !== "string") return "";
+  return platform
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .replace(/[^A-Za-z0-9._+-]/g, "")
+    .toLowerCase()
+    .slice(0, 64);
+}
+
+/**
+ * Human label for an agent host id (init/upgrade tips).
+ * Init CLI copy is English; extend as new platforms ship.
+ */
+export function formatHostDisplayName(platform: string): string {
+  const id = sanitizePlatformId(platform);
+  switch (id) {
+    case "cursor":
+      return "Cursor";
+    case "claude-code":
+      return "Claude Code";
+    case "kimi-code":
+      return "Kimi Code";
+    default: {
+      const parts = id.split(/[-_]/).filter(Boolean);
+      if (parts.length === 0) return "your agent host";
+      return parts
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(" ");
+    }
+  }
+}
+
+/** Init/upgrade outro — always English (init UX language). */
+export function formatPostInstallOutro(platform: string): string {
+  return `You're all set — try /autopilot-on in ${formatHostDisplayName(platform)}.`;
+}
+
+/**
+ * Host-specific activation tips after hooks/skills install.
+ * Always English (init UX language). Install what you chose → tip for that host.
+ */
+export function formatHostActivationTips(platform: string): string[] {
+  const id = sanitizePlatformId(platform);
+  const host = formatHostDisplayName(id);
+  switch (id) {
+    case "cursor":
+      return [
+        `If /autopilot-* skills or Autopilot hooks do not appear in ${host}: run Developer: Reload Window, or start a new Agent chat.`,
+      ];
+    default:
+      return [
+        `If Autopilot skills or hooks do not appear in ${host}: reload or restart ${host}, then open a new agent session.`,
+      ];
+  }
+}
+
+/** Non-interactive init / upgrade footer lines (English). */
+export function formatPostInstallFooter(platform: string): string[] {
+  return [formatPostInstallOutro(platform), ...formatHostActivationTips(platform)];
+}
+
+/** Plain (no markdown) host tips — cheat sheet / footer. */
+function hostActivationPlainLines(
+  locale: InitLocale,
+  platform: string,
+): string[] {
+  const id = sanitizePlatformId(platform);
+  const host = formatHostDisplayName(id);
+  if (locale === "zh-CN") {
+    if (id === "cursor") {
+      return [
+        `在 ${host} 中试用 /autopilot-on。`,
+        `若 skills / hooks 未出现：执行 Developer: Reload Window，或新开一条 Agent 对话。`,
+      ];
+    }
+    return [
+      `在 ${host} 中试用 /autopilot-on。`,
+      `若 skills / hooks 未出现：重载或重启 ${host}，再开新会话。`,
+    ];
+  }
+  if (id === "cursor") {
+    return [
+      `Try /autopilot-on in ${host}.`,
+      `If skills or hooks are missing: Developer: Reload Window, or start a new Agent chat.`,
+    ];
+  }
+  return [
+    `Try /autopilot-on in ${host}.`,
+    `If skills or hooks are missing: reload or restart ${host}, then open a new agent session.`,
+  ];
+}
+
+/** Markdown bullets for docs/autopilot/quickstart.md. */
+function hostActivationDocLines(
+  locale: InitLocale,
+  platform: string,
+): string[] {
+  return hostActivationPlainLines(locale, platform).map((l) =>
+    l
+      .replace("/autopilot-on", "`/autopilot-on`")
+      .replace(
+        "Developer: Reload Window",
+        "`Developer: Reload Window`",
+      ),
+  );
+}
+
 export function writeQuickstart(
   projectRoot: string,
   locale: InitLocale,
   plansDir = "plans",
+  platform = "cursor",
 ): string | null {
   const root = resolveProjectRootOrThrow(projectRoot);
   const normalized = normalizePlansDir(plansDir);
@@ -414,13 +529,15 @@ export function writeQuickstart(
     if (code !== "ENOENT") throw err;
   }
   const cliCmd = resolveCliCommand();
+  const host = formatHostDisplayName(platform);
+  const afterInstall = hostActivationDocLines(locale, platform);
   const body =
     locale === "zh-CN"
       ? `# Autopilot 快速开始
 
 ## Planning
 
-推荐：\`/autopilot-on\` 或 \`/autopilot-on <需求描述>\`
+推荐：在 ${host} 中使用 \`/autopilot-on\` 或 \`/autopilot-on <需求描述>\`
 
 也可：行首 \`Autopilot ON\` / \`开启自动驾驶\`
 
@@ -444,13 +561,17 @@ ${cliCmd} doctor
 ${cliCmd} upgrade --dry-run
 \`\`\`
 
+## 安装后
+
+${afterInstall.map((l) => `- ${l}`).join("\n")}
+
 方案与清单在 \`${plansLabel}/<slug>/\`。
 `
       : `# Autopilot quickstart
 
 ## Planning
 
-Preferred: \`/autopilot-on\` or \`/autopilot-on <what to build>\`
+Preferred: in ${host}, \`/autopilot-on\` or \`/autopilot-on <what to build>\`
 
 Also: line-start \`Autopilot ON\`
 
@@ -474,6 +595,10 @@ ${cliCmd} doctor
 ${cliCmd} upgrade --dry-run
 \`\`\`
 
+## After install
+
+${afterInstall.map((l) => `- ${l}`).join("\n")}
+
 Artifacts live under \`${plansLabel}/<slug>/\`.
 `;
   assertNotSymlink(dest, "docs/autopilot/quickstart.md");
@@ -485,13 +610,15 @@ export function formatCheatSheet(
   locale: InitLocale,
   cliCommand: string = resolveCliCommand(),
   plansDir = "plans",
+  platform = "cursor",
 ): string[] {
   const normalized = normalizePlansDir(plansDir);
   const plansLabel = normalized.ok ? normalized.value : "plans";
+  const host = formatHostDisplayName(platform);
   if (locale === "zh-CN") {
     return [
       "── 新开任务（Planning）──────────────────",
-      "  推荐：/autopilot-on",
+      `  推荐：在 ${host} 中 /autopilot-on`,
       "        /autopilot-on 我想做：<描述需求>",
       "  也可：Autopilot ON",
       "",
@@ -508,12 +635,15 @@ export function formatCheatSheet(
       `  ${cliCommand} session list`,
       `  ${cliCommand} locale set en`,
       "",
+      "── 生效提示 ─────────────────────────────",
+      ...hostActivationPlainLines(locale, platform).map((l) => `  ${l}`),
+      "",
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
   }
   return [
     "── Planning ─────────────────────────────",
-    "  Preferred: /autopilot-on",
+    `  Preferred: in ${host}, /autopilot-on`,
     "             /autopilot-on <what to build>",
     "  Also:      Autopilot ON",
     "",
@@ -529,6 +659,9 @@ export function formatCheatSheet(
     `  ${cliCommand} doctor`,
     `  ${cliCommand} session list`,
     `  ${cliCommand} locale set zh-CN`,
+    "",
+    "── After install ────────────────────────",
+    ...hostActivationPlainLines(locale, platform).map((l) => `  ${l}`),
     "",
     `  See: docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
   ];

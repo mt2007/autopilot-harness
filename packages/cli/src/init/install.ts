@@ -761,6 +761,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         projectRoot,
         locale,
         plansDir,
+        opts.platform,
       );
       if (qsRel && !written.includes(qsRel)) written.push(qsRel);
     }

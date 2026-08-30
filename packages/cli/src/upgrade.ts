@@ -42,6 +42,8 @@ export interface UpgradeOk {
   written: string[];
   doctorOk: boolean;
   doctorLines: string[];
+  /** Host id from config.yml (for post-upgrade activation tips). */
+  platform: string;
 }
 
 export interface UpgradeFail {
@@ -224,6 +226,10 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
     const hints = readConfigInstallHints(existingConfig);
     const locale: InitLocale = hints.locale === "zh-CN" ? "zh-CN" : "en";
+    const platform =
+      typeof hints.platform === "string" && hints.platform.trim() !== ""
+        ? hints.platform
+        : "cursor";
     // Refresh always uses the supported cursor/ide pair.
     const defaultsYaml = defaultConfigYaml({
       platform: "cursor",
@@ -296,6 +302,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         written: [],
         doctorOk: true,
         doctorLines: ["(dry-run) doctor not executed"],
+        platform,
       };
     }
 
@@ -338,6 +345,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       written,
       doctorOk: doctor.ok,
       doctorLines: doctor.lines,
+      platform,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

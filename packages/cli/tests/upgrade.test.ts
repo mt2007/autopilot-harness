@@ -232,6 +232,7 @@ review:
     ).toBe("0.1.0");
     expect(r.doctorLines.some((l) => l.startsWith("OK"))).toBe(true);
     expect(r.doctorOk).toBe(true);
+    expect(r.platform).toBe("cursor");
   });
 
   it("backs up and migrates existing state.db", () => {

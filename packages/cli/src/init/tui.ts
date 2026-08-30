@@ -7,6 +7,7 @@ import {
   answersToInstallOptions,
   appendShellAlias,
   formatCheatSheet,
+  formatPostInstallOutro,
   normalizePlansDir,
   probeProject,
   resolveCliCommand,
@@ -627,8 +628,9 @@ export async function runInteractiveInit(
     answers.locale,
     resolveCliCommand(),
     answers.plansDir,
+    answers.platform,
   );
   p.note(cheat.join("\n"), `${PREFERRED_NAME} is ready`);
-  p.outro("You're all set — try /autopilot-on in Cursor.");
+  p.outro(formatPostInstallOutro(answers.platform));
   return 0;
 }

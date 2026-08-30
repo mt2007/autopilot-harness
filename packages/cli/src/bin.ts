@@ -2,6 +2,8 @@
 import { Command } from "commander";
 import {
   CLI_NAME,
+  formatPostInstallFooter,
+  formatHostActivationTips,
   formatSessionList,
   formatStatus,
   installInitYes,
@@ -86,6 +88,10 @@ program
       console.log("  /autopilot-run         # executing");
       console.log(`  ${CLI_NAME} status`);
       console.log(`  ${CLI_NAME} doctor`);
+      console.log("");
+      for (const line of formatPostInstallFooter(platform)) {
+        console.log(line);
+      }
     },
   );
 
@@ -126,6 +132,10 @@ program
       console.log("");
       console.log("── doctor ──────────────────────────────");
       for (const line of result.doctorLines) console.log(line);
+      console.log("");
+      for (const tip of formatHostActivationTips(result.platform)) {
+        console.log(tip);
+      }
       if (!result.doctorOk) {
         console.error(
           "upgrade wrote files but doctor reported failures (exit 1)",
