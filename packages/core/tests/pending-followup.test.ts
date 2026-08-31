@@ -61,6 +61,7 @@ describe("pending followup + session round", () => {
   function engine(): ReviewEngine {
     return new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: false,
       verifyCommands: [],
       maxIdleStops: 5,
@@ -280,6 +281,7 @@ describe("pending followup + session round", () => {
     });
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: false,
       verifyCommands: [],
       maxIdleStops: 5,
@@ -430,6 +432,7 @@ describe("pending followup + session round", () => {
     });
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: false,
       verifyCommands: [],
       maxIdleStops: 5,
@@ -920,6 +923,7 @@ describe("pending followup + session round", () => {
   it("E5 with verify on: unchecked=0 (empty path) → done, not verify_fix", () => {
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: true,
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
@@ -947,6 +951,7 @@ describe("pending followup + session round", () => {
   it("E5 with verify on: all items checked → done, not verify_fix", () => {
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: true,
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
@@ -986,6 +991,7 @@ describe("pending followup + session round", () => {
   it("E5 with verify on: unchecked=1 still requires report (not skipped as done)", () => {
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: true,
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
@@ -1102,6 +1108,7 @@ describe("pending followup + session round", () => {
     const reportPath = path.join(root, ".autopilot", "verify-last.json");
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: true,
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
@@ -1149,6 +1156,7 @@ describe("pending followup + session round", () => {
   it("E5 verify enabled but no required cmds: skip still advances (guard not over-armed)", () => {
     const eng = new ReviewEngine(store, {
       confirmRounds: 5,
+      reviewScope: "executing_only",
       verifyEnabled: true,
       verifyCommands: [{ id: "optional" }],
       maxIdleStops: 5,

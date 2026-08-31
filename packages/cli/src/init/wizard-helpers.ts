@@ -78,6 +78,8 @@ export interface InitWizardAnswers {
   plansDir: string;
   plansGit: PlansGitPolicy;
   verifyEnabled: boolean;
+  /** executing_only = after RUN; project = any product-code edit. */
+  reviewScope: "executing_only" | "project";
   /** 0 = unlimited. */
   maxErrorsBeforePause: number;
   shellAlias: ShellAliasTarget;
@@ -263,6 +265,7 @@ export function answersToInstallOptions(
     plansGit: answers.plansGit,
     verifyEnabled: answers.verifyEnabled,
     maxErrorsBeforePause: answers.maxErrorsBeforePause,
+    reviewScope: answers.reviewScope,
     writeQuickstart: true,
   };
 }

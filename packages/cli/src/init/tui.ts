@@ -252,6 +252,7 @@ export async function collectWizardAnswers(
       plansDir: "plans",
       plansGit: "commit",
       verifyEnabled: false,
+      reviewScope: "executing_only",
       maxErrorsBeforePause: 0,
       shellAlias,
       force: true,
@@ -388,6 +389,35 @@ export async function collectWizardAnswers(
     initialValue: "commit",
   });
   if (p.isCancel(plansGit)) {
+    return cancelOut(p, "Cancelled — nothing was changed.");
+  }
+
+  p.note(
+    [
+      "Self-review: fix → multi-lens confirm after code edits.",
+      "executing_only — only after Autopilot RUN (checklist mode).",
+      "project — any product-code edit, no ON/RUN required.",
+      "With project scope, disable ~/.cursor global self-review to avoid double injection.",
+    ].join("\n"),
+    "Self-review scope",
+  );
+  const reviewScopeChoice = await p.select<"executing_only" | "project">({
+    message: "When should automatic self-review run?",
+    options: [
+      {
+        value: "executing_only",
+        label: "Only during Autopilot RUN",
+        hint: "default — checklist executing mode",
+      },
+      {
+        value: "project",
+        label: "On any product-code edit in this project",
+        hint: "no RUN required",
+      },
+    ],
+    initialValue: "executing_only",
+  });
+  if (p.isCancel(reviewScopeChoice)) {
     return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
@@ -556,6 +586,7 @@ export async function collectWizardAnswers(
     plansDir,
     plansGit,
     verifyEnabled: verifyChoice === "enable",
+    reviewScope: reviewScopeChoice,
     maxErrorsBeforePause,
     shellAlias,
     force,

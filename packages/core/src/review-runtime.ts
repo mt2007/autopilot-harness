@@ -37,6 +37,7 @@ export function createConfiguredReviewEngine(
   const usableLocale = Boolean(localeBundle?.followup?.review?.fix);
   return new ReviewEngine(store, {
     confirmRounds: cfg.confirmRounds,
+    reviewScope: cfg.reviewScope,
     verifyEnabled: cfg.verifyEnabled,
     // shallow copy — caller mutating preloaded.verifyCommands must not affect engine
     verifyCommands: cfg.verifyCommands.map((c) => ({ ...c })),

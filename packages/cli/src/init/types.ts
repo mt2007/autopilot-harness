@@ -24,6 +24,8 @@ export interface InitYesOptions {
    * `0` = unlimited (default). Written to review.errors.max_before_pause.
    */
   maxErrorsBeforePause?: number;
+  /** executing_only (default) | project */
+  reviewScope?: "executing_only" | "project";
   /** Also write docs/autopilot/quickstart.md (default true for fresh init). */
   writeQuickstart?: boolean;
 }

@@ -5,8 +5,13 @@ import type { VerifyCommandConfig } from "./verify-report.js";
 
 const MAX_CONFIG_BYTES = 1_000_000;
 
+/** When the fix→confirm review chain may run on completed stops. */
+export type ReviewScope = "executing_only" | "project";
+
 export interface ProjectReviewConfig {
   confirmRounds: number;
+  /** `executing_only` = after RUN; `project` = any product-code edit in this repo. */
+  reviewScope: ReviewScope;
   verifyEnabled: boolean;
   verifyCommands: VerifyCommandConfig[];
   maxIdleStops: number;
@@ -20,6 +25,7 @@ export interface ProjectReviewConfig {
 
 export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
   confirmRounds: 5,
+  reviewScope: "executing_only",
   verifyEnabled: false,
   // freeze: chặn mutate hằng số mặc định làm bẩn mọi clone sau này
   verifyCommands: Object.freeze([]) as unknown as VerifyCommandConfig[],
@@ -29,9 +35,16 @@ export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
 };
 
 /** Bản sao độc lập — tránh chia sẻ mảng verifyCommands giữa các lần gọi. */
+function parseReviewScope(raw: unknown): ReviewScope {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "project" || s === "always" || s === "all") return "project";
+  return "executing_only";
+}
+
 function cloneDefaultProjectReviewConfig(): ProjectReviewConfig {
   return {
     confirmRounds: DEFAULT_PROJECT_REVIEW_CONFIG.confirmRounds,
+    reviewScope: DEFAULT_PROJECT_REVIEW_CONFIG.reviewScope,
     verifyEnabled: DEFAULT_PROJECT_REVIEW_CONFIG.verifyEnabled,
     verifyCommands: [],
     maxIdleStops: DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
@@ -289,6 +302,7 @@ export function loadProjectReviewConfig(
     // Một đường normalize — tránh load vs normalize lệch kẹp biên / bool.
     return normalizeProjectReviewConfig({
       confirmRounds: review.confirm_rounds,
+      reviewScope: review.scope,
       verifyEnabled: verify.enabled,
       verifyCommands: verify.commands,
       maxIdleStops: stuck.max_idle_stops,
@@ -316,6 +330,7 @@ export function normalizeProjectReviewConfig(raw: unknown): ProjectReviewConfig 
       5,
       DEFAULT_PROJECT_REVIEW_CONFIG.confirmRounds,
     ),
+    reviewScope: parseReviewScope(o.reviewScope),
     verifyEnabled: coerceBool(o.verifyEnabled) === true,
     verifyCommands: parseVerifyCommands(o.verifyCommands),
     maxIdleStops: coerceIntInRange(

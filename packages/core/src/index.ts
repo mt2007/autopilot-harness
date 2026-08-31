@@ -60,7 +60,14 @@ export {
   normalizeProjectReviewConfig,
   DEFAULT_PROJECT_REVIEW_CONFIG,
   type ProjectReviewConfig,
+  type ReviewScope,
 } from "./project-config.js";
+
+export {
+  ensureAmbientReviewSession,
+  isChecklistExecuting,
+  sessionReviewRunnable,
+} from "./review-scope.js";
 
 export {
   createRenderFollowup,

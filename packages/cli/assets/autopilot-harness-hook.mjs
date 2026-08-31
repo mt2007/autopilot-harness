@@ -149,7 +149,7 @@ async function main() {
         return;
       }
       if (event === "afterFileEdit") {
-        port.handleAfterFileEdit?.(store, payload);
+        port.handleAfterFileEdit?.(store, payload, projectRoot);
         writeReply("{}");
         return;
       }
@@ -161,6 +161,7 @@ async function main() {
             ? coreMod.createConfiguredReviewEngine(store, projectRoot)
             : new coreMod.ReviewEngine(store, {
                 confirmRounds: 5,
+                reviewScope: "executing_only",
                 verifyEnabled: false,
                 verifyCommands: [],
                 maxIdleStops: 5,

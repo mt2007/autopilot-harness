@@ -7,6 +7,11 @@ import {
 } from "./checklist-md.js";
 import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
 import { getLens, type ConfirmLens } from "./review-lenses.js";
+import {
+  isChecklistExecuting,
+  sessionReviewRunnable,
+} from "./review-scope.js";
+import type { ReviewScope } from "./project-config.js";
 import type { Phase, ReviewChainRow, SessionRow, StateStore } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
 import {
@@ -27,8 +32,10 @@ export type FollowupKind =
   | "review.confirm_final"
   | "advance"
   | "done"
+  | "review_complete"
   | "recover"
   | "recover_planning"
+  | "recover_ambient"
   | "stuck"
   | "verify_fix";
 
@@ -50,6 +57,8 @@ export interface StopHandlerInput {
 
 export interface ReviewEngineConfig {
   confirmRounds: number;
+  /** When completed-stop fix→confirm may run. Default executing_only. */
+  reviewScope: ReviewScope;
   verifyEnabled: boolean;
   verifyCommands: VerifyCommandConfig[];
   maxIdleStops: number;
@@ -121,6 +130,15 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
       return `Recover: the previous turn ended with an error. Continue the current checklist item without advancing.`;
     case "recover_planning":
       return `Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.`;
+    case "recover_ambient":
+      return `Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.`;
+    case "review_complete":
+      return (
+        `Review complete. All ${vars.total ?? 5} confirm rounds passed; the review chain has ended. ` +
+        `Do not auto-commit. If the working tree still has uncommitted changes from this session, ` +
+        `local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; ` +
+        `no push unless the user asks); if clean, briefly confirm only. Do not start subagents.`
+      );
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":
@@ -205,8 +223,8 @@ export class ReviewEngine {
         return this.handleErrorStop(session, input);
       }
 
-      // Precondition: armed + executing + paused=0 + completed
-      if (session.armed !== 1 || session.phase !== "executing" || session.paused !== 0) {
+      // Precondition: review chain may run (executing_only → RUN; project → ambient/planning/executing)
+      if (!sessionReviewRunnable(session, this.config.reviewScope)) {
         return null;
       }
 
@@ -371,6 +389,7 @@ export class ReviewEngine {
     }
     if (m.startsWith("Review confirm") || m.startsWith("自审确认")) return "review.confirm";
     if (m.startsWith("Advance") || m.startsWith("推进")) return "advance";
+    if (m.startsWith("Review complete") || m.startsWith("自审完成")) return "review_complete";
     if (m.startsWith("All checklist") || m.startsWith("全部完成")) return "done";
     if (m.startsWith("Recover") || m.startsWith("恢复")) return "recover";
     if (m.startsWith("Stuck") || m.startsWith("卡住")) return "stuck";
@@ -489,20 +508,27 @@ export class ReviewEngine {
   /** True when a stop may still advance the review chain (re-check under write lock). */
   private sessionRunnable(conversationId: string): boolean {
     const s = this.store.getSession(conversationId);
-    return (
-      !!s && s.armed === 1 && s.phase === "executing" && s.paused === 0
-    );
+    return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
 
   /** Error/aborted stop may inject recover (planning or armed executing). */
   private sessionErrorRecoverable(session: SessionRow): boolean {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
+    if (
+      session.phase === "idle" &&
+      session.armed === 1 &&
+      this.config.reviewScope === "project"
+    ) {
+      return true;
+    }
     return session.phase === "executing" && session.armed === 1;
   }
 
   private recoverKindForPhase(phase: Phase): FollowupKind {
-    return phase === "planning" ? "recover_planning" : "recover";
+    if (phase === "planning") return "recover_planning";
+    if (phase === "idle") return "recover_ambient";
+    return "recover";
   }
 
   /** completed stop → reset error_count */
@@ -671,6 +697,20 @@ export class ReviewEngine {
   }
 
   private e5Gate(session: SessionRow, _chain: ReviewChainRow): FollowupAction | null {
+    // Project-scope ambient/planning: never verify/advance checklist — end with review_complete.
+    // Otherwise a leftover checklist_path (e.g. after ON) + verify fail / unreadable path
+    // would return null and stall the chain forever.
+    if (
+      this.config.reviewScope === "project" &&
+      !isChecklistExecuting(session)
+    ) {
+      return this.e5bAdvance(session, {
+        unchecked: 0,
+        next: null,
+        verifiedPass: false,
+      });
+    }
+
     // E5c first
     const checklistPath = session.checklist_path;
     let currentItem: ChecklistItem | null = null;
@@ -732,9 +772,7 @@ export class ReviewEngine {
         const sess = this.store.getSession(cid);
         if (
           !sess ||
-          sess.armed !== 1 ||
-          sess.phase !== "executing" ||
-          sess.paused !== 0
+          !isChecklistExecuting(sess)
         ) {
           return { commit: false, value: null };
         }
@@ -850,9 +888,7 @@ export class ReviewEngine {
       const lockedSession = this.store.getSession(cid);
       if (
         !lockedSession ||
-        lockedSession.armed !== 1 ||
-        lockedSession.phase !== "executing" ||
-        lockedSession.paused !== 0
+        !sessionReviewRunnable(lockedSession, this.config.reviewScope)
       ) {
         return { commit: false, value: null };
       }
@@ -862,8 +898,10 @@ export class ReviewEngine {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let following: ChecklistItem | null = null;
-      const path = lockedSession.checklist_path;
-      if (path) {
+      const path = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath =
+        isChecklistExecuting(lockedSession) && path.length > 0;
+      if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed) {
           return { commit: false, value: null };
@@ -875,6 +913,40 @@ export class ReviewEngine {
         unchecked = 0;
         next = null;
         following = null;
+      }
+
+      // Project-scope ambient/planning: end chain without checklist advance/done.
+      if (!onChecklistPath) {
+        if (isChecklistExecuting(lockedSession)) {
+          // Executing with empty/missing checklist — legacy done path below.
+        } else if (this.config.reviewScope === "project") {
+          const completeMsg = this.render("review_complete", {
+            total: this.config.confirmRounds,
+          });
+          const completeAction: FollowupAction = {
+            kind: "review_complete",
+            message: completeMsg,
+            loop: true,
+          };
+          this.store.upsertSession({
+            conversation_id: cid,
+            project_root: lockedSession.project_root,
+            code_root: lockedSession.code_root,
+            error_count: 0,
+            idle_stop_count: 0,
+            last_error: null,
+          });
+          this.store.updateReviewChain(cid, {
+            ...chainReset,
+            pending_followup: completeMsg,
+            pending_followup_at: new Date().toISOString(),
+            pending_redeliver_at: null,
+            chain_pending: 0,
+          });
+          return { commit: true, value: completeAction };
+        } else {
+          return { commit: false, value: null };
+        }
       }
 
       // When verify is armed (enabled + required cmds):
@@ -1045,11 +1117,21 @@ export function applyOff(store: StateStore, conversationId: string): SessionRow 
     });
   }
 
-  if (session.phase === "planning" || session.phase === "executing") {
+  // planning / executing checklist, or project-scope ambient (idle+armed)
+  const ambientArmed =
+    session.phase === "idle" && session.armed === 1 && session.paused === 0;
+  if (
+    session.phase === "planning" ||
+    session.phase === "executing" ||
+    ambientArmed
+  ) {
     const wasPaused = session.paused === 1;
     let pausedReason = session.paused_reason;
     if (!wasPaused) {
-      pausedReason = session.phase === "executing" ? "human_gate" : null;
+      pausedReason =
+        session.phase === "executing" || session.phase === "idle"
+          ? "human_gate"
+          : null;
     }
     // already paused → keep original paused_reason
     return store.upsertSession({
@@ -1169,6 +1251,10 @@ export function applyResume(store: StateStore, conversationId: string): SessionR
         }
       }
       patch.armed = hasUnchecked ? 1 : 0;
+    }
+    if (session.phase === "idle") {
+      // Ambient / project-scope review paused via OFF — re-arm on RESUME.
+      patch.armed = 1;
     }
   }
 

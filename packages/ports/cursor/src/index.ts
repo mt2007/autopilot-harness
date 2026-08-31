@@ -6,8 +6,10 @@ import {
   applyResumeReview,
   applyRun,
   applyTrackPick,
+  ensureAmbientReviewSession,
   isHarnessFollowupMessage,
   isProductCodeEdit,
+  loadProjectReviewConfig,
   parseTrigger,
   ReviewEngine,
   StateStore,
@@ -138,13 +140,22 @@ export function handleBeforeSubmitPrompt(
 export function handleAfterFileEdit(
   store: StateStore,
   payload: CursorEditPayload,
+  projectRoot: string,
 ): void {
   const conversationId = cid(payload);
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
-  if (isProductCodeEdit(filePath)) {
-    store.markCodeEdited(conversationId);
+  if (!isProductCodeEdit(filePath)) return;
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+    );
   }
+  store.markCodeEdited(conversationId);
 }
 
 export function handleStop(

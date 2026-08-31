@@ -632,6 +632,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     opts.maxErrorsBeforePause >= 0
       ? opts.maxErrorsBeforePause
       : 0;
+  const reviewScope =
+    opts.reviewScope === "project" ? "project" : "executing_only";
   const writeQs = opts.writeQuickstart !== false;
   const locale = resolveInstallLocale(
     opts.locale,
@@ -663,6 +665,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
             plansDir,
             verifyEnabled,
             maxErrorsBeforePause,
+            reviewScope,
           }),
           { encoding: "utf8", flag: "wx" },
         );

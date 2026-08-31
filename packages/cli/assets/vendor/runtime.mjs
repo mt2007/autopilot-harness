@@ -39,6 +39,8 @@ var en_default = {
     done: "All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.",
     recover: "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
     recover_planning: "Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.",
+    recover_ambient: "Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.",
+    review_complete: "Review complete. All {total} confirm rounds passed; the review chain has ended. Do not auto-commit. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only. Do not start subagents.",
     stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     track_pick: "Select a plan by number or slug."
@@ -112,6 +114,8 @@ var zh_CN_default = {
     done: "\u5168\u90E8\u5B8C\u6210\u3002\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002\u7136\u540E\u505C\u6B62\u3002",
     recover: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D checklist \u9879\uFF0C\u4E0D\u8981\u63A8\u8FDB\u3002",
     recover_planning: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u89C4\u5212\uFF0C\u4E0D\u8981 RUN \u6216\u5199\u4EA7\u54C1\u4EE3\u7801\u3002",
+    recover_ambient: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u4EFB\u52A1\uFF08\u672A\u5728\u6267\u884C checklist\uFF09\u3002",
+    review_complete: "\u81EA\u5BA1\u5B8C\u6210\u3002\u8FDE\u7EED {total} \u8F6E\u786E\u8BA4\u5DF2\u901A\u8FC7\uFF0C\u81EA\u5BA1\u94FE\u5DF2\u7ED3\u675F\u3002\u4E0D\u8981\u81EA\u52A8 commit\u3002\u4EC5\u5F53\u5DE5\u4F5C\u533A\u4ECD\u6709\u672C\u4F1A\u8BDD\u672A\u63D0\u4EA4\u6539\u52A8\u4E14\u9700\u8981\u4FDD\u7559\u65F6\uFF0C\u624D\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DE5\u4F5C\u533A\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\uFF0C\u52FF\u518D commit\u3002\u4E0D\u8981\u5F00 subagent\u3002\u5BF9\u7528\u6237\u53EF\u89C1\u56DE\u590D\u5FC5\u987B\u7528\u4E2D\u6587\u3002",
     stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
     track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
@@ -1168,6 +1172,74 @@ function getLens(roundIndex, confirmRounds) {
   return CONFIRM_LENSES[n] ?? CONFIRM_LENSES[5];
 }
 
+// ../core/src/review-scope.ts
+function ensureAmbientReviewSession(store, conversationId, projectRoot, reviewScope) {
+  if (reviewScope !== "project") return false;
+  if (!store.isConversationIdOk(conversationId)) return false;
+  const root = normalizeProjectRoot(store.projectRoot) ?? normalizeProjectRoot(projectRoot);
+  if (!root) return false;
+  try {
+    const existing = store.getSession(conversationId);
+    if (existing) {
+      const needsRevive = existing.paused === 0 && (existing.phase === "done" || existing.phase === "idle" && existing.armed === 0);
+      if (needsRevive) {
+        store.exclusiveWrite(() => {
+          const fresh = store.getSession(conversationId);
+          if (!fresh || fresh.paused !== 0 || !(fresh.phase === "done" || fresh.phase === "idle" && fresh.armed === 0)) {
+            return { commit: false, value: void 0 };
+          }
+          store.upsertSession({
+            conversation_id: conversationId,
+            project_root: root,
+            code_root: root,
+            phase: "idle",
+            armed: 1,
+            paused: 0,
+            paused_reason: null
+          });
+          store.neutralizeReviewChain(conversationId);
+          return { commit: true, value: void 0 };
+        });
+      }
+      return true;
+    }
+    store.exclusiveWrite(() => {
+      if (store.getSession(conversationId)) {
+        return { commit: false, value: void 0 };
+      }
+      store.upsertSession({
+        conversation_id: conversationId,
+        project_root: root,
+        code_root: root,
+        platform: "cursor",
+        phase: "idle",
+        armed: 1,
+        paused: 0,
+        paused_reason: null,
+        checklist_path: "",
+        track_id: ""
+      });
+      return { commit: true, value: void 0 };
+    });
+    return !!store.getSession(conversationId);
+  } catch {
+    return false;
+  }
+}
+function isChecklistExecuting(session) {
+  return session.paused === 0 && session.phase === "executing" && session.armed === 1;
+}
+function sessionReviewRunnable(session, reviewScope) {
+  if (session.paused !== 0) return false;
+  if (reviewScope === "project") {
+    if (session.phase === "idle" && session.armed === 1) return true;
+    if (session.phase === "planning") return true;
+    if (session.phase === "executing" && session.armed === 1) return true;
+    return false;
+  }
+  return isChecklistExecuting(session);
+}
+
 // ../core/src/track-slug.ts
 var SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 function isSafeTrackSlug(slug) {
@@ -1201,9 +1273,11 @@ var HARNESS_FOLLOWUP_PREFIXES = [
   "All checklist items done",
   "Stuck:",
   "Recover:",
+  "Review complete",
   "Verify failed",
   "\u81EA\u5BA1\u4FEE\u590D",
   "\u81EA\u5BA1\u786E\u8BA4",
+  "\u81EA\u5BA1\u5B8C\u6210",
   "\u63A8\u8FDB\u4E0B\u4E00\u9879",
   "\u5168\u90E8\u5B8C\u6210",
   "\u6821\u9A8C\u5931\u8D25",
@@ -1457,6 +1531,10 @@ function defaultRender(kind, vars) {
       return `Recover: the previous turn ended with an error. Continue the current checklist item without advancing.`;
     case "recover_planning":
       return `Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.`;
+    case "recover_ambient":
+      return `Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.`;
+    case "review_complete":
+      return `Review complete. All ${vars.total ?? 5} confirm rounds passed; the review chain has ended. Do not auto-commit. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only. Do not start subagents.`;
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":
@@ -1521,7 +1599,7 @@ var ReviewEngine = class {
       if (input.status === "error" || input.status === "aborted") {
         return this.handleErrorStop(session, input);
       }
-      if (session.armed !== 1 || session.phase !== "executing" || session.paused !== 0) {
+      if (!sessionReviewRunnable(session, this.config.reviewScope)) {
         return null;
       }
       const chain = this.store.ensureReviewChain(input.conversationId);
@@ -1632,6 +1710,7 @@ var ReviewEngine = class {
     }
     if (m.startsWith("Review confirm") || m.startsWith("\u81EA\u5BA1\u786E\u8BA4")) return "review.confirm";
     if (m.startsWith("Advance") || m.startsWith("\u63A8\u8FDB")) return "advance";
+    if (m.startsWith("Review complete") || m.startsWith("\u81EA\u5BA1\u5B8C\u6210")) return "review_complete";
     if (m.startsWith("All checklist") || m.startsWith("\u5168\u90E8\u5B8C\u6210")) return "done";
     if (m.startsWith("Recover") || m.startsWith("\u6062\u590D")) return "recover";
     if (m.startsWith("Stuck") || m.startsWith("\u5361\u4F4F")) return "stuck";
@@ -1725,16 +1804,21 @@ var ReviewEngine = class {
   /** True when a stop may still advance the review chain (re-check under write lock). */
   sessionRunnable(conversationId) {
     const s = this.store.getSession(conversationId);
-    return !!s && s.armed === 1 && s.phase === "executing" && s.paused === 0;
+    return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
   /** Error/aborted stop may inject recover (planning or armed executing). */
   sessionErrorRecoverable(session) {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
+    if (session.phase === "idle" && session.armed === 1 && this.config.reviewScope === "project") {
+      return true;
+    }
     return session.phase === "executing" && session.armed === 1;
   }
   recoverKindForPhase(phase) {
-    return phase === "planning" ? "recover_planning" : "recover";
+    if (phase === "planning") return "recover_planning";
+    if (phase === "idle") return "recover_ambient";
+    return "recover";
   }
   /** completed stop → reset error_count */
   noteCompletedOk(session) {
@@ -1881,6 +1965,13 @@ var ReviewEngine = class {
     return action;
   }
   e5Gate(session, _chain) {
+    if (this.config.reviewScope === "project" && !isChecklistExecuting(session)) {
+      return this.e5bAdvance(session, {
+        unchecked: 0,
+        next: null,
+        verifiedPass: false
+      });
+    }
     const checklistPath = session.checklist_path;
     let currentItem = null;
     let unchecked = 0;
@@ -1922,7 +2013,7 @@ var ReviewEngine = class {
           return { commit: false, value: null };
         }
         const sess = this.store.getSession(cid2);
-        if (!sess || sess.armed !== 1 || sess.phase !== "executing" || sess.paused !== 0) {
+        if (!sess || !isChecklistExecuting(sess)) {
           return { commit: false, value: null };
         }
         let lockedItem = currentItem;
@@ -2013,14 +2104,15 @@ var ReviewEngine = class {
         return { commit: false, value: null };
       }
       const lockedSession = this.store.getSession(cid2);
-      if (!lockedSession || lockedSession.armed !== 1 || lockedSession.phase !== "executing" || lockedSession.paused !== 0) {
+      if (!lockedSession || !sessionReviewRunnable(lockedSession, this.config.reviewScope)) {
         return { commit: false, value: null };
       }
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let following = null;
-      const path9 = lockedSession.checklist_path;
-      if (path9) {
+      const path9 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path9.length > 0;
+      if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed) {
           return { commit: false, value: null };
@@ -2032,6 +2124,37 @@ var ReviewEngine = class {
         unchecked = 0;
         next = null;
         following = null;
+      }
+      if (!onChecklistPath) {
+        if (isChecklistExecuting(lockedSession)) {
+        } else if (this.config.reviewScope === "project") {
+          const completeMsg = this.render("review_complete", {
+            total: this.config.confirmRounds
+          });
+          const completeAction = {
+            kind: "review_complete",
+            message: completeMsg,
+            loop: true
+          };
+          this.store.upsertSession({
+            conversation_id: cid2,
+            project_root: lockedSession.project_root,
+            code_root: lockedSession.code_root,
+            error_count: 0,
+            idle_stop_count: 0,
+            last_error: null
+          });
+          this.store.updateReviewChain(cid2, {
+            ...chainReset,
+            pending_followup: completeMsg,
+            pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
+            pending_redeliver_at: null,
+            chain_pending: 0
+          });
+          return { commit: true, value: completeAction };
+        } else {
+          return { commit: false, value: null };
+        }
       }
       const verifyArmed = this.config.verifyEnabled && this.config.verifyCommands.some((c) => c.required === true);
       if (verifyArmed) {
@@ -2165,11 +2288,12 @@ function applyOff(store, conversationId) {
       paused_reason: null
     });
   }
-  if (session.phase === "planning" || session.phase === "executing") {
+  const ambientArmed = session.phase === "idle" && session.armed === 1 && session.paused === 0;
+  if (session.phase === "planning" || session.phase === "executing" || ambientArmed) {
     const wasPaused = session.paused === 1;
     let pausedReason = session.paused_reason;
     if (!wasPaused) {
-      pausedReason = session.phase === "executing" ? "human_gate" : null;
+      pausedReason = session.phase === "executing" || session.phase === "idle" ? "human_gate" : null;
     }
     return store.upsertSession({
       conversation_id: conversationId,
@@ -2262,6 +2386,9 @@ function applyResume(store, conversationId) {
       }
       patch.armed = hasUnchecked ? 1 : 0;
     }
+    if (session.phase === "idle") {
+      patch.armed = 1;
+    }
   }
   if (session.phase === "planning") {
     patch.armed = 0;
@@ -2278,6 +2405,7 @@ import path5 from "node:path";
 var MAX_CONFIG_BYTES = 1e6;
 var DEFAULT_PROJECT_REVIEW_CONFIG = {
   confirmRounds: 5,
+  reviewScope: "executing_only",
   verifyEnabled: false,
   // freeze: chặn mutate hằng số mặc định làm bẩn mọi clone sau này
   verifyCommands: Object.freeze([]),
@@ -2285,9 +2413,15 @@ var DEFAULT_PROJECT_REVIEW_CONFIG = {
   maxErrorsBeforePause: 0,
   locale: "en"
 };
+function parseReviewScope(raw) {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (s === "project" || s === "always" || s === "all") return "project";
+  return "executing_only";
+}
 function cloneDefaultProjectReviewConfig() {
   return {
     confirmRounds: DEFAULT_PROJECT_REVIEW_CONFIG.confirmRounds,
+    reviewScope: DEFAULT_PROJECT_REVIEW_CONFIG.reviewScope,
     verifyEnabled: DEFAULT_PROJECT_REVIEW_CONFIG.verifyEnabled,
     verifyCommands: [],
     maxIdleStops: DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
@@ -2476,6 +2610,7 @@ function loadProjectReviewConfig(projectRoot) {
     const errors = isPlainObject(review.errors) ? review.errors : {};
     return normalizeProjectReviewConfig({
       confirmRounds: review.confirm_rounds,
+      reviewScope: review.scope,
       verifyEnabled: verify.enabled,
       verifyCommands: verify.commands,
       maxIdleStops: stuck.max_idle_stops,
@@ -2498,6 +2633,7 @@ function normalizeProjectReviewConfig(raw) {
       5,
       DEFAULT_PROJECT_REVIEW_CONFIG.confirmRounds
     ),
+    reviewScope: parseReviewScope(o.reviewScope),
     verifyEnabled: coerceBool(o.verifyEnabled) === true,
     verifyCommands: parseVerifyCommands(o.verifyCommands),
     maxIdleStops: coerceIntInRange(
@@ -2548,6 +2684,16 @@ function createRenderFollowup(bundle) {
           f.recover_planning ?? f.recover ?? "",
           vars
         );
+      case "recover_ambient":
+        return renderTemplate(
+          f.recover_ambient ?? f.recover ?? "",
+          vars
+        );
+      case "review_complete":
+        return renderTemplate(
+          f.review_complete ?? "Review complete. All {total} confirm rounds passed; the review chain has ended.",
+          vars
+        );
       case "stuck":
         return renderTemplate(f.stuck ?? "", vars);
       case "verify_fix":
@@ -2582,6 +2728,7 @@ function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloade
   const usableLocale = Boolean(localeBundle?.followup?.review?.fix);
   return new ReviewEngine(store, {
     confirmRounds: cfg.confirmRounds,
+    reviewScope: cfg.reviewScope,
     verifyEnabled: cfg.verifyEnabled,
     // shallow copy — caller mutating preloaded.verifyCommands must not affect engine
     verifyCommands: cfg.verifyCommands.map((c) => ({ ...c })),
@@ -3432,13 +3579,21 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
   }
   return { continue: true };
 }
-function handleAfterFileEdit(store, payload) {
+function handleAfterFileEdit(store, payload, projectRoot) {
   const conversationId = cid(payload);
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
-  if (isProductCodeEdit(filePath)) {
-    store.markCodeEdited(conversationId);
+  if (!isProductCodeEdit(filePath)) return;
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope
+    );
   }
+  store.markCodeEdited(conversationId);
 }
 function handleStop(engine, payload) {
   const conversationId = cid(payload);

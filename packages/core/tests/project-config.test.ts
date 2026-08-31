@@ -28,6 +28,7 @@ describe("loadProjectReviewConfig", () => {
     expect(cfg.maxIdleStops).toBe(5);
     expect(cfg.maxErrorsBeforePause).toBe(0);
     expect(cfg.locale).toBe("en");
+    expect(cfg.reviewScope).toBe("executing_only");
   });
 
   it("refuses symlinked config.yml (fail-open defaults)", () => {
@@ -112,6 +113,14 @@ review:
     expect(cfg.maxIdleStops).toBe(7);
     expect(cfg.maxErrorsBeforePause).toBe(5);
     expect(cfg.locale).toBe("zh-CN");
+  });
+
+  it("reads review.scope project from config.yml", () => {
+    const root = tmpRoot();
+    writeConfig(root, "review:\n  scope: project\n");
+    expect(loadProjectReviewConfig(root).reviewScope).toBe("project");
+    writeConfig(root, "review:\n  scope: executing_only\n");
+    expect(loadProjectReviewConfig(root).reviewScope).toBe("executing_only");
   });
 
   it("clamps invalid confirm_rounds / max_idle_stops / max_before_pause to defaults", () => {

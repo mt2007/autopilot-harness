@@ -17,6 +17,8 @@ export interface FollowupLocaleBundle {
     done: string;
     recover: string;
     recover_planning?: string;
+    recover_ambient?: string;
+    review_complete?: string;
     stuck: string;
     verify_fix?: string;
   };
@@ -46,6 +48,17 @@ export function createRenderFollowup(
       case "recover_planning":
         return renderTemplate(
           f.recover_planning ?? f.recover ?? "",
+          vars,
+        );
+      case "recover_ambient":
+        return renderTemplate(
+          f.recover_ambient ?? f.recover ?? "",
+          vars,
+        );
+      case "review_complete":
+        return renderTemplate(
+          f.review_complete ??
+            "Review complete. All {total} confirm rounds passed; the review chain has ended.",
           vars,
         );
       case "stuck":

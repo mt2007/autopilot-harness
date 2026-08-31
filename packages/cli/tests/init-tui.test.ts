@@ -794,6 +794,7 @@ describe("interactive init (scripted prompts)", () => {
           "ide",
           "plans",
           "commit",
+          "executing_only",
           "skip",
           "unlimited",
           "skip",
@@ -830,6 +831,7 @@ describe("interactive init (scripted prompts)", () => {
           "ide",
           "custom",
           "local-only",
+          "executing_only",
           "enable",
           "5",
           "skip",
@@ -857,6 +859,7 @@ describe("interactive init (scripted prompts)", () => {
           "ide",
           "plans",
           "commit",
+          "executing_only",
           "skip",
           "custom",
           "skip",
@@ -880,6 +883,7 @@ describe("interactive init (scripted prompts)", () => {
           "ide",
           "plans",
           "commit",
+          "executing_only",
           "skip",
           "unlimited",
           "skip",
@@ -909,6 +913,7 @@ describe("interactive init (scripted prompts)", () => {
       plansDir: "plans",
       plansGit: "leave",
       verifyEnabled: false,
+      reviewScope: "executing_only",
       maxErrorsBeforePause: 0,
       shellAlias: "skip",
       force: false,
@@ -916,6 +921,7 @@ describe("interactive init (scripted prompts)", () => {
     };
     expect(answersToInstallOptions(answers)).toMatchObject({
       plansGit: "leave",
+      reviewScope: "executing_only",
       maxErrorsBeforePause: 0,
       writeQuickstart: true,
     });

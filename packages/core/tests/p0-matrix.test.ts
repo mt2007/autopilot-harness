@@ -69,6 +69,7 @@ function sessionExecuting(
 function engine(store: StateStore, root: string, overrides?: Partial<ConstructorParameters<typeof ReviewEngine>[1]>) {
   return new ReviewEngine(store, {
     confirmRounds: 5,
+    reviewScope: "executing_only",
     verifyEnabled: false,
     verifyCommands: [],
     maxIdleStops: 5,
@@ -601,6 +602,106 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.error_count).toBe(1);
   });
 
+  it("F-SCOPE-PROJECT: ambient edit triggers fix without RUN", () => {
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "review:\n  scope: project\n",
+    );
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    handleAfterFileEdit(
+      store,
+      { conversation_id: "c-ambient", file_path: "src/app.ts" },
+      root,
+    );
+    expect(store.getSession("c-ambient")?.phase).toBe("idle");
+    expect(store.getSession("c-ambient")?.armed).toBe(1);
+    expect(store.getReviewChain("c-ambient")!.code_edited).toBe(1);
+    const fix = eng.handleStop({
+      conversationId: "c-ambient",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(fix?.kind).toBe("review.fix");
+  });
+
+  it("F-SCOPE-PROJECT: E5 ends with review_complete even with leftover checklist + verify", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      verifyEnabled: true,
+      verifyCommands: [{ id: "test", required: true }],
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-plan",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-plan");
+    store.updateReviewChain("c-plan", {
+      confirm_left: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      chain_pending: 1,
+    });
+    const done = eng.handleStop({
+      conversationId: "c-plan",
+      status: "completed",
+      loopCount: 1,
+    });
+    expect(done?.kind).toBe("review_complete");
+    expect(store.getSession("c-plan")!.phase).toBe("planning");
+  });
+
+  it("F-SCOPE-PROJECT: revive done session on next product edit", () => {
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "review:\n  scope: project\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-done",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-done");
+    store.updateReviewChain("c-done", {
+      pending_followup: "All checklist items done. Phase is done.",
+      chain_pending: 0,
+      confirm_left: null,
+      fix_round: 3,
+    });
+    handleAfterFileEdit(
+      store,
+      { conversation_id: "c-done", file_path: "src/app.ts" },
+      root,
+    );
+    expect(store.getSession("c-done")!.phase).toBe("idle");
+    expect(store.getSession("c-done")!.armed).toBe(1);
+    expect(store.getReviewChain("c-done")!.pending_followup).toBeNull();
+    expect(store.getReviewChain("c-done")!.code_edited).toBe(1);
+    const eng = engine(store, root, { reviewScope: "project" });
+    expect(
+      eng.handleStop({
+        conversationId: "c-done",
+        status: "completed",
+        loopCount: 0,
+      })?.kind,
+    ).toBe("review.fix");
+  });
+
   it("F-ITEM: E5b advance zeroes error_count", () => {
     const eng = engine(store, root);
     store.upsertSession({
@@ -704,6 +805,28 @@ describe("F-OFF / F-OFF-DONE / F-ON", () => {
     const s = store.getSession("c1")!;
     expect(s.phase).toBe("idle");
     expect(s.paused).toBe(0);
+  });
+
+  it("F-OFF-AMBIENT: idle+armed OFF pauses; RESUME re-arms", () => {
+    store.upsertSession({
+      conversation_id: "c-amb",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+    });
+    applyOff(store, "c-amb");
+    const off = store.getSession("c-amb")!;
+    expect(off.phase).toBe("idle");
+    expect(off.paused).toBe(1);
+    expect(off.armed).toBe(0);
+    expect(off.paused_reason).toBe("human_gate");
+    applyResume(store, "c-amb");
+    const on = store.getSession("c-amb")!;
+    expect(on.paused).toBe(0);
+    expect(on.armed).toBe(1);
   });
 
   it("F-ON: executing (incl paused) fail-closed; done → planning", () => {
@@ -1028,13 +1151,13 @@ describe("F-HOOK port-cursor", () => {
     handleAfterFileEdit(store, {
       conversation_id: "c1",
       file_path: "src/app.ts",
-    });
+    }, root);
     expect(store.getReviewChain("c1")!.code_edited).toBe(1);
 
     handleAfterFileEdit(store, {
       conversation_id: "c1",
       file_path: "plans/demo/plan.md",
-    });
+    }, root);
     // still 1 from before; plans do not clear
     expect(store.getReviewChain("c1")!.code_edited).toBe(1);
 
