@@ -284,17 +284,12 @@ export async function collectWizardAnswers(
     return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
-  p.note(
-    "v0.1 ships Cursor IDE hooks. More platforms may land later.",
-    "Platform",
-  );
   const platform = await p.select<"cursor">({
     message: "Which agent host are you using?",
     options: [
       {
         value: "cursor",
         label: "Cursor",
-        hint: "hooks + /autopilot-* skills",
       },
     ],
     initialValue: "cursor",
@@ -309,7 +304,6 @@ export async function collectWizardAnswers(
       {
         value: "ide",
         label: "IDE hooks (recommended)",
-        hint: "stop / edit / submit hooks drive the loop",
       },
     ],
     initialValue: "ide",
@@ -332,7 +326,7 @@ export async function collectWizardAnswers(
       {
         value: "plans",
         label: "plans/ at the repo root",
-        hint: "simple & visible — recommended",
+        hint: "recommended",
       },
       {
         value: "custom",
@@ -452,7 +446,7 @@ export async function collectWizardAnswers(
 
   p.note(
     [
-      "When a turn fails (usage limit, HTTP 500, abort, …), Autopilot can",
+      "When a turn fails (HTTP 500, tool error, …), Autopilot can",
       "keep recovering — or pause after N failures so you can take a look.",
       "Paused sessions resume with: Autopilot RESUME  /  /autopilot-resume",
       "",
