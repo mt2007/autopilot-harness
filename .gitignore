@@ -2,14 +2,11 @@
 node_modules/
 dist/
 
-# Autopilot runtime (consumer projects; also ignore if present here)
-.autopilot/state.db
-.autopilot/state.db-*
-.autopilot/state.db.bak.*
-.autopilot/.*.tmp
-.autopilot/verify-last.json
-.autopilot/worktrees/
-.autopilot/logs/
+# Autopilot (local dogfood — init per machine; not shipped in OSS)
+plans/
+.autopilot/
+.cursor/
+docs/autopilot/
 
 # Environment
 .env
@@ -20,12 +17,6 @@ dist/
 .idea/
 .vscode/
 .DS_Store
-.cursor/hooks/__pycache__/
-.cursor/hooks/.pending-*
-.cursor/hooks/.self-review-*
-.cursor/hooks/.autopilot-*
-.cursor/hooks/.cli-session-bind.json
-.cursor/autopilot.enabled
 
 # Test / coverage
 coverage/
