@@ -21,3 +21,11 @@ docs/autopilot/
 # Test / coverage
 coverage/
 *.log
+
+# Autopilot runtime
+.autopilot/state.db
+.autopilot/state.db-*
+.autopilot/state.db.bak*
+.autopilot/worktrees/
+.autopilot/verify-last.json
+.autopilot/logs/

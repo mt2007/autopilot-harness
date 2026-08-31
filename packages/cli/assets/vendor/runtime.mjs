@@ -1646,7 +1646,7 @@ var ReviewEngine = class {
       if (chain.confirm_left === 0 || chain.item_confirm_complete === 1 && chain.confirm_left === null) {
         return this.e5Gate(session, chain);
       }
-      const inChain = chain.chain_pending === 1 || input.loopCount > 0 && chain.fix_round > 0;
+      const inChain = chain.chain_pending === 1 || input.loopCount > 0 && chain.fix_round > 0 && isChecklistExecuting(session);
       if (chain.confirm_left === null && chain.item_confirm_complete === 0 && inChain) {
         return this.e3ArmConfirm(session, chain);
       }
@@ -1712,7 +1712,7 @@ var ReviewEngine = class {
   }
   inferPendingKind(message) {
     const m = message.trim();
-    if (m.startsWith("Review fix") || m.startsWith("\u81EA\u5BA1\u4FEE\u590D")) return "review.fix";
+    if (this.isFixFollowupMessage(m)) return "review.fix";
     if ((m.startsWith("Review confirm") || m.startsWith("\u81EA\u5BA1\u786E\u8BA4")) && (m.includes(`/${this.config.confirmRounds}`) || m.includes("\u7EC8\u5BA1") || m.includes("Read-only") || m.includes("\u53EA\u8BFB"))) {
       const finalRe = new RegExp(
         `(?:Review confirm|\u81EA\u5BA1\u786E\u8BA4)\\s*${this.config.confirmRounds}/${this.config.confirmRounds}`
@@ -1807,13 +1807,104 @@ var ReviewEngine = class {
     const fresh = this.store.getSession(session.conversation_id);
     if (fresh && this.sessionErrorRecoverable(fresh)) {
       const recoverKind = this.recoverKindForPhase(fresh.phase);
-      return this.emit(session.conversation_id, {
+      const message = this.render(recoverKind, {});
+      const action = {
         kind: "recover",
-        message: this.render(recoverKind, {}),
+        message,
         loop: true
-      });
+      };
+      if (!isChecklistExecuting(fresh)) {
+        const cid2 = fresh.conversation_id;
+        if (this.tryCommitAmbientErrorRecover(cid2, message)) {
+          return action;
+        }
+        if (this.tryCommitAmbientErrorRecover(cid2, message)) {
+          return action;
+        }
+        let neutralized = false;
+        try {
+          this.store.neutralizeReviewChain(cid2);
+          neutralized = true;
+        } catch {
+        }
+        if (!neutralized) {
+          if (this.tryCommitAmbientErrorRecover(cid2, message)) {
+            return action;
+          }
+          try {
+            this.applySoftResetAmbientChainForErrorRecover(cid2);
+          } catch {
+          }
+          try {
+            this.store.updateReviewChain(cid2, { chain_pending: 0 });
+          } catch {
+          }
+        }
+      }
+      return this.emit(session.conversation_id, action);
     }
     return null;
+  }
+  /**
+   * Ambient error recover write: soft-reset + recover pending under one
+   * exclusiveWrite. Returns false if the txn throws (caller may retry / fall back).
+   */
+  tryCommitAmbientErrorRecover(conversationId, message) {
+    try {
+      this.store.exclusiveWrite(() => {
+        this.applySoftResetAmbientChainForErrorRecover(conversationId);
+        this.store.savePendingFollowup(conversationId, message, {
+          armChain: false
+        });
+        return { commit: true, value: null };
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Ambient/planning error recover: drop confirm/pending arming so recover
+   * (armChain=false) cannot leave chain_pending=1 → phantom E3.
+   *
+   * Prefer calling under exclusiveWrite (with savePendingFollowup). May run
+   * unlocked only as last-resort compensation after txn failures.
+   *
+   * Preserve mid-confirm / E5-ready counters so the completed stop after
+   * recover continues E4/E5. Ready-for-E3 (fix done, chain_pending only)
+   * advances into confirm via confirm_left=confirmRounds (E4 emits 1/N) —
+   * do not regress to another fix. Ready-for-E3 requires empty pending (not
+   * merely !fixPending). Force code_edited only for an active fix
+   * (code_edited / undelivered fix pending / chain_pending with pending still
+   * set). Bare leftover fix_round is ignored (ambient phantom residue).
+   */
+  applySoftResetAmbientChainForErrorRecover(conversationId) {
+    this.store.ensureReviewChain(conversationId);
+    const chain = this.store.getReviewChain(conversationId);
+    if (!chain) return;
+    const atE5 = chain.confirm_left === 0 || chain.item_confirm_complete === 1 && chain.confirm_left === null;
+    const midConfirm = chain.confirm_left !== null && chain.confirm_left > 0;
+    const pending = chain.pending_followup?.trim() ?? "";
+    const fixPending = this.isFixFollowupMessage(pending);
+    const readyForE3 = !atE5 && !midConfirm && chain.chain_pending === 1 && chain.code_edited === 0 && pending.length === 0;
+    const resumeFix = !atE5 && !midConfirm && !readyForE3 && (chain.chain_pending === 1 || chain.code_edited === 1 || fixPending);
+    const rounds = this.config.confirmRounds;
+    this.store.updateReviewChain(conversationId, {
+      confirm_left: atE5 || midConfirm ? chain.confirm_left : readyForE3 && rounds > 0 ? rounds : null,
+      item_confirm_complete: atE5 ? chain.item_confirm_complete : 0,
+      chain_pending: 0,
+      // Preserve an in-flight edit marker (E2 wins over E4); else force only for mid-fix.
+      code_edited: resumeFix || chain.code_edited === 1 ? 1 : 0,
+      // keep fix_round — next E2/E4 bumps the session round
+      pending_followup: null,
+      pending_followup_at: null,
+      pending_redeliver_at: null
+    });
+  }
+  /** Shared with inferPendingKind — locale templates must keep these prefixes. */
+  isFixFollowupMessage(message) {
+    const m = message.trim();
+    return m.startsWith("Review fix") || m.startsWith("\u81EA\u5BA1\u4FEE\u590D");
   }
   /** True when a stop may still advance the review chain (re-check under write lock). */
   sessionRunnable(conversationId) {

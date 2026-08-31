@@ -646,6 +646,395 @@ describe("review-engine P0 matrix", () => {
     expect(done).toBeNull();
   });
 
+  it("F-ERR-AMBIENT-NO-E8: leftover fix_round + loopCount must not E3 after ambient recover", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-e8",
+      status: "error",
+      loopCount: 0,
+    });
+    // Stale counters with no active review flags — must not E3 on loopCount alone.
+    store.updateReviewChain("c-ambient-e8", {
+      fix_round: 3,
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: null,
+    });
+    const afterRecover = eng.handleStop({
+      conversationId: "c-ambient-e8",
+      status: "completed",
+      loopCount: 4,
+    });
+    expect(afterRecover).toBeNull();
+    expect(store.getReviewChain("c-ambient-e8")!.confirm_left).toBeNull();
+    expect(store.getSession("c-ambient-e8")!.phase).toBe("idle");
+  });
+
+  it("F-ERR-AMBIENT-RESUME-FIX: mid-fix error recover resumes E2 after recover completes", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-resume",
+      status: "error",
+      loopCount: 0,
+    });
+    // Mid ambient fix (round already advanced) when usage-limit hits
+    store.updateReviewChain("c-ambient-resume", {
+      fix_round: 1,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "自审修复第 1 轮",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-resume",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-ambient-resume")!;
+    expect(mid.fix_round).toBe(1);
+    expect(mid.chain_pending).toBe(0); // recover armChain=false
+    expect(mid.code_edited).toBe(1); // force post-recover E2
+    expect(mid.confirm_left).toBeNull();
+    expect(mid.pending_followup).toMatch(/恢复|Recover|checklist|任务/);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-resume",
+      status: "completed",
+      loopCount: 3,
+    });
+    expect(after?.kind).toBe("review.fix");
+    expect(after?.meta?.fixRound).toBe(2);
+    expect(store.getReviewChain("c-ambient-resume")!.confirm_left).toBeNull();
+  });
+
+  it("F-ERR-AMBIENT-RESUME-E5: confirm_left=0 must stay E5-ready (not force another fix)", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-e5",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-e5", {
+      fix_round: 6,
+      chain_pending: 1,
+      confirm_left: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "确认审查",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-e5",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-ambient-e5")!;
+    expect(mid.confirm_left).toBe(0);
+    expect(mid.code_edited).toBe(0);
+    expect(mid.chain_pending).toBe(0);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-e5",
+      status: "completed",
+      loopCount: 3,
+    });
+    expect(after?.kind).toBe("review_complete");
+    expect(store.getReviewChain("c-ambient-e5")!.confirm_left).toBeNull();
+  });
+
+  it("F-ERR-AMBIENT-RESUME-CONFIRM: mid-confirm error recover continues E4 (not forced fix)", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-confirm",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-confirm", {
+      fix_round: 3,
+      chain_pending: 1,
+      confirm_left: 3,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "确认审查 2/5",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-confirm",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-ambient-confirm")!;
+    expect(mid.confirm_left).toBe(3);
+    expect(mid.code_edited).toBe(0);
+    expect(mid.chain_pending).toBe(0);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-confirm",
+      status: "completed",
+      loopCount: 3,
+    });
+    expect(after?.kind).toBe("review.confirm");
+    expect(store.getReviewChain("c-ambient-confirm")!.confirm_left).toBe(2);
+  });
+
+  it("F-ERR-AMBIENT-STALE-FIX-ROUND: leftover fix_round alone must not force post-recover E2", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-stale",
+      status: "error",
+      loopCount: 0,
+    });
+    // Residue after ambient phantom-E3 gate: fix_round kept, no active review flags.
+    store.updateReviewChain("c-ambient-stale", {
+      fix_round: 3,
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: null,
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-stale",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    expect(store.getReviewChain("c-ambient-stale")!.code_edited).toBe(0);
+    expect(store.getReviewChain("c-ambient-stale")!.fix_round).toBe(3);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-stale",
+      status: "completed",
+      loopCount: 3,
+    });
+    expect(after).toBeNull();
+    expect(store.getReviewChain("c-ambient-stale")!.confirm_left).toBeNull();
+  });
+
+  it("F-ERR-AMBIENT-RESUME-FIX-PENDING: E8-cleared chain_pending but fix pending still resumes E2", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-fix-pending",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-fix-pending", {
+      fix_round: 1,
+      chain_pending: 0, // clearChainPending mid-fix
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "自审修复第 1 轮（无硬顶）",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-fix-pending",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    expect(store.getReviewChain("c-ambient-fix-pending")!.code_edited).toBe(1);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-fix-pending",
+      status: "completed",
+      loopCount: 3,
+    });
+    expect(after?.kind).toBe("review.fix");
+    expect(after?.meta?.fixRound).toBe(2);
+  });
+
+  it("F-ERR-AMBIENT-ATOMIC-RECOVER: soft-reset and recover pending commit with chain_pending=0", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-atomic",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-atomic", {
+      fix_round: 2,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "Review fix round 2 (no hard cap)",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-atomic",
+      status: "error",
+      loopCount: 1,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-ambient-atomic")!;
+    expect(mid.chain_pending).toBe(0);
+    expect(mid.code_edited).toBe(1);
+    expect(mid.pending_followup).toMatch(/恢复|Recover|checklist|任务/);
+    // Executing path must still leave chain alone — spot-check ambient only here.
+  });
+
+  it("F-ERR-AMBIENT-READY-E3: fix done (chain_pending only) must enter confirm after recover, not regress to fix", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-ready-e3",
+      status: "error",
+      loopCount: 0,
+    });
+    // Fix followup already delivered/cleared; chain still armed for E3.
+    store.updateReviewChain("c-ambient-ready-e3", {
+      fix_round: 2,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: null,
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-ready-e3",
+      status: "error",
+      loopCount: 1,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-ambient-ready-e3")!;
+    expect(mid.code_edited).toBe(0);
+    expect(mid.chain_pending).toBe(0);
+    expect(mid.confirm_left).toBe(5); // confirmRounds — E4 emits 1/5
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-ready-e3",
+      status: "completed",
+      loopCount: 2,
+    });
+    expect(after?.kind).toBe("review.confirm");
+    expect(after?.meta?.n).toBe(1);
+    expect(store.getReviewChain("c-ambient-ready-e3")!.confirm_left).toBe(4);
+  });
+
+  it("F-ERR-AMBIENT-READY-E3-STRICT: non-fix pending + chain_pending must not skip into confirm", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-ready-strict",
+      status: "error",
+      loopCount: 0,
+    });
+    // Custom/unknown pending still in flight — conservative resume fix, not E3.
+    store.updateReviewChain("c-ambient-ready-strict", {
+      fix_round: 2,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "Custom review pass still running",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-ready-strict",
+      status: "error",
+      loopCount: 1,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-ambient-ready-strict")!;
+    expect(mid.code_edited).toBe(1);
+    expect(mid.confirm_left).toBeNull();
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-ready-strict",
+      status: "completed",
+      loopCount: 2,
+    });
+    expect(after?.kind).toBe("review.fix");
+  });
+
+  it("F-ERR-AMBIENT-PARTIAL-FAIL: soft-reset txn + neutralize fail still disarms chain_pending", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-partial",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-partial", {
+      fix_round: 2,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "自审修复第 2 轮",
+    });
+    const origEx = store.exclusiveWrite.bind(store);
+    const origNeut = store.neutralizeReviewChain.bind(store);
+    store.exclusiveWrite = (() => {
+      throw new Error("exclusiveWrite boom");
+    }) as typeof store.exclusiveWrite;
+    store.neutralizeReviewChain = (() => {
+      throw new Error("neutralize boom");
+    }) as typeof store.neutralizeReviewChain;
+    try {
+      const recover = eng.handleStop({
+        conversationId: "c-ambient-partial",
+        status: "error",
+        loopCount: 1,
+      });
+      expect(recover?.kind).toBe("recover");
+      // Compensation must clear arming even when neutralize failed.
+      expect(store.getReviewChain("c-ambient-partial")!.chain_pending).toBe(0);
+      // Last-resort soft-reset should still mark mid-fix for post-recover E2.
+      expect(store.getReviewChain("c-ambient-partial")!.code_edited).toBe(1);
+    } finally {
+      store.exclusiveWrite = origEx;
+      store.neutralizeReviewChain = origNeut;
+    }
+    const after = eng.handleStop({
+      conversationId: "c-ambient-partial",
+      status: "completed",
+      loopCount: 2,
+    });
+    expect(after?.kind).toBe("review.fix");
+    expect(store.getReviewChain("c-ambient-partial")!.confirm_left).toBeNull();
+  });
+
+  it("F-ERR-AMBIENT-PARTIAL-NEUTRALIZE: txn fail + neutralize ok must wipe resume (no soft-reset after)", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-neut",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-neut", {
+      fix_round: 2,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "自审修复第 2 轮",
+    });
+    const origEx = store.exclusiveWrite.bind(store);
+    store.exclusiveWrite = (() => {
+      throw new Error("exclusiveWrite boom");
+    }) as typeof store.exclusiveWrite;
+    try {
+      const recover = eng.handleStop({
+        conversationId: "c-ambient-neut",
+        status: "error",
+        loopCount: 1,
+      });
+      expect(recover?.kind).toBe("recover");
+      const mid = store.getReviewChain("c-ambient-neut")!;
+      expect(mid.chain_pending).toBe(0);
+      expect(mid.code_edited).toBe(0);
+      expect(mid.fix_round).toBe(0);
+    } finally {
+      store.exclusiveWrite = origEx;
+    }
+    const after = eng.handleStop({
+      conversationId: "c-ambient-neut",
+      status: "completed",
+      loopCount: 2,
+    });
+    expect(after).toBeNull();
+    expect(store.getReviewChain("c-ambient-neut")!.confirm_left).toBeNull();
+  });
+
   it("F-SCOPE-PROJECT: ambient edit triggers fix without RUN", () => {
     fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
     fs.writeFileSync(
