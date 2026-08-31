@@ -38,6 +38,7 @@ var en_default = {
     advance: "Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: {nextId} \u2014 {nextTitle}.",
     done: "All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.",
     recover: "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
+    recover_planning: "Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.",
     stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     track_pick: "Select a plan by number or slug."
@@ -110,6 +111,7 @@ var zh_CN_default = {
     advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u5148\u52FE\u9009\u5F53\u524D\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u65E0\u6539\u52A8\u5219\u8DF3\u8FC7\uFF09\uFF1Agit status/diff \u2192 \u53EA stage \u672C checklist \u9879\u76F8\u5173\u8DEF\u5F84\uFF1B\u7981\u6B62 git add -A\u3001stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u4E00\u6B21 conventional commit\uFF1B\u7981\u6B62 push/--no-verify/amend/force\uFF08\u4EC5\u7528\u6237\u660E\u786E\u8981\u6C42\u624D\u53EF push\uFF09\u3002\u52FE\u9009\u540E\u5DF2\u5E72\u51C0\u5219\u8DF3\u8FC7 commit\u3002\u7136\u540E\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
     done: "\u5168\u90E8\u5B8C\u6210\u3002\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002\u7136\u540E\u505C\u6B62\u3002",
     recover: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D checklist \u9879\uFF0C\u4E0D\u8981\u63A8\u8FDB\u3002",
+    recover_planning: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u89C4\u5212\uFF0C\u4E0D\u8981 RUN \u6216\u5199\u4EA7\u54C1\u4EE3\u7801\u3002",
     stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
     track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
@@ -1453,6 +1455,8 @@ function defaultRender(kind, vars) {
       return `All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.`;
     case "recover":
       return `Recover: the previous turn ended with an error. Continue the current checklist item without advancing.`;
+    case "recover_planning":
+      return `Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.`;
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":
@@ -1708,10 +1712,11 @@ var ReviewEngine = class {
       }
     }
     const fresh = this.store.getSession(session.conversation_id);
-    if (fresh && fresh.armed === 1 && fresh.phase === "executing" && fresh.paused === 0) {
+    if (fresh && this.sessionErrorRecoverable(fresh)) {
+      const recoverKind = this.recoverKindForPhase(fresh.phase);
       return this.emit(session.conversation_id, {
         kind: "recover",
-        message: this.render("recover", {}),
+        message: this.render(recoverKind, {}),
         loop: true
       });
     }
@@ -1721,6 +1726,15 @@ var ReviewEngine = class {
   sessionRunnable(conversationId) {
     const s = this.store.getSession(conversationId);
     return !!s && s.armed === 1 && s.phase === "executing" && s.paused === 0;
+  }
+  /** Error/aborted stop may inject recover (planning or armed executing). */
+  sessionErrorRecoverable(session) {
+    if (session.paused !== 0) return false;
+    if (session.phase === "planning") return true;
+    return session.phase === "executing" && session.armed === 1;
+  }
+  recoverKindForPhase(phase) {
+    return phase === "planning" ? "recover_planning" : "recover";
   }
   /** completed stop → reset error_count */
   noteCompletedOk(session) {
@@ -2529,6 +2543,11 @@ function createRenderFollowup(bundle) {
         return renderTemplate(f.done ?? "", vars);
       case "recover":
         return renderTemplate(f.recover ?? "", vars);
+      case "recover_planning":
+        return renderTemplate(
+          f.recover_planning ?? f.recover ?? "",
+          vars
+        );
       case "stuck":
         return renderTemplate(f.stuck ?? "", vars);
       case "verify_fix":

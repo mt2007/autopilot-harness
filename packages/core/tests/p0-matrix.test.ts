@@ -578,6 +578,29 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.error_count).toBe(5);
   });
 
+  it("F-ERR-PLAN: planning error injects recover_planning (armed=0)", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "_pending",
+    });
+    const action = eng.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action?.kind).toBe("recover");
+    expect(action?.message).toMatch(/planning|规划|RUN/i);
+    expect(action?.loop).toBe(true);
+    expect(store.getSession("c1")!.error_count).toBe(1);
+  });
+
   it("F-ITEM: E5b advance zeroes error_count", () => {
     const eng = engine(store, root);
     store.upsertSession({

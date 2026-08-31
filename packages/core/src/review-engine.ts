@@ -28,6 +28,7 @@ export type FollowupKind =
   | "advance"
   | "done"
   | "recover"
+  | "recover_planning"
   | "stuck"
   | "verify_fix";
 
@@ -118,6 +119,8 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
       );
     case "recover":
       return `Recover: the previous turn ended with an error. Continue the current checklist item without advancing.`;
+    case "recover_planning":
+      return `Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.`;
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":
@@ -472,15 +475,11 @@ export class ReviewEngine {
     }
     // Re-read: concurrent halt may have paused after our snapshot was taken.
     const fresh = this.store.getSession(session.conversation_id);
-    if (
-      fresh &&
-      fresh.armed === 1 &&
-      fresh.phase === "executing" &&
-      fresh.paused === 0
-    ) {
+    if (fresh && this.sessionErrorRecoverable(fresh)) {
+      const recoverKind = this.recoverKindForPhase(fresh.phase);
       return this.emit(session.conversation_id, {
         kind: "recover",
-        message: this.render("recover", {}),
+        message: this.render(recoverKind, {}),
         loop: true,
       });
     }
@@ -493,6 +492,17 @@ export class ReviewEngine {
     return (
       !!s && s.armed === 1 && s.phase === "executing" && s.paused === 0
     );
+  }
+
+  /** Error/aborted stop may inject recover (planning or armed executing). */
+  private sessionErrorRecoverable(session: SessionRow): boolean {
+    if (session.paused !== 0) return false;
+    if (session.phase === "planning") return true;
+    return session.phase === "executing" && session.armed === 1;
+  }
+
+  private recoverKindForPhase(phase: Phase): FollowupKind {
+    return phase === "planning" ? "recover_planning" : "recover";
   }
 
   /** completed stop → reset error_count */
