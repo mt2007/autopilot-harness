@@ -25,6 +25,7 @@ import { isRecoverOrStuckFollowupMessage } from "./trigger-parser.js";
 import {
   defaultVerifyReportPath,
   evaluateVerifyReport,
+  hasNoCodeCompletionEvidence,
   type VerifyCommandConfig,
 } from "./verify-report.js";
 
@@ -310,8 +311,8 @@ export class ReviewEngine {
       ) {
         return this.e3ArmConfirm(session, chain);
       }
-      // E0
-      return null;
+      // E0': no product-code edit — checklist continue via verify / soft evidence.
+      return this.e0NoCodeContinue(session, chain);
     } catch (err) {
       // Purge races / late id throws from upsert|updateReviewChain must not crash the hook.
       const msg = err instanceof Error ? err.message : String(err);
@@ -726,6 +727,297 @@ export class ReviewEngine {
     // error_count reset on item id change is handled by callers tracking last item;
     // E5b always zeroes error_count on advance. Do not existsSync untrusted
     // checklist_path here (symlink / outside probe).
+  }
+
+  /**
+   * E0': checklist executing, not in fix/confirm — skip lenses when there is no
+   * product code edit. Soft/verified success advances in one IMMEDIATE txn with
+   * evidence re-check (never arm at-E5 first). Only required-verify *fail*
+   * arms at-E5 to reuse E5c verify_fix / stuck.
+   */
+  private e0NoCodeContinue(
+    session: SessionRow,
+    chain: ReviewChainRow,
+  ): FollowupAction | null {
+    if (!isChecklistExecuting(session)) return null;
+    if (
+      chain.code_edited === 1 ||
+      chain.confirm_left !== null ||
+      chain.item_confirm_complete === 1 ||
+      chain.chain_pending === 1
+    ) {
+      return null;
+    }
+
+    const parsed = this.parseSessionChecklist(session);
+    if (!parsed?.currentItem) return null;
+
+    const trustRoot = this.trustedProjectRoot();
+    const reportPath =
+      this.config.verifyReportPath ??
+      defaultVerifyReportPath(trustRoot ?? "");
+    const checklistPath = session.checklist_path || "";
+    const evalResult = evaluateVerifyReport({
+      enabled: this.config.verifyEnabled,
+      commands: this.config.verifyCommands,
+      reportPath,
+      currentItem: parsed.currentItem,
+      checklistPath,
+      projectRoot: trustRoot ?? undefined,
+    });
+
+    if (evalResult.outcome === "skip") {
+      // Soft evidence + advance/done in one write — never arm E5 first.
+      return this.e0DirectAdvance(session, reportPath, parsed.currentItem.id, {
+        kind: "soft",
+      });
+    }
+
+    if (evalResult.outcome === "pass") {
+      // Required verify already passed — advance in one write. Do NOT arm at-E5
+      // first: a crash between arm and e5Gate would leave stranded at-E5, and a
+      // later skip-configured stop could advance without soft evidence.
+      return this.e0DirectAdvance(session, reportPath, parsed.currentItem.id, {
+        kind: "verified",
+        checklistPath,
+      });
+    }
+
+    // fail (required verify armed): arm at-E5 and reuse E5c verify_fix / stuck.
+    if (!this.armAtE5ForNoCode(session.conversation_id)) return null;
+    const fresh = this.store.getReviewChain(session.conversation_id);
+    const sess = this.store.getSession(session.conversation_id);
+    if (!fresh || !sess) {
+      this.disarmE5NoCode(session.conversation_id);
+      return null;
+    }
+    const action = this.e5Gate(sess, fresh);
+    if (!action) {
+      // Do not leave a stranded at-E5 state that would skip soft evidence next stop.
+      this.disarmE5NoCode(session.conversation_id);
+      return null;
+    }
+    // E5b advance sets chain_pending=1; clear for consecutive E0 (fail→fixed→pass).
+    if (action.kind === "advance") {
+      const cid = session.conversation_id;
+      try {
+        this.store.exclusiveWrite(() => {
+          const live = this.store.getReviewChain(cid);
+          if (
+            !live ||
+            live.chain_pending !== 1 ||
+            live.code_edited === 1 ||
+            live.confirm_left !== null ||
+            live.item_confirm_complete !== 0
+          ) {
+            return { commit: false, value: undefined };
+          }
+          this.store.updateReviewChain(cid, { chain_pending: 0 });
+          return { commit: true, value: undefined };
+        });
+      } catch {
+        /* best-effort */
+      }
+    }
+    return action;
+  }
+
+  /**
+   * E0 direct advance/done: re-check soft or verified evidence under one
+   * IMMEDIATE write — never enters the confirm/E5 state machine.
+   */
+  private e0DirectAdvance(
+    session: SessionRow,
+    reportPath: string,
+    expectedItemId: string,
+    evidence:
+      | { kind: "soft" }
+      | { kind: "verified"; checklistPath: string },
+  ): FollowupAction | null {
+    const cid = session.conversation_id;
+    const trustRoot = this.trustedProjectRoot();
+    const action = this.store.exclusiveWrite(() => {
+      if (!this.sessionRunnable(cid)) {
+        return { commit: false, value: null };
+      }
+      const lockedSession = this.store.getSession(cid);
+      if (!lockedSession || !isChecklistExecuting(lockedSession)) {
+        return { commit: false, value: null };
+      }
+      const fresh = this.store.getReviewChain(cid);
+      if (
+        !fresh ||
+        fresh.code_edited === 1 ||
+        fresh.confirm_left !== null ||
+        fresh.item_confirm_complete === 1 ||
+        fresh.chain_pending === 1
+      ) {
+        return { commit: false, value: null };
+      }
+
+      const refreshed = this.parseSessionChecklist(lockedSession);
+      if (!refreshed?.currentItem || refreshed.currentItem.id !== expectedItemId) {
+        return { commit: false, value: null };
+      }
+      if (evidence.kind === "soft") {
+        if (
+          !hasNoCodeCompletionEvidence({
+            reportPath,
+            currentItemId: refreshed.currentItem.id,
+            projectRoot: trustRoot ?? undefined,
+          })
+        ) {
+          return { commit: false, value: null };
+        }
+      } else {
+        // Prefer checklist path from the locked session row (not the pre-lock snapshot).
+        const lockedChecklistPath =
+          lockedSession.checklist_path?.trim() || evidence.checklistPath;
+        const lockedEval = evaluateVerifyReport({
+          enabled: this.config.verifyEnabled,
+          commands: this.config.verifyCommands,
+          reportPath,
+          currentItem: refreshed.currentItem,
+          checklistPath: lockedChecklistPath,
+          projectRoot: trustRoot ?? undefined,
+        });
+        if (lockedEval.outcome !== "pass") {
+          return { commit: false, value: null };
+        }
+      }
+
+      const unchecked = refreshed.unchecked;
+      const following = refreshed.followingItem;
+      if (unchecked <= 0) {
+        return { commit: false, value: null };
+      }
+      const isAdvance = unchecked > 1;
+      if (isAdvance && !following) {
+        return { commit: false, value: null };
+      }
+
+      const message = isAdvance
+        ? this.render("advance", {
+            nextId: following?.id ?? "",
+            nextTitle: following?.title ?? "",
+          })
+        : this.render("done", {});
+      const out: FollowupAction = {
+        kind: isAdvance ? "advance" : "done",
+        message,
+        loop: true,
+      };
+      const chainReset = {
+        confirm_left: null as null,
+        fix_round: 0,
+        code_edited: 0,
+        item_confirm_complete: 0,
+      };
+
+      if (isAdvance) {
+        this.store.upsertSession({
+          conversation_id: cid,
+          project_root: lockedSession.project_root,
+          code_root: lockedSession.code_root,
+          error_count: 0,
+          idle_stop_count: 0,
+          last_error: null,
+        });
+        // chain_pending stays 0 — unlike E5b after confirm. Soft/verified E0
+        // advance has no product diff to confirm; leaving pending=1 would force
+        // E3 on the next no-code item and skip E0 soft evidence.
+        this.store.updateReviewChain(cid, {
+          ...chainReset,
+          pending_followup: message,
+          pending_followup_at: new Date().toISOString(),
+          pending_redeliver_at: null,
+          chain_pending: 0,
+        });
+      } else {
+        this.store.upsertSession({
+          conversation_id: cid,
+          project_root: lockedSession.project_root,
+          code_root: lockedSession.code_root,
+          phase: "done" as Phase,
+          armed: 0,
+          error_count: 0,
+          idle_stop_count: 0,
+          last_error: null,
+        });
+        this.store.updateReviewChain(cid, {
+          ...chainReset,
+          pending_followup: message,
+          pending_followup_at: new Date().toISOString(),
+          pending_redeliver_at: null,
+          chain_pending: 0,
+        });
+      }
+      return { commit: true, value: out };
+    });
+    if (action) {
+      this.afterFollowupCommitted(session, {});
+    }
+    return action;
+  }
+
+  /** Arm confirm_left=0 + ICC=1 only when still idle on the no-code path. */
+  private armAtE5ForNoCode(conversationId: string): boolean {
+    return (
+      this.store.exclusiveWrite(() => {
+        if (!this.sessionRunnable(conversationId)) {
+          return { commit: false, value: false };
+        }
+        const sess = this.store.getSession(conversationId);
+        if (!sess || !isChecklistExecuting(sess)) {
+          return { commit: false, value: false };
+        }
+        const fresh = this.store.getReviewChain(conversationId);
+        if (
+          !fresh ||
+          fresh.code_edited === 1 ||
+          fresh.confirm_left !== null ||
+          fresh.item_confirm_complete === 1 ||
+          fresh.chain_pending === 1
+        ) {
+          return { commit: false, value: false };
+        }
+        this.store.updateReviewChain(conversationId, {
+          confirm_left: 0,
+          item_confirm_complete: 1,
+          chain_pending: 0,
+        });
+        return { commit: true, value: true };
+      }) === true
+    );
+  }
+
+  /** Undo a failed arm so the next stop cannot skip soft evidence via E5. */
+  private disarmE5NoCode(conversationId: string): void {
+    try {
+      this.store.exclusiveWrite(() => {
+        const fresh = this.store.getReviewChain(conversationId);
+        if (
+          !fresh ||
+          fresh.code_edited === 1 ||
+          fresh.confirm_left !== 0 ||
+          fresh.item_confirm_complete !== 1
+        ) {
+          return { commit: false, value: undefined };
+        }
+        // Only clear a pristine post-arm state (no pending followup yet).
+        if (fresh.pending_followup?.trim()) {
+          return { commit: false, value: undefined };
+        }
+        this.store.updateReviewChain(conversationId, {
+          confirm_left: null,
+          item_confirm_complete: 0,
+          chain_pending: 0,
+        });
+        return { commit: true, value: undefined };
+      });
+    } catch {
+      /* best-effort */
+    }
   }
 
   /** Session-monotonic round counter (fix + confirm share fix_round; no hard cap). */

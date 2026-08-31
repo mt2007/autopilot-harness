@@ -202,6 +202,62 @@ export function evaluateVerifyReport(options: {
   return { outcome: "pass" };
 }
 
+/**
+ * Soft completion evidence for no-code checklist E0 continue when verify is
+ * skipped (disabled / no required commands). Requires a readable in-project
+ * report whose itemId matches the current checklist item. Optional `ok: false`
+ * blocks; missing `ok` is allowed.
+ */
+export function hasNoCodeCompletionEvidence(options: {
+  reportPath: string;
+  currentItemId: string;
+  projectRoot?: string;
+}): boolean {
+  const { reportPath, currentItemId, projectRoot } = options;
+  if (!currentItemId || typeof currentItemId !== "string") return false;
+
+  let root: string | undefined;
+  if (projectRoot !== undefined && projectRoot !== null) {
+    const n =
+      typeof projectRoot === "string"
+        ? normalizeProjectRoot(projectRoot)
+        : null;
+    if (!n) return false;
+    root = n;
+  }
+
+  const resolvedReportPath =
+    root &&
+    typeof reportPath === "string" &&
+    reportPath &&
+    !reportPath.includes("\0")
+      ? path.resolve(root, reportPath)
+      : reportPath;
+
+  if (root) {
+    try {
+      fs.lstatSync(resolvedReportPath);
+      if (!isRealpathInsideProject(root, resolvedReportPath)) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  const report = readVerifyReport(resolvedReportPath, {
+    projectRoot: root,
+  });
+  if (!report || typeof report !== "object") return false;
+  if (typeof report.itemId !== "string" || report.itemId !== currentItemId) {
+    return false;
+  }
+  const ok = (report as { ok?: unknown }).ok;
+  // Only a boolean false rejects; other types / missing ok are allowed.
+  if (ok === false) return false;
+  return true;
+}
+
 export function defaultVerifyReportPath(projectRoot: string): string {
   // Prefer normalized root so padded absolutes do not become cwd-relative joins.
   const root = normalizeProjectRoot(projectRoot) ?? "";

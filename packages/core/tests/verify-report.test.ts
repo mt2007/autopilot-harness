@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_VERIFY_REPORT_BYTES,
   evaluateVerifyReport,
+  hasNoCodeCompletionEvidence,
   readVerifyReport,
 } from "../src/verify-report.js";
 
@@ -282,5 +283,63 @@ describe("readVerifyReport hardening", () => {
         projectRoot: `good\0${project}`,
       }),
     ).toEqual({ outcome: "fail", reason: "missing verify report" });
+  });
+});
+
+describe("hasNoCodeCompletionEvidence", () => {
+  let root: string;
+
+  afterEach(() => {
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("accepts matching itemId; optional ok true; rejects ok false / mismatch / missing", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-soft-"));
+    const rp = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(rp), { recursive: true });
+
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+      }),
+    ).toBe(false);
+
+    fs.writeFileSync(rp, JSON.stringify({ itemId: "item-a" }));
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+      }),
+    ).toBe(true);
+
+    fs.writeFileSync(rp, JSON.stringify({ itemId: "item-a", ok: true }));
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+      }),
+    ).toBe(true);
+
+    fs.writeFileSync(rp, JSON.stringify({ itemId: "item-a", ok: false }));
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+      }),
+    ).toBe(false);
+
+    fs.writeFileSync(rp, JSON.stringify({ itemId: "item-b", ok: true }));
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+      }),
+    ).toBe(false);
   });
 });

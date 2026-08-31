@@ -6,8 +6,18 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 
 1. Read `plans/<slug>/checklist.md` — work only on `firstUnchecked()` (`- [ ] <id> — <title>`).
 2. Implement within that item's scope (align with `plan.md`).
-3. Optional machine verify: run configured commands; write `.autopilot/verify-last.json` with matching `itemId`.
+3. Machine verify / completion evidence: write `.autopilot/verify-last.json` with matching `itemId` (and `ok: true` when using a hand-written report). Run configured verify commands when present.
 4. Stop hook injects **fix** / **confirm** / **advance** / **done** — follow the injected message; do **not** invent your own review lens.
+
+### Product code vs no-code items
+
+| Situation | Stop behavior |
+|-----------|----------------|
+| You edited product code this item | **fix → confirm →** then verify / advance |
+| No product-code diff (env, ops, docs-only under excluded paths) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done** |
+| Required verify **fail** | `verify_fix` — fix env/report or code; if you edit product code next, fix chain runs first |
+
+`plans/`、`.autopilot/`、`.md` edits do **not** count as product code.
 
 ## Fix vs confirm
 

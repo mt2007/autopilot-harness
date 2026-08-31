@@ -358,8 +358,200 @@ describe("review-engine P0 matrix", () => {
       fix_round: 0,
       item_confirm_complete: 0,
     });
-    // loopCount 0 and no pending → E0
+    // loopCount 0 and no pending → E0 (no soft evidence) stays null
     expect(eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })).toBeNull();
+  });
+
+  it("F-E0: soft evidence itemId match advances without confirm", () => {
+    const eng = engine(store, root);
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true, at: new Date().toISOString() }),
+    );
+    const a = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(a?.kind).toBe("advance");
+    expect(a?.message).toMatch(/item-b|Second/);
+    // Soft path must not leave stranded at-E5 (would skip evidence next stop).
+    const chain = store.getReviewChain("c1")!;
+    expect(chain.confirm_left).toBeNull();
+    expect(chain.item_confirm_complete).toBe(0);
+    expect(chain.chain_pending).toBe(0);
+  });
+
+  it("F-E0: consecutive soft advances without confirm between items", () => {
+    const eng = engine(store, root);
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true }),
+    );
+    expect(
+      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })
+        ?.kind,
+    ).toBe("advance");
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+
+    // Agent checked off item-a (simulate) and wrote evidence for item-b.
+    fs.writeFileSync(
+      cp,
+      `- [x] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    store.updateReviewChain("c1", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-b", ok: true }),
+    );
+    const b = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(b?.kind).toBe("done");
+    expect(b?.kind).not.toMatch(/confirm/);
+  });
+
+  it("F-E0: required verify pass advances without confirm", () => {
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({
+        itemId: "item-a",
+        checklistPath: cp,
+        ranAt: new Date().toISOString(),
+        commands: [{ id: "test", exitCode: 0 }],
+      }),
+    );
+    const eng = engine(store, root, {
+      verifyEnabled: true,
+      verifyCommands: [{ id: "test", required: true }],
+      verifyReportPath: reportPath,
+    });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const a = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(a?.kind).toBe("advance");
+    const chain = store.getReviewChain("c1")!;
+    expect(chain.confirm_left).toBeNull();
+    expect(chain.item_confirm_complete).toBe(0);
+    expect(chain.chain_pending).toBe(0);
+  });
+
+  it("F-E0: ok false / stale itemId stay null", () => {
+    const eng = engine(store, root);
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: false }),
+    );
+    expect(
+      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 }),
+    ).toBeNull();
+
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-b", ok: true }),
+    );
+    expect(
+      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 }),
+    ).toBeNull();
+  });
+
+  it("F-E0: required verify fail then code edit still E2 first", () => {
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    const eng = engine(store, root, {
+      verifyEnabled: true,
+      verifyCommands: [{ id: "test", required: true }],
+      verifyReportPath: reportPath,
+    });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const fail = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(fail?.kind).toBe("verify_fix");
+    expect(store.getReviewChain("c1")!.item_confirm_complete).toBe(1);
+
+    store.markCodeEdited("c1");
+    const fix = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(fix?.kind).toBe("review.fix");
+  });
+
+  it("F-E0: mid-confirm does not take no-code path", () => {
+    const eng = engine(store, root);
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true }),
+    );
+    store.updateReviewChain("c1", {
+      confirm_left: 3,
+      chain_pending: 1,
+      code_edited: 0,
+      fix_round: 2,
+      item_confirm_complete: 0,
+    });
+    const a = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(a?.kind).toMatch(/confirm/);
+    expect(a?.kind).not.toBe("advance");
   });
 
   it("RESUME / checklist parse ignore poisoned session.project_root", () => {

@@ -14,6 +14,7 @@ export {
 
 export {
   evaluateVerifyReport,
+  hasNoCodeCompletionEvidence,
   readVerifyReport,
   defaultVerifyReportPath,
   MAX_VERIFY_REPORT_BYTES,
