@@ -88,6 +88,34 @@ export function isHarnessFollowupMessage(text: string): boolean {
   return false;
 }
 
+/**
+ * Recover / stuck automation prompts. Safe to drop on user Stop or ordinary chat
+ * (unlike fix/confirm pending, which must survive for lens redelivery).
+ */
+export function isRecoverOrStuckFollowupMessage(text: string): boolean {
+  const m = (text || "").trim();
+  if (!m) return false;
+  return (
+    m.startsWith("Recover:") ||
+    m.startsWith("Stuck:") ||
+    m.startsWith("恢复：") ||
+    m.startsWith("卡住：")
+  );
+}
+
+/** Cursor / host phrases that mean the user clicked Stop (not a model crash). */
+export const USER_ABORT_MARKERS = [
+  "user aborted",
+  "interrupted manually",
+  "aborted/interrupted",
+] as const;
+
+export function isUserAbortText(text: string): boolean {
+  const low = (text || "").toLowerCase();
+  if (!low.trim()) return false;
+  return USER_ABORT_MARKERS.some((m) => low.includes(m));
+}
+
 function firstLine(text: string): string {
   return text.trim().split(/\r?\n/)[0]?.trim() ?? "";
 }

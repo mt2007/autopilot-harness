@@ -468,6 +468,59 @@ describe("StateStore session ops", () => {
     store.close();
   });
 
+  it("clearPendingFollowupIf only clears when live pending still matches", () => {
+    const store = StateStore.openMemory("/tmp/ap-sess-clear-if");
+    const id = "cif-1111-2222-3333-444455556666";
+    seed(store, id);
+    store.ensureReviewChain(id);
+    store.savePendingFollowup(id, "恢复：上一回合出错。继续。");
+    expect(
+      store.clearPendingFollowupIf(id, (m) => m.startsWith("恢复：")),
+    ).toBe(true);
+    expect(store.getReviewChain(id)!.pending_followup).toBeNull();
+
+    store.savePendingFollowup(id, "自审确认 2/5 — 角度");
+    expect(
+      store.clearPendingFollowupIf(id, (m) => m.startsWith("恢复：")),
+    ).toBe(false);
+    expect(store.getReviewChain(id)!.pending_followup).toBe(
+      "自审确认 2/5 — 角度",
+    );
+
+    // Re-check under exclusiveWrite: concurrent replace must not wipe confirm.
+    store.exclusiveWrite(() => {
+      store.savePendingFollowup(id, "恢复：stale snapshot");
+      // Simulate "stale pred true" then live row already swapped to confirm:
+      store.savePendingFollowup(id, "自审确认 3/5");
+      const cleared = store.clearPendingFollowupIf(id, (m) =>
+        m.startsWith("恢复："),
+      );
+      expect(cleared).toBe(false);
+      return { commit: true, value: undefined };
+    });
+    expect(store.getReviewChain(id)!.pending_followup).toBe("自审确认 3/5");
+
+    store.savePendingFollowup(id, "恢复：keep on pred throw");
+    expect(
+      store.clearPendingFollowupIf(id, () => {
+        throw new Error("hostile pred");
+      }),
+    ).toBe(false);
+    expect(store.getReviewChain(id)!.pending_followup).toBe(
+      "恢复：keep on pred throw",
+    );
+
+    expect(
+      store.clearPendingFollowupIf(id, () =>
+        Promise.resolve(true) as unknown as boolean,
+      ),
+    ).toBe(false);
+    expect(store.getReviewChain(id)!.pending_followup).toBe(
+      "恢复：keep on pred throw",
+    );
+    store.close();
+  });
+
   it("updateReviewChain clears blank/NUL pending_followup", () => {
     const store = StateStore.openMemory("/tmp/ap-sess-nul-pending-merge");
     const id = "nul-1111-2222-3333-444455556666";

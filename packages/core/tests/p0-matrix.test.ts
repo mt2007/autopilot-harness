@@ -543,11 +543,46 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.error_count).toBe(0);
     expect(store.getSession("c1")!.paused).toBe(0);
     expect(store.getSession("c1")!.armed).toBe(1);
+    // Stale recover from earlier error stops must not survive RESUME.
+    expect(store.getReviewChain("c1")?.pending_followup ?? null).toBeNull();
 
     eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
     store.updateReviewChain("c1", { code_edited: 1 });
     stop(eng, "c1"); // completed fix → noteCompletedOk
     expect(store.getSession("c1")!.error_count).toBe(0);
+  });
+
+  it("F-RESUME-CLEAR-RECOVER: applyResume drops recover pending, keeps confirm", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      paused: 1,
+      paused_reason: "human_gate",
+      armed: 0,
+    });
+    applyResume(store, "c1");
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+
+    store.updateReviewChain("c1", {
+      pending_followup: "自审确认 2/5 — 角度",
+      pending_followup_at: new Date().toISOString(),
+    });
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      paused: 1,
+      paused_reason: "human_gate",
+      armed: 0,
+    });
+    applyResume(store, "c1");
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(
+      "自审确认 2/5 — 角度",
+    );
   });
 
   it("F-ERR-UNLIMITED: maxErrorsBeforePause=0 never pauses on errors", () => {
@@ -563,6 +598,152 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.paused).toBe(0);
     expect(store.getSession("c1")!.armed).toBe(1);
     expect(store.getSession("c1")!.error_count).toBe(10);
+  });
+
+  it("F-ABORT: user Stop (aborted) does not inject recover or bump error_count", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    const before = store.getSession("c1")!.error_count;
+    const action = eng.handleStop({
+      conversationId: "c1",
+      status: "aborted",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c1")!.error_count).toBe(before);
+    expect(store.getReviewChain("c1")?.pending_followup ?? null).toBeNull();
+  });
+
+  it("F-ABORT-CLEAR-RECOVER: aborted drops stale recover pending (not fix/confirm)", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    store.updateReviewChain("c1", {
+      pending_followup: "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
+      pending_followup_at: new Date().toISOString(),
+    });
+    expect(
+      eng.handleStop({ conversationId: "c1", status: "aborted", loopCount: 0 }),
+    ).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+
+    store.updateReviewChain("c1", {
+      pending_followup: "自审确认 2/5 — 角度",
+      pending_followup_at: new Date().toISOString(),
+    });
+    expect(
+      eng.handleStop({ conversationId: "c1", status: "aborted", loopCount: 0 }),
+    ).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(
+      "自审确认 2/5 — 角度",
+    );
+  });
+
+  it("F-ABORT-NO-AMBIENT: aborted without session does not bootstrap ambient recover", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-abort-no-session",
+      status: "aborted",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-abort-no-session")).toBeNull();
+  });
+
+  it("F-ABORT-NO-REDELIVER: after abort, completed stop does not redeliver recover", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    eng.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+    eng.handleStop({
+      conversationId: "c1",
+      status: "aborted",
+      loopCount: 0,
+    });
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+
+    const transcript = path.join(root, "t-abort.jsonl");
+    fs.writeFileSync(transcript, "");
+    const again = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(again).toBeNull();
+  });
+
+  it("F-ABORT-PORT: cancelled / error+abort-markers must not recover via Cursor port", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    const before = store.getSession("c1")!.error_count;
+
+    expect(
+      handleStop(eng, {
+        conversation_id: "c1",
+        status: "cancelled",
+      }),
+    ).toEqual({});
+    expect(store.getSession("c1")!.error_count).toBe(before);
+
+    expect(
+      handleStop(eng, {
+        conversation_id: "c1",
+        status: "canceled",
+      }),
+    ).toEqual({});
+
+    expect(
+      handleStop(eng, {
+        conversation_id: "c1",
+        status: "error",
+        error: "User aborted/interrupted manually.",
+      }),
+    ).toEqual({});
+    expect(store.getSession("c1")!.error_count).toBe(before);
+    expect(store.getReviewChain("c1")?.pending_followup ?? null).toBeNull();
+
+    expect(
+      handleStop(eng, {
+        conversation_id: "c1",
+        status: "failed",
+        error: { message: "User aborted the request" },
+      }),
+    ).toEqual({});
+
+    expect(
+      handleStop(eng, {
+        conversation_id: "c1",
+        status: "error",
+        error: ["User aborted/interrupted manually."],
+      }),
+    ).toEqual({});
+
+    expect(
+      handleStop(eng, {
+        conversation_id: "c1",
+        status: "error",
+        error: {
+          get message() {
+            throw new Error("hostile getter");
+          },
+        },
+      }).followup_message,
+    ).toMatch(/恢复|Recover/);
+
+    // Genuine error still recovers through the port.
+    const recovered = handleStop(eng, {
+      conversation_id: "c1",
+      status: "error",
+      error: "Tool call failed: ENOENT",
+    });
+    expect(recovered.followup_message).toMatch(/恢复|Recover/);
+    expect(recovered.loop).toBe(true);
   });
 
   it("F-ERR-5: maxErrorsBeforePause=5 pauses on 5th error", () => {
@@ -1475,6 +1656,47 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
     // Must keep undelivered pending — wiping it would let the next stop skip a lens.
     expect(afterChat.pending_followup).toBe("Review confirm 3/5 undelivered");
     expect(afterChat.confirm_left).toBe(2);
+
+    // Recover pending is not a lens — any user submit (incl. triggers) must drop
+    // it so RESUME / RUN-same-track cannot resurrect「恢复：上一回合出错」.
+    store.updateReviewChain("c1", {
+      chain_pending: 0,
+      pending_followup: "恢复：上一回合出错。继续当前任务（未在执行 checklist）。",
+      pending_followup_at: new Date().toISOString(),
+    });
+    handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "c1", prompt: "换个话题继续聊" },
+      root,
+    );
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+
+    store.updateReviewChain("c1", {
+      pending_followup: "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
+      pending_followup_at: new Date().toISOString(),
+    });
+    handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "c1", prompt: "Autopilot RESUME" },
+      root,
+    );
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+
+    // Trigger must not wipe fix/confirm pending (lens redelivery).
+    store.updateReviewChain("c1", {
+      pending_followup: "Review confirm 3/5 undelivered",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      confirm_left: 2,
+    });
+    handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "c1", prompt: "Autopilot RESUME" },
+      root,
+    );
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(
+      "Review confirm 3/5 undelivered",
+    );
 
     expect(isHarnessFollowupMessage("Review fix round 1: ...")).toBe(true);
     expect(isHarnessFollowupMessage("Briefly inform the user about the task result.继续")).toBe(true);

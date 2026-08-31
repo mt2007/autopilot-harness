@@ -996,6 +996,53 @@ var StateStore = class _StateStore {
     ).run(nowIso(), conversationId);
   }
   /**
+   * Atomically clear pending only when the live row still matches `pred`.
+   * Avoids read-then-clear TOCTOU: a concurrent stop may replace recover with
+   * fix/confirm between getReviewChain and clearPendingFollowup.
+   * Safe inside an open exclusiveWrite (runs inline; no nest).
+   */
+  clearPendingFollowupIf(conversationId, pred) {
+    if (this.isInvalidConversationId(conversationId)) {
+      return false;
+    }
+    if (typeof pred !== "function") {
+      return false;
+    }
+    const run = () => {
+      const pending = this.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
+      if (!pending) {
+        return false;
+      }
+      let matched = false;
+      try {
+        const raw = pred(pending);
+        if (raw !== null && typeof raw === "object" && typeof raw.then === "function") {
+          return false;
+        }
+        matched = Boolean(raw);
+      } catch {
+        return false;
+      }
+      if (!matched) {
+        return false;
+      }
+      this.db.prepare(
+        `UPDATE review_chains SET
+            pending_followup = NULL, pending_followup_at = NULL, pending_redeliver_at = NULL,
+            updated_at = ?
+           WHERE conversation_id = ?`
+      ).run(nowIso(), conversationId);
+      return true;
+    };
+    if (this.writeDepth > 0) {
+      return run();
+    }
+    return this.exclusiveWrite(() => {
+      const ok = run();
+      return { commit: ok, value: ok };
+    });
+  }
+  /**
    * Column-only: neutralize fix/confirm/pending re-entry without ensure/session.
    * Used when pause-threshold upsert failed but the session is still armed — a
    * later completed stop must not resume the review loop via code_edited/pending
@@ -1305,6 +1352,21 @@ function isHarnessFollowupMessage(text) {
   }
   return false;
 }
+function isRecoverOrStuckFollowupMessage(text) {
+  const m = (text || "").trim();
+  if (!m) return false;
+  return m.startsWith("Recover:") || m.startsWith("Stuck:") || m.startsWith("\u6062\u590D\uFF1A") || m.startsWith("\u5361\u4F4F\uFF1A");
+}
+var USER_ABORT_MARKERS = [
+  "user aborted",
+  "interrupted manually",
+  "aborted/interrupted"
+];
+function isUserAbortText(text) {
+  const low = (text || "").toLowerCase();
+  if (!low.trim()) return false;
+  return USER_ABORT_MARKERS.some((m) => low.includes(m));
+}
 function firstLine(text) {
   return text.trim().split(/\r?\n/)[0]?.trim() ?? "";
 }
@@ -1599,7 +1661,7 @@ var ReviewEngine = class {
     }
     try {
       let session = this.store.getSession(input.conversationId);
-      if (!session && (input.status === "error" || input.status === "aborted") && this.config.reviewScope === "project") {
+      if (!session && input.status === "error" && this.config.reviewScope === "project") {
         ensureAmbientReviewSession(
           this.store,
           input.conversationId,
@@ -1609,7 +1671,10 @@ var ReviewEngine = class {
         session = this.store.getSession(input.conversationId);
       }
       if (!session) return null;
-      if (input.status === "error" || input.status === "aborted") {
+      if (input.status === "aborted") {
+        return this.handleAbortedStop(session);
+      }
+      if (input.status === "error") {
         return this.handleErrorStop(session, input);
       }
       if (!sessionReviewRunnable(session, this.config.reviewScope)) {
@@ -1737,6 +1802,22 @@ var ReviewEngine = class {
     } catch {
     }
     return action;
+  }
+  /**
+   * Cursor Stop button (and similar host interrupts) arrive as status=aborted.
+   * Do not inject recover — that fights the user and loops with loop_limit:null.
+   * Drop recover/stuck pending so transcript revert cannot redeliver them later.
+   * Leave fix/confirm pending alone (delivery retry still valid if inject raced).
+   */
+  handleAbortedStop(session) {
+    try {
+      this.store.clearPendingFollowupIf(
+        session.conversation_id,
+        isRecoverOrStuckFollowupMessage
+      );
+    } catch {
+    }
+    return null;
   }
   handleErrorStop(session, input) {
     const nextCount = session.error_count + 1;
@@ -1911,7 +1992,7 @@ var ReviewEngine = class {
     const s = this.store.getSession(conversationId);
     return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
-  /** Error/aborted stop may inject recover (planning, project ambient, or armed executing). */
+  /** Genuine error stop may inject recover (planning, project ambient, or armed executing). */
   sessionErrorRecoverable(session) {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
@@ -2498,7 +2579,15 @@ function applyResume(store, conversationId) {
   if (session.phase === "planning") {
     patch.armed = 0;
   }
-  return store.upsertSession(patch);
+  const updated = store.upsertSession(patch);
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  return updated;
 }
 function applyResumeReview(store, conversationId) {
   store.setChainPending(conversationId);
@@ -3609,10 +3698,66 @@ function isProductCodeEdit(filePath) {
 function cid(p) {
   return (p.conversation_id ?? p.conversationId ?? "").trim();
 }
+function collectStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const MAX_CHARS = 8192;
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value.slice(0, 8)) {
+          if (typeof item === "string" && item.trim()) parts.push(item);
+        }
+        return;
+      }
+      if (value && typeof value === "object") {
+        const o = value;
+        for (const key of ["message", "error", "name", "stack", "detail", "title"]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.status_message);
+    push(payload.reason);
+    push(payload.detail);
+    push(payload.title);
+  } catch {
+    return "";
+  }
+  const joined = parts.join("\n");
+  return joined.length > MAX_CHARS ? joined.slice(0, MAX_CHARS) : joined;
+}
+function normalizeCursorStopStatus(payload) {
+  if (!payload || typeof payload !== "object") return "completed";
+  const statusRaw = String(payload.status ?? "completed").toLowerCase().trim();
+  const errText = collectStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  return "completed";
+}
 function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
   const conversationId = cid(payload);
   if (!conversationId) return { continue: true };
   const prompt = payload.prompt ?? payload.content ?? "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
   const session = store.getSession(conversationId);
   const trigger = parseTrigger({
     prompt,
@@ -3703,8 +3848,7 @@ function handleAfterFileEdit(store, payload, projectRoot) {
 function handleStop(engine, payload) {
   const conversationId = cid(payload);
   if (!conversationId) return {};
-  const statusRaw = payload.status ?? "completed";
-  const status = statusRaw === "error" || statusRaw === "aborted" ? statusRaw : "completed";
+  const status = normalizeCursorStopStatus(payload);
   const loopCount = payload.loop_count ?? payload.loopCount ?? 0;
   const transcriptPath = payload.transcript_path ?? payload.transcriptPath;
   const action = engine.handleStop({

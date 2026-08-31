@@ -107,6 +107,9 @@ export { isProductCodeEdit } from "./code-edit-detector.js";
 export {
   parseTrigger,
   isHarnessFollowupMessage,
+  isRecoverOrStuckFollowupMessage,
+  isUserAbortText,
+  USER_ABORT_MARKERS,
   DEFAULT_TRIGGERS,
   HARNESS_FOLLOWUP_PREFIXES,
   type TriggerEvent,

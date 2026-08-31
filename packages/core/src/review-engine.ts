@@ -21,6 +21,7 @@ import {
   pendingRedeliverAllowed,
   readTranscriptTail,
 } from "./transcript-followup.js";
+import { isRecoverOrStuckFollowupMessage } from "./trigger-parser.js";
 import {
   defaultVerifyReportPath,
   evaluateVerifyReport,
@@ -218,9 +219,11 @@ export class ReviewEngine {
     }
     try {
       let session = this.store.getSession(input.conversationId);
+      // User Stop / host abort must not bootstrap ambient sessions or recover.
+      // Only genuine `error` turns may ensure + inject recover.
       if (
         !session &&
-        (input.status === "error" || input.status === "aborted") &&
+        input.status === "error" &&
         this.config.reviewScope === "project"
       ) {
         ensureAmbientReviewSession(
@@ -233,7 +236,10 @@ export class ReviewEngine {
       }
       if (!session) return null;
 
-      if (input.status === "error" || input.status === "aborted") {
+      if (input.status === "aborted") {
+        return this.handleAbortedStop(session);
+      }
+      if (input.status === "error") {
         return this.handleErrorStop(session, input);
       }
 
@@ -430,6 +436,24 @@ export class ReviewEngine {
       // Hook can still deliver once; pending redelivery is best-effort.
     }
     return action;
+  }
+
+  /**
+   * Cursor Stop button (and similar host interrupts) arrive as status=aborted.
+   * Do not inject recover — that fights the user and loops with loop_limit:null.
+   * Drop recover/stuck pending so transcript revert cannot redeliver them later.
+   * Leave fix/confirm pending alone (delivery retry still valid if inject raced).
+   */
+  private handleAbortedStop(session: SessionRow): FollowupAction | null {
+    try {
+      this.store.clearPendingFollowupIf(
+        session.conversation_id,
+        isRecoverOrStuckFollowupMessage,
+      );
+    } catch {
+      /* best-effort */
+    }
+    return null;
   }
 
   private handleErrorStop(session: SessionRow, input: StopHandlerInput): FollowupAction | null {
@@ -665,7 +689,7 @@ export class ReviewEngine {
     return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
 
-  /** Error/aborted stop may inject recover (planning, project ambient, or armed executing). */
+  /** Genuine error stop may inject recover (planning, project ambient, or armed executing). */
   private sessionErrorRecoverable(session: SessionRow): boolean {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
@@ -1416,7 +1440,18 @@ export function applyResume(store: StateStore, conversationId: string): SessionR
     patch.armed = 0;
   }
 
-  return store.upsertSession(patch);
+  const updated = store.upsertSession(patch);
+  // CLI / direct RESUME: drop stale recover so the next completed stop cannot
+  // resurrect it (Cursor path also clears on beforeSubmitPrompt).
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage,
+    );
+  } catch {
+    /* best-effort */
+  }
+  return updated;
 }
 
 /** resume_review: only chain_pending=1 */

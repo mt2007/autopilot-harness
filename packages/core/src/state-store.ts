@@ -629,6 +629,65 @@ export class StateStore {
   }
 
   /**
+   * Atomically clear pending only when the live row still matches `pred`.
+   * Avoids read-then-clear TOCTOU: a concurrent stop may replace recover with
+   * fix/confirm between getReviewChain and clearPendingFollowup.
+   * Safe inside an open exclusiveWrite (runs inline; no nest).
+   */
+  clearPendingFollowupIf(
+    conversationId: string,
+    pred: (message: string) => boolean,
+  ): boolean {
+    if (this.isInvalidConversationId(conversationId)) {
+      return false;
+    }
+    if (typeof pred !== "function") {
+      return false;
+    }
+    const run = (): boolean => {
+      const pending =
+        this.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
+      if (!pending) {
+        return false;
+      }
+      let matched = false;
+      try {
+        const raw = pred(pending);
+        // Refuse thenables — async preds must not clear under a write lock.
+        if (
+          raw !== null &&
+          typeof raw === "object" &&
+          typeof (raw as { then?: unknown }).then === "function"
+        ) {
+          return false;
+        }
+        matched = Boolean(raw);
+      } catch {
+        return false;
+      }
+      if (!matched) {
+        return false;
+      }
+      this.db
+        .prepare(
+          `UPDATE review_chains SET
+            pending_followup = NULL, pending_followup_at = NULL, pending_redeliver_at = NULL,
+            updated_at = ?
+           WHERE conversation_id = ?`,
+        )
+        .run(nowIso(), conversationId);
+      return true;
+    };
+    if (this.writeDepth > 0) {
+      return run();
+    }
+    return this.exclusiveWrite(() => {
+      const ok = run();
+      return { commit: ok, value: ok };
+    });
+  }
+
+  /**
    * Column-only: neutralize fix/confirm/pending re-entry without ensure/session.
    * Used when pause-threshold upsert failed but the session is still armed — a
    * later completed stop must not resume the review loop via code_edited/pending
