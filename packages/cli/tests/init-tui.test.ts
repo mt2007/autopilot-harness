@@ -209,8 +209,34 @@ describe("wizard helpers", () => {
     expect(applyAutopilotRuntimeGitignore(root)).toBe(".gitignore");
     const body = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
     expect(body).toMatch(/\.autopilot\/state\.db/);
+    expect(body).toMatch(/\.autopilot\/state\.db\.bak\*/);
     expect(body).toMatch(/\.autopilot\/worktrees\//);
     expect(applyAutopilotRuntimeGitignore(root)).toBeNull();
+  });
+
+  it("applyAutopilotRuntimeGitignore appends missing bak without duplicate header", () => {
+    root = tmpProject();
+    fs.writeFileSync(
+      path.join(root, ".gitignore"),
+      `# Autopilot runtime
+.autopilot/state.db
+.autopilot/state.db-*
+.autopilot/worktrees/
+.autopilot/verify-last.json
+.autopilot/logs/
+
+# other
+dist/
+`,
+    );
+    expect(applyAutopilotRuntimeGitignore(root)).toBe(".gitignore");
+    const body = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+    expect(body).toMatch(/\.autopilot\/state\.db\.bak\*/);
+    expect(body.match(/# Autopilot runtime/g)?.length).toBe(1);
+    // Inserted inside the runtime section, not after unrelated trailing rules.
+    expect(body.indexOf(".autopilot/state.db.bak*")).toBeLessThan(
+      body.indexOf("# other"),
+    );
   });
 
   it("writeQuickstart + formatCheatSheet locale", () => {

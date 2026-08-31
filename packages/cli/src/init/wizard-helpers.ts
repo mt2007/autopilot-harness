@@ -216,7 +216,31 @@ function appendGitignoreLines(
   const toAdd = lines.filter((l) => !existing.has(l) && !existing.has(`/${l}`));
   if (toAdd.length === 0) return null;
   if (body.length > 0 && !body.endsWith("\n")) body += "\n";
-  body += `\n# ${comment}\n${toAdd.map((l) => `${l}\n`).join("")}`;
+  const commentLine = `# ${comment}`;
+  // Prefer extending an existing section instead of duplicating the header
+  // (e.g. upgrade adds `.autopilot/state.db.bak*` to a prior runtime block).
+  if (existing.has(commentLine)) {
+    const rows = body.split(/\r?\n/);
+    let commentIdx = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i]!.trim() === commentLine) commentIdx = i;
+    }
+    let insertAt = rows.length;
+    if (commentIdx >= 0) {
+      insertAt = commentIdx + 1;
+      while (insertAt < rows.length) {
+        const t = rows[insertAt]!.trim();
+        // End of section: blank line or next comment.
+        if (t === "" || t.startsWith("#")) break;
+        insertAt++;
+      }
+    }
+    rows.splice(insertAt, 0, ...toAdd);
+    body = rows.join("\n");
+    if (!body.endsWith("\n")) body += "\n";
+  } else {
+    body += `\n${commentLine}\n${toAdd.map((l) => `${l}\n`).join("")}`;
+  }
   assertNotSymlink(gi, ".gitignore");
   writeTextFileReplace(gi, body, root);
   return path.relative(root, gi);
@@ -244,6 +268,7 @@ export function applyAutopilotRuntimeGitignore(
   return appendGitignoreLines(projectRoot, "Autopilot runtime", [
     ".autopilot/state.db",
     ".autopilot/state.db-*",
+    ".autopilot/state.db.bak*",
     ".autopilot/worktrees/",
     ".autopilot/verify-last.json",
     ".autopilot/logs/",
