@@ -397,7 +397,8 @@ export async function collectWizardAnswers(
       "Self-review: fix → multi-lens confirm after code edits.",
       "executing_only — only after Autopilot RUN (checklist mode).",
       "project — any product-code edit, no ON/RUN required.",
-      "With project scope, disable ~/.cursor global self-review to avoid double injection.",
+      "With project scope, error recovery and self-review apply to casual project chats",
+      "(no ON/RUN required). Disable ~/.cursor global self-review to avoid double injection.",
     ].join("\n"),
     "Self-review scope",
   );
@@ -411,8 +412,8 @@ export async function collectWizardAnswers(
       },
       {
         value: "project",
-        label: "On any product-code edit in this project",
-        hint: "no RUN required",
+        label: "Project-wide (edits + error recovery)",
+        hint: "no ON/RUN required",
       },
     ],
     initialValue: "executing_only",

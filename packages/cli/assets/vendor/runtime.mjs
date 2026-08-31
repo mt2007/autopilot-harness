@@ -965,19 +965,23 @@ var StateStore = class _StateStore {
       ).run(nowIso(), conversationId, conversationId);
     });
   }
-  savePendingFollowup(conversationId, message) {
+  savePendingFollowup(conversationId, message, opts) {
     const msg = typeof message === "string" ? message.trim() : "";
     if (!msg || msg.includes("\0")) return;
+    const armChain = opts?.armChain !== false;
     this.withSessionChainWrite(conversationId, () => {
       this.ensureReviewChain(conversationId);
       const ts = nowIso();
-      this.db.prepare(
-        `UPDATE review_chains SET
+      const sql = armChain ? `UPDATE review_chains SET
           pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = NULL,
           chain_pending = 1, updated_at = ?
          WHERE conversation_id = ?
-           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`
-      ).run(msg, ts, ts, conversationId, conversationId);
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)` : `UPDATE review_chains SET
+          pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = NULL,
+          updated_at = ?
+         WHERE conversation_id = ?
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`;
+      this.db.prepare(sql).run(msg, ts, ts, conversationId, conversationId);
     });
   }
   clearPendingFollowup(conversationId) {
@@ -1594,7 +1598,16 @@ var ReviewEngine = class {
       return null;
     }
     try {
-      const session = this.store.getSession(input.conversationId);
+      let session = this.store.getSession(input.conversationId);
+      if (!session && (input.status === "error" || input.status === "aborted") && this.config.reviewScope === "project") {
+        ensureAmbientReviewSession(
+          this.store,
+          input.conversationId,
+          this.config.projectRoot,
+          this.config.reviewScope
+        );
+        session = this.store.getSession(input.conversationId);
+      }
       if (!session) return null;
       if (input.status === "error" || input.status === "aborted") {
         return this.handleErrorStop(session, input);
@@ -1719,7 +1732,8 @@ var ReviewEngine = class {
   }
   emit(conversationId, action) {
     try {
-      this.store.savePendingFollowup(conversationId, action.message);
+      const armChain = action.kind !== "recover" && action.kind !== "recover_planning" && action.kind !== "recover_ambient";
+      this.store.savePendingFollowup(conversationId, action.message, { armChain });
     } catch {
     }
     return action;
@@ -1806,7 +1820,7 @@ var ReviewEngine = class {
     const s = this.store.getSession(conversationId);
     return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
-  /** Error/aborted stop may inject recover (planning or armed executing). */
+  /** Error/aborted stop may inject recover (planning, project ambient, or armed executing). */
   sessionErrorRecoverable(session) {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;

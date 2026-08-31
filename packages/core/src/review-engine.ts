@@ -8,6 +8,7 @@ import {
 import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
 import { getLens, type ConfirmLens } from "./review-lenses.js";
 import {
+  ensureAmbientReviewSession,
   isChecklistExecuting,
   sessionReviewRunnable,
 } from "./review-scope.js";
@@ -216,7 +217,20 @@ export class ReviewEngine {
       return null;
     }
     try {
-      const session = this.store.getSession(input.conversationId);
+      let session = this.store.getSession(input.conversationId);
+      if (
+        !session &&
+        (input.status === "error" || input.status === "aborted") &&
+        this.config.reviewScope === "project"
+      ) {
+        ensureAmbientReviewSession(
+          this.store,
+          input.conversationId,
+          this.config.projectRoot,
+          this.config.reviewScope,
+        );
+        session = this.store.getSession(input.conversationId);
+      }
       if (!session) return null;
 
       if (input.status === "error" || input.status === "aborted") {
@@ -402,7 +416,11 @@ export class ReviewEngine {
     action: FollowupAction,
   ): FollowupAction {
     try {
-      this.store.savePendingFollowup(conversationId, action.message);
+      const armChain =
+        action.kind !== "recover" &&
+        action.kind !== "recover_planning" &&
+        action.kind !== "recover_ambient";
+      this.store.savePendingFollowup(conversationId, action.message, { armChain });
     } catch {
       // Hook can still deliver once; pending redelivery is best-effort.
     }
@@ -511,7 +529,7 @@ export class ReviewEngine {
     return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
 
-  /** Error/aborted stop may inject recover (planning or armed executing). */
+  /** Error/aborted stop may inject recover (planning, project ambient, or armed executing). */
   private sessionErrorRecoverable(session: SessionRow): boolean {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;

@@ -587,22 +587,30 @@ export class StateStore {
     });
   }
 
-  savePendingFollowup(conversationId: string, message: string): void {
+  savePendingFollowup(
+    conversationId: string,
+    message: string,
+    opts?: { armChain?: boolean },
+  ): void {
     const msg = typeof message === "string" ? message.trim() : "";
     // Blank or NUL-poisoned text must not become a redeliverable pending.
     if (!msg || msg.includes("\0")) return;
+    const armChain = opts?.armChain !== false;
     this.withSessionChainWrite(conversationId, () => {
       this.ensureReviewChain(conversationId);
       const ts = nowIso();
-      this.db
-        .prepare(
-          `UPDATE review_chains SET
+      const sql = armChain
+        ? `UPDATE review_chains SET
           pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = NULL,
           chain_pending = 1, updated_at = ?
          WHERE conversation_id = ?
-           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
-        )
-        .run(msg, ts, ts, conversationId, conversationId);
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`
+        : `UPDATE review_chains SET
+          pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = NULL,
+          updated_at = ?
+         WHERE conversation_id = ?
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`;
+      this.db.prepare(sql).run(msg, ts, ts, conversationId, conversationId);
     });
   }
 

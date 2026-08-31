@@ -602,6 +602,50 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.error_count).toBe(1);
   });
 
+  it("F-ERR-AMBIENT: project scope error bootstraps session and injects recover_ambient", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    expect(store.getSession("c-ambient-err")).toBeNull();
+    const action = eng.handleStop({
+      conversationId: "c-ambient-err",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action?.kind).toBe("recover");
+    expect(action?.message).toMatch(/checklist|current work|任务|Autopilot RUN/i);
+    expect(action?.loop).toBe(true);
+    expect(store.getSession("c-ambient-err")?.phase).toBe("idle");
+    expect(store.getSession("c-ambient-err")?.armed).toBe(1);
+    expect(store.getSession("c-ambient-err")!.error_count).toBe(1);
+  });
+
+  it("F-ERR-AMBIENT-NO: executing_only error without session does not recover", () => {
+    const eng = engine(store, root, { reviewScope: "executing_only", maxErrorsBeforePause: 0 });
+    const action = eng.handleStop({
+      conversationId: "c-no-session",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-no-session")).toBeNull();
+  });
+
+  it("F-ERR-AMBIENT-DONE: completed after error recover does not arm review chain", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-done",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(store.getReviewChain("c-ambient-done")!.chain_pending).toBe(0);
+    expect(store.getReviewChain("c-ambient-done")!.code_edited).toBe(0);
+    const done = eng.handleStop({
+      conversationId: "c-ambient-done",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(done).toBeNull();
+  });
+
   it("F-SCOPE-PROJECT: ambient edit triggers fix without RUN", () => {
     fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
     fs.writeFileSync(

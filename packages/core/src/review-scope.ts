@@ -2,7 +2,7 @@ import type { ReviewScope } from "./project-config.js";
 import { normalizeProjectRoot } from "./project-path.js";
 import type { SessionRow, StateStore } from "./state-store.js";
 
-/** Ensure a review-only session exists for project-scope ambient edits (no ON/RUN). */
+/** Ensure a review-only session exists for project-scope ambient work (edits or error recover). */
 export function ensureAmbientReviewSession(
   store: StateStore,
   conversationId: string,
