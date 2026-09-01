@@ -52,6 +52,35 @@ describe("i18n helpers", () => {
     }
   });
 
+  it("followup copy omits subagent bans and hardcoded reply-language locks", () => {
+    const banned =
+      /do not start subagents?|不要开\s*subagent|必须用中文|reply in (chinese|english)/i;
+    for (const code of ["en", "zh-CN"] as const) {
+      const f = loadLocale(code).followup;
+      const blobs = [
+        f.review.fix,
+        f.review.confirm,
+        f.review.confirm_final,
+        f.advance,
+        f.done,
+        f.recover,
+        f.recover_planning,
+        f.recover_ambient,
+        f.review_complete,
+        f.stuck,
+        f.verify_fix,
+        f.track_pick,
+      ];
+      for (const text of blobs) {
+        expect(text, `${code}: ${text.slice(0, 40)}…`).not.toMatch(banned);
+      }
+      expect(f.review_complete).toMatch(/^Review complete|^自审完成/);
+      expect(f.review_complete).not.toMatch(
+        /do not auto-commit|不要自动 commit|勿再 commit/i,
+      );
+    }
+  });
+
   it("skillDescription returns locale-specific text", () => {
     const en = skillDescription("en", "autopilot-on");
     const zh = skillDescription("zh-CN", "autopilot-on");

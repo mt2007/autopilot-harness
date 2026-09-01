@@ -40,7 +40,7 @@ var en_default = {
     recover: "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
     recover_planning: "Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.",
     recover_ambient: "Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.",
-    review_complete: "Review complete. All {total} confirm rounds passed; the review chain has ended. Do not auto-commit. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only. Do not start subagents.",
+    review_complete: "Review complete. All {total} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.",
     stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     track_pick: "Select a plan by number or slug."
@@ -115,7 +115,7 @@ var zh_CN_default = {
     recover: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D checklist \u9879\uFF0C\u4E0D\u8981\u63A8\u8FDB\u3002",
     recover_planning: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u89C4\u5212\uFF0C\u4E0D\u8981 RUN \u6216\u5199\u4EA7\u54C1\u4EE3\u7801\u3002",
     recover_ambient: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u4EFB\u52A1\uFF08\u672A\u5728\u6267\u884C checklist\uFF09\u3002",
-    review_complete: "\u81EA\u5BA1\u5B8C\u6210\u3002\u8FDE\u7EED {total} \u8F6E\u786E\u8BA4\u5DF2\u901A\u8FC7\uFF0C\u81EA\u5BA1\u94FE\u5DF2\u7ED3\u675F\u3002\u4E0D\u8981\u81EA\u52A8 commit\u3002\u4EC5\u5F53\u5DE5\u4F5C\u533A\u4ECD\u6709\u672C\u4F1A\u8BDD\u672A\u63D0\u4EA4\u6539\u52A8\u4E14\u9700\u8981\u4FDD\u7559\u65F6\uFF0C\u624D\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DE5\u4F5C\u533A\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\uFF0C\u52FF\u518D commit\u3002\u4E0D\u8981\u5F00 subagent\u3002\u5BF9\u7528\u6237\u53EF\u89C1\u56DE\u590D\u5FC5\u987B\u7528\u4E2D\u6587\u3002",
+    review_complete: "\u81EA\u5BA1\u5B8C\u6210\u3002\u8FDE\u7EED {total} \u8F6E\u786E\u8BA4\u5DF2\u901A\u8FC7\uFF0C\u81EA\u5BA1\u94FE\u5DF2\u7ED3\u675F\u3002\u82E5\u5DE5\u4F5C\u533A\u4ECD\u6709\u672C\u4F1A\u8BDD\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002",
     stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
     track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
@@ -1816,7 +1816,7 @@ function defaultRender(kind, vars) {
     case "recover_ambient":
       return `Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.`;
     case "review_complete":
-      return `Review complete. All ${vars.total ?? 5} confirm rounds passed; the review chain has ended. Do not auto-commit. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only. Do not start subagents.`;
+      return `Review complete. All ${vars.total ?? 5} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.`;
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":

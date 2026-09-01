@@ -39,7 +39,7 @@
     "recover": "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.",
     "recover_planning": "Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.",
     "recover_ambient": "Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.",
-    "review_complete": "Review complete. All {total} confirm rounds passed; the review chain has ended. Do not auto-commit. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only. Do not start subagents.",
+    "review_complete": "Review complete. All {total} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.",
     "stuck": "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     "verify_fix": "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     "track_pick": "Select a plan by number or slug."

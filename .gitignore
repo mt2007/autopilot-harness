@@ -5,7 +5,10 @@ dist/
 # Autopilot (local dogfood — init per machine; not shipped in OSS)
 plans/
 .autopilot/
-.cursor/
+# Ignore dogfood .cursor contents, but keep project rules versioned
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 docs/autopilot/
 
 # Environment

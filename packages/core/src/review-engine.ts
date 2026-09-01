@@ -144,9 +144,9 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
     case "review_complete":
       return (
         `Review complete. All ${vars.total ?? 5} confirm rounds passed; the review chain has ended. ` +
-        `Do not auto-commit. If the working tree still has uncommitted changes from this session, ` +
+        `If the working tree still has uncommitted changes from this session, ` +
         `local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; ` +
-        `no push unless the user asks); if clean, briefly confirm only. Do not start subagents.`
+        `no push unless the user asks); if clean, briefly confirm only.`
       );
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;

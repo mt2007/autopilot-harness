@@ -42,5 +42,4 @@ If you write next-item code before checking off, `itemId` / verify binding will 
 - Do not advance while verify required commands FAIL (hook blocks; rewrite `verify-last.json` after fixing).
 - Configure verify under `.autopilot/config.yml` → `review.verify.commands` (`id` / `run` / `required`).
 - User-visible replies match the user's language.
-- No subagents for review unless the user asks.
 - No push / `--no-verify` / amend unless the user explicitly asks in this conversation.

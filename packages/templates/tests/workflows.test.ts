@@ -27,5 +27,6 @@ describe("P1 workflow templates", () => {
     );
     expect(text).toMatch(/Mark the \*\*current\*\* item|checkoff|\[x\]/i);
     expect(text).toMatch(/review\.verify\.commands/);
+    expect(text).not.toMatch(/No subagents for review/i);
   });
 });

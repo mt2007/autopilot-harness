@@ -1,0 +1,19 @@
+---
+description: Autopilot followup/i18n/workflow copy hygiene — no subagent bans or hardcoded reply language
+alwaysApply: true
+---
+
+# Followup / i18n copy hygiene
+
+When editing Autopilot stop-hook followups, locale JSON, `defaultRender`, or workflow/skill templates:
+
+## Do not
+
+- Put **「不要开 subagent」 / 「Do not start subagents」** (or similar) in followup, i18n, or workflow copy. Ban-on-subagents is already a workspace rule; followups must not restate it.
+- Hardcode a **specific human language** for user-visible replies (e.g. 「必须用中文」, 「reply in Chinese」, 「reply in English」) inside locale followup strings. Harness `locale` chooses the **template language**; chat replies follow the **user's language**.
+
+## Do
+
+- Keep reply-language guidance **locale-agnostic** where needed: 「User-visible replies must match the user's language」 (skills/workflows only — not every followup).
+- Keep `review_complete` commit wording aligned with `done`: dirty → local safe commit; clean → brief confirm. Avoid stacked 「不要自动 commit / 才 commit / 勿再 commit」 contradictions.
+- After changing `packages/i18n/locales/*` or engine fallbacks, rebuild vendor (`pnpm bundle-vendor`) so `packages/cli/assets/vendor/runtime.mjs` stays in sync.

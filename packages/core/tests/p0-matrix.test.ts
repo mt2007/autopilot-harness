@@ -1466,6 +1466,10 @@ describe("review-engine P0 matrix", () => {
       loopCount: 1,
     });
     expect(done?.kind).toBe("review_complete");
+    expect(done?.message).toMatch(/^Review complete/);
+    expect(done?.message).not.toMatch(
+      /Do not start subagents|Do not auto-commit|must reply in/i,
+    );
     expect(store.getSession("c-plan")!.phase).toBe("planning");
   });
 
