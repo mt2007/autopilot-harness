@@ -832,6 +832,64 @@ describe("review-engine P0 matrix", () => {
     );
   });
 
+  it("F-ABORT-CLEAR-CODE-EDITED: aborted drops sticky code_edited, keeps confirm pending", () => {
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    store.updateReviewChain("c1", {
+      code_edited: 1,
+      pending_followup: "自审确认 2/5 — 角度",
+      pending_followup_at: new Date().toISOString(),
+      confirm_left: 3,
+      chain_pending: 1,
+    });
+    expect(
+      eng.handleStop({ conversationId: "c1", status: "aborted", loopCount: 0 }),
+    ).toBeNull();
+    const chain = store.getReviewChain("c1")!;
+    expect(chain.code_edited).toBe(0);
+    expect(chain.pending_followup).toBe("自审确认 2/5 — 角度");
+    expect(chain.confirm_left).toBe(3);
+    expect(chain.chain_pending).toBe(1);
+  });
+
+  it("F-ABORT-NO-PHANTOM-FIX: abort then completed must not open fix from sticky code_edited", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-abort-phantom",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-abort-phantom");
+    store.updateReviewChain("c-abort-phantom", { code_edited: 1 });
+
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-phantom",
+        status: "aborted",
+        loopCount: 0,
+      }),
+    ).toBeNull();
+    expect(store.getReviewChain("c-abort-phantom")!.code_edited).toBe(0);
+
+    const transcript = path.join(root, "t-abort-phantom.jsonl");
+    fs.writeFileSync(transcript, "");
+    const again = eng.handleStop({
+      conversationId: "c-abort-phantom",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(again).toBeNull();
+    expect(store.getReviewChain("c-abort-phantom")!.pending_followup).toBeNull();
+  });
+
   it("F-ABORT-NO-AMBIENT: aborted without session does not bootstrap ambient recover", () => {
     const eng = engine(store, root, {
       reviewScope: "project",
@@ -878,6 +936,7 @@ describe("review-engine P0 matrix", () => {
   it("F-ABORT-PORT: cancelled / error+abort-markers must not recover via Cursor port", () => {
     const eng = engine(store, root, { maxErrorsBeforePause: 0 });
     const before = store.getSession("c1")!.error_count;
+    store.updateReviewChain("c1", { code_edited: 1 });
 
     expect(
       handleStop(eng, {
@@ -886,14 +945,18 @@ describe("review-engine P0 matrix", () => {
       }),
     ).toEqual({});
     expect(store.getSession("c1")!.error_count).toBe(before);
+    expect(store.getReviewChain("c1")!.code_edited).toBe(0);
 
+    store.updateReviewChain("c1", { code_edited: 1 });
     expect(
       handleStop(eng, {
         conversation_id: "c1",
         status: "canceled",
       }),
     ).toEqual({});
+    expect(store.getReviewChain("c1")!.code_edited).toBe(0);
 
+    store.updateReviewChain("c1", { code_edited: 1 });
     expect(
       handleStop(eng, {
         conversation_id: "c1",
@@ -903,6 +966,7 @@ describe("review-engine P0 matrix", () => {
     ).toEqual({});
     expect(store.getSession("c1")!.error_count).toBe(before);
     expect(store.getReviewChain("c1")?.pending_followup ?? null).toBeNull();
+    expect(store.getReviewChain("c1")!.code_edited).toBe(0);
 
     expect(
       handleStop(eng, {

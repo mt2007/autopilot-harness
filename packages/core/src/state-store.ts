@@ -558,6 +558,22 @@ export class StateStore {
   }
 
   /**
+   * Drop sticky code_edited without touching pending/confirm (Stop/abort path).
+   * Column-only like clearChainPending — no ensure/merge; missing chain → no-op.
+   */
+  clearCodeEdited(conversationId: string): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE review_chains SET code_edited = 0, updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(nowIso(), conversationId);
+  }
+
+  /**
    * E8: user ordinary chat clears the in-chain flag only.
    * Do NOT wipe pending_followup* — undelivered automation must still redeliver;
    * clearing pending here would let the next stop advance confirm_left (skip a lens).

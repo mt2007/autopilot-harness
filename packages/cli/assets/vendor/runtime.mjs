@@ -981,6 +981,19 @@ var StateStore = class _StateStore {
     });
   }
   /**
+   * Drop sticky code_edited without touching pending/confirm (Stop/abort path).
+   * Column-only like clearChainPending — no ensure/merge; missing chain → no-op.
+   */
+  clearCodeEdited(conversationId) {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db.prepare(
+      `UPDATE review_chains SET code_edited = 0, updated_at = ?
+         WHERE conversation_id = ?`
+    ).run(nowIso(), conversationId);
+  }
+  /**
    * E8: user ordinary chat clears the in-chain flag only.
    * Do NOT wipe pending_followup* — undelivered automation must still redeliver;
    * clearing pending here would let the next stop advance confirm_left (skip a lens).
@@ -2023,14 +2036,20 @@ var ReviewEngine = class {
    * Cursor Stop button (and similar host interrupts) arrive as status=aborted.
    * Do not inject recover — that fights the user and loops with loop_limit:null.
    * Drop recover/stuck pending so transcript revert cannot redeliver them later.
+   * Clear sticky code_edited so Stop→revert→resend cannot open a phantom fix
+   * chain on the next completed stop (disk may already be clean).
    * Leave fix/confirm pending alone (delivery retry still valid if inject raced).
+   * Both clears share one exclusiveWrite so a mid-abort failure cannot leave
+   * recover gone while code_edited sticky (or the reverse).
    */
   handleAbortedStop(session) {
     try {
-      this.store.clearPendingFollowupIf(
-        session.conversation_id,
-        isRecoverOrStuckFollowupMessage
-      );
+      const cid2 = session.conversation_id;
+      this.store.exclusiveWrite(() => {
+        this.store.clearPendingFollowupIf(cid2, isRecoverOrStuckFollowupMessage);
+        this.store.clearCodeEdited(cid2);
+        return { commit: true, value: void 0 };
+      });
     } catch {
     }
     return null;

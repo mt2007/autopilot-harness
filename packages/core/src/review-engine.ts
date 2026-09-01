@@ -449,14 +449,20 @@ export class ReviewEngine {
    * Cursor Stop button (and similar host interrupts) arrive as status=aborted.
    * Do not inject recover — that fights the user and loops with loop_limit:null.
    * Drop recover/stuck pending so transcript revert cannot redeliver them later.
+   * Clear sticky code_edited so Stop→revert→resend cannot open a phantom fix
+   * chain on the next completed stop (disk may already be clean).
    * Leave fix/confirm pending alone (delivery retry still valid if inject raced).
+   * Both clears share one exclusiveWrite so a mid-abort failure cannot leave
+   * recover gone while code_edited sticky (or the reverse).
    */
   private handleAbortedStop(session: SessionRow): FollowupAction | null {
     try {
-      this.store.clearPendingFollowupIf(
-        session.conversation_id,
-        isRecoverOrStuckFollowupMessage,
-      );
+      const cid = session.conversation_id;
+      this.store.exclusiveWrite(() => {
+        this.store.clearPendingFollowupIf(cid, isRecoverOrStuckFollowupMessage);
+        this.store.clearCodeEdited(cid);
+        return { commit: true, value: undefined };
+      });
     } catch {
       /* best-effort */
     }
