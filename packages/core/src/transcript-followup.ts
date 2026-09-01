@@ -8,9 +8,46 @@ import { HARNESS_FOLLOWUP_PREFIXES, isHarnessFollowupMessage } from "./trigger-p
 export const TRANSCRIPT_TAIL_BYTES = 512_000;
 export const TRANSCRIPT_TAIL_EVENTS = 80;
 export const PENDING_REDELIVER_COOLDOWN_MS = 8_000;
+/** Debounce + same-window coalesce for error-stop recover injects. */
+export const RECOVER_DEBOUNCE_MS = 3_000;
 export const BRIEFLY_PREFIX = "Briefly inform the user";
 
+/** True when `at` is within the recover debounce window (same storm). */
+export function inRecoverDebounceWindow(
+  at: string | null | undefined,
+  windowMs: number,
+): boolean {
+  if (!at || !(windowMs > 0)) return false;
+  const t = Date.parse(at);
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < windowMs;
+}
+
+/** Sync sleep for stop-hook debounce (Atomics.wait; no-op when ms<=0). */
+export function sleepSyncMs(ms: number): void {
+  if (!(ms > 0) || !Number.isFinite(ms)) return;
+  const capped = Math.min(Math.floor(ms), 60_000);
+  try {
+    const sab = new SharedArrayBuffer(4);
+    const ia = new Int32Array(sab);
+    Atomics.wait(ia, 0, 0, capped);
+  } catch {
+    // Do not busy-spin for seconds inside a stop hook if Atomics.wait is
+    // unavailable — same-window coalesce still prevents duplicate recovers.
+  }
+}
+
 export type TranscriptEvent = Record<string, unknown>;
+
+/** True when the newest role tip is an assistant turn (session has spoken). */
+export function transcriptTipIsAssistant(events: TranscriptEvent[]): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const role = events[i]!.role;
+    if (role === "assistant") return true;
+    if (role === "user") return false;
+  }
+  return false;
+}
 
 export function readTranscriptTail(transcriptPath: string): TranscriptEvent[] {
   // Untrusted stop-hook path: refuse empty, NUL, symlinks; prefer O_NOFOLLOW.
@@ -105,13 +142,24 @@ function isInFlightUserQuery(query: string): boolean {
 
 /** True when latest user automation/Briefly turn has no assistant reply yet. */
 export function followupInFlight(events: TranscriptEvent[]): boolean {
+  return inFlightUserQuery(events) !== null;
+}
+
+/**
+ * Latest in-flight automation/Briefly user query, or null if tip is assistant /
+ * ordinary user / empty.
+ */
+export function inFlightUserQuery(events: TranscriptEvent[]): string | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i]!;
     const role = ev.role;
-    if (role === "assistant") return false;
-    if (role === "user") return isInFlightUserQuery(userQueryText(ev));
+    if (role === "assistant") return null;
+    if (role === "user") {
+      const q = userQueryText(ev);
+      return isInFlightUserQuery(q) ? q : null;
+    }
   }
-  return false;
+  return null;
 }
 
 /** True if the latest non-noise user message matches the pending followup. */

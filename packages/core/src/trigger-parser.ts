@@ -67,6 +67,9 @@ export const HARNESS_FOLLOWUP_PREFIXES = [
   // Match zh recover/stuck templates (fullwidth colon) — bare「恢复」is too broad.
   "恢复：",
   "卡住：",
+  // Halfwidth colon variants (same as isRecoverOrStuckFollowupMessage).
+  "恢复:",
+  "卡住:",
   // External usage-limit continue (account-pool); must not clear Autopilot chain.
   "Briefly inform the user about the task result.",
 ];
@@ -89,6 +92,19 @@ export function isHarnessFollowupMessage(text: string): boolean {
 }
 
 /**
+ * Recover automation prompts (not stuck). Used for error-recover coalesce/CAS.
+ */
+export function isRecoverFollowupMessage(text: string): boolean {
+  const m = (text || "").trim();
+  if (!m) return false;
+  return (
+    m.startsWith("Recover:") ||
+    m.startsWith("恢复：") ||
+    m.startsWith("恢复:")
+  );
+}
+
+/**
  * Recover / stuck automation prompts. Safe to drop on user Stop or ordinary chat
  * (unlike fix/confirm pending, which must survive for lens redelivery).
  */
@@ -96,10 +112,10 @@ export function isRecoverOrStuckFollowupMessage(text: string): boolean {
   const m = (text || "").trim();
   if (!m) return false;
   return (
-    m.startsWith("Recover:") ||
+    isRecoverFollowupMessage(m) ||
     m.startsWith("Stuck:") ||
-    m.startsWith("恢复：") ||
-    m.startsWith("卡住：")
+    m.startsWith("卡住：") ||
+    m.startsWith("卡住:")
   );
 }
 

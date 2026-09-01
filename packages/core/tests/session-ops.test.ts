@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import path from "node:path";
 import { StateStore } from "../src/state-store.js";
 
@@ -452,6 +452,62 @@ describe("StateStore session ops", () => {
     store.close();
   });
 
+  it("setPendingRedeliverHold is column-only (no confirm/pending clobber)", () => {
+    const store = StateStore.openMemory("/tmp/ap-sess-redeliver-hold");
+    const id = "hold-1111-2222-3333-444455556666";
+    store.setPendingRedeliverHold(id, "2026-01-01T00:00:09.000Z");
+    expect(store.getReviewChain(id)).toBeNull();
+
+    seed(store, id);
+    store.updateReviewChain(id, {
+      chain_pending: 1,
+      confirm_left: 2,
+      fix_round: 4,
+      pending_followup: "自审确认 2/5（空值）",
+      pending_followup_at: "2026-01-01T00:00:00.000Z",
+      code_edited: 0,
+      item_confirm_complete: 1,
+    });
+    store.setPendingRedeliverHold(id, "2026-01-01T00:00:09.000Z");
+    const chain = store.getReviewChain(id)!;
+    expect(chain.pending_redeliver_at).toBe("2026-01-01T00:00:09.000Z");
+    expect(chain.chain_pending).toBe(0);
+    expect(chain.confirm_left).toBe(2);
+    expect(chain.pending_followup).toBe("自审确认 2/5（空值）");
+    expect(chain.fix_round).toBe(4);
+    expect(chain.item_confirm_complete).toBe(1);
+    // Blank / NUL must no-op (do not clear a live hold with junk).
+    store.setPendingRedeliverHold(id, "");
+    store.setPendingRedeliverHold(id, "bad\0stamp");
+    expect(store.getReviewChain(id)!.pending_redeliver_at).toBe(
+      "2026-01-01T00:00:09.000Z",
+    );
+    store.clearPendingRedeliverHold(id);
+    const cleared = store.getReviewChain(id)!;
+    expect(cleared.pending_redeliver_at).toBeNull();
+    expect(cleared.pending_followup).toBe("自审确认 2/5（空值）");
+    expect(cleared.confirm_left).toBe(2);
+
+    // Stamp-guarded clear: only the owning claim stamp may drop the hold.
+    store.setPendingRedeliverHold(id, "2026-01-01T00:00:09.000Z");
+    store.updateReviewChain(id, {
+      pending_followup: "Recover: peer",
+      pending_followup_at: "2026-01-01T00:00:01.000Z",
+    });
+    expect(
+      store.clearPendingRedeliverHoldIfStamp(id, "2026-01-01T00:00:99.000Z"),
+    ).toBe(false);
+    expect(store.getReviewChain(id)!.pending_redeliver_at).toBe(
+      "2026-01-01T00:00:09.000Z",
+    );
+    expect(
+      store.clearPendingRedeliverHoldIfStamp(id, "2026-01-01T00:00:01.000Z"),
+    ).toBe(true);
+    expect(store.getReviewChain(id)!.pending_redeliver_at).toBeNull();
+    expect(store.getReviewChain(id)!.pending_followup).toBe("Recover: peer");
+    store.close();
+  });
+
   it("savePendingFollowup ignores blank messages", () => {
     const store = StateStore.openMemory("/tmp/ap-sess-blank-pending");
     const id = "blk-1111-2222-3333-444455556666";
@@ -465,6 +521,31 @@ describe("StateStore session ops", () => {
     expect(store.getReviewChain(id)!.pending_followup).toBeNull();
     store.savePendingFollowup(id, "Review confirm 1/5");
     expect(store.getReviewChain(id)!.pending_followup).toBe("Review confirm 1/5");
+    store.close();
+  });
+
+  it("savePendingFollowup advances stamp ≥1ms on same-ms collision", () => {
+    const store = StateStore.openMemory("/tmp/ap-sess-stamp-bump");
+    const id = "stb-1111-2222-3333-444455556666";
+    seed(store, id);
+    const frozen = "2026-06-15T12:00:00.000Z";
+    store.updateReviewChain(id, {
+      pending_followup: "Recover: first",
+      pending_followup_at: frozen,
+    });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(frozen));
+    try {
+      store.savePendingFollowup(id, "Recover: peer refresh", { armChain: false });
+      const at = store.getReviewChain(id)!.pending_followup_at!;
+      expect(at).not.toBe(frozen);
+      expect(Date.parse(at)).toBe(Date.parse(frozen) + 1);
+      expect(store.getReviewChain(id)!.pending_followup).toBe(
+        "Recover: peer refresh",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
     store.close();
   });
 
@@ -637,6 +718,78 @@ describe("StateStore session ops", () => {
     const chain = store.getReviewChain(id)!;
     expect(chain.chain_pending).toBe(0);
     expect(chain.pending_redeliver_at).toBeNull();
+    store.close();
+  });
+
+  it("touchPendingRedeliver keeps recover/stuck pending disarmed", () => {
+    const store = StateStore.openMemory("/tmp/ap-sess-touch-recover");
+    const id = "tch-aaaa-bbbb-cccc-ddddeeeeffff";
+    seed(store, id);
+    store.ensureReviewChain(id);
+    store.updateReviewChain(id, {
+      pending_followup:
+        "Recover: the previous turn ended with an error. Continue.",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
+    expect(store.getReviewChain(id)!.pending_redeliver_at).toBeTruthy();
+
+    store.updateReviewChain(id, {
+      pending_followup: "卡住：连续多轮无进展。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      pending_redeliver_at: null,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
+    store.close();
+  });
+
+  it("touchPendingRedeliver keeps done/review_complete pending disarmed", () => {
+    const store = StateStore.openMemory("/tmp/ap-sess-touch-terminal");
+    const id = "tch-1111-aaaa-bbbb-ccccddddeeee";
+    seed(store, id);
+    store.ensureReviewChain(id);
+    store.updateReviewChain(id, {
+      pending_followup:
+        "All checklist items done. Confirm chain passed. Phase is done.",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
+
+    store.updateReviewChain(id, {
+      pending_followup:
+        "Review complete. All 5 confirm rounds passed; the review chain has ended.",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      pending_redeliver_at: null,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
+
+    store.updateReviewChain(id, {
+      pending_followup: "自审完成。连续 5 轮确认已通过，自审链已结束。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      pending_redeliver_at: null,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
+
+    // E5 advance must still arm so the next item stays in-chain.
+    store.updateReviewChain(id, {
+      pending_followup:
+        "Advance checklist: confirm chain passed cleanly. Implement next: a — A.",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+      pending_redeliver_at: null,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(1);
     store.close();
   });
 });

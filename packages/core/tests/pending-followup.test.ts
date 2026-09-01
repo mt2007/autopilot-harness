@@ -66,6 +66,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [],
       maxIdleStops: 5,
       maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
       projectRoot: root,
     });
   }
@@ -201,7 +202,7 @@ describe("pending followup + session round", () => {
     }
   });
 
-  it("handleStop still returns recover if savePendingFollowup throws", () => {
+  it("handleStop must not return unstamped recover if savePendingFollowup throws", () => {
     store.upsertSession({
       conversation_id: "c1",
       project_root: root,
@@ -221,8 +222,8 @@ describe("pending followup + session round", () => {
         status: "error",
         loopCount: 0,
       });
-      expect(out?.kind).toBe("recover");
-      expect(out?.message).toBeTruthy();
+      // Unstamped recover would double-inject with a claimer that still owns the window.
+      expect(out).toBeNull();
     } finally {
       store.savePendingFollowup = orig;
     }
@@ -286,6 +287,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [],
       maxIdleStops: 5,
       maxErrorsBeforePause: 3,
+      recoverDebounceMs: 0,
       projectRoot: root,
     });
     const orig = store.upsertSession.bind(store);
@@ -439,6 +441,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [],
       maxIdleStops: 5,
       maxErrorsBeforePause: 3,
+      recoverDebounceMs: 0,
       projectRoot: root,
     });
     const orig = store.upsertSession.bind(store);
@@ -644,6 +647,124 @@ describe("pending followup + session round", () => {
     const events = readTranscriptTail(transcript);
     expect(automationFollowupPresent(events, pending)).toBe(true);
     expect(followupInFlight(events)).toBe(false);
+  });
+
+  it("delivered snapshot clear must not wipe a replaced live pending", () => {
+    const delivered =
+      "Review confirm 1/5 (session round 3; consecutive no-edit confirms, counted on the fix-round counter).";
+    const replacement =
+      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n${delivered}\n</user_query>`,
+      },
+      { role: "assistant", text: "acked confirm" },
+    ]);
+    // Live row already replaced (concurrent claim) while outer snapshot still
+    // looks like the delivered confirm — clear must be needle-scoped.
+    // Keep confirm_left so a buggy unblock would let e4 overwrite recover.
+    store.updateReviewChain("c1", {
+      confirm_left: 4,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 3,
+      pending_followup: replacement,
+      pending_followup_at: new Date().toISOString(),
+      // Claim hold — completed must not redeliver recover during debounce.
+      pending_redeliver_at: new Date().toISOString(),
+    });
+    const origEnsure = store.ensureReviewChain.bind(store);
+    let reads = 0;
+    store.ensureReviewChain = ((id: string) => {
+      reads += 1;
+      const row = origEnsure(id);
+      // First handleStop snapshot still shows the delivered confirm.
+      if (reads === 1) {
+        return {
+          ...row,
+          pending_followup: delivered,
+          pending_followup_at: new Date().toISOString(),
+          confirm_left: 4,
+          chain_pending: 1,
+          fix_round: 3,
+          pending_redeliver_at: null,
+        };
+      }
+      return row;
+    }) as typeof store.ensureReviewChain;
+    try {
+      const out = engine().handleStop({
+        conversationId: "c1",
+        status: "completed",
+        loopCount: 1,
+        transcriptPath: transcript,
+      });
+      // Must not advance e4 over recover; live recover (+ hold) stays.
+      expect(out).toBeNull();
+      expect(store.getReviewChain("c1")!.pending_followup).toBe(replacement);
+      expect(store.getReviewChain("c1")!.confirm_left).toBe(4);
+    } finally {
+      store.ensureReviewChain = origEnsure;
+    }
+  });
+
+  it("replaced live pending must not redeliver while another harness tip is in flight", () => {
+    const delivered =
+      "Review confirm 1/5 (session round 3; consecutive no-edit confirms, counted on the fix-round counter).";
+    const replacement =
+      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+    const inflightFix = "Review fix round 2/5 (session round 4).";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n${delivered}\n</user_query>`,
+      },
+      { role: "assistant", text: "acked confirm" },
+      {
+        role: "user",
+        text: `<user_query>\n${inflightFix}\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      confirm_left: 4,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 3,
+      pending_followup: replacement,
+      pending_followup_at: new Date().toISOString(),
+      pending_redeliver_at: null,
+    });
+    const origEnsure = store.ensureReviewChain.bind(store);
+    let reads = 0;
+    store.ensureReviewChain = ((id: string) => {
+      reads += 1;
+      const row = origEnsure(id);
+      if (reads === 1) {
+        return {
+          ...row,
+          pending_followup: delivered,
+          pending_followup_at: new Date().toISOString(),
+          confirm_left: 4,
+          chain_pending: 1,
+          fix_round: 3,
+          pending_redeliver_at: null,
+        };
+      }
+      return row;
+    }) as typeof store.ensureReviewChain;
+    try {
+      const out = engine().handleStop({
+        conversationId: "c1",
+        status: "completed",
+        loopCount: 1,
+        transcriptPath: transcript,
+      });
+      expect(out).toBeNull();
+      expect(store.getReviewChain("c1")!.pending_followup).toBe(replacement);
+    } finally {
+      store.ensureReviewChain = origEnsure;
+    }
   });
 
   it("readTranscriptTail refuses symlinks (no follow)", () => {
@@ -930,6 +1051,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
       maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
       projectRoot: root,
     });
     // checklist_path "" → unchecked 0, currentItem null
@@ -958,6 +1080,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
       maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
       projectRoot: root,
     });
     const cp = path.join(root, "plans", "t", "checklist.md");
@@ -998,6 +1121,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
       maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
       projectRoot: root,
       verifyReportPath: path.join(root, ".autopilot", "verify-last.json"),
     });
@@ -1115,6 +1239,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [{ id: "test", required: true }],
       maxIdleStops: 5,
       maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
       projectRoot: root,
       verifyReportPath: reportPath,
     });
@@ -1163,6 +1288,7 @@ describe("pending followup + session round", () => {
       verifyCommands: [{ id: "optional" }],
       maxIdleStops: 5,
       maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
       projectRoot: root,
     });
     const cp = path.join(root, "plans", "t", "checklist.md");

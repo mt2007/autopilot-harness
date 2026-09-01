@@ -24,10 +24,16 @@ import { isSafeTrackSlug } from "./track-slug.js";
 import {
   automationFollowupPresent,
   followupInFlight,
+  inFlightUserQuery,
+  inRecoverDebounceWindow,
+  PENDING_REDELIVER_COOLDOWN_MS,
   pendingRedeliverAllowed,
+  RECOVER_DEBOUNCE_MS,
+  sleepSyncMs,
   readTranscriptTail,
+  transcriptTipIsAssistant,
 } from "./transcript-followup.js";
-import { isRecoverOrStuckFollowupMessage } from "./trigger-parser.js";
+import { isRecoverFollowupMessage, isRecoverOrStuckFollowupMessage } from "./trigger-parser.js";
 import {
   defaultVerifyReportPath,
   evaluateVerifyReport,
@@ -74,6 +80,13 @@ export interface ReviewEngineConfig {
   /** 0 = never pause on turn errors. */
   maxErrorsBeforePause: number;
   projectRoot: string;
+  /**
+   * Error-stop recover debounce / same-window coalesce (ms).
+   * Default {@link RECOVER_DEBOUNCE_MS} (3000). Tests pass 0 to skip sleep.
+   */
+  recoverDebounceMs?: number;
+  /** Override sync sleep used by recover debounce (tests). */
+  sleepSync?: (ms: number) => void;
   /** Optional override for verify report path (tests). */
   verifyReportPath?: string;
   /** Render followup message; default English templates. */
@@ -342,7 +355,24 @@ export class ReviewEngine {
     if (!pending) return false;
     if (events.length > 0 && automationFollowupPresent(events, pending)) {
       try {
-        this.store.clearPendingFollowup(conversationId);
+        // Only clear the snapshot needle — a concurrent replace must survive.
+        const cleared = this.store.clearPendingFollowupIf(
+          conversationId,
+          (m) => m.trim() === pending,
+        );
+        if (!cleared) {
+          // Live pending was replaced (e.g. error-recover claim). Keep blocking
+          // so stale confirm_left cannot advance and overwrite the new pending.
+          const live =
+            this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+            "";
+          if (
+            live &&
+            !(events.length > 0 && automationFollowupPresent(events, live))
+          ) {
+            return true;
+          }
+        }
       } catch {
         /* already delivered — clearing stamp is best-effort */
       }
@@ -364,44 +394,91 @@ export class ReviewEngine {
     if (!pending) return null;
     // Without transcript_path, skip redelivery (avoid duplicate spam in unit tests).
     if (!transcriptPath) return null;
+    // Recover claim arms pending_redeliver_at for ~debounceMs so completed-stop
+    // cannot inject during claim sleep (would race CAS for a second recover).
+    // CAS emit clears that hold → host-drop redelivery is immediate again.
     if (events.length > 0 && automationFollowupPresent(events, pending)) {
       try {
-        this.store.clearPendingFollowup(conversationId);
+        const cleared = this.store.clearPendingFollowupIf(
+          conversationId,
+          (m) => m.trim() === pending,
+        );
+        // Snapshot looked delivered but live was replaced — fall through to the
+        // locked live-row path instead of dropping the new pending.
+        if (cleared) return null;
       } catch {
         /* already delivered — clearing stamp is best-effort */
       }
-      return null;
     }
+    // Apply even after a delivered-snapshot miss (replaced live pending): do not
+    // inject while another harness followup still owns the transcript tip.
     if (events.length > 0 && followupInFlight(events)) {
       return null;
     }
-    if (!pendingRedeliverAllowed(chain.pending_redeliver_at)) {
-      return null;
-    }
-    // Concurrent error-halt may have paused after the outer armed check.
-    if (!this.sessionRunnable(conversationId)) {
-      return null;
-    }
+    // Cooldown + touch under one write lock so we never honor a stale
+    // chain.pending_redeliver_at snapshot from before a concurrent recover claim.
     try {
-      this.store.touchPendingRedeliver(conversationId);
+      return this.store.exclusiveWrite(() => {
+        if (!this.sessionRunnable(conversationId)) {
+          return { commit: false, value: null };
+        }
+        const liveRow = this.store.getReviewChain(conversationId);
+        const livePending = liveRow?.pending_followup?.trim() ?? "";
+        if (!livePending) {
+          return { commit: false, value: null };
+        }
+        if (!pendingRedeliverAllowed(liveRow?.pending_redeliver_at ?? null)) {
+          return { commit: false, value: null };
+        }
+        // Live row may differ from the outer snapshot — do not re-inject a tip
+        // already present on the transcript.
+        if (
+          events.length > 0 &&
+          automationFollowupPresent(events, livePending)
+        ) {
+          this.store.clearPendingFollowupIf(
+            conversationId,
+            (m) => m.trim() === livePending,
+          );
+          return { commit: true, value: null };
+        }
+        try {
+          this.store.touchPendingRedeliver(conversationId);
+        } catch {
+          // Still attempt redeliver — cooldown stamp is best-effort.
+        }
+        // Commit after touch: a nested clear/neutralize (or concurrent-looking
+        // mock) must not be rolled back by commit:false, or the outer stop
+        // would keep a stale confirm_left and skip-a-lens / re-emit.
+        if (!this.sessionRunnable(conversationId)) {
+          return { commit: true, value: null };
+        }
+        const after =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        if (!after) {
+          return { commit: true, value: null };
+        }
+        if (events.length > 0 && automationFollowupPresent(events, after)) {
+          this.store.clearPendingFollowupIf(
+            conversationId,
+            (m) => m.trim() === after,
+          );
+          return { commit: true, value: null };
+        }
+        return {
+          commit: true,
+          value: {
+            kind: this.inferPendingKind(after),
+            message: after,
+            loop: true,
+            meta: { redeliver: true },
+          },
+        };
+      });
     } catch {
-      // Still attempt redeliver — cooldown stamp is best-effort.
-    }
-    // Re-check after touch: halt may have won, or pending was cleared (touch
-    // no-ops without pending) — never redeliver a stale in-memory message.
-    if (!this.sessionRunnable(conversationId)) {
       return null;
     }
-    const live = this.store.getReviewChain(conversationId)?.pending_followup?.trim();
-    if (!live) {
-      return null;
-    }
-    return {
-      kind: this.inferPendingKind(live),
-      message: live,
-      loop: true,
-      meta: { redeliver: true },
-    };
   }
 
   private inferPendingKind(message: string): FollowupKind {
@@ -555,76 +632,550 @@ export class ReviewEngine {
     // Re-read: concurrent halt may have paused after our snapshot was taken.
     const fresh = this.store.getSession(session.conversation_id);
     if (fresh && this.sessionErrorRecoverable(fresh)) {
-      const recoverKind = this.recoverKindForPhase(fresh.phase);
-      const message = this.render(recoverKind, {});
-      const action: FollowupAction = {
-        kind: "recover",
-        message,
-        loop: true,
-      };
-      // Ambient/planning: soft-reset + recover pending in ONE txn so a
-      // concurrent completed stop cannot re-arm chain_pending after soft-reset
-      // and before emit (armChain=false would keep it → phantom E3).
-      // Mid-fix → code_edited; ready-for-E3 → confirm_left=rounds (forward);
-      // mid-confirm/E5 preserved. Checklist executing: leave chain alone.
-      if (!isChecklistExecuting(fresh)) {
-        const cid = fresh.conversation_id;
-        if (this.tryCommitAmbientErrorRecover(cid, message)) {
-          return action;
-        }
-        // First attempt failed — one retry for transient SQLITE_BUSY / lock.
-        if (this.tryCommitAmbientErrorRecover(cid, message)) {
-          return action;
-        }
-        // Hard failure: prefer neutralize (no phantom). If neutralize fails,
-        // last-resort soft-reset may still arm mid-fix resume, then disarm.
-        let neutralized = false;
-        try {
-          this.store.neutralizeReviewChain(cid);
-          neutralized = true;
-        } catch {
-          /* continue compensation */
-        }
-        if (!neutralized) {
-          if (this.tryCommitAmbientErrorRecover(cid, message)) {
-            return action;
-          }
-          try {
-            this.applySoftResetAmbientChainForErrorRecover(cid);
-          } catch {
-            /* ignore */
-          }
-          try {
-            this.store.updateReviewChain(cid, { chain_pending: 0 });
-          } catch {
-            /* fall through to emit */
-          }
-        }
-      }
-      return this.emit(session.conversation_id, action);
+      return this.debouncedErrorRecover(fresh, input);
     }
     return null;
   }
 
+  private resolveRecoverDebounceMs(): number {
+    const n = this.config.recoverDebounceMs;
+    if (n === undefined) return RECOVER_DEBOUNCE_MS;
+    if (!Number.isFinite(n) || n < 0) return RECOVER_DEBOUNCE_MS;
+    return Math.min(Math.floor(n), 60_000);
+  }
+
+  private sleepRecoverDebounce(ms: number): void {
+    try {
+      (this.config.sleepSync ?? sleepSyncMs)(ms);
+    } catch {
+      // Sleep is best-effort; claim/coalesce still hold. Always continue to finish.
+    }
+  }
+
+  /**
+   * Error recover: claim under exclusiveWrite → sleep debounce → emit at most
+   * once per window. Concurrent error stops in the same window coalesce to null.
+   * Outside the window, if still dead, redeliver once (new window).
+   * Emit ownership is CAS'd on `pending_followup_at` so claimer+redeliver
+   * cannot both return followup_message after overlapping sleeps.
+   */
+  private debouncedErrorRecover(
+    session: SessionRow,
+    input: StopHandlerInput,
+  ): FollowupAction | null {
+    const recoverKind = this.recoverKindForPhase(session.phase);
+    const message = this.render(recoverKind, {}).trim();
+    // Blank/NUL must not claim: ambient soft-reset would wipe the chain with
+    // nothing redeliverable (savePendingFollowup no-ops on empty/NUL).
+    if (!message || message.includes("\0")) {
+      return null;
+    }
+    const action: FollowupAction = {
+      kind: "recover",
+      message,
+      loop: true,
+    };
+    const cid = session.conversation_id;
+    const ambient = !isChecklistExecuting(session);
+    const debounceMs = this.resolveRecoverDebounceMs();
+    const transcriptPath = input.transcriptPath?.trim() || undefined;
+
+    // Do not claim/overwrite a *non-recover* in-flight harness followup (e.g. fix).
+    // If the tip is already recover, fall through so coalesce/CAS can dedupe —
+    // skipping entirely would permanently suppress recover while that tip sits.
+    let recoverAnsweredAtClaim = false;
+    if (transcriptPath) {
+      const tipEvents = readTranscriptTail(transcriptPath);
+      const inflight = inFlightUserQuery(tipEvents);
+      if (inflight && !isRecoverFollowupMessage(inflight)) {
+        return null;
+      }
+      // Snapshot before claim: historical Recover+assistant must not be treated
+      // as "became alive during sleep" for a brand-new error (same template text).
+      recoverAnsweredAtClaim =
+        tipEvents.length > 0 &&
+        transcriptTipIsAssistant(tipEvents) &&
+        automationFollowupPresent(tipEvents, message);
+    }
+
+    const claim = this.tryClaimErrorRecoverWindow(
+      cid,
+      message,
+      debounceMs,
+      ambient,
+      recoverAnsweredAtClaim,
+    );
+    if (claim.role === "coalesced") {
+      return null;
+    }
+    if (claim.role === "failed") {
+      // Claim txn failed. Compensate like legacy handleErrorStop, but never wipe
+      // an existing recover pending (unlocked neutralize would race a claimer).
+      return this.compensateFailedErrorRecoverClaim(cid, message, action, ambient);
+    }
+
+    this.sleepRecoverDebounce(debounceMs);
+    return this.finishErrorRecoverAfterDebounce(
+      cid,
+      message,
+      transcriptPath,
+      claim.stamp,
+      recoverAnsweredAtClaim,
+    );
+  }
+
+  /**
+   * Claim the recover inject slot for this error storm.
+   * - coalesced: another stop already owns the window → do not emit
+   * - claimer/redeliver: pending written; `stamp` is pending_followup_at for CAS emit
+   * - failed: exclusiveWrite threw
+   */
+  private tryClaimErrorRecoverWindow(
+    conversationId: string,
+    message: string,
+    debounceMs: number,
+    ambient: boolean,
+    recoverAnsweredAtClaim = false,
+  ):
+    | { role: "coalesced" }
+    | { role: "claimer" | "redeliver"; stamp: string }
+    | { role: "failed" } {
+    try {
+      return this.store.exclusiveWrite(() => {
+        const session = this.store.getSession(conversationId);
+        if (!session || !this.sessionErrorRecoverable(session)) {
+          return { commit: false, value: { role: "failed" as const } };
+        }
+        this.store.ensureReviewChain(conversationId);
+        const chain = this.store.getReviewChain(conversationId);
+        let pending = chain?.pending_followup?.trim() ?? "";
+        const inWindow =
+          isRecoverFollowupMessage(pending) &&
+          inRecoverDebounceWindow(chain?.pending_followup_at, debounceMs);
+        // Stale recover pending after the agent already answered that recover:
+        // drop only when outside the window, then fall through to fresh-claim
+        // for this new error. Never wipe an in-window claimer, and never
+        // coalesce-return after the drop (that swallowed the new storm).
+        if (
+          recoverAnsweredAtClaim &&
+          isRecoverFollowupMessage(pending) &&
+          !inWindow
+        ) {
+          this.store.clearPendingFollowupIf(conversationId, (m) =>
+            isRecoverFollowupMessage(m),
+          );
+          pending = "";
+        }
+        if (inWindow) {
+          return { commit: true, value: { role: "coalesced" as const } };
+        }
+        if (isRecoverFollowupMessage(pending)) {
+          // Outside window, still dead — refresh stamp so peers coalesce.
+          this.store.savePendingFollowup(conversationId, message, {
+            armChain: false,
+          });
+          const stamp =
+            this.store.getReviewChain(conversationId)?.pending_followup_at ?? "";
+          if (!stamp) {
+            return { commit: false, value: { role: "failed" as const } };
+          }
+          // Recover must not keep a leftover fix chain_pending (phantom E3).
+          this.store.clearChainPending(conversationId);
+          // Hold completed-stop redeliver through claim sleep; CAS clears it.
+          this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
+          return {
+            commit: true,
+            value: { role: "redeliver" as const, stamp },
+          };
+        }
+        if (ambient) {
+          this.applySoftResetAmbientChainForErrorRecover(conversationId);
+        }
+        this.store.savePendingFollowup(conversationId, message, {
+          armChain: false,
+        });
+        const stamp =
+          this.store.getReviewChain(conversationId)?.pending_followup_at ?? "";
+        if (!stamp) {
+          return { commit: false, value: { role: "failed" as const } };
+        }
+        // Executing claim skips ambient soft-reset — still disarm chain_pending.
+        this.store.clearChainPending(conversationId);
+        this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
+        return {
+          commit: true,
+          value: { role: "claimer" as const, stamp },
+        };
+      });
+    } catch {
+      return { role: "failed" };
+    }
+  }
+
+  /**
+   * After debounce: skip inject if the session already revived or recover is
+   * already in-flight on the transcript; otherwise CAS-emit on claim stamp.
+   */
+  private finishErrorRecoverAfterDebounce(
+    conversationId: string,
+    message: string,
+    transcriptPath: string | undefined,
+    expectedStamp: string,
+    recoverAnsweredAtClaim = false,
+  ): FollowupAction | null {
+    if (!expectedStamp) {
+      return null;
+    }
+    const fresh = this.store.getSession(conversationId);
+    if (!fresh || !this.sessionErrorRecoverable(fresh)) {
+      this.clearRecoverPendingBestEffort(conversationId);
+      return null;
+    }
+    const live =
+      this.store.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
+    if (!isRecoverFollowupMessage(live)) {
+      return null;
+    }
+    const needle = live || message;
+    const events = transcriptPath ? readTranscriptTail(transcriptPath) : [];
+    if (events.length > 0) {
+      if (followupInFlight(events)) {
+        // Keep recover pending for host-drop / later redeliver, but drop THIS
+        // stop's claim hold only (stamp-matched). Sleep may have been no-op;
+        // an uncleared hold would block redelivery for the full debounceMs.
+        // Must not wipe a peer redeliver's newly armed hold after the window.
+        try {
+          this.store.clearPendingRedeliverHoldIfStamp(
+            conversationId,
+            expectedStamp,
+          );
+        } catch {
+          /* best-effort */
+        }
+        return null;
+      }
+      if (
+        !recoverAnsweredAtClaim &&
+        transcriptTipIsAssistant(events) &&
+        automationFollowupPresent(events, needle)
+      ) {
+        // Became answered during debounce sleep — do not double-emit.
+        // If Recover+assistant was already true at claim time, this is a new
+        // error after a prior revive (same template); fall through to CAS.
+        this.clearRecoverPendingBestEffort(conversationId);
+        return null;
+      }
+      // Tip is unanswered user text, or prior assistant without our recover —
+      // still dead; emit recover.
+    }
+    const emitted = this.tryCasRecoverEmit(
+      conversationId,
+      expectedStamp,
+      needle,
+    );
+    if (!emitted) return null;
+    // Pause may land after CAS commit — drop inject + clear recover pending.
+    return this.recoverActionIfStillRunnable(conversationId, emitted);
+  }
+
+  /**
+   * Atomically take emit ownership: only the stop whose claim stamp still
+   * matches may return followup. Winner bumps pending_followup_at so a racing
+   * redeliver lands in-window and coalesces instead of double-injecting.
+   */
+  private tryCasRecoverEmit(
+    conversationId: string,
+    expectedStamp: string,
+    fallbackMessage: string,
+  ): FollowupAction | null {
+    try {
+      return this.store.exclusiveWrite(() => {
+        const chain = this.store.getReviewChain(conversationId);
+        const live = chain?.pending_followup?.trim() ?? "";
+        if (!isRecoverFollowupMessage(live)) {
+          return { commit: false, value: null };
+        }
+        if (chain?.pending_followup_at !== expectedStamp) {
+          return { commit: false, value: null };
+        }
+        const session = this.store.getSession(conversationId);
+        if (!session || !this.sessionErrorRecoverable(session)) {
+          this.store.clearPendingFollowupIf(conversationId, (m) =>
+            isRecoverFollowupMessage(m),
+          );
+          return { commit: true, value: null };
+        }
+        // True CAS: only one stop bumps the stamp; savePending no-op cannot
+        // leave two winners with the same expectedStamp.
+        if (!this.store.casBumpPendingFollowupAt(conversationId, expectedStamp)) {
+          return { commit: false, value: null };
+        }
+        // Defense: recover emit must not leave chain_pending armed.
+        this.store.clearChainPending(conversationId);
+        return {
+          commit: true,
+          value: {
+            kind: "recover" as const,
+            message: live || fallbackMessage,
+            loop: true,
+          },
+        };
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  private clearRecoverPendingBestEffort(conversationId: string): void {
+    try {
+      this.store.clearPendingFollowupIf(conversationId, (m) =>
+        isRecoverFollowupMessage(m),
+      );
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /**
+   * Block completed-stop recover redelivery for ~holdMs using pending_redeliver_at
+   * against {@link PENDING_REDELIVER_COOLDOWN_MS}. CAS emit nulls the hold so a
+   * host-dropped inject can redeliver immediately (unlike gating on
+   * pending_followup_at, which CAS refreshes and would extend the block).
+   *
+   * When holdMs > cooldown, `at` is in the future so
+   * {@link pendingRedeliverAllowed} stays false until ~holdMs elapses — do not
+   * clamp hold to cooldown (that would unblock mid-sleep for long debounce).
+   */
+  private armRecoverClaimRedeliverHold(
+    conversationId: string,
+    holdMs: number,
+  ): void {
+    if (!(holdMs > 0) || !Number.isFinite(holdMs)) return;
+    const cooldown = PENDING_REDELIVER_COOLDOWN_MS;
+    // Match resolveRecoverDebounceMs cap — keep hold covering the full sleep.
+    const hold = Math.min(Math.floor(holdMs), 60_000);
+    if (!(hold > 0)) return;
+    const at = new Date(Date.now() - (cooldown - hold)).toISOString();
+    // Column-only: merge updateReviewChain would rewrite confirm_left/pending.
+    this.store.setPendingRedeliverHold(conversationId, at);
+  }
+
+  /**
+   * Last-resort when tryClaimErrorRecoverWindow's exclusiveWrite failed.
+   * Retries ambient soft-reset+pending up to 3×; then column-only disarm +
+   * emitRecover (never unlocked neutralize/soft-reset, never full-neutralize
+   * after transient lock failures — that wiped mid-confirm confirm_left).
+   * Skip wipe/emit when recover pending already exists.
+   */
+  private compensateFailedErrorRecoverClaim(
+    conversationId: string,
+    message: string,
+    action: FollowupAction,
+    ambient: boolean,
+  ): FollowupAction | null {
+    const recoverPending = (): boolean => {
+      try {
+        const pending =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        return isRecoverFollowupMessage(pending);
+      } catch {
+        return false;
+      }
+    };
+
+    // Paused/disarmed after claim failure — do not inject recover.
+    if (!this.sessionStillErrorRecoverable(conversationId)) {
+      return null;
+    }
+
+    // Peer already owns recover — coalesce; do not neutralize or double-emit.
+    if (recoverPending()) {
+      return null;
+    }
+
+    if (ambient) {
+      for (let i = 0; i < 3; i++) {
+        const committed = this.tryCommitAmbientErrorRecover(
+          conversationId,
+          message,
+        );
+        if (committed === "ok") {
+          return this.recoverActionIfStillRunnable(conversationId, action);
+        }
+        if (committed === "exists") return null;
+      }
+      // tryCommit may have observed a concurrent pause — do not unlock-wipe
+      // mid-confirm/fix state on an already-halted session.
+      if (!this.sessionStillErrorRecoverable(conversationId)) {
+        return null;
+      }
+      if (recoverPending()) {
+        return null;
+      }
+      // Soft-reset txns failed (lock or stamp). Never full-neutralize — that wiped
+      // mid-confirm confirm_left after transient tryCommit lock failures.
+      // Column-only disarm so leftover chain_pending cannot phantom-E3.
+      try {
+        this.store.clearChainPending(conversationId);
+      } catch {
+        /* fall through to emit */
+      }
+    }
+
+    if (!this.sessionStillErrorRecoverable(conversationId)) {
+      return null;
+    }
+
+    // Peer may have claimed recover during unlocked disarm — do not emit over it.
+    const emitted = this.emitRecoverAfterFailedClaim(conversationId, action, {
+      ambientSoftReset: ambient,
+    });
+    if (!emitted) return null;
+    // Match tryCommit: drop stamped recover if pause won after the write.
+    return this.recoverActionIfStillRunnable(conversationId, emitted);
+  }
+
+  /** After a successful compensate write, drop recover if session paused mid-flight. */
+  private recoverActionIfStillRunnable(
+    conversationId: string,
+    action: FollowupAction,
+  ): FollowupAction | null {
+    if (this.sessionStillErrorRecoverable(conversationId)) {
+      return action;
+    }
+    this.clearRecoverPendingBestEffort(conversationId);
+    return null;
+  }
+
+  private sessionStillErrorRecoverable(conversationId: string): boolean {
+    try {
+      const s = this.store.getSession(conversationId);
+      return !!s && this.sessionErrorRecoverable(s);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Compensating emit after claim failure: never overwrite a peer recover pending.
+   * Ambient: soft-reset under the same lock before stamp (resume mid-fix /
+   * preserve mid-confirm). Never unlocked soft-reset on the legacy fallback.
+   * If exclusiveWrite is unavailable, fall back to legacy {@link emit} only when
+   * no recover pending is visible and a recover row was stamped.
+   */
+  private emitRecoverAfterFailedClaim(
+    conversationId: string,
+    action: FollowupAction,
+    opts?: { ambientSoftReset?: boolean },
+  ): FollowupAction | null {
+    const ambientSoftReset = opts?.ambientSoftReset === true;
+    try {
+      return this.store.exclusiveWrite(() => {
+        const session = this.store.getSession(conversationId);
+        if (!session || !this.sessionErrorRecoverable(session)) {
+          return { commit: false, value: null };
+        }
+        const pending =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        if (isRecoverFollowupMessage(pending)) {
+          return { commit: false, value: null };
+        }
+        if (ambientSoftReset) {
+          this.applySoftResetAmbientChainForErrorRecover(conversationId);
+        }
+        this.store.savePendingFollowup(conversationId, action.message, {
+          armChain: false,
+        });
+        const live =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        // Under lock, require a stamped recover row — silent savePending no-op
+        // must not return action (two compensators could both "win").
+        if (!isRecoverFollowupMessage(live)) {
+          return { commit: false, value: null };
+        }
+        // armChain=false does not clear a leftover fix chain_pending=1 → phantom E3.
+        this.store.clearChainPending(conversationId);
+        return { commit: true, value: action };
+      });
+    } catch {
+      if (!this.sessionStillErrorRecoverable(conversationId)) {
+        return null;
+      }
+      try {
+        const pending =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        if (isRecoverFollowupMessage(pending)) {
+          return null;
+        }
+      } catch {
+        /* fall through to legacy emit */
+      }
+      // Legacy path: never unlocked soft-reset (confirm/fix pending desync).
+      this.emit(conversationId, action);
+      try {
+        this.store.clearChainPending(conversationId);
+      } catch {
+        /* best-effort */
+      }
+      // Must own a stamped recover row. Returning action after a failed
+      // savePending (lock storm) double-injects with a claimer that still
+      // holds the window and will CAS-emit after debounce.
+      try {
+        const live =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        if (isRecoverFollowupMessage(live)) {
+          return action;
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    }
+  }
+
   /**
    * Ambient error recover write: soft-reset + recover pending under one
-   * exclusiveWrite. Returns false if the txn throws (caller may retry / fall back).
+   * exclusiveWrite. "exists" = peer already claimed recover (do not overwrite).
    */
   private tryCommitAmbientErrorRecover(
     conversationId: string,
     message: string,
-  ): boolean {
+  ): "ok" | "exists" | "failed" {
     try {
-      this.store.exclusiveWrite(() => {
+      return this.store.exclusiveWrite(() => {
+        const session = this.store.getSession(conversationId);
+        if (!session || !this.sessionErrorRecoverable(session)) {
+          return { commit: false, value: "failed" as const };
+        }
+        const pending =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        if (isRecoverFollowupMessage(pending)) {
+          return { commit: false, value: "exists" as const };
+        }
         this.applySoftResetAmbientChainForErrorRecover(conversationId);
         this.store.savePendingFollowup(conversationId, message, {
           armChain: false,
         });
-        return { commit: true, value: null };
+        // savePending may no-op (missing session / blank). Do not report ok or
+        // commit a soft-reset that left nothing redeliverable.
+        const live =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+        const stamp =
+          this.store.getReviewChain(conversationId)?.pending_followup_at ?? "";
+        if (!stamp || !isRecoverFollowupMessage(live)) {
+          return { commit: false, value: "failed" as const };
+        }
+        return { commit: true, value: "ok" as const };
       });
-      return true;
     } catch {
-      return false;
+      return "failed";
     }
   }
 
@@ -632,8 +1183,9 @@ export class ReviewEngine {
    * Ambient/planning error recover: drop confirm/pending arming so recover
    * (armChain=false) cannot leave chain_pending=1 → phantom E3.
    *
-   * Prefer calling under exclusiveWrite (with savePendingFollowup). May run
-   * unlocked only as last-resort compensation after txn failures.
+   * Call only under exclusiveWrite (with savePendingFollowup). Compensate must
+   * not call this unlocked: clearing undelivered confirm/fix pending while
+   * confirm_left is already post-decrement desyncs the next E4 lens.
    *
    * Preserve mid-confirm / E5-ready counters so the completed stop after
    * recover continues E4/E5. Ready-for-E3 (fix done, chain_pending only)
@@ -649,6 +1201,10 @@ export class ReviewEngine {
     this.store.ensureReviewChain(conversationId);
     const chain = this.store.getReviewChain(conversationId);
     if (!chain) return;
+    // Never clear a live recover claim (unlocked compensate / TOCTOU defense).
+    if (isRecoverFollowupMessage(chain.pending_followup?.trim() ?? "")) {
+      return;
+    }
     const atE5 =
       chain.confirm_left === 0 ||
       (chain.item_confirm_complete === 1 && chain.confirm_left === null);
@@ -673,7 +1229,7 @@ export class ReviewEngine {
         chain.code_edited === 1 ||
         fixPending);
     const rounds = this.config.confirmRounds;
-    this.store.updateReviewChain(conversationId, {
+    this.store.softResetAmbientChainUnlessRecover(conversationId, {
       confirm_left: atE5 || midConfirm
         ? chain.confirm_left
         : readyForE3 && rounds > 0
@@ -683,10 +1239,6 @@ export class ReviewEngine {
       chain_pending: 0,
       // Preserve an in-flight edit marker (E2 wins over E4); else force only for mid-fix.
       code_edited: resumeFix || chain.code_edited === 1 ? 1 : 0,
-      // keep fix_round — next E2/E4 bumps the session round
-      pending_followup: null,
-      pending_followup_at: null,
-      pending_redeliver_at: null,
     });
   }
 

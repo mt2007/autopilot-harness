@@ -75,6 +75,8 @@ function engine(store: StateStore, root: string, overrides?: Partial<Constructor
     maxIdleStops: 5,
     maxErrorsBeforePause: 3,
     projectRoot: root,
+    // Unit tests skip wall-clock recover debounce unless overridden.
+    recoverDebounceMs: 0,
     ...overrides,
   });
 }
@@ -782,6 +784,7 @@ describe("review-engine P0 matrix", () => {
   });
 
   it("F-ERR-UNLIMITED: maxErrorsBeforePause=0 never pauses on errors", () => {
+    // recoverDebounceMs:0 → no same-window coalesce (window requires ms>0).
     const eng = engine(store, root, { maxErrorsBeforePause: 0 });
     for (let i = 0; i < 10; i++) {
       const action = eng.handleStop({
@@ -794,6 +797,27 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.paused).toBe(0);
     expect(store.getSession("c1")!.armed).toBe(1);
     expect(store.getSession("c1")!.error_count).toBe(10);
+  });
+
+  it("F-ERR-DEBOUNCE-COALESCE: production window coalesces burst errors", () => {
+    const eng = engine(store, root, {
+      maxErrorsBeforePause: 0,
+      recoverDebounceMs: 3000,
+      sleepSync: () => {},
+    });
+    const first = eng.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+    });
+    const second = eng.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(first?.kind).toBe("recover");
+    expect(second).toBeNull();
+    expect(store.getSession("c1")!.error_count).toBe(2);
   });
 
   it("F-ABORT: user Stop (aborted) does not inject recover or bump error_count", () => {
@@ -1387,7 +1411,7 @@ describe("review-engine P0 matrix", () => {
     expect(after?.kind).toBe("review.fix");
   });
 
-  it("F-ERR-AMBIENT-PARTIAL-FAIL: soft-reset txn + neutralize fail still disarms chain_pending", () => {
+  it("F-ERR-AMBIENT-PARTIAL-FAIL: lock storm disarms chain_pending without unlocked soft-reset", () => {
     const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
     eng.handleStop({
       conversationId: "c-ambient-partial",
@@ -1403,38 +1427,43 @@ describe("review-engine P0 matrix", () => {
       pending_followup: "自审修复第 2 轮",
     });
     const origEx = store.exclusiveWrite.bind(store);
-    const origNeut = store.neutralizeReviewChain.bind(store);
+    const origNeut = store.neutralizeReviewChainUnlessRecover.bind(store);
     store.exclusiveWrite = (() => {
       throw new Error("exclusiveWrite boom");
     }) as typeof store.exclusiveWrite;
-    store.neutralizeReviewChain = (() => {
+    store.neutralizeReviewChainUnlessRecover = (() => {
       throw new Error("neutralize boom");
-    }) as typeof store.neutralizeReviewChain;
+    }) as typeof store.neutralizeReviewChainUnlessRecover;
     try {
       const recover = eng.handleStop({
         conversationId: "c-ambient-partial",
         status: "error",
         loopCount: 1,
       });
-      expect(recover?.kind).toBe("recover");
-      // Compensation must clear arming even when neutralize failed.
-      expect(store.getReviewChain("c-ambient-partial")!.chain_pending).toBe(0);
-      // Last-resort soft-reset should still mark mid-fix for post-recover E2.
-      expect(store.getReviewChain("c-ambient-partial")!.code_edited).toBe(1);
+      // Lock storm: cannot stamp recover pending — do not return unstamped
+      // recover (would double-inject with a successful claimer).
+      expect(recover).toBeNull();
+      const mid = store.getReviewChain("c-ambient-partial")!;
+      // Disarm only — unlocked soft-reset would clear undelivered fix pending.
+      expect(mid.chain_pending).toBe(0);
+      expect(mid.code_edited).toBe(0);
+      expect(mid.pending_followup).toBe("自审修复第 2 轮");
     } finally {
       store.exclusiveWrite = origEx;
-      store.neutralizeReviewChain = origNeut;
+      store.neutralizeReviewChainUnlessRecover = origNeut;
     }
+    fs.writeFileSync(path.join(root, "t-partial.jsonl"), "");
     const after = eng.handleStop({
       conversationId: "c-ambient-partial",
       status: "completed",
       loopCount: 2,
+      transcriptPath: path.join(root, "t-partial.jsonl"),
     });
     expect(after?.kind).toBe("review.fix");
-    expect(store.getReviewChain("c-ambient-partial")!.confirm_left).toBeNull();
+    expect(after?.meta?.redeliver).toBe(true);
   });
 
-  it("F-ERR-AMBIENT-PARTIAL-NEUTRALIZE: txn fail + neutralize ok must wipe resume (no soft-reset after)", () => {
+  it("F-ERR-AMBIENT-PARTIAL-NEUTRALIZE: lock storm disarms without unlocked soft-reset/wipe", () => {
     const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
     eng.handleStop({
       conversationId: "c-ambient-neut",
@@ -1459,21 +1488,28 @@ describe("review-engine P0 matrix", () => {
         status: "error",
         loopCount: 1,
       });
-      expect(recover?.kind).toBe("recover");
+      // Hook must not get unstamped recover under total lock storm.
+      expect(recover).toBeNull();
       const mid = store.getReviewChain("c-ambient-neut")!;
+      // Only chain_pending disarmed — no unlocked soft-reset (would drop fix
+      // pending) and no unlocked neutralize (would wipe resume markers).
       expect(mid.chain_pending).toBe(0);
       expect(mid.code_edited).toBe(0);
-      expect(mid.fix_round).toBe(0);
+      expect(mid.fix_round).toBe(2);
+      expect(mid.pending_followup).toBe("自审修复第 2 轮");
     } finally {
       store.exclusiveWrite = origEx;
     }
+    fs.writeFileSync(path.join(root, "t-neut.jsonl"), "");
     const after = eng.handleStop({
       conversationId: "c-ambient-neut",
       status: "completed",
       loopCount: 2,
+      transcriptPath: path.join(root, "t-neut.jsonl"),
     });
-    expect(after).toBeNull();
-    expect(store.getReviewChain("c-ambient-neut")!.confirm_left).toBeNull();
+    // Fix pending still redeliverable once locks work again.
+    expect(after?.kind).toBe("review.fix");
+    expect(after?.meta?.redeliver).toBe(true);
   });
 
   it("F-SCOPE-PROJECT: ambient edit triggers fix without RUN", () => {

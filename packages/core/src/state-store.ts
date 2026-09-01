@@ -56,6 +56,21 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/**
+ * Next `pending_followup_at` value. When `nowIso()` collides with `previousAt`,
+ * advance ≥1ms so claim/CAS ownership stamps stay unique (same-ms refresh must
+ * not look like the prior claim).
+ */
+function nextFollowupTimestamp(previousAt: string | null | undefined): string {
+  let ts = nowIso();
+  const prev = previousAt ?? "";
+  if (prev && ts === prev) {
+    const t = Date.parse(prev);
+    ts = new Date((Number.isNaN(t) ? Date.now() : t) + 1).toISOString();
+  }
+  return ts;
+}
+
 /** Stable short id for CLI tables (first 8 chars of dehyphenated conversation_id). */
 export function shortConversationId(conversationId: string): string {
   return conversationId.replace(/-/g, "").slice(0, 8);
@@ -591,6 +606,73 @@ export class StateStore {
       .run(nowIso(), conversationId);
   }
 
+  /**
+   * Column-only redeliver hold (recover claim sleep). Also clears chain_pending so
+   * armChain=false recover cannot leave a phantom E3 arm. Avoids updateReviewChain
+   * read-merge-write clobbering confirm_left / pending under concurrency.
+   */
+  setPendingRedeliverHold(conversationId: string, at: string): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    const stamp = typeof at === "string" ? at.trim() : "";
+    if (!stamp || stamp.includes("\0")) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE review_chains SET
+          pending_redeliver_at = ?, chain_pending = 0, updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(stamp, nowIso(), conversationId);
+  }
+
+  /**
+   * Column-only: drop claim redeliver hold without touching pending / confirm.
+   * Used when finish skips CAS (e.g. another followup in flight) but sleep was
+   * no-op — leaving the hold would block host-drop redelivery for debounceMs.
+   */
+  clearPendingRedeliverHold(conversationId: string): void {
+    if (this.isInvalidConversationId(conversationId)) {
+      return;
+    }
+    this.db
+      .prepare(
+        `UPDATE review_chains SET pending_redeliver_at = NULL, updated_at = ?
+         WHERE conversation_id = ?`,
+      )
+      .run(nowIso(), conversationId);
+  }
+
+  /**
+   * Drop redeliver hold only while `pending_followup_at` still equals this stop's
+   * claim stamp (and pending is recover). Prevents wiping a peer redeliver's
+   * newly armed hold after the debounce window.
+   */
+  clearPendingRedeliverHoldIfStamp(
+    conversationId: string,
+    expectedAt: string,
+  ): boolean {
+    if (this.isInvalidConversationId(conversationId)) {
+      return false;
+    }
+    if (!expectedAt || expectedAt.includes("\0")) {
+      return false;
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE review_chains SET pending_redeliver_at = NULL, updated_at = ?
+         WHERE conversation_id = ?
+           AND pending_followup_at = ?
+           AND pending_followup IS NOT NULL
+           AND trim(pending_followup) != ''
+           AND ${StateStore.SQL_PENDING_IS_RECOVER}`,
+      )
+      .run(nowIso(), conversationId, expectedAt);
+    return result.changes > 0;
+  }
+
   setChainPending(conversationId: string): void {
     this.withSessionChainWrite(conversationId, () => {
       this.ensureReviewChain(conversationId);
@@ -615,7 +697,10 @@ export class StateStore {
     const armChain = opts?.armChain !== false;
     this.withSessionChainWrite(conversationId, () => {
       this.ensureReviewChain(conversationId);
-      const ts = nowIso();
+      // Recover claim/CAS ownership keys off pending_followup_at — keep unique.
+      const ts = nextFollowupTimestamp(
+        this.getReviewChain(conversationId)?.pending_followup_at,
+      );
       const sql = armChain
         ? `UPDATE review_chains SET
           pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = NULL,
@@ -629,6 +714,77 @@ export class StateStore {
            AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`;
       this.db.prepare(sql).run(msg, ts, ts, conversationId, conversationId);
     });
+  }
+
+  /**
+   * SQL: pending looks like a recover automation prompt.
+   * Keep in sync with `isRecoverFollowupMessage` prefixes.
+   */
+  private static readonly SQL_PENDING_IS_RECOVER = `(
+    trim(pending_followup) GLOB 'Recover:*'
+    OR trim(pending_followup) GLOB '恢复：*'
+    OR trim(pending_followup) GLOB '恢复:*'
+  )`;
+
+  /**
+   * SQL: pending kinds that must stay chain_pending=0 on redeliver.
+   * Matches recover/stuck (armChain=false) and terminal done/review_complete
+   * rows that intentionally leave the chain disarmed. Keep prefixes in sync
+   * with emit/updateReviewChain sites and `isRecoverOrStuckFollowupMessage`.
+   * Do NOT include Advance — E5 advance arms chain_pending=1; E0 soft advance
+   * shares the same prefix but is rarer than breaking E5 redelivery.
+   */
+  private static readonly SQL_PENDING_REDELIVER_KEEP_DISARMED = `(
+    trim(pending_followup) GLOB 'Recover:*'
+    OR trim(pending_followup) GLOB '恢复：*'
+    OR trim(pending_followup) GLOB '恢复:*'
+    OR trim(pending_followup) GLOB 'Stuck:*'
+    OR trim(pending_followup) GLOB '卡住：*'
+    OR trim(pending_followup) GLOB '卡住:*'
+    OR trim(pending_followup) GLOB 'All checklist*'
+    OR trim(pending_followup) GLOB '全部完成*'
+    OR trim(pending_followup) GLOB 'Review complete*'
+    OR trim(pending_followup) GLOB '自审完成*'
+  )`;
+
+  /**
+   * SQL predicate: pending is absent or not a recover automation prompt.
+   * Keep in sync with `isRecoverFollowupMessage` prefixes.
+   */
+  private static readonly SQL_PENDING_NOT_RECOVER = `(
+    pending_followup IS NULL
+    OR (
+      trim(pending_followup) NOT GLOB 'Recover:*'
+      AND trim(pending_followup) NOT GLOB '恢复：*'
+      AND trim(pending_followup) NOT GLOB '恢复:*'
+    )
+  )`;
+
+  /**
+   * Atomic emit-ownership bump: succeeds only when `pending_followup_at` still
+   * equals `expectedAt` and pending is a recover prompt. Returns the new stamp,
+   * or null if the race was lost / row missing. Advances by ≥1ms when `nowIso()`
+   * collides with `expectedAt`.
+   */
+  casBumpPendingFollowupAt(
+    conversationId: string,
+    expectedAt: string,
+  ): string | null {
+    if (this.isInvalidConversationId(conversationId)) return null;
+    if (!expectedAt || expectedAt.includes("\0")) return null;
+    const ts = nextFollowupTimestamp(expectedAt);
+    const result = this.db
+      .prepare(
+        `UPDATE review_chains SET
+          pending_followup_at = ?, pending_redeliver_at = NULL, updated_at = ?
+         WHERE conversation_id = ?
+           AND pending_followup_at = ?
+           AND pending_followup IS NOT NULL
+           AND trim(pending_followup) != ''
+           AND ${StateStore.SQL_PENDING_IS_RECOVER}`,
+      )
+      .run(ts, ts, conversationId, expectedAt);
+    return result.changes > 0 ? ts : null;
   }
 
   clearPendingFollowup(conversationId: string): void {
@@ -732,6 +888,77 @@ export class StateStore {
   }
 
   /**
+   * Like {@link neutralizeReviewChain}, but refuse to wipe an in-flight recover
+   * pending (error-storm claimer). Returns true when a row was updated.
+   */
+  neutralizeReviewChainUnlessRecover(conversationId: string): boolean {
+    if (this.isInvalidConversationId(conversationId)) {
+      return false;
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE review_chains SET
+          code_edited = 0,
+          confirm_left = NULL,
+          chain_pending = 0,
+          item_confirm_complete = 0,
+          fix_round = 0,
+          pending_followup = NULL,
+          pending_followup_at = NULL,
+          pending_redeliver_at = NULL,
+          updated_at = ?
+         WHERE conversation_id = ?
+           AND ${StateStore.SQL_PENDING_NOT_RECOVER}`,
+      )
+      .run(nowIso(), conversationId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Ambient error-recover soft-reset columns + clear pending, but refuse when
+   * pending is already recover (unlocked compensate TOCTOU defense).
+   * Returns true when a row was updated.
+   */
+  softResetAmbientChainUnlessRecover(
+    conversationId: string,
+    fields: {
+      confirm_left: number | null;
+      item_confirm_complete: number;
+      chain_pending: number;
+      code_edited: number;
+    },
+  ): boolean {
+    if (this.isInvalidConversationId(conversationId)) {
+      return false;
+    }
+    const result = this.db
+      .prepare(
+        `UPDATE review_chains SET
+          confirm_left = ?,
+          item_confirm_complete = ?,
+          chain_pending = ?,
+          code_edited = ?,
+          pending_followup = NULL,
+          pending_followup_at = NULL,
+          pending_redeliver_at = NULL,
+          updated_at = ?
+         WHERE conversation_id = ?
+           AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)
+           AND ${StateStore.SQL_PENDING_NOT_RECOVER}`,
+      )
+      .run(
+        fields.confirm_left,
+        fields.item_confirm_complete,
+        fields.chain_pending,
+        fields.code_edited,
+        nowIso(),
+        conversationId,
+        conversationId,
+      );
+    return result.changes > 0;
+  }
+
+  /**
    * Column-only pause/disarm when the full upsertSession pause write failed.
    * Without this, loopCount>0 completed stops can still hit E3 while armed.
    */
@@ -796,10 +1023,17 @@ export class StateStore {
       const ts = nowIso();
       // Require live pending — after neutralize/clear, must not resurrect
       // chain_pending=1 (would E3 on RESUME with no undelivered message).
+      // Recover/stuck and terminal done/review_complete must stay disarmed;
+      // arming them here would open a phantom confirm after the tip is answered.
       this.db
         .prepare(
           `UPDATE review_chains SET
-          pending_redeliver_at = ?, chain_pending = 1, updated_at = ?
+          pending_redeliver_at = ?,
+          chain_pending = CASE
+            WHEN ${StateStore.SQL_PENDING_REDELIVER_KEEP_DISARMED} THEN 0
+            ELSE 1
+          END,
+          updated_at = ?
          WHERE conversation_id = ?
            AND pending_followup IS NOT NULL
            AND trim(pending_followup) != ''

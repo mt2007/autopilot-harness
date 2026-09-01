@@ -100,7 +100,12 @@ export {
   automationFollowupPresent,
   pendingRedeliverAllowed,
   userQueryText,
+  inFlightUserQuery,
+  inRecoverDebounceWindow,
+  sleepSyncMs,
+  transcriptTipIsAssistant,
   PENDING_REDELIVER_COOLDOWN_MS,
+  RECOVER_DEBOUNCE_MS,
   type TranscriptEvent,
 } from "./transcript-followup.js";
 
@@ -110,6 +115,7 @@ export {
   parseTrigger,
   isHarnessFollowupMessage,
   isRecoverOrStuckFollowupMessage,
+  isRecoverFollowupMessage,
   isUserAbortText,
   USER_ABORT_MARKERS,
   DEFAULT_TRIGGERS,
