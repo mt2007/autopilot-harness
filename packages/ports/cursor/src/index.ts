@@ -172,7 +172,12 @@ export function handleBeforeSubmitPrompt(
       return { continue: true };
     }
     if (trigger.kind === "resume") {
-      applyResume(store, conversationId);
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug,
+      });
+      if (!result.ok) {
+        return { continue: false, userMessage: result.userMessage };
+      }
       return { continue: true };
     }
     if (trigger.kind === "resume_review") {

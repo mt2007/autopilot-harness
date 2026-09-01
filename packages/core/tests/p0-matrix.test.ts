@@ -567,8 +567,10 @@ describe("review-engine P0 matrix", () => {
       expect(store.getSession("c1")!.project_root).toBe(outside);
       // Checklist still under the real project — must re-arm using store root.
       const sess = applyResume(store, "c1");
-      expect(sess?.paused).toBe(0);
-      expect(sess?.armed).toBe(1);
+      expect(sess.ok).toBe(true);
+      if (!sess.ok) return;
+      expect(sess.session?.paused).toBe(0);
+      expect(sess.session?.armed).toBe(1);
 
       // Outside checklist + poisoned root must not count as in-project work.
       const evilCp = path.join(outside, "checklist.md");
@@ -580,7 +582,9 @@ describe("review-engine P0 matrix", () => {
         )
         .run(outside, evilCp, "c1");
       const blocked = applyResume(store, "c1");
-      expect(blocked?.armed).toBe(0);
+      expect(blocked.ok).toBe(true);
+      if (!blocked.ok) return;
+      expect(blocked.session?.armed).toBe(0);
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }

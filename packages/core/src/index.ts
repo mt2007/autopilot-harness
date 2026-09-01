@@ -50,6 +50,7 @@ export {
   applyOn,
   applyResume,
   applyResumeReview,
+  type ApplyResumeResult,
   type FollowupAction,
   type FollowupKind,
   type ReviewEngineConfig,

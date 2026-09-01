@@ -184,11 +184,18 @@ export function parseTrigger(options: {
       const { slug, initialBrief } = parseSlugAndBrief(rest);
       if (slug) event.slug = slug;
       if (initialBrief || (!slug && rest)) event.initialBrief = initialBrief ?? rest;
-    } else if (kind === "run" || kind === "replan") {
+    } else if (kind === "run" || kind === "replan" || kind === "resume") {
       const { slug, initialBrief } = parseSlugAndBrief(rest);
       if (slug) event.slug = slug;
-      else if (rest) event.slug = rest.split(/\s+/)[0];
-      if (initialBrief) event.initialBrief = initialBrief;
+      else if (rest && kind !== "resume") {
+        event.slug = rest.split(/\s+/)[0];
+      } else if (rest && kind === "resume") {
+        // Single token → pass through (applyResume rejects unsafe). Multi-word
+        // free text → no slug (bare resume). Do not silently drop illegal slugs.
+        const token = rest.split(/\s+/)[0]!;
+        if (token === rest) event.slug = token;
+      }
+      if (initialBrief && kind !== "resume") event.initialBrief = initialBrief;
     }
     return event;
   }
@@ -217,10 +224,17 @@ export function parseTrigger(options: {
       const { slug, initialBrief } = parseSlugAndBrief(hit.rest);
       if (slug) event.slug = slug;
       if (initialBrief || (!slug && hit.rest)) event.initialBrief = initialBrief ?? hit.rest;
-    } else if (kind === "run" || kind === "replan") {
+    } else if (kind === "run" || kind === "replan" || kind === "resume") {
       const { slug } = parseSlugAndBrief(hit.rest);
       if (slug) event.slug = slug;
-      else if (hit.rest) event.slug = hit.rest.split(/\s+/)[0];
+      else if (hit.rest && kind !== "resume") {
+        event.slug = hit.rest.split(/\s+/)[0];
+      } else if (hit.rest && kind === "resume") {
+        // Single token → pass through (applyResume rejects unsafe). Multi-word
+        // free text → no slug (bare resume).
+        const token = hit.rest.split(/\s+/)[0]!;
+        if (token === hit.rest) event.slug = token;
+      }
     }
     return event;
   }

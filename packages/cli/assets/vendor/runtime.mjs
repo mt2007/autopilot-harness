@@ -23,7 +23,7 @@ var en_default = {
       description: "Pause Autopilot"
     },
     autopilot_resume: {
-      description: "Resume the current session"
+      description: "Resume session (can claim a track into this chat)"
     },
     autopilot_replan: {
       description: "Change the plan"
@@ -98,7 +98,7 @@ var zh_CN_default = {
       description: "\u6682\u505C Autopilot"
     },
     autopilot_resume: {
-      description: "\u6062\u590D\u5F53\u524D\u4F1A\u8BDD"
+      description: "\u6062\u590D\u4F1A\u8BDD\uFF08\u53EF\u8DE8\u804A\u5929\u8BA4\u9886 track\uFF09"
     },
     autopilot_replan: {
       description: "\u4FEE\u6539\u65B9\u6848"
@@ -592,6 +592,12 @@ function openDatabase(filename) {
   };
 }
 
+// ../core/src/track-slug.ts
+var SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+function isSafeTrackSlug(slug) {
+  return typeof slug === "string" && SLUG_RE.test(slug) && !slug.includes("..") && !slug.includes("/") && !slug.includes("\\");
+}
+
 // ../core/src/state-store.ts
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
@@ -618,6 +624,9 @@ function normalizeSessionTitle(title) {
     );
   }
   return trimmed;
+}
+function sanitizeSessionDisplayText(text) {
+  return text.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/ +/g, " ").trim();
 }
 var StateStore = class _StateStore {
   db;
@@ -1186,6 +1195,178 @@ var StateStore = class _StateStore {
     ).get(excludeConversationId) ?? null;
   }
   /**
+   * Move session + review_chain rows from `fromId` → `toId` (PK rebind).
+   * Replaces disposable destinations (idle — incl. stale track_id — or done).
+   * Refuses planning or executing destinations (paused or armed).
+   */
+  rebindConversation(fromId, toId) {
+    if (this.isInvalidConversationId(fromId) || this.isInvalidConversationId(toId)) {
+      return { ok: false, reason: "invalid_id" };
+    }
+    if (fromId === toId) {
+      const self = this.getSession(toId);
+      if (!self) return { ok: false, reason: "missing_source" };
+      return { ok: true, session: self };
+    }
+    if (this.writeDepth > 0) {
+      return this.rebindConversationInTxn(fromId, toId);
+    }
+    return this.exclusiveWrite(() => {
+      const result = this.rebindConversationInTxn(fromId, toId);
+      return { commit: result.ok, value: result };
+    });
+  }
+  isDisposableResumeDest(dest) {
+    return dest.phase === "done" || dest.phase === "idle";
+  }
+  rebindConversationInTxn(fromId, toId) {
+    const source = this.getSession(fromId);
+    if (!source) {
+      return { ok: false, reason: "missing_source" };
+    }
+    const dest = this.getSession(toId);
+    if (dest) {
+      if (!this.isDisposableResumeDest(dest)) {
+        return { ok: false, reason: "dest_busy" };
+      }
+      this.db.prepare("DELETE FROM review_chains WHERE conversation_id = ?").run(toId);
+      this.db.prepare("DELETE FROM sessions WHERE conversation_id = ?").run(toId);
+    }
+    const ts = nowIso();
+    this.db.prepare(
+      `UPDATE sessions SET conversation_id = ?, updated_at = ?, last_active_at = ?
+           WHERE conversation_id = ?`
+    ).run(toId, ts, ts, fromId);
+    this.db.prepare(
+      `UPDATE review_chains SET conversation_id = ?, updated_at = ?
+           WHERE conversation_id = ?`
+    ).run(toId, ts, fromId);
+    const moved = this.getSession(toId);
+    if (!moved) {
+      return { ok: false, reason: "missing_source" };
+    }
+    return { ok: true, session: moved };
+  }
+  /**
+   * Atomically pick a foreign session (by slug or unique executing) and rebind
+   * it onto `toId`. No-op (ok + current dest) when nothing to claim.
+   */
+  claimSessionInto(toId, opts) {
+    if (this.isInvalidConversationId(toId)) {
+      return { ok: false, userMessage: "Invalid conversation id." };
+    }
+    const slug = opts?.slug?.trim() || void 0;
+    if (slug && !isSafeTrackSlug(slug)) {
+      return {
+        ok: false,
+        userMessage: `Invalid track slug "${sanitizeSessionDisplayText(slug).slice(0, 64)}".`
+      };
+    }
+    return this.exclusiveWrite(() => {
+      const dest = this.getSession(toId);
+      if (dest && !this.isDisposableResumeDest(dest)) {
+        return {
+          commit: false,
+          value: {
+            ok: false,
+            userMessage: `This conversation already has track "${sanitizeSessionDisplayText(dest.track_id)}" (${sanitizeSessionDisplayText(String(dest.phase))}). Claim from a new chat with /autopilot-resume <slug> \u2014 planning/executing here cannot be replaced (OFF only pauses).`
+          }
+        };
+      }
+      const others = this.listSessions().filter(
+        (s) => s.conversation_id !== toId
+      );
+      const pickExecuting = (pool) => {
+        const active = pool.filter(
+          (s) => s.phase === "executing" && s.paused === 0
+        );
+        if (active.length > 1) {
+          const allSame = active.every(
+            (s) => s.track_id === active[0].track_id
+          );
+          return {
+            ok: false,
+            userMessage: allSame ? `Multiple executing sessions for "${sanitizeSessionDisplayText(active[0].track_id)}". Send Autopilot OFF on extras, then retry.` : `Multiple executing sessions (${active.map((s) => sanitizeSessionDisplayText(s.track_id)).join(", ")}). Send Autopilot OFF on extras, then retry \u2014 or use /autopilot-resume <slug>.`
+          };
+        }
+        if (active.length === 1) {
+          return { ok: true, session: active[0] };
+        }
+        const paused = pool.filter(
+          (s) => s.phase === "executing" && s.paused === 1
+        );
+        if (paused.length > 1) {
+          const allSame = paused.every(
+            (s) => s.track_id === paused[0].track_id
+          );
+          return {
+            ok: false,
+            userMessage: allSame ? `Multiple paused executing sessions for "${sanitizeSessionDisplayText(paused[0].track_id)}". Leave only one source, then retry.` : `Multiple paused executing sessions (${paused.map((s) => sanitizeSessionDisplayText(s.track_id)).join(", ")}). Use /autopilot-resume <slug>.`
+          };
+        }
+        return { ok: true, session: paused[0] ?? null };
+      };
+      let source = null;
+      if (slug) {
+        const hits = others.filter((s) => s.track_id === slug);
+        const picked = pickExecuting(hits);
+        if (!picked.ok) {
+          return { commit: false, value: picked };
+        }
+        const preferred = picked.session ?? hits.find((s) => s.phase === "planning") ?? null;
+        if (!preferred) {
+          const onlyDone = hits.some((s) => s.phase === "done");
+          return {
+            commit: false,
+            value: {
+              ok: false,
+              userMessage: onlyDone ? `Track "${slug}" is already done. Use /autopilot-run ${slug} to start again.` : `No session found for track "${slug}".`
+            }
+          };
+        }
+        source = preferred;
+      } else {
+        const picked = pickExecuting(others);
+        if (!picked.ok) {
+          return { commit: false, value: picked };
+        }
+        source = picked.session;
+      }
+      if (!source) {
+        return {
+          commit: true,
+          value: { ok: true, session: dest ?? null }
+        };
+      }
+      const rebound = this.rebindConversationInTxn(
+        source.conversation_id,
+        toId
+      );
+      if (!rebound.ok) {
+        if (rebound.reason === "dest_busy") {
+          return {
+            commit: false,
+            value: {
+              ok: false,
+              userMessage: "This conversation already has an active session. Claim from a new chat with /autopilot-resume <slug> \u2014 planning/executing here cannot be replaced (OFF only pauses)."
+            }
+          };
+        }
+        return {
+          commit: false,
+          value: {
+            ok: false,
+            userMessage: `Failed to claim session for track "${sanitizeSessionDisplayText(source.track_id)}".`
+          }
+        };
+      }
+      return {
+        commit: true,
+        value: { ok: true, session: rebound.session }
+      };
+    });
+  }
+  /**
    * Serialize writers with BEGIN IMMEDIATE so check-then-act (e.g. one_executor)
    * and multi-statement enters stay atomic. Callback chooses commit vs rollback.
    */
@@ -1322,12 +1503,6 @@ function sessionReviewRunnable(session, reviewScope) {
   return isChecklistExecuting(session);
 }
 
-// ../core/src/track-slug.ts
-var SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-function isSafeTrackSlug(slug) {
-  return typeof slug === "string" && SLUG_RE.test(slug) && !slug.includes("..") && !slug.includes("/") && !slug.includes("\\");
-}
-
 // ../core/src/transcript-followup.ts
 import fs6 from "node:fs";
 
@@ -1451,11 +1626,16 @@ function parseTrigger(options) {
       const { slug, initialBrief } = parseSlugAndBrief(rest);
       if (slug) event.slug = slug;
       if (initialBrief || !slug && rest) event.initialBrief = initialBrief ?? rest;
-    } else if (kind === "run" || kind === "replan") {
+    } else if (kind === "run" || kind === "replan" || kind === "resume") {
       const { slug, initialBrief } = parseSlugAndBrief(rest);
       if (slug) event.slug = slug;
-      else if (rest) event.slug = rest.split(/\s+/)[0];
-      if (initialBrief) event.initialBrief = initialBrief;
+      else if (rest && kind !== "resume") {
+        event.slug = rest.split(/\s+/)[0];
+      } else if (rest && kind === "resume") {
+        const token = rest.split(/\s+/)[0];
+        if (token === rest) event.slug = token;
+      }
+      if (initialBrief && kind !== "resume") event.initialBrief = initialBrief;
     }
     return event;
   }
@@ -1481,10 +1661,15 @@ function parseTrigger(options) {
       const { slug, initialBrief } = parseSlugAndBrief(hit.rest);
       if (slug) event.slug = slug;
       if (initialBrief || !slug && hit.rest) event.initialBrief = initialBrief ?? hit.rest;
-    } else if (kind === "run" || kind === "replan") {
+    } else if (kind === "run" || kind === "replan" || kind === "resume") {
       const { slug } = parseSlugAndBrief(hit.rest);
       if (slug) event.slug = slug;
-      else if (hit.rest) event.slug = hit.rest.split(/\s+/)[0];
+      else if (hit.rest && kind !== "resume") {
+        event.slug = hit.rest.split(/\s+/)[0];
+      } else if (hit.rest && kind === "resume") {
+        const token = hit.rest.split(/\s+/)[0];
+        if (token === hit.rest) event.slug = token;
+      }
     }
     return event;
   }
@@ -2146,12 +2331,13 @@ var ReviewEngine = class {
           return { commit: false, value: null };
         }
       } else {
+        const lockedChecklistPath = lockedSession.checklist_path?.trim() || evidence.checklistPath;
         const lockedEval = evaluateVerifyReport({
           enabled: this.config.verifyEnabled,
           commands: this.config.verifyCommands,
           reportPath,
           currentItem: refreshed.currentItem,
-          checklistPath: evidence.checklistPath,
+          checklistPath: lockedChecklistPath,
           projectRoot: trustRoot ?? void 0
         });
         if (lockedEval.outcome !== "pass") {
@@ -2788,53 +2974,103 @@ function applyOn(store, conversationId, projectRoot, opts) {
   });
   return { ok: true, session: s };
 }
-function applyResume(store, conversationId) {
-  const session = store.getSession(conversationId);
-  if (!session) return null;
-  const patch = {
-    conversation_id: conversationId,
-    project_root: session.project_root,
-    code_root: session.code_root
-  };
-  if (session.paused === 1) {
-    patch.paused = 0;
-    patch.paused_reason = null;
-    patch.error_count = 0;
-    patch.idle_stop_count = 0;
-    if (session.phase === "executing") {
-      let hasUnchecked = false;
-      if (session.checklist_path) {
-        const root = normalizeProjectRoot(store.projectRoot);
-        if (root && isRealpathInsideProject(root, session.checklist_path)) {
-          try {
-            hasUnchecked = countUnchecked(
-              parseChecklist(session.checklist_path, {
-                projectRoot: root
-              })
-            ) > 0;
-          } catch {
-            hasUnchecked = false;
-          }
+function finishLocalResume(store, conversationId, session) {
+  const snap = store.getSession(conversationId);
+  if (!snap) {
+    return null;
+  }
+  let armedOnUnpauseExecuting;
+  if (snap.paused === 1 && snap.phase === "executing") {
+    armedOnUnpauseExecuting = 0;
+    if (snap.checklist_path) {
+      const root = normalizeProjectRoot(store.projectRoot);
+      if (root && isRealpathInsideProject(root, snap.checklist_path)) {
+        try {
+          armedOnUnpauseExecuting = countUnchecked(
+            parseChecklist(snap.checklist_path, {
+              projectRoot: root
+            })
+          ) > 0 ? 1 : 0;
+        } catch {
+          armedOnUnpauseExecuting = 0;
         }
       }
-      patch.armed = hasUnchecked ? 1 : 0;
-    }
-    if (session.phase === "idle") {
-      patch.armed = 1;
     }
   }
-  if (session.phase === "planning") {
-    patch.armed = 0;
+  return store.exclusiveWrite(() => {
+    const live = store.getSession(conversationId);
+    if (!live) {
+      return { commit: false, value: null };
+    }
+    const patch = {
+      conversation_id: conversationId,
+      project_root: live.project_root || session.project_root,
+      code_root: live.code_root || session.code_root
+    };
+    const phase = live.phase;
+    const paused = live.paused;
+    if (paused === 1) {
+      patch.paused = 0;
+      patch.paused_reason = null;
+      patch.error_count = 0;
+      patch.idle_stop_count = 0;
+      if (phase === "executing") {
+        if (armedOnUnpauseExecuting !== void 0 && snap.phase === "executing" && snap.checklist_path === live.checklist_path) {
+          patch.armed = armedOnUnpauseExecuting;
+        } else {
+          patch.armed = 0;
+        }
+      }
+      if (phase === "idle") {
+        patch.armed = 1;
+      }
+    }
+    if (phase === "planning") {
+      patch.armed = 0;
+    }
+    const updated = store.upsertSession(patch);
+    try {
+      store.clearPendingFollowupIf(
+        conversationId,
+        isRecoverOrStuckFollowupMessage
+      );
+    } catch {
+    }
+    return { commit: true, value: updated };
+  });
+}
+function applyResume(store, conversationId, opts) {
+  if (!store.isConversationIdOk(conversationId)) {
+    return { ok: false, userMessage: "Invalid conversation id." };
   }
-  const updated = store.upsertSession(patch);
-  try {
-    store.clearPendingFollowupIf(
-      conversationId,
-      isRecoverOrStuckFollowupMessage
-    );
-  } catch {
+  let session = store.getSession(conversationId);
+  const slug = opts?.slug?.trim() || void 0;
+  if (slug && !isSafeTrackSlug(slug)) {
+    return {
+      ok: false,
+      userMessage: `Invalid track slug "${sanitizeSessionDisplayText(slug).slice(0, 64)}".`
+    };
   }
-  return updated;
+  const localMatches = !!session && (session.phase === "executing" || session.phase === "planning") && (!slug || session.track_id === slug);
+  if (!localMatches) {
+    const claimed = store.claimSessionInto(conversationId, { slug });
+    if (!claimed.ok) return claimed;
+    session = claimed.session;
+  }
+  if (!session) {
+    return { ok: true, session: null };
+  }
+  const updated = finishLocalResume(store, conversationId, session);
+  if (!updated) {
+    return {
+      ok: false,
+      userMessage: "Session moved concurrently; retry Autopilot RESUME."
+    };
+  }
+  return {
+    ok: true,
+    session: updated
+  };
 }
 function applyResumeReview(store, conversationId) {
   store.setChainPending(conversationId);
@@ -4029,7 +4265,12 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
       return { continue: true };
     }
     if (trigger.kind === "resume") {
-      applyResume(store, conversationId);
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        return { continue: false, userMessage: result.userMessage };
+      }
       return { continue: true };
     }
     if (trigger.kind === "resume_review") {

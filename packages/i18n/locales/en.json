@@ -22,7 +22,7 @@
       "description": "Pause Autopilot"
     },
     "autopilot_resume": {
-      "description": "Resume the current session"
+      "description": "Resume session (can claim a track into this chat)"
     },
     "autopilot_replan": {
       "description": "Change the plan"

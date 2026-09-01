@@ -7,6 +7,7 @@ import {
   normalizeProjectRoot,
 } from "./project-path.js";
 import { openDatabase, type SqlDatabase } from "./sqlite.js";
+import { isSafeTrackSlug } from "./track-slug.js";
 
 export type Phase = "idle" | "planning" | "executing" | "done";
 export type PausedReason = "stuck" | "repeated_errors" | "human_gate";
@@ -830,6 +831,235 @@ export class StateStore {
         )
         .get(excludeConversationId) as SessionRow | undefined) ?? null
     );
+  }
+
+  /**
+   * Move session + review_chain rows from `fromId` → `toId` (PK rebind).
+   * Replaces disposable destinations (idle — incl. stale track_id — or done).
+   * Refuses planning or executing destinations (paused or armed).
+   */
+  rebindConversation(
+    fromId: string,
+    toId: string,
+  ):
+    | { ok: true; session: SessionRow }
+    | { ok: false; reason: "missing_source" | "dest_busy" | "invalid_id" } {
+    if (
+      this.isInvalidConversationId(fromId) ||
+      this.isInvalidConversationId(toId)
+    ) {
+      return { ok: false, reason: "invalid_id" };
+    }
+    if (fromId === toId) {
+      const self = this.getSession(toId);
+      if (!self) return { ok: false, reason: "missing_source" };
+      return { ok: true, session: self };
+    }
+    if (this.writeDepth > 0) {
+      return this.rebindConversationInTxn(fromId, toId);
+    }
+    return this.exclusiveWrite(() => {
+      const result = this.rebindConversationInTxn(fromId, toId);
+      return { commit: result.ok, value: result };
+    });
+  }
+
+  private isDisposableResumeDest(dest: SessionRow): boolean {
+    // All idle (incl. ambient revive that kept a stale track_id) and done may be
+    // replaced. Never replace planning / executing.
+    return dest.phase === "done" || dest.phase === "idle";
+  }
+
+  private rebindConversationInTxn(
+    fromId: string,
+    toId: string,
+  ):
+    | { ok: true; session: SessionRow }
+    | { ok: false; reason: "missing_source" | "dest_busy" | "invalid_id" } {
+    const source = this.getSession(fromId);
+    if (!source) {
+      return { ok: false, reason: "missing_source" };
+    }
+    const dest = this.getSession(toId);
+    if (dest) {
+      if (!this.isDisposableResumeDest(dest)) {
+        return { ok: false, reason: "dest_busy" };
+      }
+      this.db
+        .prepare("DELETE FROM review_chains WHERE conversation_id = ?")
+        .run(toId);
+      this.db
+        .prepare("DELETE FROM sessions WHERE conversation_id = ?")
+        .run(toId);
+    }
+    const ts = nowIso();
+    this.db
+      .prepare(
+        `UPDATE sessions SET conversation_id = ?, updated_at = ?, last_active_at = ?
+           WHERE conversation_id = ?`,
+      )
+      .run(toId, ts, ts, fromId);
+    this.db
+      .prepare(
+        `UPDATE review_chains SET conversation_id = ?, updated_at = ?
+           WHERE conversation_id = ?`,
+      )
+      .run(toId, ts, fromId);
+    const moved = this.getSession(toId);
+    if (!moved) {
+      return { ok: false, reason: "missing_source" };
+    }
+    return { ok: true, session: moved };
+  }
+
+  /**
+   * Atomically pick a foreign session (by slug or unique executing) and rebind
+   * it onto `toId`. No-op (ok + current dest) when nothing to claim.
+   */
+  claimSessionInto(
+    toId: string,
+    opts?: { slug?: string },
+  ):
+    | { ok: true; session: SessionRow | null }
+    | { ok: false; userMessage: string } {
+    if (this.isInvalidConversationId(toId)) {
+      return { ok: false, userMessage: "Invalid conversation id." };
+    }
+    const slug = opts?.slug?.trim() || undefined;
+    if (slug && !isSafeTrackSlug(slug)) {
+      return {
+        ok: false,
+        userMessage: `Invalid track slug "${sanitizeSessionDisplayText(slug).slice(0, 64)}".`,
+      };
+    }
+
+    return this.exclusiveWrite(() => {
+      const dest = this.getSession(toId);
+      if (dest && !this.isDisposableResumeDest(dest)) {
+        return {
+          commit: false,
+          value: {
+            ok: false as const,
+            userMessage: `This conversation already has track "${sanitizeSessionDisplayText(dest.track_id)}" (${sanitizeSessionDisplayText(String(dest.phase))}). Claim from a new chat with /autopilot-resume <slug> — planning/executing here cannot be replaced (OFF only pauses).`,
+          },
+        };
+      }
+
+      const others = this.listSessions().filter(
+        (s) => s.conversation_id !== toId,
+      );
+
+      // OFF only pauses — phase stays "executing". Prefer unpaused workers so
+      // "OFF extras, then retry" actually reduces ambiguity; fall back to a
+      // single paused executing (dead-chat recovery).
+      const pickExecuting = (
+        pool: SessionRow[],
+      ):
+        | { ok: true; session: SessionRow | null }
+        | { ok: false; userMessage: string } => {
+        const active = pool.filter(
+          (s) => s.phase === "executing" && s.paused === 0,
+        );
+        if (active.length > 1) {
+          const allSame = active.every(
+            (s) => s.track_id === active[0]!.track_id,
+          );
+          return {
+            ok: false,
+            userMessage: allSame
+              ? `Multiple executing sessions for "${sanitizeSessionDisplayText(active[0]!.track_id)}". Send Autopilot OFF on extras, then retry.`
+              : `Multiple executing sessions (${active
+                  .map((s) => sanitizeSessionDisplayText(s.track_id))
+                  .join(", ")}). Send Autopilot OFF on extras, then retry — or use /autopilot-resume <slug>.`,
+          };
+        }
+        if (active.length === 1) {
+          return { ok: true, session: active[0]! };
+        }
+        const paused = pool.filter(
+          (s) => s.phase === "executing" && s.paused === 1,
+        );
+        if (paused.length > 1) {
+          const allSame = paused.every(
+            (s) => s.track_id === paused[0]!.track_id,
+          );
+          return {
+            ok: false,
+            userMessage: allSame
+              ? `Multiple paused executing sessions for "${sanitizeSessionDisplayText(paused[0]!.track_id)}". Leave only one source, then retry.`
+              : `Multiple paused executing sessions (${paused
+                  .map((s) => sanitizeSessionDisplayText(s.track_id))
+                  .join(", ")}). Use /autopilot-resume <slug>.`,
+          };
+        }
+        return { ok: true, session: paused[0] ?? null };
+      };
+
+      let source: SessionRow | null = null;
+      if (slug) {
+        const hits = others.filter((s) => s.track_id === slug);
+        const picked = pickExecuting(hits);
+        if (!picked.ok) {
+          return { commit: false, value: picked };
+        }
+        const preferred =
+          picked.session ?? hits.find((s) => s.phase === "planning") ?? null;
+        if (!preferred) {
+          const onlyDone = hits.some((s) => s.phase === "done");
+          return {
+            commit: false,
+            value: {
+              ok: false as const,
+              userMessage: onlyDone
+                ? `Track "${slug}" is already done. Use /autopilot-run ${slug} to start again.`
+                : `No session found for track "${slug}".`,
+            },
+          };
+        }
+        source = preferred;
+      } else {
+        const picked = pickExecuting(others);
+        if (!picked.ok) {
+          return { commit: false, value: picked };
+        }
+        source = picked.session;
+      }
+
+      if (!source) {
+        return {
+          commit: true,
+          value: { ok: true as const, session: dest ?? null },
+        };
+      }
+
+      const rebound = this.rebindConversationInTxn(
+        source.conversation_id,
+        toId,
+      );
+      if (!rebound.ok) {
+        if (rebound.reason === "dest_busy") {
+          return {
+            commit: false,
+            value: {
+              ok: false as const,
+              userMessage:
+                "This conversation already has an active session. Claim from a new chat with /autopilot-resume <slug> — planning/executing here cannot be replaced (OFF only pauses).",
+            },
+          };
+        }
+        return {
+          commit: false,
+          value: {
+            ok: false as const,
+            userMessage: `Failed to claim session for track "${sanitizeSessionDisplayText(source.track_id)}".`,
+          },
+        };
+      }
+      return {
+        commit: true,
+        value: { ok: true as const, session: rebound.session },
+      };
+    });
   }
 
   /**

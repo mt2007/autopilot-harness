@@ -13,7 +13,13 @@ import {
   sessionReviewRunnable,
 } from "./review-scope.js";
 import type { ReviewScope } from "./project-config.js";
-import type { Phase, ReviewChainRow, SessionRow, StateStore } from "./state-store.js";
+import {
+  sanitizeSessionDisplayText,
+  type Phase,
+  type ReviewChainRow,
+  type SessionRow,
+  type StateStore,
+} from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
 import {
   automationFollowupPresent,
@@ -1680,70 +1686,156 @@ export function applyOn(
   return { ok: true, session: s };
 }
 
-/** Apply RESUME side effects. */
-export function applyResume(store: StateStore, conversationId: string): SessionRow | null {
-  const session = store.getSession(conversationId);
-  if (!session) return null;
+export type ApplyResumeResult =
+  | { ok: true; session: SessionRow | null }
+  | { ok: false; userMessage: string };
 
-  const patch: Partial<SessionRow> & {
-    conversation_id: string;
-    project_root: string;
-    code_root: string;
-  } = {
-    conversation_id: conversationId,
-    project_root: session.project_root,
-    code_root: session.code_root,
-  };
+function finishLocalResume(
+  store: StateStore,
+  conversationId: string,
+  session: SessionRow,
+): SessionRow | null {
+  // Speculative read + checklist I/O outside the write lock (never block other
+  // writers on disk). Re-check live row under IMMEDIATE before applying.
+  const snap = store.getSession(conversationId);
+  if (!snap) {
+    return null;
+  }
 
-  if (session.paused === 1) {
-    patch.paused = 0;
-    patch.paused_reason = null;
-    patch.error_count = 0;
-    patch.idle_stop_count = 0;
-    if (session.phase === "executing") {
-      // re-arm if checklist still has unchecked
-      let hasUnchecked = false;
-      if (session.checklist_path) {
-        // Containment uses store root — ignore poisoned session.project_root.
-        const root = normalizeProjectRoot(store.projectRoot);
-        if (root && isRealpathInsideProject(root, session.checklist_path)) {
-          try {
-            hasUnchecked =
-              countUnchecked(
-                parseChecklist(session.checklist_path, {
-                  projectRoot: root,
-                }),
-              ) > 0;
-          } catch {
-            // Missing/unsafe checklist — do not re-arm (armed=0).
-            hasUnchecked = false;
-          }
+  let armedOnUnpauseExecuting: number | undefined;
+  if (snap.paused === 1 && snap.phase === "executing") {
+    armedOnUnpauseExecuting = 0;
+    if (snap.checklist_path) {
+      const root = normalizeProjectRoot(store.projectRoot);
+      if (root && isRealpathInsideProject(root, snap.checklist_path)) {
+        try {
+          armedOnUnpauseExecuting =
+            countUnchecked(
+              parseChecklist(snap.checklist_path, {
+                projectRoot: root,
+              }),
+            ) > 0
+              ? 1
+              : 0;
+        } catch {
+          armedOnUnpauseExecuting = 0;
         }
       }
-      patch.armed = hasUnchecked ? 1 : 0;
-    }
-    if (session.phase === "idle") {
-      // Ambient / project-scope review paused via OFF — re-arm on RESUME.
-      patch.armed = 1;
     }
   }
 
-  if (session.phase === "planning") {
-    patch.armed = 0;
+  return store.exclusiveWrite(() => {
+    const live = store.getSession(conversationId);
+    if (!live) {
+      return { commit: false, value: null };
+    }
+
+    const patch: Partial<SessionRow> & {
+      conversation_id: string;
+      project_root: string;
+      code_root: string;
+    } = {
+      conversation_id: conversationId,
+      project_root: live.project_root || session.project_root,
+      code_root: live.code_root || session.code_root,
+    };
+
+    const phase = live.phase;
+    const paused = live.paused;
+
+    if (paused === 1) {
+      patch.paused = 0;
+      patch.paused_reason = null;
+      patch.error_count = 0;
+      patch.idle_stop_count = 0;
+      if (phase === "executing") {
+        // Use precomputed armed only when phase/checklist still match the snap;
+        // otherwise fail closed (armed=0) rather than parsing under the lock.
+        if (
+          armedOnUnpauseExecuting !== undefined &&
+          snap.phase === "executing" &&
+          snap.checklist_path === live.checklist_path
+        ) {
+          patch.armed = armedOnUnpauseExecuting;
+        } else {
+          patch.armed = 0;
+        }
+      }
+      if (phase === "idle") {
+        patch.armed = 1;
+      }
+    }
+
+    if (phase === "planning") {
+      patch.armed = 0;
+    }
+
+    const updated = store.upsertSession(patch);
+    try {
+      store.clearPendingFollowupIf(
+        conversationId,
+        isRecoverOrStuckFollowupMessage,
+      );
+    } catch {
+      /* best-effort */
+    }
+    return { commit: true, value: updated };
+  });
+}
+
+/**
+ * Apply RESUME: unpause local session, or claim another conversation's track
+ * onto this conversation_id (preserving review_chains).
+ */
+export function applyResume(
+  store: StateStore,
+  conversationId: string,
+  opts?: { slug?: string },
+): ApplyResumeResult {
+  if (!store.isConversationIdOk(conversationId)) {
+    return { ok: false, userMessage: "Invalid conversation id." };
   }
 
-  const updated = store.upsertSession(patch);
-  // CLI / direct RESUME: drop stale recover so the next completed stop cannot
-  // resurrect it (Cursor path also clears on beforeSubmitPrompt).
-  try {
-    store.clearPendingFollowupIf(
-      conversationId,
-      isRecoverOrStuckFollowupMessage,
-    );
-  } catch {
-    /* best-effort */
+  let session = store.getSession(conversationId);
+  const slug = opts?.slug?.trim() || undefined;
+  // Fail closed on illegal slug before localMatches / claim (idempotent retry-safe).
+  if (slug && !isSafeTrackSlug(slug)) {
+    return {
+      ok: false,
+      userMessage: `Invalid track slug "${sanitizeSessionDisplayText(slug).slice(0, 64)}".`,
+    };
   }
-  return updated;
+
+  // Only planning/executing "own" the conversation for local resume.
+  // idle (incl. ambient revive with a stale track_id) and done go through
+  // claimSessionInto so a foreign executing session for the same slug can win.
+  const localMatches =
+    !!session &&
+    (session.phase === "executing" || session.phase === "planning") &&
+    (!slug || session.track_id === slug);
+
+  if (!localMatches) {
+    const claimed = store.claimSessionInto(conversationId, { slug });
+    if (!claimed.ok) return claimed;
+    session = claimed.session;
+  }
+
+  if (!session) {
+    return { ok: true, session: null };
+  }
+
+  const updated = finishLocalResume(store, conversationId, session);
+  if (!updated) {
+    return {
+      ok: false,
+      userMessage: "Session moved concurrently; retry Autopilot RESUME.",
+    };
+  }
+
+  return {
+    ok: true,
+    session: updated,
+  };
 }
 
 /** resume_review: only chain_pending=1 */

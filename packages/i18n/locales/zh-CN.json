@@ -22,7 +22,7 @@
       "description": "暂停 Autopilot"
     },
     "autopilot_resume": {
-      "description": "恢复当前会话"
+      "description": "恢复会话（可跨聊天认领 track）"
     },
     "autopilot_replan": {
       "description": "修改方案"

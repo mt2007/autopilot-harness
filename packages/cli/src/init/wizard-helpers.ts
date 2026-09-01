@@ -578,7 +578,7 @@ export function writeQuickstart(
 ## 暂停 / 恢复 / 改方案
 
 - 暂停：\`Autopilot OFF\`
-- 恢复：\`Autopilot RESUME\` / \`/autopilot-resume\`
+- 恢复：\`Autopilot RESUME\` / \`/autopilot-resume\` / \`/autopilot-resume <slug>\`（新聊天可认领旧轨）
 - 改方案：\`Autopilot REPLAN\` / \`/autopilot-replan\`
 
 ## 终端
@@ -612,7 +612,7 @@ Also: \`Autopilot RUN\`
 ## Pause / resume / replan
 
 - Pause: \`Autopilot OFF\`
-- Resume: \`Autopilot RESUME\` / \`/autopilot-resume\`
+- Resume: \`Autopilot RESUME\` / \`/autopilot-resume\` / \`/autopilot-resume <slug>\` (new chat can claim a track)
 - Replan: \`Autopilot REPLAN\` / \`/autopilot-replan\`
 
 ## Terminal

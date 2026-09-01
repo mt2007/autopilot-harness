@@ -352,9 +352,11 @@ describe("pending followup + session round", () => {
       // upsertSession merge keeps paused=1 from disarm; applyResume clears it.
       expect(store.getSession("c1")!.paused).toBe(1);
       const resumed = applyResume(store, "c1");
-      expect(resumed!.paused).toBe(0);
-      expect(resumed!.paused_reason).toBeNull();
-      expect(resumed!.armed).toBe(1);
+      expect(resumed.ok).toBe(true);
+      if (!resumed.ok) return;
+      expect(resumed.session!.paused).toBe(0);
+      expect(resumed.session!.paused_reason).toBeNull();
+      expect(resumed.session!.armed).toBe(1);
     } finally {
       store.upsertSession = orig;
       store.pauseSessionForRepeatedErrors = origPause;
