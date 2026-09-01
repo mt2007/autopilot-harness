@@ -933,7 +933,11 @@ export class StateStore {
       };
     }
 
-    return this.exclusiveWrite(() => {
+    type ClaimResult =
+      | { ok: true; session: SessionRow | null }
+      | { ok: false; userMessage: string };
+
+    return this.exclusiveWrite<ClaimResult>(() => {
       const dest = this.getSession(toId);
       if (dest && !this.isDisposableResumeDest(dest)) {
         return {
