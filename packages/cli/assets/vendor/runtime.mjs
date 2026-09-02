@@ -31,9 +31,9 @@ var en_default = {
   },
   followup: {
     review: {
-      fix: 'Review fix round {round} (no hard cap; confirm needs {total} consecutive no-edit rounds). Code changed this turn. Defect-first self-review and fix now: 1) inspect full diff via git diff / git status; 2) check correctness, null/boundaries, concurrency, security, regression, missing tests; 3) CRITICAL/HIGH must fix, MEDIUM preferably; 4) run relevant tests; 5) briefly state what you reviewed and changed (or "self-review clean"). Do not commit/push. If no further code changes, next stop enters multi-lens confirm.',
-      confirm: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; 4) if you edit, fix and run related tests; 5) close with: "Lens ({lensTitle}): self-review clean" or a short list of fixes; if clean, do not edit further. Do not commit/push.',
-      confirm_final: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens ({lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.'
+      fix: 'Review fix round {round} (no hard cap; confirm needs {total} consecutive no-edit rounds). Code changed this turn. Defect-first self-review and fix now: 1) when using git diff / git status, skip paths matching .autopilotignore, and skip untracked paths ignored by .gitignore; review only the remaining paths; 2) check correctness, null/boundaries, concurrency, security, regression, missing tests; 3) CRITICAL/HIGH must fix, MEDIUM preferably; 4) run relevant tests; 5) briefly state what you reviewed and changed (or "self-review clean"). Do not commit/push. If no further code changes, next stop enters multi-lens confirm.',
+      confirm: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; 4) if you edit, fix and run related tests; 5) close with: "Lens ({lensTitle}): self-review clean" or a short list of fixes; if clean, do not edit further. Do not commit/push.',
+      confirm_final: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens ({lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.'
     },
     advance: "Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: {nextId} \u2014 {nextTitle}.",
     done: "All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.",
@@ -106,9 +106,9 @@ var zh_CN_default = {
   },
   followup: {
     review: {
-      fix: "\u81EA\u5BA1\u4FEE\u590D\u7B2C {round} \u8F6E\uFF08\u65E0\u786C\u9876\uFF1B\u786E\u8BA4\u9636\u6BB5\u9700\u8FDE\u7EED {total} \u8F6E\u65E0\u6539\u52A8\uFF09\u3002\u672C\u8F6E\u6539\u8FC7\u4EE3\u7801\u3002\u8BF7\u7ACB\u523B\u5BF9\u672C\u8F6E diff \u505A\u7F3A\u9677\u4F18\u5148\u81EA\u5BA1\u5E76\u76F4\u63A5\u4FEE\u590D\uFF1A1) \u7528 git diff / git status \u770B\u5B8C\u6574\u6539\u52A8\uFF1B2) \u67E5\u6B63\u786E\u6027\u3001\u7A7A\u503C/\u8FB9\u754C\u3001\u5E76\u53D1\u3001\u5B89\u5168\u3001\u56DE\u5F52\u3001\u7F3A\u6D4B\uFF1B3) CRITICAL/HIGH \u5FC5\u987B\u6539\uFF0CMEDIUM \u5C3D\u91CF\u6539\uFF1B4) \u8DD1\u76F8\u5173\u6D4B\u8BD5\uFF1B5) \u4FEE\u5B8C\u540E\u7B80\u77ED\u8BF4\u660E\u5BA1\u4E86\u4EC0\u4E48\u3001\u6539\u4E86\u4EC0\u4E48\uFF08\u6216\u300C\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\uFF09\u3002\u4E0D\u8981 commit/push\u3002\u82E5\u672C\u8F6E\u672A\u518D\u6539\u4EE3\u7801\uFF0C\u4E0B\u4E00\u8F6E\u4F1A\u8FDB\u5165\u786E\u8BA4\u5BA1\u67E5\uFF08\u6BCF\u8F6E\u4E0D\u540C\u5BA1\u67E5\u89D2\u5EA6\uFF09\u3002",
-      confirm: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u89D2\u5EA6\u82E5\u6709 CRITICAL/HIGH \u5FC5\u987B\u6539\uFF1BMEDIUM \u5C3D\u91CF\u6539\uFF1B4) \u6709\u6539\u52A8\u5219\u76F4\u63A5\u4FEE\u590D\u5E76\u8DD1\u76F8\u5173\u6D4B\u8BD5\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u7B80\u8FF0\u5DF2\u4FEE\u9879\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002",
-      confirm_final: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u8F6E\u53EA\u8BFB\uFF1A\u53D1\u73B0 CRITICAL/HIGH/\u7F3A\u6D4B\u53EA\u8BB0\u5F55\uFF0C\u4E0D\u8981\u6539\u4EE3\u7801\u3001\u4E0D\u8981\u8865\u6D4B\u3001\u4E0D\u8981 commit\uFF1B\u82E5\u5DF2\u7ECF\u6539\u4E86\u6587\u4EF6\uFF0C\u63A5\u53D7\u56DE\u5230\u4FEE\u590D\u8F6E\uFF0C\u672C\u8F6E\u7EDD\u4E0D commit\uFF1B4) \u4E0D\u8981\u8DD1\u4F1A\u6539\u52A8\u4ED3\u5E93\u7684\u547D\u4EE4\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u5217\u51FA\u95EE\u9898\uFF08\u4E0D\u4FEE\u590D\uFF09\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002\u4EA4\u5377\uFF08commit\uFF09\u4E0E\u4E0B\u4E00\u9879\u7531\u94FE\u7ED3\u675F\u540E\u7684\u63A8\u8FDB/\u5B8C\u6210\u5904\u7406\uFF0C\u672C\u8F6E\u4E0D\u505A\u3002"
+      fix: "\u81EA\u5BA1\u4FEE\u590D\u7B2C {round} \u8F6E\uFF08\u65E0\u786C\u9876\uFF1B\u786E\u8BA4\u9636\u6BB5\u9700\u8FDE\u7EED {total} \u8F6E\u65E0\u6539\u52A8\uFF09\u3002\u672C\u8F6E\u6539\u8FC7\u4EE3\u7801\u3002\u8BF7\u7ACB\u523B\u5BF9\u672C\u8F6E diff \u505A\u7F3A\u9677\u4F18\u5148\u81EA\u5BA1\u5E76\u76F4\u63A5\u4FEE\u590D\uFF1A1) \u7528 git diff / git status \u770B\u6539\u52A8\u65F6\uFF0C\u8DF3\u8FC7\u547D\u4E2D .autopilotignore \u7684\u8DEF\u5F84\uFF0C\u4EE5\u53CA\u672A\u88AB Git \u8DDF\u8E2A\u4E14\u88AB .gitignore \u5FFD\u7565\u7684\u8DEF\u5F84\uFF1B\u53EA\u5BF9\u5269\u4F59\u8DEF\u5F84\u5BA1\uFF1B2) \u67E5\u6B63\u786E\u6027\u3001\u7A7A\u503C/\u8FB9\u754C\u3001\u5E76\u53D1\u3001\u5B89\u5168\u3001\u56DE\u5F52\u3001\u7F3A\u6D4B\uFF1B3) CRITICAL/HIGH \u5FC5\u987B\u6539\uFF0CMEDIUM \u5C3D\u91CF\u6539\uFF1B4) \u8DD1\u76F8\u5173\u6D4B\u8BD5\uFF1B5) \u4FEE\u5B8C\u540E\u7B80\u77ED\u8BF4\u660E\u5BA1\u4E86\u4EC0\u4E48\u3001\u6539\u4E86\u4EC0\u4E48\uFF08\u6216\u300C\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\uFF09\u3002\u4E0D\u8981 commit/push\u3002\u82E5\u672C\u8F6E\u672A\u518D\u6539\u4EE3\u7801\uFF0C\u4E0B\u4E00\u8F6E\u4F1A\u8FDB\u5165\u786E\u8BA4\u5BA1\u67E5\uFF08\u6BCF\u8F6E\u4E0D\u540C\u5BA1\u67E5\u89D2\u5EA6\uFF09\u3002",
+      confirm: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\u65F6\uFF0C\u540C\u6837\u8DF3\u8FC7\u547D\u4E2D .autopilotignore \u7684\u8DEF\u5F84\uFF0C\u4EE5\u53CA\u672A\u88AB Git \u8DDF\u8E2A\u4E14\u88AB .gitignore \u5FFD\u7565\u7684\u8DEF\u5F84\uFF1B\u53EA\u6839\u636E\u5269\u4F59\u8DEF\u5F84\u5224\u65AD\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u89D2\u5EA6\u82E5\u6709 CRITICAL/HIGH \u5FC5\u987B\u6539\uFF1BMEDIUM \u5C3D\u91CF\u6539\uFF1B4) \u6709\u6539\u52A8\u5219\u76F4\u63A5\u4FEE\u590D\u5E76\u8DD1\u76F8\u5173\u6D4B\u8BD5\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u7B80\u8FF0\u5DF2\u4FEE\u9879\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002",
+      confirm_final: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\u65F6\uFF0C\u540C\u6837\u8DF3\u8FC7\u547D\u4E2D .autopilotignore \u7684\u8DEF\u5F84\uFF0C\u4EE5\u53CA\u672A\u88AB Git \u8DDF\u8E2A\u4E14\u88AB .gitignore \u5FFD\u7565\u7684\u8DEF\u5F84\uFF1B\u53EA\u6839\u636E\u5269\u4F59\u8DEF\u5F84\u5224\u65AD\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u8F6E\u53EA\u8BFB\uFF1A\u53D1\u73B0 CRITICAL/HIGH/\u7F3A\u6D4B\u53EA\u8BB0\u5F55\uFF0C\u4E0D\u8981\u6539\u4EE3\u7801\u3001\u4E0D\u8981\u8865\u6D4B\u3001\u4E0D\u8981 commit\uFF1B\u82E5\u5DF2\u7ECF\u6539\u4E86\u6587\u4EF6\uFF0C\u63A5\u53D7\u56DE\u5230\u4FEE\u590D\u8F6E\uFF0C\u672C\u8F6E\u7EDD\u4E0D commit\uFF1B4) \u4E0D\u8981\u8DD1\u4F1A\u6539\u52A8\u4ED3\u5E93\u7684\u547D\u4EE4\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u5217\u51FA\u95EE\u9898\uFF08\u4E0D\u4FEE\u590D\uFF09\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002\u4EA4\u5377\uFF08commit\uFF09\u4E0E\u4E0B\u4E00\u9879\u7531\u94FE\u7ED3\u675F\u540E\u7684\u63A8\u8FDB/\u5B8C\u6210\u5904\u7406\uFF0C\u672C\u8F6E\u4E0D\u505A\u3002"
     },
     advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u5148\u52FE\u9009\u5F53\u524D\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u65E0\u6539\u52A8\u5219\u8DF3\u8FC7\uFF09\uFF1Agit status/diff \u2192 \u53EA stage \u672C checklist \u9879\u76F8\u5173\u8DEF\u5F84\uFF1B\u7981\u6B62 git add -A\u3001stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u4E00\u6B21 conventional commit\uFF1B\u7981\u6B62 push/--no-verify/amend/force\uFF08\u4EC5\u7528\u6237\u660E\u786E\u8981\u6C42\u624D\u53EF push\uFF09\u3002\u52FE\u9009\u540E\u5DF2\u5E72\u51C0\u5219\u8DF3\u8FC7 commit\u3002\u7136\u540E\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
     done: "\u5168\u90E8\u5B8C\u6210\u3002\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002\u7136\u540E\u505C\u6B62\u3002",
@@ -1114,11 +1114,11 @@ var StateStore = class _StateStore {
   )`;
   /**
    * SQL: pending kinds that must stay chain_pending=0 on redeliver.
-   * Matches recover/stuck (armChain=false) and terminal done/review_complete
-   * rows that intentionally leave the chain disarmed. Keep prefixes in sync
-   * with emit/updateReviewChain sites and `isRecoverOrStuckFollowupMessage`.
-   * Do NOT include Advance — E5 advance arms chain_pending=1; E0 soft advance
-   * shares the same prefix but is rarer than breaking E5 redelivery.
+   * Matches recover/stuck (armChain=false), terminal done/review_complete, and
+   * E5/E0 Advance (intentionally disarmed — next product edit arms via
+   * afterFileEdit → code_edited). Re-arming Advance on host-drop redelivery
+   * would force phantom E3 after the tip is answered. Keep prefixes in sync
+   * with emit/updateReviewChain sites and kindFromPendingMessage.
    */
   static SQL_PENDING_REDELIVER_KEEP_DISARMED = `(
     trim(pending_followup) GLOB 'Recover:*'
@@ -1131,6 +1131,8 @@ var StateStore = class _StateStore {
     OR trim(pending_followup) GLOB '\u5168\u90E8\u5B8C\u6210*'
     OR trim(pending_followup) GLOB 'Review complete*'
     OR trim(pending_followup) GLOB '\u81EA\u5BA1\u5B8C\u6210*'
+    OR trim(pending_followup) GLOB 'Advance*'
+    OR trim(pending_followup) GLOB '\u63A8\u8FDB*'
   )`;
   /**
    * SQL predicate: pending is absent or not a recover automation prompt.
@@ -2042,11 +2044,11 @@ function pendingRedeliverAllowed(lastRedeliverAt) {
 function defaultRender(kind, vars) {
   switch (kind) {
     case "review.fix":
-      return `Review fix round ${vars.round} (no hard cap; confirm needs ${vars.total} consecutive no-edit rounds). Code changed this turn. Defect-first self-review and fix now: 1) inspect full diff via git diff / git status; 2) check correctness, null/boundaries, concurrency, security, regression, missing tests; 3) CRITICAL/HIGH must fix, MEDIUM preferably; 4) run relevant tests; 5) briefly state what you reviewed and changed (or "self-review clean"). Do not commit/push. If no further code changes, next stop enters multi-lens confirm.`;
+      return `Review fix round ${vars.round} (no hard cap; confirm needs ${vars.total} consecutive no-edit rounds). Code changed this turn. Defect-first self-review and fix now: 1) when using git diff / git status, skip paths matching .autopilotignore, and skip untracked paths ignored by .gitignore; review only the remaining paths; 2) check correctness, null/boundaries, concurrency, security, regression, missing tests; 3) CRITICAL/HIGH must fix, MEDIUM preferably; 4) run relevant tests; 5) briefly state what you reviewed and changed (or "self-review clean"). Do not commit/push. If no further code changes, next stop enters multi-lens confirm.`;
     case "review.confirm":
-      return `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010${vars.lensTitle}\u3011 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; 4) if you edit, fix and run related tests; 5) close with: "Lens (${vars.lensTitle}): self-review clean" or a short list of fixes; if clean, do not edit further. Do not commit/push.`;
+      return `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010${vars.lensTitle}\u3011 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; 4) if you edit, fix and run related tests; 5) close with: "Lens (${vars.lensTitle}): self-review clean" or a short list of fixes; if clean, do not edit further. Do not commit/push.`;
     case "review.confirm_final":
-      return `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010${vars.lensTitle}\u3011 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens (${vars.lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.`;
+      return `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010${vars.lensTitle}\u3011 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens (${vars.lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.`;
     case "advance":
       return `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: ${vars.nextId ?? ""} \u2014 ${vars.nextTitle ?? ""}.`;
     case "done":
@@ -3360,8 +3362,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let following = null;
-      const path10 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path10.length > 0;
+      const path9 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path9.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed) {
@@ -3443,7 +3445,7 @@ var ReviewEngine = class {
           pending_followup: message,
           pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
           pending_redeliver_at: null,
-          chain_pending: 1
+          chain_pending: 0
         });
       } else {
         this.store.upsertSession({
@@ -4666,25 +4668,106 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
 }
 
 // ../core/src/code-edit-detector.ts
-import path9 from "node:path";
+import { spawnSync } from "node:child_process";
 
 // ../core/src/autopilot-ignore.ts
 import fs10 from "node:fs";
 import path8 from "node:path";
 var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigger self-review (gitignore syntax).
-# Use ! to force-include an exception (e.g. deliverable YAML under docs/).
+#
+# What this file is:
+#   - Controls whether an afterFileEdit counts as "product code" (opens fix/confirm).
+#   - Does NOT change \`git diff\` / \`git status\` output (that is \`.gitignore\`).
+#   - Review followups ask the agent to skip these paths when reading diffs (soft).
+#
+# Semantics:
+#   - Same glob rules as gitignore; last matching pattern wins.
+#   - Use \`!\` to force-include an exception (e.g. \`!docs/feed/**/*.yml\`).
+#   - Markdown (*.md / *.mdx) is NOT ignored by default \u2014 design docs can be reviewed.
+#   - \`docs/**\` is NOT ignored by default.
+#   - Also skip untracked paths ignored by \`.gitignore\` (tracked files still count).
+#
+# Later (not implemented): hard-filtered review-diff / path ledger \u2014 see
+# docs/autopilot/workflows/autopilot-executing.md (B2 strong).
+
+# Runtime / editor (prefer also listing these in .gitignore)
+.autopilot/**
+.cursor/**
 
 # Planning artifacts
 plans/**
 
-# Documentation tree (negate deliverables you want reviewed)
-docs/**
+# Common build / vendor trees
+node_modules/**
+dist/**
+build/**
+out/**
+target/**
+.target/**
+coverage/**
+.venv/**
+venv/**
+__pycache__/**
 
-# Prose / design markdown
-**/*.md
-**/*.mdx
+# Lockfiles / package manager noise
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+Cargo.lock
+poetry.lock
+composer.lock
+
+# Media / binary (do not trigger self-review)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+*.mp3
+*.mp4
+*.wav
+*.webm
+*.mov
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+*.pdf
+*.zip
+*.gz
+*.tgz
+*.7z
+*.rar
+*.jar
+*.class
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.wasm
+
+# Prose / data noise (markdown is intentionally allowed)
+*.txt
+*.html
+*.htm
+*.csv
+*.tsv
+*.log
+*.map
+*.min.js
+*.min.css
 `;
 var MAX_AUTOPILOT_IGNORE_BYTES = 1e6;
+var MAX_AUTOPILOT_IGNORE_LINE_CHARS = 4096;
+var MAX_AUTOPILOT_IGNORE_PATTERNS = 1e4;
 var ignoreCache = /* @__PURE__ */ new Map();
 function escapeRegexChar(ch) {
   return ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
@@ -4721,6 +4804,7 @@ function globBodyToRegex(glob) {
 function compilePattern(raw) {
   let line = raw.trim();
   if (!line || line.startsWith("#")) return null;
+  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
   let negated = false;
   if (line.startsWith("!")) {
     negated = true;
@@ -4730,6 +4814,7 @@ function compilePattern(raw) {
   const dirOnly = line.endsWith("/");
   if (dirOnly) line = line.slice(0, -1);
   if (!line) return null;
+  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
   let anchored = false;
   if (line.startsWith("/")) {
     anchored = true;
@@ -4758,7 +4843,9 @@ function parseAutopilotIgnore(text) {
   const patterns = [];
   for (const rawLine of text.split(/\r?\n/)) {
     const compiled = compilePattern(rawLine);
-    if (compiled) patterns.push(compiled);
+    if (!compiled) continue;
+    patterns.push(compiled);
+    if (patterns.length >= MAX_AUTOPILOT_IGNORE_PATTERNS) break;
   }
   return patterns;
 }
@@ -4825,152 +4912,32 @@ function loadAutopilotIgnorePatterns(projectRoot) {
 }
 
 // ../core/src/code-edit-detector.ts
-var CODE_EXTENSIONS = /* @__PURE__ */ new Set([
-  // JS / TS
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".mts",
-  ".cts",
-  // Web
-  ".vue",
-  ".svelte",
-  ".astro",
-  ".css",
-  ".scss",
-  ".sass",
-  ".less",
-  // Systems / native
-  ".c",
-  ".h",
-  ".cc",
-  ".cpp",
-  ".cxx",
-  ".hpp",
-  ".hh",
-  ".m",
-  ".mm",
-  ".rs",
-  ".go",
-  ".zig",
-  ".nim",
-  ".v",
-  // JVM / .NET
-  ".java",
-  ".kt",
-  ".kts",
-  ".scala",
-  ".groovy",
-  ".cs",
-  ".fs",
-  ".fsx",
-  ".vb",
-  // Mobile / UI
-  ".swift",
-  ".dart",
-  // Scripting
-  ".py",
-  ".rb",
-  ".php",
-  ".pl",
-  ".pm",
-  ".lua",
-  ".r",
-  ".jl",
-  ".ex",
-  ".exs",
-  ".erl",
-  ".hrl",
-  ".clj",
-  ".cljs",
-  ".cljc",
-  ".edn",
-  ".hs",
-  ".lhs",
-  ".ml",
-  ".mli",
-  ".elm",
-  // Shell
-  ".sh",
-  ".bash",
-  ".zsh",
-  ".ps1",
-  ".bat",
-  ".cmd",
-  // Data / IDL / infra
-  ".sql",
-  ".graphql",
-  ".gql",
-  ".proto",
-  ".tf",
-  ".toml",
-  ".yaml",
-  ".yml",
-  ".json",
-  ".jsonc",
-  ".xml",
-  ".prisma"
-]);
-var ROOT_CONFIG_NAMES = /* @__PURE__ */ new Set([
-  "package.json",
-  "package-lock.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb",
-  "pnpm-workspace.yaml",
-  "Cargo.toml",
-  "Cargo.lock",
-  "go.mod",
-  "go.sum",
-  "pom.xml",
-  "build.gradle",
-  "build.gradle.kts",
-  "settings.gradle",
-  "settings.gradle.kts",
-  "docker-compose.yml",
-  "docker-compose.yaml",
-  "Dockerfile",
-  "Makefile",
-  "makefile",
-  "CMakeLists.txt",
-  "pyproject.toml",
-  "Pipfile",
-  "requirements.txt",
-  "Gemfile",
-  "composer.json",
-  "tsconfig.json",
-  "jsconfig.json",
-  "deno.json",
-  "deno.jsonc"
-]);
-function isSafetyExcluded(relativePath) {
-  const lower = relativePath.toLowerCase();
-  if (lower.includes("/.autopilot/") || lower.startsWith(".autopilot/") || lower.includes("/.cursor/") || lower.startsWith(".cursor/")) {
-    return true;
+function isUntrackedGitIgnored(projectRoot, relativePath) {
+  if (!relativePath || relativePath.includes("\0")) return false;
+  try {
+    const r = spawnSync(
+      "git",
+      ["check-ignore", "-q", "--", relativePath],
+      {
+        cwd: projectRoot,
+        encoding: "utf8",
+        timeout: 5e3,
+        windowsHide: true,
+        shell: false
+      }
+    );
+    return r.status === 0;
+  } catch {
+    return false;
   }
-  if (/\/\.cursor\/hooks\/\./.test(lower) || /^\.cursor\/hooks\/\./.test(lower)) {
-    return true;
-  }
-  return false;
-}
-function isProductCandidate(relativePath) {
-  const base = path9.posix.basename(relativePath);
-  const ext = path9.posix.extname(relativePath).toLowerCase();
-  if (CODE_EXTENSIONS.has(ext)) return true;
-  if (ROOT_CONFIG_NAMES.has(base)) return true;
-  return false;
 }
 function isProductCodeEdit(filePath, opts) {
   const relative = toProjectRelativePath(filePath, opts?.projectRoot);
   if (!relative) return false;
-  if (isSafetyExcluded(relative)) return false;
-  if (!isProductCandidate(relative)) return false;
   const patterns = opts?.projectRoot?.trim() ? loadAutopilotIgnorePatterns(opts.projectRoot) : DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
   if (isAutopilotIgnoredPath(relative, patterns)) return false;
+  const root = opts?.projectRoot?.trim();
+  if (root && isUntrackedGitIgnored(root, relative)) return false;
   return true;
 }
 

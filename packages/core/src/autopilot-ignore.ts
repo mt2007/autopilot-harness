@@ -3,17 +3,96 @@ import path from "node:path";
 
 /** Default ignore rules when `.autopilotignore` is missing (matches init template). */
 export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT trigger self-review (gitignore syntax).
-# Use ! to force-include an exception (e.g. deliverable YAML under docs/).
+#
+# What this file is:
+#   - Controls whether an afterFileEdit counts as "product code" (opens fix/confirm).
+#   - Does NOT change \`git diff\` / \`git status\` output (that is \`.gitignore\`).
+#   - Review followups ask the agent to skip these paths when reading diffs (soft).
+#
+# Semantics:
+#   - Same glob rules as gitignore; last matching pattern wins.
+#   - Use \`!\` to force-include an exception (e.g. \`!docs/feed/**/*.yml\`).
+#   - Markdown (*.md / *.mdx) is NOT ignored by default — design docs can be reviewed.
+#   - \`docs/**\` is NOT ignored by default.
+#   - Also skip untracked paths ignored by \`.gitignore\` (tracked files still count).
+#
+# Later (not implemented): hard-filtered review-diff / path ledger — see
+# docs/autopilot/workflows/autopilot-executing.md (B2 strong).
+
+# Runtime / editor (prefer also listing these in .gitignore)
+.autopilot/**
+.cursor/**
 
 # Planning artifacts
 plans/**
 
-# Documentation tree (negate deliverables you want reviewed)
-docs/**
+# Common build / vendor trees
+node_modules/**
+dist/**
+build/**
+out/**
+target/**
+.target/**
+coverage/**
+.venv/**
+venv/**
+__pycache__/**
 
-# Prose / design markdown
-**/*.md
-**/*.mdx
+# Lockfiles / package manager noise
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+Cargo.lock
+poetry.lock
+composer.lock
+
+# Media / binary (do not trigger self-review)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+*.mp3
+*.mp4
+*.wav
+*.webm
+*.mov
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+*.pdf
+*.zip
+*.gz
+*.tgz
+*.7z
+*.rar
+*.jar
+*.class
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.wasm
+
+# Prose / data noise (markdown is intentionally allowed)
+*.txt
+*.html
+*.htm
+*.csv
+*.tsv
+*.log
+*.map
+*.min.js
+*.min.css
 `;
 
 export interface AutopilotIgnorePattern {
@@ -24,6 +103,10 @@ export interface AutopilotIgnorePattern {
 
 /** Max bytes for `.autopilotignore` (untrusted project file). */
 const MAX_AUTOPILOT_IGNORE_BYTES = 1_000_000;
+/** Per-line cap — untrusted globs compile to RegExp on the edit hot path. */
+const MAX_AUTOPILOT_IGNORE_LINE_CHARS = 4_096;
+/** Cap compiled patterns to bound match cost per afterFileEdit. */
+const MAX_AUTOPILOT_IGNORE_PATTERNS = 10_000;
 
 const ignoreCache = new Map<
   string,
@@ -68,6 +151,7 @@ function globBodyToRegex(glob: string): string {
 function compilePattern(raw: string): AutopilotIgnorePattern | null {
   let line = raw.trim();
   if (!line || line.startsWith("#")) return null;
+  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
 
   let negated = false;
   if (line.startsWith("!")) {
@@ -79,6 +163,7 @@ function compilePattern(raw: string): AutopilotIgnorePattern | null {
   const dirOnly = line.endsWith("/");
   if (dirOnly) line = line.slice(0, -1);
   if (!line) return null;
+  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
 
   let anchored = false;
   if (line.startsWith("/")) {
@@ -112,7 +197,9 @@ export function parseAutopilotIgnore(text: string): AutopilotIgnorePattern[] {
   const patterns: AutopilotIgnorePattern[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
     const compiled = compilePattern(rawLine);
-    if (compiled) patterns.push(compiled);
+    if (!compiled) continue;
+    patterns.push(compiled);
+    if (patterns.length >= MAX_AUTOPILOT_IGNORE_PATTERNS) break;
   }
   return patterns;
 }

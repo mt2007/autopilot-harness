@@ -728,11 +728,11 @@ export class StateStore {
 
   /**
    * SQL: pending kinds that must stay chain_pending=0 on redeliver.
-   * Matches recover/stuck (armChain=false) and terminal done/review_complete
-   * rows that intentionally leave the chain disarmed. Keep prefixes in sync
-   * with emit/updateReviewChain sites and `isRecoverOrStuckFollowupMessage`.
-   * Do NOT include Advance — E5 advance arms chain_pending=1; E0 soft advance
-   * shares the same prefix but is rarer than breaking E5 redelivery.
+   * Matches recover/stuck (armChain=false), terminal done/review_complete, and
+   * E5/E0 Advance (intentionally disarmed — next product edit arms via
+   * afterFileEdit → code_edited). Re-arming Advance on host-drop redelivery
+   * would force phantom E3 after the tip is answered. Keep prefixes in sync
+   * with emit/updateReviewChain sites and kindFromPendingMessage.
    */
   private static readonly SQL_PENDING_REDELIVER_KEEP_DISARMED = `(
     trim(pending_followup) GLOB 'Recover:*'
@@ -745,6 +745,8 @@ export class StateStore {
     OR trim(pending_followup) GLOB '全部完成*'
     OR trim(pending_followup) GLOB 'Review complete*'
     OR trim(pending_followup) GLOB '自审完成*'
+    OR trim(pending_followup) GLOB 'Advance*'
+    OR trim(pending_followup) GLOB '推进*'
   )`;
 
   /**
@@ -1023,8 +1025,9 @@ export class StateStore {
       const ts = nowIso();
       // Require live pending — after neutralize/clear, must not resurrect
       // chain_pending=1 (would E3 on RESUME with no undelivered message).
-      // Recover/stuck and terminal done/review_complete must stay disarmed;
-      // arming them here would open a phantom confirm after the tip is answered.
+      // Recover/stuck, terminal done/review_complete, and Advance must stay
+      // disarmed; arming them here would open a phantom confirm after the tip
+      // is answered.
       this.db
         .prepare(
           `UPDATE review_chains SET

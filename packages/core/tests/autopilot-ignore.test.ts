@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clearAutopilotIgnoreCache,
   DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+  DEFAULT_AUTOPILOT_IGNORE_TEXT,
   isAutopilotIgnoredPath,
   loadAutopilotIgnorePatterns,
   parseAutopilotIgnore,
@@ -13,6 +15,13 @@ import { isProductCodeEdit } from "../src/code-edit-detector.js";
 
 function tmpRoot(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "autopilot-ignore-"));
+}
+
+function patternLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith("#"));
 }
 
 afterEach(() => {
@@ -31,18 +40,61 @@ describe("parseAutopilotIgnore", () => {
     expect(patterns).toHaveLength(2);
     expect(patterns[1]?.negated).toBe(true);
   });
+
+  it("drops oversized pattern lines (untrusted ReDoS bound)", () => {
+    const huge = `src/${"a".repeat(5_000)}.ts`;
+    const patterns = parseAutopilotIgnore(`${huge}\nplans/**\n`);
+    expect(patterns).toHaveLength(1);
+    expect(isAutopilotIgnoredPath("plans/x.md", patterns)).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(`src/${"a".repeat(5_000)}.ts`, patterns),
+    ).toBe(false);
+  });
+
+  it("caps compiled pattern count", () => {
+    const lines = Array.from({ length: 10_001 }, (_, i) => `p${i}/**`).join(
+      "\n",
+    );
+    expect(parseAutopilotIgnore(lines)).toHaveLength(10_000);
+  });
+
+  it("DEFAULT pattern lines match packages/templates/.autopilotignore", () => {
+    const templatePath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../templates/.autopilotignore",
+    );
+    const template = fs.readFileSync(templatePath, "utf8");
+    expect(patternLines(DEFAULT_AUTOPILOT_IGNORE_TEXT)).toEqual(
+      patternLines(template),
+    );
+  });
 });
 
 describe("isAutopilotIgnoredPath", () => {
-  it("matches plans/** and docs/**", () => {
+  it("matches plans/** and runtime dirs; docs/md not ignored by default", () => {
     expect(
       isAutopilotIgnoredPath("plans/foo/checklist.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(true);
     expect(
-      isAutopilotIgnoredPath("docs/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+      isAutopilotIgnoredPath(".autopilot/config.yml", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(true);
     expect(
+      isAutopilotIgnoredPath(".cursor/hooks.json", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath("docs/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(false);
+    expect(
       isAutopilotIgnoredPath("docs/feed/agent.yml", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(false);
+    expect(
+      isAutopilotIgnoredPath("src/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(false);
+    expect(
+      isAutopilotIgnoredPath("assets/logo.png", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath("target/release/foo", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(true);
   });
 
@@ -50,12 +102,6 @@ describe("isAutopilotIgnoredPath", () => {
     const patterns = parseAutopilotIgnore(`docs/**\n!docs/feed/**/*.yml\n`);
     expect(isAutopilotIgnoredPath("docs/other/x.yml", patterns)).toBe(true);
     expect(isAutopilotIgnoredPath("docs/feed/agent.yml", patterns)).toBe(false);
-  });
-
-  it("matches **/*.md anywhere", () => {
-    expect(
-      isAutopilotIgnoredPath("src/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
-    ).toBe(true);
   });
 });
 
@@ -81,22 +127,26 @@ describe("loadAutopilotIgnorePatterns", () => {
 });
 
 describe("isProductCodeEdit + autopilotignore", () => {
-  it("keeps safety denylist immutable", () => {
+  it("excludes .autopilot/.cursor via default ignore (overridable)", () => {
+    expect(isProductCodeEdit(".autopilot/config.yml")).toBe(false);
+    expect(isProductCodeEdit(".cursor/hooks.json")).toBe(false);
+
     const root = tmpRoot();
-    fs.writeFileSync(path.join(root, ".autopilotignore"), "!\n", "utf8");
+    // Empty ignore file → no patterns → runtime paths count as product.
+    fs.writeFileSync(path.join(root, ".autopilotignore"), "\n", "utf8");
     expect(
       isProductCodeEdit(".autopilot/config.yml", { projectRoot: root }),
-    ).toBe(false);
-    expect(
-      isProductCodeEdit(".cursor/hooks.json", { projectRoot: root }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("excludes docs yml by default; honors ! exception", () => {
-    const root = tmpRoot();
-    expect(isProductCodeEdit("docs/feed/agent.yml")).toBe(false);
+  it("allows docs/md by default; honors docs/** + ! exception", () => {
+    expect(isProductCodeEdit("docs/feed/agent.yml")).toBe(true);
+    expect(isProductCodeEdit("docs/design.md")).toBe(true);
     expect(isProductCodeEdit("services/config.yaml")).toBe(true);
+    expect(isProductCodeEdit("readme.md")).toBe(true);
+    expect(isProductCodeEdit("logo.png")).toBe(false);
 
+    const root = tmpRoot();
     fs.writeFileSync(
       path.join(root, ".autopilotignore"),
       `docs/**\n!docs/feed/**/*.yml\n`,
@@ -133,17 +183,17 @@ describe("isProductCodeEdit + autopilotignore", () => {
 
   it("falls back to defaults for symlink or oversized ignore file", () => {
     const root = tmpRoot();
-    fs.mkdirSync(path.join(root, "docs", "feed"), { recursive: true });
+    fs.mkdirSync(path.join(root, "plans", "t"), { recursive: true });
     const ignorePath = path.join(root, ".autopilotignore");
     fs.symlinkSync("/etc/hosts", ignorePath);
     expect(
-      isProductCodeEdit("docs/feed/agent.yml", { projectRoot: root }),
+      isProductCodeEdit("plans/t/checklist.md", { projectRoot: root }),
     ).toBe(false);
     fs.unlinkSync(ignorePath);
     fs.writeFileSync(ignorePath, "x".repeat(1_000_001), "utf8");
     clearAutopilotIgnoreCache();
     expect(
-      isProductCodeEdit("docs/feed/agent.yml", { projectRoot: root }),
+      isProductCodeEdit("plans/t/checklist.md", { projectRoot: root }),
     ).toBe(false);
   });
 

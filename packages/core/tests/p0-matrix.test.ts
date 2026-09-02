@@ -238,12 +238,14 @@ describe("F-VR verify-report", () => {
 describe("F-CED code-edit-detector", () => {
   it("excludes plans/docs/md/autopilot; includes .ts", () => {
     expect(isProductCodeEdit("plans/foo/checklist.md")).toBe(false);
-    expect(isProductCodeEdit("docs/readme.md")).toBe(false);
+    expect(isProductCodeEdit("docs/readme.md")).toBe(true);
     expect(isProductCodeEdit(".autopilot/config.yml")).toBe(false);
     expect(isProductCodeEdit(".cursor/hooks.json")).toBe(false);
-    expect(isProductCodeEdit("README.md")).toBe(false);
+    expect(isProductCodeEdit("README.md")).toBe(true);
     expect(isProductCodeEdit("src/index.ts")).toBe(true);
     expect(isProductCodeEdit("package.json")).toBe(true);
+    expect(isProductCodeEdit("logo.png")).toBe(false);
+    expect(isProductCodeEdit("notes.txt")).toBe(false);
   });
 
   it("treats common non-JS languages as product code", () => {

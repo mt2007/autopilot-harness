@@ -101,7 +101,7 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
       return (
         `Review fix round ${vars.round} (no hard cap; confirm needs ${vars.total} consecutive no-edit rounds). ` +
         `Code changed this turn. Defect-first self-review and fix now: ` +
-        `1) inspect full diff via git diff / git status; ` +
+        `1) when using git diff / git status, skip paths matching .autopilotignore, and skip untracked paths ignored by .gitignore; review only the remaining paths; ` +
         `2) check correctness, null/boundaries, concurrency, security, regression, missing tests; ` +
         `3) CRITICAL/HIGH must fix, MEDIUM preferably; ` +
         `4) run relevant tests; ` +
@@ -113,7 +113,7 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
         `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). ` +
         `Lens 【${vars.lensTitle}】 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} ` +
         `Previous turn had no further code edits. Recheck under this lens only: ` +
-        `1) git diff / git status — no new edits vs prior turn (or only already-reviewed edits); ` +
+        `1) git diff / git status — no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; ` +
         `2) dig into this lens only; ban vague "fully rechecked, all good"; ` +
         `3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; ` +
         `4) if you edit, fix and run related tests; ` +
@@ -125,7 +125,7 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
         `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). ` +
         `Lens 【${vars.lensTitle}】 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} ` +
         `Previous turn had no further code edits. Recheck under this lens only: ` +
-        `1) git diff / git status — no new edits vs prior turn (or only already-reviewed edits); ` +
+        `1) git diff / git status — no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; ` +
         `2) dig into this lens only; ban vague "fully rechecked, all good"; ` +
         `3) read-only: record CRITICAL/HIGH/missing tests — do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; ` +
         `4) do not run commands that mutate the repo; ` +
@@ -1361,7 +1361,7 @@ export class ReviewEngine {
       this.disarmE5NoCode(session.conversation_id);
       return null;
     }
-    // E5b advance sets chain_pending=1; clear for consecutive E0 (fail→fixed→pass).
+    // E5b advance keeps chain_pending=0; clear stray pending if any (fail→fixed→pass).
     if (action.kind === "advance") {
       const cid = session.conversation_id;
       try {
@@ -1487,7 +1487,7 @@ export class ReviewEngine {
           idle_stop_count: 0,
           last_error: null,
         });
-        // chain_pending stays 0 — unlike E5b after confirm. Soft/verified E0
+        // chain_pending stays 0 (same as E5b advance). Soft/verified E0
         // advance has no product diff to confirm; leaving pending=1 would force
         // E3 on the next no-code item and skip E0 soft evidence.
         this.store.updateReviewChain(cid, {
@@ -2032,12 +2032,15 @@ export class ReviewEngine {
           idle_stop_count: 0,
           last_error: null,
         });
+        // chain_pending=0 (same as E0 soft advance): product edits on the next
+        // item still arm via afterFileEdit → code_edited. Leaving pending=1
+        // forced E3 confirm on docs-only / ignore-only turns (phantom confirm).
         this.store.updateReviewChain(cid, {
           ...chainReset,
           pending_followup: message,
           pending_followup_at: new Date().toISOString(),
           pending_redeliver_at: null,
-          chain_pending: 1,
+          chain_pending: 0,
         });
       } else {
         this.store.upsertSession({

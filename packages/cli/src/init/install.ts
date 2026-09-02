@@ -318,24 +318,101 @@ function resolveAutopilotIgnoreTemplate(templatesRoot: string): string {
   return DEFAULT_AUTOPILOT_IGNORE_TEXT;
 }
 
-/** Write `.autopilotignore` when missing; never clobber an existing file. */
+/** Active or intentionally disabled pattern lines (trimmed), for merge dedupe. */
+function autopilotIgnoreOwnedPatterns(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const raw of text.split(/\r?\n/)) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) {
+      // "# *.png" / "#*.png" = user disabled that pattern — do not re-merge it.
+      const rest = trimmed.replace(/^#\s*/, "").trim();
+      if (rest && !/\s/.test(rest)) out.add(rest);
+      continue;
+    }
+    out.add(trimmed);
+  }
+  return out;
+}
+
+/** Template pattern lines to consider for merge (non-comment only). */
+function autopilotIgnorePatternLines(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Write `.autopilotignore` when missing; when present, append template pattern
+ * lines that are not already present or commented-out (never delete user lines).
+ */
 export function ensureAutopilotIgnore(
   projectRoot: string,
   templatesRoot: string,
 ): string | null {
   const dest = path.join(projectRoot, ".autopilotignore");
-  try {
-    assertNotSymlink(dest, ".autopilotignore");
-    fs.lstatSync(dest);
-    return null;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code !== "ENOENT") throw err;
-  }
-
   let contents = resolveAutopilotIgnoreTemplate(templatesRoot);
   if (!contents.endsWith("\n")) contents += "\n";
-  writeFileAtomic(dest, contents, projectRoot, ".autopilotignore");
+
+  let existing: string | null = null;
+  let existed = false;
+  try {
+    assertNotSymlink(dest, ".autopilotignore");
+    const st = fs.lstatSync(dest);
+    existed = true;
+    if (!st.isFile()) {
+      throw new Error(".autopilotignore exists and is not a regular file");
+    }
+    existing = readUntrustedUtf8File(
+      dest,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".autopilotignore",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (code === "ENOENT" && !existed) {
+      existing = null;
+    } else if (
+      existed ||
+      code === "ELOOP" ||
+      /is a symlink/i.test(msg)
+    ) {
+      // Present but unreadable/unsafe (incl. symlink before lstat) — never
+      // overwrite; skip merge. Runtime falls back to DEFAULT patterns.
+      return null;
+    } else {
+      throw err;
+    }
+  }
+
+  if (existing === null) {
+    writeFileAtomic(dest, contents, projectRoot, ".autopilotignore");
+    return ".autopilotignore";
+  }
+
+  const have = autopilotIgnoreOwnedPatterns(existing);
+  const missing = autopilotIgnorePatternLines(contents).filter(
+    (line) => !have.has(line),
+  );
+  if (missing.length === 0) return null;
+
+  let next = existing;
+  if (!next.endsWith("\n")) next += "\n";
+  next +=
+    "\n# --- merged from Autopilot defaults (upgrade/init) ---\n" +
+    missing.join("\n") +
+    "\n";
+  // Do not write a merge that exceeds the untrusted size cap — runtime would
+  // reject the file and fall back to DEFAULT, silently dropping user rules.
+  if (Buffer.byteLength(next, "utf8") > MAX_UNTRUSTED_TEXT_BYTES) {
+    return null;
+  }
+  writeFileAtomic(dest, next, projectRoot, ".autopilotignore");
   return ".autopilotignore";
 }
 

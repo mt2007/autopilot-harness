@@ -1,12 +1,91 @@
 # Autopilot — paths that do NOT trigger self-review (gitignore syntax).
-# Use ! to force-include an exception (e.g. deliverable YAML under docs/).
+#
+# What this file is:
+#   - Controls whether an afterFileEdit counts as "product code" (opens fix/confirm).
+#   - Does NOT change `git diff` / `git status` output (that is `.gitignore`).
+#   - Review followups ask the agent to skip these paths when reading diffs (soft).
+#
+# Semantics:
+#   - Same glob rules as gitignore; last matching pattern wins.
+#   - Use `!` to force-include an exception (e.g. `!docs/feed/**/*.yml`).
+#   - Markdown (*.md / *.mdx) is NOT ignored by default — design docs can be reviewed.
+#   - `docs/**` is NOT ignored by default.
+#   - Also skip untracked paths ignored by `.gitignore` (tracked files still count).
+#
+# Later (not implemented): hard-filtered review-diff / path ledger — see
+# docs/autopilot/workflows/autopilot-executing.md (B2 strong).
+
+# Runtime / editor (prefer also listing these in .gitignore)
+.autopilot/**
+.cursor/**
 
 # Planning artifacts
 plans/**
 
-# Documentation tree (negate deliverables you want reviewed)
-docs/**
+# Common build / vendor trees
+node_modules/**
+dist/**
+build/**
+out/**
+target/**
+.target/**
+coverage/**
+.venv/**
+venv/**
+__pycache__/**
 
-# Prose / design markdown
-**/*.md
-**/*.mdx
+# Lockfiles / package manager noise
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+Cargo.lock
+poetry.lock
+composer.lock
+
+# Media / binary (do not trigger self-review)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+*.mp3
+*.mp4
+*.wav
+*.webm
+*.mov
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+*.pdf
+*.zip
+*.gz
+*.tgz
+*.7z
+*.rar
+*.jar
+*.class
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.wasm
+
+# Prose / data noise (markdown is intentionally allowed)
+*.txt
+*.html
+*.htm
+*.csv
+*.tsv
+*.log
+*.map
+*.min.js
+*.min.css

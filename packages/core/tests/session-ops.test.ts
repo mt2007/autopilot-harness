@@ -780,7 +780,8 @@ describe("StateStore session ops", () => {
     store.touchPendingRedeliver(id);
     expect(store.getReviewChain(id)!.chain_pending).toBe(0);
 
-    // E5 advance must still arm so the next item stays in-chain.
+    // E5/E0 advance stays disarmed: product edits re-arm via afterFileEdit.
+    // Re-arming here would phantom-E3 after the Advance tip is answered.
     store.updateReviewChain(id, {
       pending_followup:
         "Advance checklist: confirm chain passed cleanly. Implement next: a — A.",
@@ -789,7 +790,16 @@ describe("StateStore session ops", () => {
       pending_redeliver_at: null,
     });
     store.touchPendingRedeliver(id);
-    expect(store.getReviewChain(id)!.chain_pending).toBe(1);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
+
+    store.updateReviewChain(id, {
+      pending_followup: "推进下一项：自审确认已干净通过。然后实现下一项：a — A。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+      pending_redeliver_at: null,
+    });
+    store.touchPendingRedeliver(id);
+    expect(store.getReviewChain(id)!.chain_pending).toBe(0);
     store.close();
   });
 });

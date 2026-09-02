@@ -14,16 +14,20 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 | Situation | Stop behavior |
 |-----------|----------------|
 | You edited product code this item | **fix → confirm →** then verify / advance |
-| No product-code diff (env, ops, paths listed in `.autopilotignore`) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done** |
+| No product-code diff (env, ops, paths listed in `.autopilotignore`, or untracked + `.gitignore`) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done** |
 | Required verify **fail** | `verify_fix` — fix env/report or code; if you edit product code next, fix chain runs first |
 
-Paths excluded from self-review live in **`.autopilotignore`** at the repo root (gitignore syntax; use `!` for exceptions). Immutable safety excludes (`.autopilot/`, `.cursor/`) stay in the harness. With no ignore file, built-in defaults match init template (`plans/**`, `docs/**`, `**/*.md`).
+**What counts as product code (trigger):** any edited path that is **not** matched by `.autopilotignore`, and is **not** an untracked path ignored by `.gitignore`. There is no hardcoded extension allowlist — configure exclusions in `.autopilotignore` (comments in that file explain defaults). Markdown is reviewable by default; `docs/**` is not blocked by default.
+
+**Agent review scope (B2 weak):** fix/confirm followups ask the agent to skip `.autopilotignore` hits and untracked `.gitignore` paths when reading `git diff` / `git status`. This is prompt guidance only (soft).
+
+**B2 strong (not implemented — future):** harness could emit a filtered diff command or a per-chain product-path ledger so review scope is hard-enforced without relying on the agent. Revisit if soft guidance is insufficient.
 
 ## Fix vs confirm
 
 | Mode | Behavior |
 |------|----------|
-| Fix round | Defect-first on the full diff; fix CRITICAL/HIGH; run relevant tests; **no commit** |
+| Fix round | Defect-first on the in-scope diff; fix CRITICAL/HIGH; run relevant tests; **no commit** |
 | Confirm rounds | Only the **injected lens**; CRITICAL/HIGH may fix (returns to fix); final lens is **read-only** |
 | Confirm 1–N | **Never commit** |
 
@@ -36,6 +40,8 @@ When followup is advance or done:
 3. **Then** start the next unchecked item (next turn is OK for large code).
 
 If you write next-item code before checking off, `itemId` / verify binding will be wrong.
+
+Advance leaves `chain_pending=0` so a docs-only / ignore-only next item does not open a phantom confirm chain; product edits still arm review via `afterFileEdit`.
 
 ## Hard rules
 

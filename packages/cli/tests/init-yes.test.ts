@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillDescription } from "@autopilot-harness/i18n";
-import { installInitYes, mergeHooksJson, preflightForceRefresh } from "../src/init/install.js";
+import {
+  ensureAutopilotIgnore,
+  installInitYes,
+  mergeHooksJson,
+  preflightForceRefresh,
+} from "../src/init/install.js";
 import { autopilotStopHasUnlimitedLoop } from "../src/init/hooks-merge.js";
+import { MAX_UNTRUSTED_TEXT_BYTES } from "../src/read-untrusted-file.js";
 import { runDoctor } from "../src/status-doctor.js";
 
 function tmpProject(): string {
@@ -193,7 +200,7 @@ describe("init --yes install", () => {
     );
     expect(fs.existsSync(path.join(root, ".autopilotignore"))).toBe(true);
     expect(fs.readFileSync(path.join(root, ".autopilotignore"), "utf8")).toMatch(
-      /plans\/\*\*/,
+      /\.autopilot\/\*\*/,
     );
     const pin = JSON.parse(
       fs.readFileSync(path.join(root, ".autopilot", "pin.json"), "utf8"),
@@ -637,5 +644,82 @@ describe("init --yes install", () => {
       "utf8",
     );
     expect(skill).toContain(skillDescription("zh-CN", "autopilot-on"));
+  });
+});
+
+describe("ensureAutopilotIgnore merge", () => {
+  let root = "";
+  afterEach(() => {
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const templatesRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../templates",
+  );
+
+  it("does not re-add patterns the user commented out", () => {
+    root = tmpProject();
+    fs.writeFileSync(
+      path.join(root, ".autopilotignore"),
+      "plans/**\n# *.png\n",
+      "utf8",
+    );
+    const rel = ensureAutopilotIgnore(root, templatesRoot);
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    expect(body).toMatch(/# \*\.png/);
+    // Active *.png must not appear as a non-comment merged line.
+    const activePng = body
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l === "*.png");
+    expect(activePng).toHaveLength(0);
+    expect(body).toMatch(/\.autopilot\/\*\*/);
+  });
+
+  it("skips merge when existing ignore is present but unreadable", () => {
+    root = tmpProject();
+    const dest = path.join(root, ".autopilotignore");
+    fs.writeFileSync(dest, "plans/**\n" + "x".repeat(2_000_000), "utf8");
+    const before = fs.readFileSync(dest, "utf8");
+    const rel = ensureAutopilotIgnore(root, templatesRoot);
+    expect(rel).toBeNull();
+    expect(fs.readFileSync(dest, "utf8")).toBe(before);
+  });
+
+  it("skips merge when existing ignore is a symlink (does not abort)", () => {
+    root = tmpProject();
+    const dest = path.join(root, ".autopilotignore");
+    const target = path.join(root, "ignore-target");
+    fs.writeFileSync(target, "plans/**\n", "utf8");
+    fs.symlinkSync(target, dest);
+    const rel = ensureAutopilotIgnore(root, templatesRoot);
+    expect(rel).toBeNull();
+    expect(fs.lstatSync(dest).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(target, "utf8")).toBe("plans/**\n");
+  });
+
+  it("skips merge when appending defaults would exceed the size cap", () => {
+    root = tmpProject();
+    const dest = path.join(root, ".autopilotignore");
+    // Pad with a comment (not an active glob) so parse would stay cheap if
+    // runtime ever loaded this fixture; stay just under the read cap so merge
+    // appendix would push past MAX and must be skipped.
+    const header = "custom-only/**\n#";
+    const fillerLen =
+      MAX_UNTRUSTED_TEXT_BYTES - Buffer.byteLength(header + "\n", "utf8") - 40;
+    const prefix = header + "y".repeat(fillerLen) + "\n";
+    fs.writeFileSync(dest, prefix, "utf8");
+    const before = fs.readFileSync(dest, "utf8");
+    expect(Buffer.byteLength(before, "utf8")).toBeLessThanOrEqual(
+      MAX_UNTRUSTED_TEXT_BYTES,
+    );
+    expect(Buffer.byteLength(before, "utf8")).toBeGreaterThan(
+      MAX_UNTRUSTED_TEXT_BYTES - 100,
+    );
+    const rel = ensureAutopilotIgnore(root, templatesRoot);
+    expect(rel).toBeNull();
+    expect(fs.readFileSync(dest, "utf8")).toBe(before);
   });
 });

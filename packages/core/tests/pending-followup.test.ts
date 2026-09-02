@@ -926,12 +926,13 @@ describe("pending followup + session round", () => {
     const chain = store.getReviewChain("c1")!;
     expect(chain.fix_round).toBe(0);
     expect(chain.confirm_left).toBeNull();
-    expect(chain.chain_pending).toBe(1);
+    expect(chain.chain_pending).toBe(0);
     expect(chain.pending_followup).toBe(out!.message);
     expect(chain.pending_followup).not.toContain("stale confirm");
 
-    // After E5 reset, confirm_left is null — a follow-up stop must not emit
-    // another advance (E3 may arm confirm for the next item instead).
+    // After E5 reset, confirm_left is null and chain_pending=0 — a follow-up
+    // stop must not emit another advance or phantom confirm (E0 without soft
+    // evidence stays null).
     const again = eng.handleStop({
       conversationId: "c1",
       status: "completed",
@@ -939,6 +940,65 @@ describe("pending followup + session round", () => {
     });
     expect(again?.kind).not.toBe("advance");
     expect(again?.kind).not.toBe("done");
+    expect(again?.kind).not.toBe("review.confirm");
+    expect(again?.kind).not.toBe("review.confirm_final");
+  });
+
+  it("E5 Advance host-drop redeliver keeps chain_pending=0 (no phantom E3)", () => {
+    const eng = engine();
+    const pending =
+      "Advance checklist: confirm chain passed cleanly. Implement next: b — Second.";
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      checklist_path: path.join(root, "plans", "t", "checklist.md"),
+      track_id: "t",
+    });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      fix_round: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      chain_pending: 0,
+      pending_followup: pending,
+      pending_followup_at: new Date().toISOString(),
+      pending_redeliver_at: null,
+    });
+    writeTranscript(transcript, [{ role: "assistant", text: "worked on prior item" }]);
+
+    const redelivered = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+      transcriptPath: transcript,
+    });
+    expect(redelivered?.meta?.redeliver).toBe(true);
+    expect(redelivered?.kind).toBe("advance");
+    expect(redelivered?.message).toBe(pending);
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+
+    // Delivered tips are user automation queries (not assistant text).
+    writeTranscript(transcript, [
+      { role: "assistant", text: "worked on prior item" },
+      { role: "user", text: `<user_query>\n${pending}\n</user_query>` },
+      { role: "assistant", text: "marked prior item and continuing" },
+    ]);
+    const after = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+      transcriptPath: transcript,
+    });
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+    expect(after?.kind).not.toBe("review.confirm");
+    expect(after?.kind).not.toBe("review.confirm_final");
+    expect(after?.meta?.redeliver).not.toBe(true);
   });
 
   it("E5 does not mark done when checklist is unreadable", () => {
