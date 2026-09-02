@@ -7,11 +7,15 @@ import {
   applyRun,
   applyTrackPick,
   ensureAmbientReviewSession,
+  effectiveReviewingItemId,
+  firstUnchecked,
   isHarnessFollowupMessage,
   isProductCodeEdit,
   isRecoverOrStuckFollowupMessage,
   isUserAbortText,
   loadProjectReviewConfig,
+  parseAdvanceNextItemId,
+  parseChecklist,
   parseTrigger,
   ReviewEngine,
   StateStore,
@@ -246,7 +250,27 @@ export function handleAfterFileEdit(
       cfg.reviewScope,
     );
   }
-  store.markCodeEdited(conversationId);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap: ReturnType<typeof parseChecklist> | null = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+      /* checklist unreadable — still arm code_edited */
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    // Live pending under lock; checklist snapshot is best-effort from outside.
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
 }
 
 export function handleStop(

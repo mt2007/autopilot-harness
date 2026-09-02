@@ -35,7 +35,7 @@ var en_default = {
       confirm: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) CRITICAL/HIGH under this lens must fix; MEDIUM preferably; 4) if you edit, fix and run related tests; 5) close with: "Lens ({lensTitle}): self-review clean" or a short list of fixes; if clean, do not edit further. Do not commit/push.',
       confirm_final: 'Review confirm {n}/{total} (session round {sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010{lensTitle}\u3011 (multi-lens confirm, not the same checklist again). {lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens ({lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.'
     },
-    advance: "Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: {nextId} \u2014 {nextTitle}.",
+    advance: "Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the completed current item {currentId} [x] in checklist.md (do not mark the next item yet). Never mark an item [x] while you are still implementing it \u2014 only this Advance/Done followup checks off the completed item. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: {nextId} \u2014 {nextTitle}.",
     done: "All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.",
     recover: "Recover: the previous turn ended with an error. Continue the current task.",
     recover_planning: "Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.",
@@ -110,7 +110,7 @@ var zh_CN_default = {
       confirm: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\u65F6\uFF0C\u540C\u6837\u8DF3\u8FC7\u547D\u4E2D .autopilotignore \u7684\u8DEF\u5F84\uFF0C\u4EE5\u53CA\u672A\u88AB Git \u8DDF\u8E2A\u4E14\u88AB .gitignore \u5FFD\u7565\u7684\u8DEF\u5F84\uFF1B\u53EA\u6839\u636E\u5269\u4F59\u8DEF\u5F84\u5224\u65AD\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u89D2\u5EA6\u82E5\u6709 CRITICAL/HIGH \u5FC5\u987B\u6539\uFF1BMEDIUM \u5C3D\u91CF\u6539\uFF1B4) \u6709\u6539\u52A8\u5219\u76F4\u63A5\u4FEE\u590D\u5E76\u8DD1\u76F8\u5173\u6D4B\u8BD5\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u7B80\u8FF0\u5DF2\u4FEE\u9879\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002",
       confirm_final: "\u81EA\u5BA1\u786E\u8BA4 {n}/{total}\uFF08\u4F1A\u8BDD\u7B2C {sessionRound} \u8F6E\uFF1B\u8FDE\u7EED\u65E0\u6539\u52A8\u786E\u8BA4\uFF0C\u8BA1\u5165\u4FEE\u590D\u8F6E\u8BA1\u6570\uFF09\u3002\u672C\u8F6E\u5BA1\u67E5\u89D2\u5EA6\uFF1A\u3010{lensTitle}\u3011\uFF08\u901A\u7528\u591A\u89D2\u5EA6\u786E\u8BA4\uFF0C\u975E\u540C\u4E00\u6E05\u5355\u590D\u8BFB\uFF09\u3002{lensFocus} \u4E0A\u4E00\u8F6E\u672A\u518D\u6539\u4EE3\u7801\u3002\u8BF7\u6309\u672C\u89D2\u5EA6\u590D\u6838\uFF1A1) \u7528 git diff / git status \u786E\u8BA4\u76F8\u5BF9\u4E0A\u4E00\u8F6E\u65E0\u65B0\u6539\u52A8\u6216\u4EC5\u6709\u5DF2\u5BA1\u6539\u52A8\u65F6\uFF0C\u540C\u6837\u8DF3\u8FC7\u547D\u4E2D .autopilotignore \u7684\u8DEF\u5F84\uFF0C\u4EE5\u53CA\u672A\u88AB Git \u8DDF\u8E2A\u4E14\u88AB .gitignore \u5FFD\u7565\u7684\u8DEF\u5F84\uFF1B\u53EA\u6839\u636E\u5269\u4F59\u8DEF\u5F84\u5224\u65AD\uFF1B2) \u53EA\u6DF1\u6316\u672C\u89D2\u5EA6\uFF1B\u7981\u6B62\u7528\u300C\u5168\u9762\u590D\u6838\u65E0\u95EE\u9898\u300D\u6577\u884D\uFF1B3) \u672C\u8F6E\u53EA\u8BFB\uFF1A\u53D1\u73B0 CRITICAL/HIGH/\u7F3A\u6D4B\u53EA\u8BB0\u5F55\uFF0C\u4E0D\u8981\u6539\u4EE3\u7801\u3001\u4E0D\u8981\u8865\u6D4B\u3001\u4E0D\u8981 commit\uFF1B\u82E5\u5DF2\u7ECF\u6539\u4E86\u6587\u4EF6\uFF0C\u63A5\u53D7\u56DE\u5230\u4FEE\u590D\u8F6E\uFF0C\u672C\u8F6E\u7EDD\u4E0D commit\uFF1B4) \u4E0D\u8981\u8DD1\u4F1A\u6539\u52A8\u4ED3\u5E93\u7684\u547D\u4EE4\uFF1B5) \u7ED3\u5C3E\u5199\uFF1A\u300C\u672C\u89D2\u5EA6\uFF08{lensTitle}\uFF09\uFF1A\u81EA\u5BA1\u65E0\u95EE\u9898\u300D\u6216\u5217\u51FA\u95EE\u9898\uFF08\u4E0D\u4FEE\u590D\uFF09\uFF1B\u65E0\u95EE\u9898\u5219\u4E0D\u8981\u518D\u6539\u4EE3\u7801\u3002\u4E0D\u8981 commit/push\u3002\u4EA4\u5377\uFF08commit\uFF09\u4E0E\u4E0B\u4E00\u9879\u7531\u94FE\u7ED3\u675F\u540E\u7684\u63A8\u8FDB/\u5B8C\u6210\u5904\u7406\uFF0C\u672C\u8F6E\u4E0D\u505A\u3002"
     },
-    advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u5148\u52FE\u9009\u5F53\u524D\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u65E0\u6539\u52A8\u5219\u8DF3\u8FC7\uFF09\uFF1Agit status/diff \u2192 \u53EA stage \u672C checklist \u9879\u76F8\u5173\u8DEF\u5F84\uFF1B\u7981\u6B62 git add -A\u3001stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u4E00\u6B21 conventional commit\uFF1B\u7981\u6B62 push/--no-verify/amend/force\uFF08\u4EC5\u7528\u6237\u660E\u786E\u8981\u6C42\u624D\u53EF push\uFF09\u3002\u52FE\u9009\u540E\u5DF2\u5E72\u51C0\u5219\u8DF3\u8FC7 commit\u3002\u7136\u540E\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
+    advance: "\u63A8\u8FDB\u4E0B\u4E00\u9879\uFF1A\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u5148\u52FE\u9009\u521A\u5B8C\u6210\u7684\u5F53\u524D\u9879 {currentId} [x]\uFF08\u4E0D\u8981\u52FE\u4E0B\u4E00\u9879\uFF09\u3002\u5B9E\u73B0\u8FC7\u7A0B\u4E2D\u4E0D\u8981\u63D0\u524D\u628A\u6B63\u5728\u505A\u7684\u9879\u52FE\u6210 [x]\uFF1B\u53EA\u6709\u672C\u6761\u63A8\u8FDB/\u5B8C\u6210\u6307\u4EE4\u624D\u52FE\u9009\u521A\u5B8C\u6210\u7684\u5F53\u524D\u9879\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u65E0\u6539\u52A8\u5219\u8DF3\u8FC7\uFF09\uFF1Agit status/diff \u2192 \u53EA stage \u672C checklist \u9879\u76F8\u5173\u8DEF\u5F84\uFF1B\u7981\u6B62 git add -A\u3001stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u4E00\u6B21 conventional commit\uFF1B\u7981\u6B62 push/--no-verify/amend/force\uFF08\u4EC5\u7528\u6237\u660E\u786E\u8981\u6C42\u624D\u53EF push\uFF09\u3002\u52FE\u9009\u540E\u5DF2\u5E72\u51C0\u5219\u8DF3\u8FC7 commit\u3002\u7136\u540E\u5B9E\u73B0\u4E0B\u4E00\u9879\uFF1A{nextId} \u2014 {nextTitle}\u3002",
     done: "\u5168\u90E8\u5B8C\u6210\u3002\u81EA\u5BA1\u786E\u8BA4\u5DF2\u5E72\u51C0\u901A\u8FC7\uFF08\u786E\u8BA4\u8F6E\u4E0D commit\uFF09\u3002\u52FE\u9009\u6700\u540E\u4E00\u9879 [x]\u3002\u82E5 working tree \u4ECD\u6709\u672C\u9879\u672A\u63D0\u4EA4\u6539\u52A8\uFF08\u542B checklist.md\uFF0C\u4E14 plans/ \u7EB3\u5165\u63D0\u4EA4\u65F6\u4E00\u5E76 stage\uFF09\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002\u7136\u540E\u505C\u6B62\u3002",
     recover: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u4EFB\u52A1\u3002",
     recover_planning: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u89C4\u5212\uFF0C\u4E0D\u8981 RUN \u6216\u5199\u4EA7\u54C1\u4EE3\u7801\u3002",
@@ -331,6 +331,58 @@ function secondUnchecked(checklist) {
   }
   return null;
 }
+function uncheckedAfter(checklist, afterItemId) {
+  const id = afterItemId.trim();
+  if (!id) return null;
+  let seen = false;
+  for (const item of checklist.items) {
+    if (!seen) {
+      if (item.id === id) seen = true;
+      continue;
+    }
+    if (!item.checked) return item;
+  }
+  return null;
+}
+function effectiveReviewingItemId(checklist, reviewingItemId) {
+  const rid = (reviewingItemId ?? "").trim();
+  if (!rid) return null;
+  const idx = checklist.items.findIndex((i) => i.id === rid);
+  if (idx < 0) return null;
+  for (let i = 0; i < idx; i++) {
+    if (!checklist.items[i].checked) return null;
+  }
+  return rid;
+}
+function resolveAdvanceTargets(checklist, reviewingItemId) {
+  const unchecked = countUnchecked(checklist);
+  const rid = effectiveReviewingItemId(checklist, reviewingItemId);
+  if (rid) {
+    const current = checklist.items.find((i) => i.id === rid) ?? null;
+    if (current) {
+      return {
+        current,
+        next: uncheckedAfter(checklist, rid),
+        unchecked
+      };
+    }
+  }
+  return {
+    current: firstUnchecked(checklist),
+    next: secondUnchecked(checklist),
+    unchecked
+  };
+}
+function parseAdvanceNextItemId(pendingFollowup) {
+  const text = (pendingFollowup ?? "").trim();
+  if (!text || text.includes("\0")) return null;
+  const m = text.match(
+    /(?:Then implement next|然后实现下一项)\s*[:：]\s*([A-Za-z0-9][\w.-]*)/
+  );
+  const id = m?.[1]?.trim() ?? "";
+  if (!id || id.includes("\0")) return null;
+  return id;
+}
 
 // ../core/src/verify-report.ts
 import fs3 from "node:fs";
@@ -491,7 +543,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 var __dirname = dirname(fileURLToPath(import.meta.url));
 function getLatestSchemaVersion() {
-  return 2;
+  return 3;
 }
 function migrationDirs() {
   return [
@@ -712,6 +764,7 @@ var StateStore = class _StateStore {
     if (!row) return null;
     return {
       ...row,
+      reviewing_item_id: row.reviewing_item_id ?? null,
       pending_followup: row.pending_followup ?? null,
       pending_followup_at: row.pending_followup_at ?? null,
       pending_redeliver_at: row.pending_redeliver_at ?? null
@@ -808,6 +861,7 @@ var StateStore = class _StateStore {
         chain_pending: 0,
         code_edited: 0,
         item_confirm_complete: 0,
+        reviewing_item_id: null,
         pending_followup: null,
         pending_followup_at: null,
         pending_redeliver_at: null
@@ -949,10 +1003,13 @@ var StateStore = class _StateStore {
       merged.pending_redeliver_at = null;
       merged.chain_pending = 0;
     }
+    if (typeof merged.reviewing_item_id === "string" && (!merged.reviewing_item_id.trim() || merged.reviewing_item_id.includes("\0"))) {
+      merged.reviewing_item_id = null;
+    }
     const result = this.db.prepare(
       `UPDATE review_chains SET
           fix_round = ?, confirm_left = ?, chain_pending = ?, code_edited = ?,
-          item_confirm_complete = ?,
+          item_confirm_complete = ?, reviewing_item_id = ?,
           pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = ?,
           updated_at = ?
          WHERE conversation_id = ?
@@ -963,6 +1020,7 @@ var StateStore = class _StateStore {
       merged.chain_pending,
       merged.code_edited,
       merged.item_confirm_complete,
+      merged.reviewing_item_id,
       merged.pending_followup,
       merged.pending_followup_at,
       merged.pending_redeliver_at,
@@ -979,14 +1037,46 @@ var StateStore = class _StateStore {
     }
     return updated;
   }
-  markCodeEdited(conversationId) {
+  /**
+   * E1: product edit → code_edited=1.
+   * Sticky `reviewing_item_id`: set only when empty so a premature checklist `[x]`
+   * cannot retarget the item under review mid-chain.
+   *
+   * When `reviewingItemId` is a function, it runs **inside** the write lock against
+   * the live chain row so concurrent advance/neutralize cannot TOCTOU a stale
+   * pending/firstUnchecked snapshot from outside the lock.
+   */
+  markCodeEdited(conversationId, reviewingItemId) {
     this.withSessionChainWrite(conversationId, () => {
       this.ensureReviewChain(conversationId);
+      let raw = "";
+      if (typeof reviewingItemId === "function") {
+        try {
+          const live = this.getReviewChain(conversationId);
+          if (live) {
+            const resolved = reviewingItemId(live);
+            raw = typeof resolved === "string" ? resolved.trim() : "";
+          }
+        } catch {
+          raw = "";
+        }
+      } else if (typeof reviewingItemId === "string") {
+        raw = reviewingItemId.trim();
+      }
+      const itemId = raw && !raw.includes("\0") ? raw : "";
       this.db.prepare(
-        `UPDATE review_chains SET code_edited = 1, updated_at = ?
+        `UPDATE review_chains SET
+             code_edited = 1,
+             reviewing_item_id = CASE
+               WHEN (reviewing_item_id IS NULL OR trim(reviewing_item_id) = '')
+                    AND ? != ''
+               THEN ?
+               ELSE reviewing_item_id
+             END,
+             updated_at = ?
            WHERE conversation_id = ?
              AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`
-      ).run(nowIso(), conversationId, conversationId);
+      ).run(itemId, itemId, nowIso(), conversationId, conversationId);
     });
   }
   /**
@@ -1242,6 +1332,7 @@ var StateStore = class _StateStore {
           chain_pending = 0,
           item_confirm_complete = 0,
           fix_round = 0,
+          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,
@@ -1264,6 +1355,7 @@ var StateStore = class _StateStore {
           chain_pending = 0,
           item_confirm_complete = 0,
           fix_round = 0,
+          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,
@@ -1288,6 +1380,7 @@ var StateStore = class _StateStore {
           item_confirm_complete = ?,
           chain_pending = ?,
           code_edited = ?,
+          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,
@@ -2050,7 +2143,7 @@ function defaultRender(kind, vars) {
     case "review.confirm_final":
       return `Review confirm ${vars.n}/${vars.total} (session round ${vars.sessionRound}; consecutive no-edit confirms, counted on the fix-round counter). Lens \u3010${vars.lensTitle}\u3011 (multi-lens confirm, not the same checklist again). ${vars.lensFocus} Previous turn had no further code edits. Recheck under this lens only: 1) git diff / git status \u2014 no new edits vs prior turn (or only already-reviewed edits); likewise skip paths matching .autopilotignore and untracked paths ignored by .gitignore; judge only from remaining paths; 2) dig into this lens only; ban vague "fully rechecked, all good"; 3) read-only: record CRITICAL/HIGH/missing tests \u2014 do not change code, add tests, or commit; if you already edited, accept returning to a fix round; never commit this turn; 4) do not run commands that mutate the repo; 5) close with: "Lens (${vars.lensTitle}): self-review clean" or list issues (no fixes); if clean, do not edit further. Do not commit/push. Handoff (commit) and next checklist item are handled by Advance/Done after the chain \u2014 not this turn.`;
     case "advance":
-      return `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: ${vars.nextId ?? ""} \u2014 ${vars.nextTitle ?? ""}.`;
+      return `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). First mark the completed current item ${vars.currentId ?? ""} [x] in checklist.md (do not mark the next item yet). Never mark an item [x] while you are still implementing it \u2014 only this Advance/Done followup checks off the completed item. Then, if the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only: git status/diff \u2192 stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. If already clean after marking, skip commit. Then implement next: ${vars.nextId ?? ""} \u2014 ${vars.nextTitle ?? ""}.`;
     case "done":
       return `All checklist items done. Confirm chain passed (confirm rounds do not commit). Mark the last item [x]. If the working tree still has uncommitted changes for this item (including checklist.md when plans/ is committed), local conventional commit only (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.`;
     case "recover":
@@ -2105,15 +2198,67 @@ var ReviewEngine = class {
       return {
         unchecked: countUnchecked(cl),
         currentItem: firstUnchecked(cl),
-        followingItem: secondUnchecked(cl)
+        followingItem: secondUnchecked(cl),
+        checklist: cl
       };
     } catch {
       return null;
     }
   }
-  /** E1: afterFileEdit product code → code_edited=1 */
+  reviewChainResetFields() {
+    return {
+      confirm_left: null,
+      fix_round: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      reviewing_item_id: null
+    };
+  }
+  renderAdvanceOrDone(targets) {
+    const isAdvance = targets.next != null;
+    const message = isAdvance ? this.render("advance", {
+      currentId: targets.current?.id ?? "",
+      currentTitle: targets.current?.title ?? "",
+      nextId: targets.next?.id ?? "",
+      nextTitle: targets.next?.title ?? ""
+    }) : this.render("done", {});
+    return {
+      kind: isAdvance ? "advance" : "done",
+      message,
+      loop: true
+    };
+  }
+  /** Resolve sticky reviewing id from chain, or fall back to hint / firstUnchecked. */
+  resolveReviewingItemId(chain, checklist, hintItemId) {
+    const sticky = chain?.reviewing_item_id?.trim() || "";
+    if (sticky) {
+      if (!checklist) return sticky;
+      const usable = effectiveReviewingItemId(checklist, sticky);
+      if (usable) return usable;
+    }
+    const hint = (hintItemId ?? "").trim();
+    if (hint) {
+      if (!checklist) return hint;
+      const usableHint = effectiveReviewingItemId(checklist, hint);
+      if (usableHint) return usableHint;
+    }
+    if (!checklist) return null;
+    return firstUnchecked(checklist)?.id ?? null;
+  }
+  /** E1: afterFileEdit product code → code_edited=1 (+ sticky reviewing_item_id). */
   onCodeEdited(conversationId) {
-    this.store.markCodeEdited(conversationId);
+    const session = this.store.getSession(conversationId);
+    const parsed = session ? this.parseSessionChecklist(session) : null;
+    this.store.markCodeEdited(conversationId, (chain) => {
+      const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+      if (parsed?.checklist) {
+        if (fromPending && effectiveReviewingItemId(parsed.checklist, fromPending)) {
+          return fromPending;
+        }
+        return parsed.currentItem?.id ?? null;
+      }
+      return fromPending;
+    });
   }
   handleStop(input) {
     if (!this.store.isConversationIdOk(input.conversationId)) {
@@ -2881,7 +3026,10 @@ var ReviewEngine = class {
       return null;
     }
     const parsed = this.parseSessionChecklist(session);
-    if (!parsed?.currentItem) return null;
+    if (!parsed?.checklist) return null;
+    const reviewingId = this.resolveReviewingItemId(chain, parsed.checklist);
+    const currentItem = reviewingId && parsed.checklist.items.find((i) => i.id === reviewingId) || parsed.currentItem;
+    if (!currentItem) return null;
     const trustRoot = this.trustedProjectRoot();
     const reportPath = this.config.verifyReportPath ?? defaultVerifyReportPath(trustRoot ?? "");
     const checklistPath = session.checklist_path || "";
@@ -2889,17 +3037,17 @@ var ReviewEngine = class {
       enabled: this.config.verifyEnabled,
       commands: this.config.verifyCommands,
       reportPath,
-      currentItem: parsed.currentItem,
+      currentItem,
       checklistPath,
       projectRoot: trustRoot ?? void 0
     });
     if (evalResult.outcome === "skip") {
-      return this.e0DirectAdvance(session, reportPath, parsed.currentItem.id, {
+      return this.e0DirectAdvance(session, reportPath, currentItem.id, {
         kind: "soft"
       });
     }
     if (evalResult.outcome === "pass") {
-      return this.e0DirectAdvance(session, reportPath, parsed.currentItem.id, {
+      return this.e0DirectAdvance(session, reportPath, currentItem.id, {
         kind: "verified",
         checklistPath
       });
@@ -2952,13 +3100,22 @@ var ReviewEngine = class {
         return { commit: false, value: null };
       }
       const refreshed = this.parseSessionChecklist(lockedSession);
-      if (!refreshed?.currentItem || refreshed.currentItem.id !== expectedItemId) {
+      if (!refreshed?.checklist) {
+        return { commit: false, value: null };
+      }
+      const reviewingId = this.resolveReviewingItemId(
+        fresh,
+        refreshed.checklist,
+        expectedItemId
+      );
+      const targets = resolveAdvanceTargets(refreshed.checklist, reviewingId);
+      if (!targets.current || targets.current.id !== expectedItemId) {
         return { commit: false, value: null };
       }
       if (evidence.kind === "soft") {
         if (!hasNoCodeCompletionEvidence({
           reportPath,
-          currentItemId: refreshed.currentItem.id,
+          currentItemId: targets.current.id,
           projectRoot: trustRoot ?? void 0
         })) {
           return { commit: false, value: null };
@@ -2969,7 +3126,7 @@ var ReviewEngine = class {
           enabled: this.config.verifyEnabled,
           commands: this.config.verifyCommands,
           reportPath,
-          currentItem: refreshed.currentItem,
+          currentItem: targets.current,
           checklistPath: lockedChecklistPath,
           projectRoot: trustRoot ?? void 0
         });
@@ -2977,30 +3134,12 @@ var ReviewEngine = class {
           return { commit: false, value: null };
         }
       }
-      const unchecked = refreshed.unchecked;
-      const following = refreshed.followingItem;
-      if (unchecked <= 0) {
+      if (targets.unchecked <= 0 && !targets.current) {
         return { commit: false, value: null };
       }
-      const isAdvance = unchecked > 1;
-      if (isAdvance && !following) {
-        return { commit: false, value: null };
-      }
-      const message = isAdvance ? this.render("advance", {
-        nextId: following?.id ?? "",
-        nextTitle: following?.title ?? ""
-      }) : this.render("done", {});
-      const out = {
-        kind: isAdvance ? "advance" : "done",
-        message,
-        loop: true
-      };
-      const chainReset = {
-        confirm_left: null,
-        fix_round: 0,
-        code_edited: 0,
-        item_confirm_complete: 0
-      };
+      const out = this.renderAdvanceOrDone(targets);
+      const isAdvance = out.kind === "advance";
+      const chainReset = this.reviewChainResetFields();
       if (isAdvance) {
         this.store.upsertSession({
           conversation_id: cid2,
@@ -3012,7 +3151,10 @@ var ReviewEngine = class {
         });
         this.store.updateReviewChain(cid2, {
           ...chainReset,
-          pending_followup: message,
+          // Stick the *next* item immediately so premature `[x]` before the
+          // first product edit cannot retarget via firstUnchecked.
+          reviewing_item_id: targets.next?.id ?? null,
+          pending_followup: out.message,
           pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0
@@ -3030,7 +3172,7 @@ var ReviewEngine = class {
         });
         this.store.updateReviewChain(cid2, {
           ...chainReset,
-          pending_followup: message,
+          pending_followup: out.message,
           pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0
@@ -3216,7 +3358,7 @@ var ReviewEngine = class {
     }
     return action;
   }
-  e5Gate(session, _chain) {
+  e5Gate(session, chain) {
     if (this.config.reviewScope === "project" && !isChecklistExecuting(session)) {
       return this.e5bAdvance(session, {
         unchecked: 0,
@@ -3227,18 +3369,21 @@ var ReviewEngine = class {
     const checklistPath = session.checklist_path;
     let currentItem = null;
     let unchecked = 0;
+    let checklistMd = null;
     if (checklistPath) {
       const parsed = this.parseSessionChecklist(session);
       if (!parsed) {
         return null;
       }
       unchecked = parsed.unchecked;
-      currentItem = parsed.currentItem;
+      checklistMd = parsed.checklist;
+      const reviewingId = this.resolveReviewingItemId(chain, checklistMd);
+      currentItem = reviewingId && checklistMd.items.find((i) => i.id === reviewingId) || parsed.currentItem;
     }
     if (unchecked === 0) {
       return this.e5bAdvance(session, {
         unchecked: 0,
-        next: null,
+        next: currentItem,
         verifiedPass: false
       });
     }
@@ -3278,7 +3423,11 @@ var ReviewEngine = class {
           if (locked.unchecked === 0) {
             return { commit: false, value: null };
           }
-          const nextItem = locked.currentItem;
+          const reviewingId = this.resolveReviewingItemId(
+            fresh,
+            locked.checklist
+          );
+          const nextItem = reviewingId && locked.checklist?.items.find((i) => i.id === reviewingId) || locked.currentItem;
           if (!nextItem) {
             return { commit: false, value: null };
           }
@@ -3343,12 +3492,7 @@ var ReviewEngine = class {
   }
   e5bAdvance(session, checklist) {
     const cid2 = session.conversation_id;
-    const chainReset = {
-      confirm_left: null,
-      fix_round: 0,
-      code_edited: 0,
-      item_confirm_complete: 0
-    };
+    const chainReset = this.reviewChainResetFields();
     return this.store.exclusiveWrite(() => {
       const fresh = this.store.getReviewChain(cid2);
       const atE5 = !!fresh && (fresh.confirm_left === 0 || fresh.item_confirm_complete === 1 && fresh.confirm_left === null);
@@ -3361,21 +3505,26 @@ var ReviewEngine = class {
       }
       let unchecked = checklist.unchecked;
       let next = checklist.next;
-      let following = null;
+      let targets = null;
       const path9 = lockedSession.checklist_path?.trim() ?? "";
       const onChecklistPath = isChecklistExecuting(lockedSession) && path9.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
-        if (!refreshed) {
+        if (!refreshed?.checklist) {
           return { commit: false, value: null };
         }
-        unchecked = refreshed.unchecked;
-        next = refreshed.currentItem;
-        following = refreshed.followingItem;
+        const reviewingId = this.resolveReviewingItemId(
+          fresh,
+          refreshed.checklist,
+          checklist.next?.id
+        );
+        targets = resolveAdvanceTargets(refreshed.checklist, reviewingId);
+        unchecked = targets.unchecked;
+        next = targets.current;
       } else {
         unchecked = 0;
         next = null;
-        following = null;
+        targets = null;
       }
       if (!onChecklistPath) {
         if (isChecklistExecuting(lockedSession)) {
@@ -3414,23 +3563,19 @@ var ReviewEngine = class {
         if (foresawDone && unchecked > 0) {
           return { commit: false, value: null };
         }
-        if (checklist.verifiedPass && checklist.next != null && (unchecked === 0 || next?.id !== checklist.next.id)) {
+        const foresawId = checklist.next?.id;
+        const activeId = targets?.current?.id ?? next?.id;
+        if (checklist.verifiedPass && foresawId && activeId !== foresawId) {
           return { commit: false, value: null };
         }
       }
-      const isAdvance = unchecked > 1;
-      if (isAdvance && !following) {
-        return { commit: false, value: null };
-      }
-      const message = isAdvance ? this.render("advance", {
-        nextId: following?.id ?? "",
-        nextTitle: following?.title ?? ""
-      }) : this.render("done", {});
-      const action = {
-        kind: isAdvance ? "advance" : "done",
-        message,
-        loop: true
+      const resolved = targets ?? {
+        current: next,
+        next: null,
+        unchecked
       };
+      const action = this.renderAdvanceOrDone(resolved);
+      const isAdvance = action.kind === "advance";
       if (isAdvance) {
         this.store.upsertSession({
           conversation_id: cid2,
@@ -3442,7 +3587,10 @@ var ReviewEngine = class {
         });
         this.store.updateReviewChain(cid2, {
           ...chainReset,
-          pending_followup: message,
+          // Stick the *next* item immediately so premature `[x]` before the
+          // first product edit cannot retarget via firstUnchecked.
+          reviewing_item_id: resolved.next?.id ?? null,
+          pending_followup: action.message,
           pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0
@@ -3460,7 +3608,7 @@ var ReviewEngine = class {
         });
         this.store.updateReviewChain(cid2, {
           ...chainReset,
-          pending_followup: message,
+          pending_followup: action.message,
           pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0
@@ -4479,12 +4627,19 @@ Reply with a number or /autopilot-run <slug>.`
         idle_stop_count: 0
       });
       if (!alreadyExecutingSameTrack) {
+        let reviewingItemId = null;
+        try {
+          const cl = parseChecklist(checklistPath, { projectRoot });
+          reviewingItemId = firstUnchecked(cl)?.id ?? null;
+        } catch {
+        }
         store.updateReviewChain(conversationId, {
           fix_round: 0,
           confirm_left: null,
           chain_pending: 0,
           code_edited: 0,
           item_confirm_complete: 0,
+          reviewing_item_id: reviewingItemId,
           pending_followup: null,
           pending_followup_at: null,
           pending_redeliver_at: null
@@ -4582,6 +4737,7 @@ Reply with a number or /autopilot-replan <slug>.`
     chain_pending: 0,
     code_edited: 0,
     item_confirm_complete: 0,
+    reviewing_item_id: null,
     pending_followup: null,
     pending_followup_at: null,
     pending_redeliver_at: null
@@ -5095,7 +5251,25 @@ function handleAfterFileEdit(store, payload, projectRoot) {
       cfg.reviewScope
     );
   }
-  store.markCodeEdited(conversationId);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
 }
 function handleStop(engine, payload) {
   const conversationId = cid(payload);

@@ -12,6 +12,7 @@ import {
   normalizeInProjectPlansDir,
   normalizeProjectRoot,
 } from "./project-path.js";
+import { firstUnchecked, parseChecklist } from "./checklist-md.js";
 import type { SessionRow, StateStore } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
 
@@ -389,12 +390,22 @@ export function applyRun(
 
       if (!alreadyExecutingSameTrack) {
         // Fresh enter or track switch: drop stale pending / chain from prior work.
+        // Seed sticky reviewing_item_id from firstUnchecked so a premature `[x]`
+        // before the first product edit cannot retarget via firstUnchecked.
+        let reviewingItemId: string | null = null;
+        try {
+          const cl = parseChecklist(checklistPath, { projectRoot });
+          reviewingItemId = firstUnchecked(cl)?.id ?? null;
+        } catch {
+          /* checklist unreadable — leave sticky null; first edit may still arm */
+        }
         store.updateReviewChain(conversationId, {
           fix_round: 0,
           confirm_left: null,
           chain_pending: 0,
           code_edited: 0,
           item_confirm_complete: 0,
+          reviewing_item_id: reviewingItemId,
           pending_followup: null,
           pending_followup_at: null,
           pending_redeliver_at: null,
@@ -503,6 +514,7 @@ export function applyReplan(
     chain_pending: 0,
     code_edited: 0,
     item_confirm_complete: 0,
+    reviewing_item_id: null,
     pending_followup: null,
     pending_followup_at: null,
     pending_redeliver_at: null,

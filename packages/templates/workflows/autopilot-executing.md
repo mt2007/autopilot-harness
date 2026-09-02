@@ -35,9 +35,15 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 
 When followup is advance or done:
 
-1. Mark the **current** item `[x]` in `checklist.md`.
+1. Mark **only** the completed current item named in the followup `[x]` in `checklist.md`. Do **not** mark the next item.
 2. Scoped conventional commit if the working tree has this item's changes — **include `checklist.md`** when `plans/` is committed (no `git add -A`, no secrets / `.autopilot/state.db`).
-3. **Then** start the next unchecked item (next turn is OK for large code).
+3. **Then** start the next unchecked item named in the followup (next turn is OK for large code).
+
+### Checklist `[x]` timing (hard)
+
+- **Do not** mark the item you are still implementing `[x]` mid-work or mid-review.
+- Only Advance/Done followups check off the **completed** current item.
+- Premature `[x]` used to make the stop-hook name the wrong "next" item; the harness now sticks `reviewing_item_id`, but agents must still obey this rule.
 
 If you write next-item code before checking off, `itemId` / verify binding will be wrong.
 

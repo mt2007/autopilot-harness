@@ -158,6 +158,98 @@ export function secondUnchecked(checklist: ChecklistMd): ChecklistItem | null {
   return null;
 }
 
+/**
+ * First unchecked item that appears *after* `afterItemId` in checklist order.
+ * Used when advance must follow the item under review (not bare secondUnchecked),
+ * so a premature `[x]` on the reviewing item cannot skip the true next row.
+ */
+export function uncheckedAfter(
+  checklist: ChecklistMd,
+  afterItemId: string,
+): ChecklistItem | null {
+  const id = afterItemId.trim();
+  if (!id) return null;
+  let seen = false;
+  for (const item of checklist.items) {
+    if (!seen) {
+      if (item.id === id) seen = true;
+      continue;
+    }
+    if (!item.checked) return item;
+  }
+  return null;
+}
+
+/**
+ * Sticky reviewing id is usable only when the row exists and every earlier
+ * checklist item is already checked. Otherwise advance may have seeded the
+ * *next* id before the agent checked off the completed current item — honoring
+ * sticky then would skip the still-open predecessor.
+ */
+export function effectiveReviewingItemId(
+  checklist: ChecklistMd,
+  reviewingItemId?: string | null,
+): string | null {
+  const rid = (reviewingItemId ?? "").trim();
+  if (!rid) return null;
+  const idx = checklist.items.findIndex((i) => i.id === rid);
+  if (idx < 0) return null;
+  for (let i = 0; i < idx; i++) {
+    if (!checklist.items[i]!.checked) return null;
+  }
+  return rid;
+}
+
+/**
+ * Resolve which item advance/done should mark, and which to implement next.
+ * When `reviewingItemId` is set (sticky from first product edit), prefer it over
+ * firstUnchecked so premature checklist checks cannot rename "current".
+ */
+export function resolveAdvanceTargets(
+  checklist: ChecklistMd,
+  reviewingItemId?: string | null,
+): {
+  current: ChecklistItem | null;
+  next: ChecklistItem | null;
+  unchecked: number;
+} {
+  const unchecked = countUnchecked(checklist);
+  const rid = effectiveReviewingItemId(checklist, reviewingItemId);
+  if (rid) {
+    const current = checklist.items.find((i) => i.id === rid) ?? null;
+    if (current) {
+      return {
+        current,
+        next: uncheckedAfter(checklist, rid),
+        unchecked,
+      };
+    }
+  }
+  return {
+    current: firstUnchecked(checklist),
+    next: secondUnchecked(checklist),
+    unchecked,
+  };
+}
+
+/**
+ * Extract the "implement next" item id from an Advance followup body.
+ * Used when arming sticky reviewing_item_id so a premature `[x]` before the
+ * first product edit cannot retarget via firstUnchecked.
+ */
+export function parseAdvanceNextItemId(
+  pendingFollowup: string | null | undefined,
+): string | null {
+  const text = (pendingFollowup ?? "").trim();
+  if (!text || text.includes("\0")) return null;
+  const m = text.match(
+    /(?:Then implement next|然后实现下一项)\s*[:：]\s*([A-Za-z0-9][\w.-]*)/,
+  );
+  const id = m?.[1]?.trim() ?? "";
+  if (!id || id.includes("\0")) return null;
+  return id;
+}
+
 export function isLastUnchecked(checklist: ChecklistMd): boolean {
   return countUnchecked(checklist) === 1;
 }

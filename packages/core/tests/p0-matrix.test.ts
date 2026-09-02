@@ -264,9 +264,9 @@ describe("F-MIG migrate", () => {
   it("empty db runs migrations → latest; migrate is idempotent", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
-    expect(store.getSchemaVersion()).toBe(2);
-    expect(migrate(store.db)).toBe(2);
-    expect(store.getSchemaVersion()).toBe(2);
+    expect(store.getSchemaVersion()).toBe(3);
+    expect(migrate(store.db)).toBe(3);
+    expect(store.getSchemaVersion()).toBe(3);
     store.close();
   });
 
@@ -364,6 +364,44 @@ describe("review-engine P0 matrix", () => {
     });
     // loopCount 0 and no pending → E0 (no soft evidence) stays null
     expect(eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })).toBeNull();
+  });
+
+  it("F-E0-STICKY: soft advance still uses sticky after premature [x]", () => {
+    const cp = writeChecklist(
+      root,
+      "e0-sticky",
+      `- [ ] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    sessionExecuting(store, root, "e0s1", cp);
+    store.ensureReviewChain("e0s1");
+    store.updateReviewChain("e0s1", {
+      reviewing_item_id: "item-a",
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      chain_pending: 0,
+    });
+    // Premature check — firstUnchecked becomes item-b; soft must still bind item-a.
+    fs.writeFileSync(
+      cp,
+      `- [x] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true, at: new Date().toISOString() }),
+    );
+    const eng = engine(store, root);
+    const a = eng.handleStop({
+      conversationId: "e0s1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(a?.kind).toBe("advance");
+    expect(a?.message ?? "").toMatch(/item-b/);
+    expect(a?.message ?? "").toMatch(/item-a/);
+    expect(store.getReviewChain("e0s1")!.reviewing_item_id).toBe("item-b");
   });
 
   it("F-E0: soft evidence itemId match advances without confirm", () => {
@@ -680,11 +718,12 @@ describe("review-engine P0 matrix", () => {
     expect(advance?.kind).toBe("advance");
     // defaultRender (no locale): mark [x] before commit instruction.
     const advMsg = advance?.message ?? "";
-    const advMark = advMsg.search(/First mark the current item \[x\]/i);
+    const advMark = advMsg.search(/First mark the completed current item/i);
     const advCommit = advMsg.search(/conventional commit/i);
     expect(advMark).toBeGreaterThanOrEqual(0);
     expect(advCommit).toBeGreaterThan(advMark);
-    expect(advMsg).not.toMatch(/Then mark current item \[x\]/);
+    expect(advMsg).toMatch(/Never mark an item \[x\] while you are still implementing/i);
+    expect(advMsg).toMatch(/item-a/);
     // After marking current (item-a), "implement next" must be the following
     // unchecked item — not firstUnchecked / the item just completed.
     expect(advMsg).toMatch(/item-b/);
@@ -705,6 +744,216 @@ describe("review-engine P0 matrix", () => {
     expect(doneCommit).toBeGreaterThan(doneMark);
     expect(store.getSession("c2")!.phase).toBe("done");
     expect(store.getSession("c2")!.armed).toBe(0);
+  });
+
+  it("F-ADV-STICKY: premature [x] on reviewing item still advances to true next", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n- [ ] reply-upgrade — Upgrade\n`,
+    );
+    sessionExecuting(store, root, "sticky1", cp);
+    store.ensureReviewChain("sticky1");
+    // First product edit arms sticky reviewing_item_id = initial-core
+    store.markCodeEdited("sticky1", "initial-core");
+    expect(store.getReviewChain("sticky1")!.reviewing_item_id).toBe("initial-core");
+    // Later edits must not retarget when firstUnchecked moved
+    store.markCodeEdited("sticky1", "reply-design");
+    expect(store.getReviewChain("sticky1")!.reviewing_item_id).toBe("initial-core");
+
+    // Premature checklist check (simulate agent mid-impl)
+    fs.writeFileSync(
+      cp,
+      `- [x] initial-core — Core\n- [ ] reply-design — Design\n- [ ] reply-upgrade — Upgrade\n`,
+    );
+
+    // Finish confirm chain → E5
+    store.updateReviewChain("sticky1", {
+      code_edited: 0,
+      confirm_left: 0,
+      item_confirm_complete: 1,
+      chain_pending: 0,
+      reviewing_item_id: "initial-core",
+    });
+    const eng = engine(store, root);
+    const advance = stop(eng, "sticky1");
+    expect(advance?.kind).toBe("advance");
+    const msg = advance?.message ?? "";
+    // Must implement design (true next), NOT upgrade (bare secondUnchecked trap)
+    expect(msg).toMatch(/reply-design/);
+    expect(msg).toMatch(/Design/);
+    expect(msg).not.toMatch(/implement next: reply-upgrade/i);
+    expect(msg).toMatch(/initial-core/);
+    // Advance seeds sticky to the next item (not cleared to null).
+    expect(store.getReviewChain("sticky1")!.reviewing_item_id).toBe(
+      "reply-design",
+    );
+  });
+
+  it("F-ADV-STICKY-AHEAD: sticky next must not skip still-open current", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-ahead",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n- [ ] reply-upgrade — Upgrade\n`,
+    );
+    sessionExecuting(store, root, "sticky-a1", cp);
+    store.ensureReviewChain("sticky-a1");
+    // Simulate post-advance: sticky already points at next, but current still [ ].
+    store.updateReviewChain("sticky-a1", {
+      code_edited: 0,
+      confirm_left: 0,
+      item_confirm_complete: 1,
+      chain_pending: 0,
+      reviewing_item_id: "reply-design",
+    });
+    const eng = engine(store, root);
+    const advance = stop(eng, "sticky-a1");
+    expect(advance?.kind).toBe("advance");
+    const msg = advance?.message ?? "";
+    expect(msg).toMatch(/initial-core/);
+    expect(msg).toMatch(/implement next: reply-design/i);
+    expect(msg).not.toMatch(/implement next: reply-upgrade/i);
+  });
+
+  it("F-ADV-STICKY-VERIFY: verify uses sticky item after premature [x]", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-v",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    sessionExecuting(store, root, "sticky-v1", cp);
+    store.ensureReviewChain("sticky-v1");
+    store.markCodeEdited("sticky-v1", "initial-core");
+    fs.writeFileSync(
+      cp,
+      `- [x] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({
+        itemId: "initial-core",
+        checklistPath: cp,
+        ranAt: new Date().toISOString(),
+        commands: [{ id: "test", exitCode: 0, required: true }],
+      }),
+    );
+    store.updateReviewChain("sticky-v1", {
+      code_edited: 0,
+      confirm_left: 0,
+      item_confirm_complete: 1,
+      chain_pending: 0,
+      reviewing_item_id: "initial-core",
+    });
+    const eng = engine(store, root, {
+      verifyEnabled: true,
+      verifyCommands: [{ id: "test", required: true }],
+      verifyReportPath: reportPath,
+    });
+    const advance = stop(eng, "sticky-v1");
+    expect(advance?.kind).toBe("advance");
+    expect(advance?.message ?? "").toMatch(/reply-design/);
+    expect(advance?.message ?? "").not.toMatch(/implement next: initial-core/i);
+  });
+
+  it("F-ADV-STICKY-NEUTRALIZE: neutralizeReviewChain clears reviewing_item_id", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-n",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    sessionExecuting(store, root, "sticky-n1", cp);
+    store.ensureReviewChain("sticky-n1");
+    store.markCodeEdited("sticky-n1", "initial-core");
+    expect(store.getReviewChain("sticky-n1")!.reviewing_item_id).toBe(
+      "initial-core",
+    );
+    store.neutralizeReviewChain("sticky-n1");
+    const chain = store.getReviewChain("sticky-n1")!;
+    expect(chain.reviewing_item_id).toBeNull();
+    expect(chain.code_edited).toBe(0);
+    // Next arm can stick a new item (empty sticky again).
+    store.markCodeEdited("sticky-n1", "reply-design");
+    expect(store.getReviewChain("sticky-n1")!.reviewing_item_id).toBe(
+      "reply-design",
+    );
+  });
+
+  it("F-ADV-STICKY-PENDING: premature [x] before first edit still arms from advance pending", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-p",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    sessionExecuting(store, root, "sticky-p1", cp);
+    store.ensureReviewChain("sticky-p1");
+    // Advance already delivered; agent premature-checks before any product edit.
+    store.updateReviewChain("sticky-p1", {
+      pending_followup:
+        "推进下一项：…然后实现下一项：initial-core — Job stub。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+    });
+    fs.writeFileSync(
+      cp,
+      `- [x] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    const product = path.join(root, "src", "App.java");
+    fs.mkdirSync(path.dirname(product), { recursive: true });
+    fs.writeFileSync(product, "class App {}\n");
+    // First product edit should sticky initial-core from pending, not reply-design.
+    handleAfterFileEdit(
+      store,
+      {
+        conversation_id: "sticky-p1",
+        file_path: product,
+      },
+      root,
+    );
+    expect(store.getReviewChain("sticky-p1")!.reviewing_item_id).toBe(
+      "initial-core",
+    );
+    expect(store.getReviewChain("sticky-p1")!.code_edited).toBe(1);
+  });
+
+  it("F-ADV-STICKY-LOCK: sticky resolve uses live chain under write lock", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-lock",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    sessionExecuting(store, root, "sticky-l1", cp);
+    store.ensureReviewChain("sticky-l1");
+    store.updateReviewChain("sticky-l1", {
+      pending_followup:
+        "Then implement next: initial-core — Core.",
+      pending_followup_at: new Date().toISOString(),
+    });
+    // Neutralize clears pending; resolver must not arm from a stale outer snapshot.
+    store.neutralizeReviewChain("sticky-l1");
+    store.markCodeEdited("sticky-l1", (chain) => {
+      expect(chain.pending_followup).toBeNull();
+      // Live row has no pending — do not invent a sticky id.
+      return null;
+    });
+    expect(store.getReviewChain("sticky-l1")!.code_edited).toBe(1);
+    expect(store.getReviewChain("sticky-l1")!.reviewing_item_id).toBeNull();
+  });
+
+  it("F-ADV-STICKY-RESOLVE-THROW: resolver throw still arms code_edited", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-throw",
+      `- [ ] initial-core — Core\n`,
+    );
+    sessionExecuting(store, root, "sticky-t1", cp);
+    store.ensureReviewChain("sticky-t1");
+    store.markCodeEdited("sticky-t1", () => {
+      throw new Error("resolver boom");
+    });
+    expect(store.getReviewChain("sticky-t1")!.code_edited).toBe(1);
+    expect(store.getReviewChain("sticky-t1")!.reviewing_item_id).toBeNull();
   });
 
   it("F-ARM: paused or armed=0 → no inject", () => {

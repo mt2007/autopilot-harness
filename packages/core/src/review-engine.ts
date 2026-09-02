@@ -1,9 +1,13 @@
 import {
   countUnchecked,
+  effectiveReviewingItemId,
   firstUnchecked,
+  parseAdvanceNextItemId,
   parseChecklist,
+  resolveAdvanceTargets,
   secondUnchecked,
   type ChecklistItem,
+  type ChecklistMd,
 } from "./checklist-md.js";
 import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
 import { getLens, type ConfirmLens } from "./review-lenses.js";
@@ -135,7 +139,10 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
     case "advance":
       return (
         `Advance checklist: confirm chain passed cleanly (confirm rounds do not commit). ` +
-        `First mark the current item [x] in checklist.md. Then, if the working tree still has uncommitted changes for this item ` +
+        `First mark the completed current item ${vars.currentId ?? ""} [x] in checklist.md ` +
+        `(do not mark the next item yet). ` +
+        `Never mark an item [x] while you are still implementing it — only this Advance/Done followup checks off the completed item. ` +
+        `Then, if the working tree still has uncommitted changes for this item ` +
         `(including checklist.md when plans/ is committed), local conventional commit only: ` +
         `git status/diff → stage only this checklist item's paths; never git add -A, never stage .env/secrets/.autopilot runtime; ` +
         `one conventional commit; no push/--no-verify/amend/force unless the user explicitly asks. ` +
@@ -206,6 +213,7 @@ export class ReviewEngine {
     currentItem: ChecklistItem | null;
     /** Following unchecked item (after current); used by advance followup text. */
     followingItem: ChecklistItem | null;
+    checklist: ChecklistMd | null;
   } | null {
     const checklistPath = session.checklist_path;
     if (!checklistPath) return null;
@@ -221,15 +229,92 @@ export class ReviewEngine {
         unchecked: countUnchecked(cl),
         currentItem: firstUnchecked(cl),
         followingItem: secondUnchecked(cl),
+        checklist: cl,
       };
     } catch {
       return null;
     }
   }
 
-  /** E1: afterFileEdit product code → code_edited=1 */
+  private reviewChainResetFields(): Pick<
+    ReviewChainRow,
+    | "confirm_left"
+    | "fix_round"
+    | "code_edited"
+    | "item_confirm_complete"
+    | "reviewing_item_id"
+  > {
+    return {
+      confirm_left: null,
+      fix_round: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      reviewing_item_id: null,
+    };
+  }
+
+  private renderAdvanceOrDone(targets: {
+    current: ChecklistItem | null;
+    next: ChecklistItem | null;
+  }): FollowupAction {
+    const isAdvance = targets.next != null;
+    const message = isAdvance
+      ? this.render("advance", {
+          currentId: targets.current?.id ?? "",
+          currentTitle: targets.current?.title ?? "",
+          nextId: targets.next?.id ?? "",
+          nextTitle: targets.next?.title ?? "",
+        })
+      : this.render("done", {});
+    return {
+      kind: isAdvance ? "advance" : "done",
+      message,
+      loop: true,
+    };
+  }
+
+  /** Resolve sticky reviewing id from chain, or fall back to hint / firstUnchecked. */
+  private resolveReviewingItemId(
+    chain: ReviewChainRow | null | undefined,
+    checklist: ChecklistMd | null | undefined,
+    hintItemId?: string | null,
+  ): string | null {
+    const sticky = chain?.reviewing_item_id?.trim() || "";
+    if (sticky) {
+      if (!checklist) return sticky;
+      const usable = effectiveReviewingItemId(checklist, sticky);
+      if (usable) return usable;
+      // Sticky points past an earlier open item (advance seeded next too early).
+    }
+    const hint = (hintItemId ?? "").trim();
+    if (hint) {
+      if (!checklist) return hint;
+      const usableHint = effectiveReviewingItemId(checklist, hint);
+      if (usableHint) return usableHint;
+    }
+    if (!checklist) return null;
+    return firstUnchecked(checklist)?.id ?? null;
+  }
+
+  /** E1: afterFileEdit product code → code_edited=1 (+ sticky reviewing_item_id). */
   onCodeEdited(conversationId: string): void {
-    this.store.markCodeEdited(conversationId);
+    // Checklist FS read stays outside the write lock; only pending/sticky arming
+    // uses the live chain row under the lock (neutralize/advance TOCTOU).
+    const session = this.store.getSession(conversationId);
+    const parsed = session ? this.parseSessionChecklist(session) : null;
+    this.store.markCodeEdited(conversationId, (chain) => {
+      const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+      if (parsed?.checklist) {
+        if (
+          fromPending &&
+          effectiveReviewingItemId(parsed.checklist, fromPending)
+        ) {
+          return fromPending;
+        }
+        return parsed.currentItem?.id ?? null;
+      }
+      return fromPending;
+    });
   }
 
   handleStop(input: StopHandlerInput): FollowupAction | null {
@@ -1314,7 +1399,13 @@ export class ReviewEngine {
     }
 
     const parsed = this.parseSessionChecklist(session);
-    if (!parsed?.currentItem) return null;
+    if (!parsed?.checklist) return null;
+    const reviewingId = this.resolveReviewingItemId(chain, parsed.checklist);
+    const currentItem =
+      (reviewingId &&
+        parsed.checklist.items.find((i) => i.id === reviewingId)) ||
+      parsed.currentItem;
+    if (!currentItem) return null;
 
     const trustRoot = this.trustedProjectRoot();
     const reportPath =
@@ -1325,14 +1416,14 @@ export class ReviewEngine {
       enabled: this.config.verifyEnabled,
       commands: this.config.verifyCommands,
       reportPath,
-      currentItem: parsed.currentItem,
+      currentItem,
       checklistPath,
       projectRoot: trustRoot ?? undefined,
     });
 
     if (evalResult.outcome === "skip") {
       // Soft evidence + advance/done in one write — never arm E5 first.
-      return this.e0DirectAdvance(session, reportPath, parsed.currentItem.id, {
+      return this.e0DirectAdvance(session, reportPath, currentItem.id, {
         kind: "soft",
       });
     }
@@ -1341,7 +1432,7 @@ export class ReviewEngine {
       // Required verify already passed — advance in one write. Do NOT arm at-E5
       // first: a crash between arm and e5Gate would leave stranded at-E5, and a
       // later skip-configured stop could advance without soft evidence.
-      return this.e0DirectAdvance(session, reportPath, parsed.currentItem.id, {
+      return this.e0DirectAdvance(session, reportPath, currentItem.id, {
         kind: "verified",
         checklistPath,
       });
@@ -1420,14 +1511,24 @@ export class ReviewEngine {
       }
 
       const refreshed = this.parseSessionChecklist(lockedSession);
-      if (!refreshed?.currentItem || refreshed.currentItem.id !== expectedItemId) {
+      if (!refreshed?.checklist) {
+        return { commit: false, value: null };
+      }
+      const reviewingId = this.resolveReviewingItemId(
+        fresh,
+        refreshed.checklist,
+        expectedItemId,
+      );
+      const targets = resolveAdvanceTargets(refreshed.checklist, reviewingId);
+      // Soft/verified E0 still requires the expected item to be the one we advance.
+      if (!targets.current || targets.current.id !== expectedItemId) {
         return { commit: false, value: null };
       }
       if (evidence.kind === "soft") {
         if (
           !hasNoCodeCompletionEvidence({
             reportPath,
-            currentItemId: refreshed.currentItem.id,
+            currentItemId: targets.current.id,
             projectRoot: trustRoot ?? undefined,
           })
         ) {
@@ -1441,7 +1542,7 @@ export class ReviewEngine {
           enabled: this.config.verifyEnabled,
           commands: this.config.verifyCommands,
           reportPath,
-          currentItem: refreshed.currentItem,
+          currentItem: targets.current,
           checklistPath: lockedChecklistPath,
           projectRoot: trustRoot ?? undefined,
         });
@@ -1450,33 +1551,12 @@ export class ReviewEngine {
         }
       }
 
-      const unchecked = refreshed.unchecked;
-      const following = refreshed.followingItem;
-      if (unchecked <= 0) {
+      if (targets.unchecked <= 0 && !targets.current) {
         return { commit: false, value: null };
       }
-      const isAdvance = unchecked > 1;
-      if (isAdvance && !following) {
-        return { commit: false, value: null };
-      }
-
-      const message = isAdvance
-        ? this.render("advance", {
-            nextId: following?.id ?? "",
-            nextTitle: following?.title ?? "",
-          })
-        : this.render("done", {});
-      const out: FollowupAction = {
-        kind: isAdvance ? "advance" : "done",
-        message,
-        loop: true,
-      };
-      const chainReset = {
-        confirm_left: null as null,
-        fix_round: 0,
-        code_edited: 0,
-        item_confirm_complete: 0,
-      };
+      const out = this.renderAdvanceOrDone(targets);
+      const isAdvance = out.kind === "advance";
+      const chainReset = this.reviewChainResetFields();
 
       if (isAdvance) {
         this.store.upsertSession({
@@ -1492,7 +1572,10 @@ export class ReviewEngine {
         // E3 on the next no-code item and skip E0 soft evidence.
         this.store.updateReviewChain(cid, {
           ...chainReset,
-          pending_followup: message,
+          // Stick the *next* item immediately so premature `[x]` before the
+          // first product edit cannot retarget via firstUnchecked.
+          reviewing_item_id: targets.next?.id ?? null,
+          pending_followup: out.message,
           pending_followup_at: new Date().toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0,
@@ -1510,7 +1593,7 @@ export class ReviewEngine {
         });
         this.store.updateReviewChain(cid, {
           ...chainReset,
-          pending_followup: message,
+          pending_followup: out.message,
           pending_followup_at: new Date().toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0,
@@ -1730,7 +1813,7 @@ export class ReviewEngine {
     return action;
   }
 
-  private e5Gate(session: SessionRow, _chain: ReviewChainRow): FollowupAction | null {
+  private e5Gate(session: SessionRow, chain: ReviewChainRow): FollowupAction | null {
     // Project-scope ambient/planning: never verify/advance checklist — end with review_complete.
     // Otherwise a leftover checklist_path (e.g. after ON) + verify fail / unreadable path
     // would return null and stall the chain forever.
@@ -1751,6 +1834,7 @@ export class ReviewEngine {
     // Single checklist read for verify + advance/done — avoids TOCTOU between
     // e5Gate and e5bAdvance, and keeps FS I/O outside the write lock.
     let unchecked = 0;
+    let checklistMd: ChecklistMd | null = null;
     if (checklistPath) {
       const parsed = this.parseSessionChecklist(session);
       if (!parsed) {
@@ -1758,20 +1842,25 @@ export class ReviewEngine {
         return null;
       }
       unchecked = parsed.unchecked;
-      currentItem = parsed.currentItem;
+      checklistMd = parsed.checklist;
+      const reviewingId = this.resolveReviewingItemId(chain, checklistMd);
+      currentItem =
+        (reviewingId &&
+          checklistMd.items.find((i) => i.id === reviewingId)) ||
+        parsed.currentItem;
     }
 
-    // No open item (empty path, empty file, or all checked): skip verify.
+    // No open unchecked rows: still allow done via sticky reviewing item when present.
     // Otherwise verifyEnabled + required cmds treat currentItem=null as fail and
     // loop verify_fix forever instead of emitting done.
     if (unchecked === 0) {
       return this.e5bAdvance(session, {
         unchecked: 0,
-        next: null,
+        next: currentItem,
         verifiedPass: false,
       });
     }
-    // Defensive: countUnchecked>0 must yield a firstUnchecked item.
+    // Defensive: countUnchecked>0 must yield a resolvable item (first or sticky).
     if (!currentItem) {
       return null;
     }
@@ -1821,9 +1910,18 @@ export class ReviewEngine {
           }
           if (locked.unchecked === 0) {
             // Nothing left to verify — let the next stop take the done path.
+            // Do not require empty sticky: orphan/stale reviewing_item_id must
+            // not keep E5c fail looping when the checklist is fully checked.
             return { commit: false, value: null };
           }
-          const nextItem = locked.currentItem;
+          const reviewingId = this.resolveReviewingItemId(
+            fresh,
+            locked.checklist,
+          );
+          const nextItem =
+            (reviewingId &&
+              locked.checklist?.items.find((i) => i.id === reviewingId)) ||
+            locked.currentItem;
           if (!nextItem) {
             return { commit: false, value: null };
           }
@@ -1900,12 +1998,7 @@ export class ReviewEngine {
     },
   ): FollowupAction | null {
     const cid = session.conversation_id;
-    const chainReset = {
-      confirm_left: null as null,
-      fix_round: 0,
-      code_edited: 0,
-      item_confirm_complete: 0,
-    };
+    const chainReset = this.reviewChainResetFields();
 
     return this.store.exclusiveWrite(() => {
       // Re-check E5 gate under the write lock — a concurrent stop may have
@@ -1931,22 +2024,27 @@ export class ReviewEngine {
       // unchecked/next from before BEGIN IMMEDIATE (same class as E5c fail).
       let unchecked = checklist.unchecked;
       let next = checklist.next;
-      let following: ChecklistItem | null = null;
+      let targets: ReturnType<typeof resolveAdvanceTargets> | null = null;
       const path = lockedSession.checklist_path?.trim() ?? "";
       const onChecklistPath =
         isChecklistExecuting(lockedSession) && path.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
-        if (!refreshed) {
+        if (!refreshed?.checklist) {
           return { commit: false, value: null };
         }
-        unchecked = refreshed.unchecked;
-        next = refreshed.currentItem;
-        following = refreshed.followingItem;
+        const reviewingId = this.resolveReviewingItemId(
+          fresh,
+          refreshed.checklist,
+          checklist.next?.id,
+        );
+        targets = resolveAdvanceTargets(refreshed.checklist, reviewingId);
+        unchecked = targets.unchecked;
+        next = targets.current;
       } else {
         unchecked = 0;
         next = null;
-        following = null;
+        targets = null;
       }
 
       // Project-scope ambient/planning: end chain without checklist advance/done.
@@ -1995,33 +2093,28 @@ export class ReviewEngine {
         if (foresawDone && unchecked > 0) {
           return { commit: false, value: null };
         }
+        // verifiedPass foresaw checklist.next (sticky reviewing from e5Gate).
+        const foresawId = checklist.next?.id;
+        const activeId = targets?.current?.id ?? next?.id;
         if (
           checklist.verifiedPass &&
-          checklist.next != null &&
-          (unchecked === 0 || next?.id !== checklist.next.id)
+          foresawId &&
+          activeId !== foresawId
         ) {
           return { commit: false, value: null };
         }
       }
 
-      const isAdvance = unchecked > 1;
-      // Invariant: >1 unchecked ⇒ secondUnchecked exists; abort rather than
-      // emit advance pointing at the item about to be marked [x].
-      if (isAdvance && !following) {
-        return { commit: false, value: null };
-      }
-      // nextId/Title = item after marking current [x], not firstUnchecked.
-      const message = isAdvance
-        ? this.render("advance", {
-            nextId: following?.id ?? "",
-            nextTitle: following?.title ?? "",
-          })
-        : this.render("done", {});
-      const action: FollowupAction = {
-        kind: isAdvance ? "advance" : "done",
-        message,
-        loop: true,
-      };
+      const resolved =
+        targets ??
+        ({
+          current: next,
+          next: null as ChecklistItem | null,
+          unchecked,
+        } as const);
+      // nextId/Title = item after the reviewing item (sticky), not bare secondUnchecked.
+      const action = this.renderAdvanceOrDone(resolved);
+      const isAdvance = action.kind === "advance";
 
       if (isAdvance) {
         this.store.upsertSession({
@@ -2037,7 +2130,10 @@ export class ReviewEngine {
         // forced E3 confirm on docs-only / ignore-only turns (phantom confirm).
         this.store.updateReviewChain(cid, {
           ...chainReset,
-          pending_followup: message,
+          // Stick the *next* item immediately so premature `[x]` before the
+          // first product edit cannot retarget via firstUnchecked.
+          reviewing_item_id: resolved.next?.id ?? null,
+          pending_followup: action.message,
           pending_followup_at: new Date().toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0,
@@ -2057,7 +2153,7 @@ export class ReviewEngine {
         // so a later path cannot treat the chain as still active.
         this.store.updateReviewChain(cid, {
           ...chainReset,
-          pending_followup: message,
+          pending_followup: action.message,
           pending_followup_at: new Date().toISOString(),
           pending_redeliver_at: null,
           chain_pending: 0,

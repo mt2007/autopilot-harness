@@ -7,7 +7,11 @@ import {
   firstUnchecked,
   parseChecklist,
   parseChecklistMarkdown,
+  resolveAdvanceTargets,
   secondUnchecked,
+  uncheckedAfter,
+  effectiveReviewingItemId,
+  parseAdvanceNextItemId,
 } from "../src/index.js";
 
 describe("parseChecklist hardening", () => {
@@ -102,5 +106,64 @@ describe("secondUnchecked", () => {
     expect(secondUnchecked(one)).toBeNull();
     const none = parseChecklistMarkdown(`- [x] done — Done\n`, "/v.md");
     expect(secondUnchecked(none)).toBeNull();
+  });
+});
+
+describe("uncheckedAfter / resolveAdvanceTargets", () => {
+  it("uncheckedAfter skips past afterItemId even when that row is already checked", () => {
+    const cl = parseChecklistMarkdown(
+      `- [x] a — Done early\n- [ ] b — Design\n- [ ] c — Core\n`,
+      "/v.md",
+    );
+    expect(uncheckedAfter(cl, "a")?.id).toBe("b");
+    expect(secondUnchecked(cl)?.id).toBe("c");
+  });
+
+  it("resolveAdvanceTargets prefers reviewing id over firstUnchecked", () => {
+    const cl = parseChecklistMarkdown(
+      `- [x] a — Done early\n- [ ] b — Design\n- [ ] c — Core\n`,
+      "/v.md",
+    );
+    const targets = resolveAdvanceTargets(cl, "a");
+    expect(targets.current?.id).toBe("a");
+    expect(targets.next?.id).toBe("b");
+    // Bare secondUnchecked would wrongly name c as "next" when a is checked.
+    expect(secondUnchecked(cl)?.id).toBe("c");
+  });
+
+  it("resolveAdvanceTargets falls back when sticky is ahead of an open predecessor", () => {
+    const cl = parseChecklistMarkdown(
+      `- [ ] a — Still open\n- [ ] b — Seeded next\n- [ ] c — Later\n`,
+      "/v.md",
+    );
+    expect(effectiveReviewingItemId(cl, "b")).toBeNull();
+    const targets = resolveAdvanceTargets(cl, "b");
+    expect(targets.current?.id).toBe("a");
+    expect(targets.next?.id).toBe("b");
+  });
+
+  it("resolveAdvanceTargets falls back to first/second when reviewing missing", () => {
+    const cl = parseChecklistMarkdown(
+      `- [ ] a — First\n- [ ] b — Second\n`,
+      "/v.md",
+    );
+    const targets = resolveAdvanceTargets(cl, null);
+    expect(targets.current?.id).toBe("a");
+    expect(targets.next?.id).toBe("b");
+  });
+
+  it("parseAdvanceNextItemId reads en/zh advance bodies", () => {
+    expect(
+      parseAdvanceNextItemId(
+        "Advance checklist: ... Then implement next: reply-design — Design.",
+      ),
+    ).toBe("reply-design");
+    expect(
+      parseAdvanceNextItemId(
+        "推进下一项：…然后实现下一项：agent-initial-core — Job 调 Flow。",
+      ),
+    ).toBe("agent-initial-core");
+    expect(parseAdvanceNextItemId("Review fix round 1")).toBeNull();
+    expect(parseAdvanceNextItemId("bad\0")).toBeNull();
   });
 });

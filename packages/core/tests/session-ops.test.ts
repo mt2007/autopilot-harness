@@ -314,6 +314,7 @@ describe("StateStore session ops", () => {
       chain_pending: 1,
       code_edited: 1,
       item_confirm_complete: 1,
+      reviewing_item_id: "stale-item",
       pending_followup: "Review confirm 1/5 — stale",
       pending_followup_at: new Date().toISOString(),
       pending_redeliver_at: new Date().toISOString(),
@@ -325,6 +326,7 @@ describe("StateStore session ops", () => {
     expect(chain.chain_pending).toBe(0);
     expect(chain.code_edited).toBe(0);
     expect(chain.item_confirm_complete).toBe(0);
+    expect(chain.reviewing_item_id).toBeNull();
     expect(chain.pending_followup).toBeNull();
     expect(chain.pending_followup_at).toBeNull();
     expect(chain.pending_redeliver_at).toBeNull();

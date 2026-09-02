@@ -147,6 +147,7 @@ describe("F-RUN applyRun gates", () => {
     expect(chain.pending_followup).toBeNull();
     expect(chain.pending_followup_at).toBeNull();
     expect(chain.pending_redeliver_at).toBeNull();
+    expect(chain.reviewing_item_id).toBe("a");
   });
 
   it("idempotent re-RUN while executing preserves chain_pending (F-E8)", () => {

@@ -254,7 +254,7 @@ review:
       code_root: root,
       phase: "planning",
     });
-    expect(store.getSchemaVersion()).toBe(2);
+    expect(store.getSchemaVersion()).toBe(3);
     store.close();
 
     const r = upgradeProject({ projectRoot: root });

@@ -46,6 +46,8 @@ export interface ReviewChainRow {
   chain_pending: number;
   code_edited: number;
   item_confirm_complete: number;
+  /** Sticky checklist item id under review (set on first product edit). */
+  reviewing_item_id: string | null;
   pending_followup: string | null;
   pending_followup_at: string | null;
   pending_redeliver_at: string | null;
@@ -217,6 +219,7 @@ export class StateStore {
     if (!row) return null;
     return {
       ...row,
+      reviewing_item_id: row.reviewing_item_id ?? null,
       pending_followup: row.pending_followup ?? null,
       pending_followup_at: row.pending_followup_at ?? null,
       pending_redeliver_at: row.pending_redeliver_at ?? null,
@@ -340,6 +343,7 @@ export class StateStore {
         chain_pending: 0,
         code_edited: 0,
         item_confirm_complete: 0,
+        reviewing_item_id: null,
         pending_followup: null,
         pending_followup_at: null,
         pending_redeliver_at: null,
@@ -524,11 +528,17 @@ export class StateStore {
       merged.pending_redeliver_at = null;
       merged.chain_pending = 0;
     }
+    if (
+      typeof merged.reviewing_item_id === "string" &&
+      (!merged.reviewing_item_id.trim() || merged.reviewing_item_id.includes("\0"))
+    ) {
+      merged.reviewing_item_id = null;
+    }
     const result = this.db
       .prepare(
         `UPDATE review_chains SET
           fix_round = ?, confirm_left = ?, chain_pending = ?, code_edited = ?,
-          item_confirm_complete = ?,
+          item_confirm_complete = ?, reviewing_item_id = ?,
           pending_followup = ?, pending_followup_at = ?, pending_redeliver_at = ?,
           updated_at = ?
          WHERE conversation_id = ?
@@ -540,6 +550,7 @@ export class StateStore {
         merged.chain_pending,
         merged.code_edited,
         merged.item_confirm_complete,
+        merged.reviewing_item_id,
         merged.pending_followup,
         merged.pending_followup_at,
         merged.pending_redeliver_at,
@@ -558,17 +569,56 @@ export class StateStore {
     return updated;
   }
 
-  markCodeEdited(conversationId: string): void {
+  /**
+   * E1: product edit → code_edited=1.
+   * Sticky `reviewing_item_id`: set only when empty so a premature checklist `[x]`
+   * cannot retarget the item under review mid-chain.
+   *
+   * When `reviewingItemId` is a function, it runs **inside** the write lock against
+   * the live chain row so concurrent advance/neutralize cannot TOCTOU a stale
+   * pending/firstUnchecked snapshot from outside the lock.
+   */
+  markCodeEdited(
+    conversationId: string,
+    reviewingItemId?:
+      | string
+      | null
+      | ((chain: ReviewChainRow) => string | null | undefined),
+  ): void {
     this.withSessionChainWrite(conversationId, () => {
       this.ensureReviewChain(conversationId);
+      let raw = "";
+      if (typeof reviewingItemId === "function") {
+        try {
+          const live = this.getReviewChain(conversationId);
+          if (live) {
+            const resolved = reviewingItemId(live);
+            raw = typeof resolved === "string" ? resolved.trim() : "";
+          }
+        } catch {
+          // Resolver must not skip arming code_edited (partial-failure safe).
+          raw = "";
+        }
+      } else if (typeof reviewingItemId === "string") {
+        raw = reviewingItemId.trim();
+      }
+      const itemId = raw && !raw.includes("\0") ? raw : "";
       // Column-only update — avoid read-merge-write clobbering concurrent E4/pending.
       this.db
         .prepare(
-          `UPDATE review_chains SET code_edited = 1, updated_at = ?
+          `UPDATE review_chains SET
+             code_edited = 1,
+             reviewing_item_id = CASE
+               WHEN (reviewing_item_id IS NULL OR trim(reviewing_item_id) = '')
+                    AND ? != ''
+               THEN ?
+               ELSE reviewing_item_id
+             END,
+             updated_at = ?
            WHERE conversation_id = ?
              AND EXISTS (SELECT 1 FROM sessions WHERE conversation_id = ?)`,
         )
-        .run(nowIso(), conversationId, conversationId);
+        .run(itemId, itemId, nowIso(), conversationId, conversationId);
     });
   }
 
@@ -880,6 +930,7 @@ export class StateStore {
           chain_pending = 0,
           item_confirm_complete = 0,
           fix_round = 0,
+          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,
@@ -905,6 +956,7 @@ export class StateStore {
           chain_pending = 0,
           item_confirm_complete = 0,
           fix_round = 0,
+          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,
@@ -940,6 +992,7 @@ export class StateStore {
           item_confirm_complete = ?,
           chain_pending = ?,
           code_edited = ?,
+          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,

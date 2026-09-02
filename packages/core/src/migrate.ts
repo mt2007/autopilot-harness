@@ -6,7 +6,7 @@ import type { SqlDatabase } from "./sqlite.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function getLatestSchemaVersion(): number {
-  return 2;
+  return 3;
 }
 
 function migrationDirs(): string[] {
