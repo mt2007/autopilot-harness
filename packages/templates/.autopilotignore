@@ -1,0 +1,12 @@
+# Autopilot — paths that do NOT trigger self-review (gitignore syntax).
+# Use ! to force-include an exception (e.g. deliverable YAML under docs/).
+
+# Planning artifacts
+plans/**
+
+# Documentation tree (negate deliverables you want reviewed)
+docs/**
+
+# Prose / design markdown
+**/*.md
+**/*.mdx

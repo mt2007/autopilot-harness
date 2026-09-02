@@ -247,7 +247,7 @@ describe("hook vendor runtime", () => {
       /paused_reason = COALESCE\(paused_reason, 'repeated_errors'\)/,
     );
     expect(src).toMatch(
-      /pending_redeliver_at = \?, chain_pending = 1, updated_at = \?[\s\S]*?AND pending_followup IS NOT NULL[\s\S]*?AND trim\(pending_followup\) != ''/,
+      /pending_redeliver_at = \?,[\s\S]*?chain_pending = CASE[\s\S]*?ELSE 1[\s\S]*?AND pending_followup IS NOT NULL[\s\S]*?AND trim\(pending_followup\) != ''/,
     );
     expect(src).toMatch(
       /kind: "stuck",\s*message: this\.render\("stuck", \{\}\),\s*loop: false/,

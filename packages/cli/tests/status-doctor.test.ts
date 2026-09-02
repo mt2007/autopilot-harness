@@ -108,6 +108,7 @@ describe("runDoctor", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(/OK\s+config\.yml/);
+    expect(joined).toMatch(/OK\s+\.autopilotignore/);
     expect(joined).toMatch(/OK\s+hook vendor runtime/);
     expect(joined).toMatch(/OK\s+state\.db/);
     expect(joined).toMatch(/schema_version/);

@@ -3360,8 +3360,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let following = null;
-      const path9 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path9.length > 0;
+      const path10 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path10.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed) {
@@ -4666,7 +4666,165 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
 }
 
 // ../core/src/code-edit-detector.ts
+import path9 from "node:path";
+
+// ../core/src/autopilot-ignore.ts
+import fs10 from "node:fs";
 import path8 from "node:path";
+var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigger self-review (gitignore syntax).
+# Use ! to force-include an exception (e.g. deliverable YAML under docs/).
+
+# Planning artifacts
+plans/**
+
+# Documentation tree (negate deliverables you want reviewed)
+docs/**
+
+# Prose / design markdown
+**/*.md
+**/*.mdx
+`;
+var MAX_AUTOPILOT_IGNORE_BYTES = 1e6;
+var ignoreCache = /* @__PURE__ */ new Map();
+function escapeRegexChar(ch) {
+  return ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+function globBodyToRegex(glob) {
+  let out = "";
+  for (let i = 0; i < glob.length; ) {
+    const ch = glob[i];
+    if (ch === "*" && glob[i + 1] === "*") {
+      if (glob[i + 2] === "/") {
+        out += "(?:.*/)?";
+        i += 3;
+        continue;
+      }
+      out += ".*";
+      i += 2;
+      continue;
+    }
+    if (ch === "*") {
+      out += "[^/]*";
+      i += 1;
+      continue;
+    }
+    if (ch === "?") {
+      out += "[^/]";
+      i += 1;
+      continue;
+    }
+    out += escapeRegexChar(ch);
+    i += 1;
+  }
+  return out;
+}
+function compilePattern(raw) {
+  let line = raw.trim();
+  if (!line || line.startsWith("#")) return null;
+  let negated = false;
+  if (line.startsWith("!")) {
+    negated = true;
+    line = line.slice(1).trim();
+    if (!line || line.startsWith("#")) return null;
+  }
+  const dirOnly = line.endsWith("/");
+  if (dirOnly) line = line.slice(0, -1);
+  if (!line) return null;
+  let anchored = false;
+  if (line.startsWith("/")) {
+    anchored = true;
+    line = line.slice(1);
+  }
+  const body = globBodyToRegex(line);
+  let regexSource;
+  if (anchored) {
+    regexSource = `^${body}`;
+    if (dirOnly || line.endsWith("/**") || line.endsWith("/*")) {
+      regexSource += "(?:/.*)?";
+    }
+    regexSource += "$";
+  } else if (line.includes("/")) {
+    regexSource = `(?:^|.*/)${body}`;
+    if (dirOnly || line.endsWith("/**") || line.endsWith("/*")) {
+      regexSource += "(?:/.*)?";
+    }
+    regexSource += "$";
+  } else {
+    regexSource = `(?:^|.*/)?${body}$`;
+  }
+  return { negated, regex: new RegExp(regexSource) };
+}
+function parseAutopilotIgnore(text) {
+  const patterns = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const compiled = compilePattern(rawLine);
+    if (compiled) patterns.push(compiled);
+  }
+  return patterns;
+}
+var DEFAULT_AUTOPILOT_IGNORE_PATTERNS = parseAutopilotIgnore(
+  DEFAULT_AUTOPILOT_IGNORE_TEXT
+);
+function normalizeRelativePath(filePath) {
+  return filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+function isAutopilotIgnoredPath(relativePath, patterns) {
+  const norm = normalizeRelativePath(relativePath);
+  let ignored = false;
+  for (const pat of patterns) {
+    if (pat.regex.test(norm)) {
+      ignored = !pat.negated;
+    }
+  }
+  return ignored;
+}
+function toProjectRelativePath(filePath, projectRoot) {
+  const posix = filePath.replace(/\\/g, "/");
+  if (!projectRoot?.trim()) {
+    return normalizeRelativePath(posix);
+  }
+  const root = path8.resolve(projectRoot);
+  const abs = path8.isAbsolute(posix) ? path8.resolve(posix) : path8.resolve(root, posix);
+  const rel = path8.relative(root, abs);
+  if (rel.startsWith("..") || path8.isAbsolute(rel)) {
+    return "";
+  }
+  return normalizeRelativePath(rel.replace(/\\/g, "/"));
+}
+function loadAutopilotIgnorePatterns(projectRoot) {
+  const root = path8.resolve(projectRoot);
+  const filePath = path8.join(root, ".autopilotignore");
+  let st;
+  try {
+    st = fs10.lstatSync(filePath);
+  } catch {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  if (st.isSymbolicLink() || !st.isFile()) {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  if (st.size > MAX_AUTOPILOT_IGNORE_BYTES) {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  const cached = ignoreCache.get(root);
+  if (cached && cached.mtimeMs === st.mtimeMs) {
+    return cached.patterns;
+  }
+  let text;
+  try {
+    text = fs10.readFileSync(filePath, "utf8");
+  } catch {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  if (text.length > MAX_AUTOPILOT_IGNORE_BYTES) {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  const patterns = parseAutopilotIgnore(text);
+  ignoreCache.set(root, { mtimeMs: st.mtimeMs, patterns });
+  return patterns;
+}
+
+// ../core/src/code-edit-detector.ts
 var CODE_EXTENSIONS = /* @__PURE__ */ new Set([
   // JS / TS
   ".ts",
@@ -4789,23 +4947,31 @@ var ROOT_CONFIG_NAMES = /* @__PURE__ */ new Set([
   "deno.json",
   "deno.jsonc"
 ]);
-function normalizePosix(filePath) {
-  return filePath.replace(/\\/g, "/");
-}
-function isProductCodeEdit(filePath) {
-  const posix = normalizePosix(filePath);
-  const base = path8.posix.basename(posix);
-  const lower = posix.toLowerCase();
-  if (lower.includes("/docs/") || lower.startsWith("docs/") || lower.includes("/plans/") || lower.startsWith("plans/") || lower.includes("/.autopilot/") || lower.startsWith(".autopilot/") || lower.includes("/.cursor/") || lower.startsWith(".cursor/") || lower.endsWith(".md") || lower.endsWith(".mdx")) {
-    return false;
+function isSafetyExcluded(relativePath) {
+  const lower = relativePath.toLowerCase();
+  if (lower.includes("/.autopilot/") || lower.startsWith(".autopilot/") || lower.includes("/.cursor/") || lower.startsWith(".cursor/")) {
+    return true;
   }
   if (/\/\.cursor\/hooks\/\./.test(lower) || /^\.cursor\/hooks\/\./.test(lower)) {
-    return false;
+    return true;
   }
-  const ext = path8.posix.extname(posix).toLowerCase();
+  return false;
+}
+function isProductCandidate(relativePath) {
+  const base = path9.posix.basename(relativePath);
+  const ext = path9.posix.extname(relativePath).toLowerCase();
   if (CODE_EXTENSIONS.has(ext)) return true;
   if (ROOT_CONFIG_NAMES.has(base)) return true;
   return false;
+}
+function isProductCodeEdit(filePath, opts) {
+  const relative = toProjectRelativePath(filePath, opts?.projectRoot);
+  if (!relative) return false;
+  if (isSafetyExcluded(relative)) return false;
+  if (!isProductCandidate(relative)) return false;
+  const patterns = opts?.projectRoot?.trim() ? loadAutopilotIgnorePatterns(opts.projectRoot) : DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  if (isAutopilotIgnoredPath(relative, patterns)) return false;
+  return true;
 }
 
 // ../ports/cursor/src/index.ts
@@ -4952,7 +5118,7 @@ function handleAfterFileEdit(store, payload, projectRoot) {
   const conversationId = cid(payload);
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
-  if (!isProductCodeEdit(filePath)) return;
+  if (!isProductCodeEdit(filePath, { projectRoot })) return;
   const cfg = loadProjectReviewConfig(projectRoot);
   if (cfg.reviewScope === "project") {
     ensureAmbientReviewSession(

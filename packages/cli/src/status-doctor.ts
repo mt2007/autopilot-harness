@@ -429,6 +429,30 @@ export function runDoctor(
   } else {
     lines.push("OK    config.yml");
   }
+
+  const ignorePath = path.join(root, ".autopilotignore");
+  try {
+    assertNotSymlink(ignorePath, ".autopilotignore");
+    const st = fs.lstatSync(ignorePath);
+    if (!st.isFile()) {
+      lines.push("WARN  .autopilotignore is not a regular file — using built-in defaults");
+    } else {
+      lines.push("OK    .autopilotignore");
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      lines.push(
+        "WARN  .autopilotignore missing — using built-in defaults; run upgrade to add",
+      );
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      lines.push(
+        `WARN  .autopilotignore unreadable (${safeDisplayToken(msg, "error")}) — using built-in defaults`,
+      );
+    }
+  }
+
   if (cfg.staleHoursInvalid) {
     // Fail closed: do not claim we "use default" while --prune-stale refuses.
     lines.push("FAIL  session.stale_after_hours invalid — fix or remove the key");

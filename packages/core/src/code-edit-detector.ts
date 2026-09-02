@@ -1,4 +1,10 @@
 import path from "node:path";
+import {
+  DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+  isAutopilotIgnoredPath,
+  loadAutopilotIgnorePatterns,
+  toProjectRelativePath,
+} from "./autopilot-ignore.js";
 
 /** Broad source/config extensions — language-agnostic product edits. */
 const CODE_EXTENSIONS = new Set([
@@ -125,40 +131,51 @@ const ROOT_CONFIG_NAMES = new Set([
   "deno.jsonc",
 ]);
 
-function normalizePosix(filePath: string): string {
-  return filePath.replace(/\\/g, "/");
+export interface ProductCodeEditOptions {
+  /** Project root — loads `.autopilotignore` when present. */
+  projectRoot?: string;
 }
 
-/** Returns true if the edited path counts as product code (triggers fix review). */
-export function isProductCodeEdit(filePath: string): boolean {
-  const posix = normalizePosix(filePath);
-  const base = path.posix.basename(posix);
-  const lower = posix.toLowerCase();
-
-  // Built-in excludes
+/** Immutable safety denylist — never counts as product code (not overridable). */
+function isSafetyExcluded(relativePath: string): boolean {
+  const lower = relativePath.toLowerCase();
   if (
-    lower.includes("/docs/") ||
-    lower.startsWith("docs/") ||
-    lower.includes("/plans/") ||
-    lower.startsWith("plans/") ||
     lower.includes("/.autopilot/") ||
     lower.startsWith(".autopilot/") ||
     lower.includes("/.cursor/") ||
-    lower.startsWith(".cursor/") ||
-    lower.endsWith(".md") ||
-    lower.endsWith(".mdx")
+    lower.startsWith(".cursor/")
   ) {
-    return false;
+    return true;
   }
-
-  // Runtime dot files under .cursor/hooks/ (belt-and-suspenders; .cursor/ already excluded)
   if (/\/\.cursor\/hooks\/\./.test(lower) || /^\.cursor\/hooks\/\./.test(lower)) {
-    return false;
+    return true;
   }
+  return false;
+}
 
-  const ext = path.posix.extname(posix).toLowerCase();
+function isProductCandidate(relativePath: string): boolean {
+  const base = path.posix.basename(relativePath);
+  const ext = path.posix.extname(relativePath).toLowerCase();
   if (CODE_EXTENSIONS.has(ext)) return true;
   if (ROOT_CONFIG_NAMES.has(base)) return true;
-
   return false;
+}
+
+/** Returns true if the edited path counts as product code (triggers fix review). */
+export function isProductCodeEdit(
+  filePath: string,
+  opts?: ProductCodeEditOptions,
+): boolean {
+  const relative = toProjectRelativePath(filePath, opts?.projectRoot);
+  if (!relative) return false;
+
+  if (isSafetyExcluded(relative)) return false;
+  if (!isProductCandidate(relative)) return false;
+
+  const patterns = opts?.projectRoot?.trim()
+    ? loadAutopilotIgnorePatterns(opts.projectRoot)
+    : DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+
+  if (isAutopilotIgnoredPath(relative, patterns)) return false;
+  return true;
 }

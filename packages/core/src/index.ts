@@ -109,7 +109,14 @@ export {
   type TranscriptEvent,
 } from "./transcript-followup.js";
 
-export { isProductCodeEdit } from "./code-edit-detector.js";
+export { isProductCodeEdit, type ProductCodeEditOptions } from "./code-edit-detector.js";
+
+export {
+  DEFAULT_AUTOPILOT_IGNORE_TEXT,
+  autopilotIgnorePath,
+  parseAutopilotIgnore,
+  loadAutopilotIgnorePatterns,
+} from "./autopilot-ignore.js";
 
 export {
   parseTrigger,

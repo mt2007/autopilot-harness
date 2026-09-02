@@ -14,10 +14,10 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 | Situation | Stop behavior |
 |-----------|----------------|
 | You edited product code this item | **fix → confirm →** then verify / advance |
-| No product-code diff (env, ops, docs-only under excluded paths) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done** |
+| No product-code diff (env, ops, paths listed in `.autopilotignore`) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done** |
 | Required verify **fail** | `verify_fix` — fix env/report or code; if you edit product code next, fix chain runs first |
 
-`plans/`、`.autopilot/`、`.md` edits do **not** count as product code.
+Paths excluded from self-review live in **`.autopilotignore`** at the repo root (gitignore syntax; use `!` for exceptions). Immutable safety excludes (`.autopilot/`, `.cursor/`) stay in the harness. With no ignore file, built-in defaults match init template (`plans/**`, `docs/**`, `**/*.md`).
 
 ## Fix vs confirm
 

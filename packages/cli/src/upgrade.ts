@@ -280,6 +280,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     actions.push("refresh .autopilot/bin/autopilot-harness-hook.mjs");
     actions.push("refresh .cursor/skills/autopilot-*");
     actions.push("refresh docs/autopilot/workflows/*");
+    actions.push("ensure .autopilotignore (when missing)");
     actions.push("merge .cursor/hooks.json (Autopilot entries)");
 
     if (opts.target && opts.target !== version) {

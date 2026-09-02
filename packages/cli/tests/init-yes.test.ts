@@ -191,6 +191,10 @@ describe("init --yes install", () => {
     expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
       true,
     );
+    expect(fs.existsSync(path.join(root, ".autopilotignore"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, ".autopilotignore"), "utf8")).toMatch(
+      /plans\/\*\*/,
+    );
     const pin = JSON.parse(
       fs.readFileSync(path.join(root, ".autopilot", "pin.json"), "utf8"),
     );

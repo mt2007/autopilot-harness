@@ -27,6 +27,7 @@ import {
   assertPresentRealFile,
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
+import { DEFAULT_AUTOPILOT_IGNORE_TEXT } from "@autopilot-harness/core";
 import { readConfigInstallHints } from "./config-merge.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
@@ -303,6 +304,39 @@ function readHooksFile(filePath: string): HooksRead {
       error: `${filePath} is not valid JSON; fix or remove it before init.`,
     };
   }
+}
+
+function resolveAutopilotIgnoreTemplate(templatesRoot: string): string {
+  const templatePath = path.join(templatesRoot, ".autopilotignore");
+  if (isRealRegularFile(templatePath)) {
+    return readUntrustedUtf8File(
+      templatePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      "templates/.autopilotignore",
+    );
+  }
+  return DEFAULT_AUTOPILOT_IGNORE_TEXT;
+}
+
+/** Write `.autopilotignore` when missing; never clobber an existing file. */
+export function ensureAutopilotIgnore(
+  projectRoot: string,
+  templatesRoot: string,
+): string | null {
+  const dest = path.join(projectRoot, ".autopilotignore");
+  try {
+    assertNotSymlink(dest, ".autopilotignore");
+    fs.lstatSync(dest);
+    return null;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") throw err;
+  }
+
+  let contents = resolveAutopilotIgnoreTemplate(templatesRoot);
+  if (!contents.endsWith("\n")) contents += "\n";
+  writeFileAtomic(dest, contents, projectRoot, ".autopilotignore");
+  return ".autopilotignore";
 }
 
 function writeFileAtomic(
@@ -750,6 +784,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
 
     written.push(...installSkills(templatesRoot, projectRoot, locale));
     written.push(...installWorkflows(templatesRoot, projectRoot));
+
+    const ignoreRel = ensureAutopilotIgnore(projectRoot, templatesRoot);
+    if (ignoreRel && !written.includes(ignoreRel)) written.push(ignoreRel);
 
     // Fresh init only: plans tree / plans gitignore / quickstart follow wizard.
     // Force refresh must not create a second plans dir or rewrite docs.
