@@ -83,7 +83,7 @@ composer.lock
 *.exe
 *.wasm
 
-# Prose / data noise (markdown is intentionally allowed)
+# Prose / data noise
 *.txt
 *.html
 *.htm
