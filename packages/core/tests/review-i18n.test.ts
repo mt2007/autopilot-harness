@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   createRenderFollowup,
@@ -5,6 +8,11 @@ import {
   type FollowupLocaleBundle,
 } from "../src/review-i18n.js";
 import { getLens, lensNumberForRound } from "../src/review-lenses.js";
+
+const localesDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../i18n/locales",
+);
 
 const zhBundle: FollowupLocaleBundle = {
   followup: {
@@ -39,6 +47,23 @@ describe("review-i18n", () => {
     );
     expect(render("verify_fix", { reason: "missing" })).toContain("missing");
     expect(render("advance", { nextId: "a", nextTitle: "A" })).toContain("a — A");
+  });
+
+  it("shipped zh-CN/en recover copy is neutral (no 不要推进)", () => {
+    const zh = JSON.parse(
+      fs.readFileSync(path.join(localesDir, "zh-CN.json"), "utf8"),
+    ) as FollowupLocaleBundle;
+    const en = JSON.parse(
+      fs.readFileSync(path.join(localesDir, "en.json"), "utf8"),
+    ) as FollowupLocaleBundle;
+    const zhMsg = createRenderFollowup(zh)("recover", {});
+    const enMsg = createRenderFollowup(en)("recover", {});
+    expect(zhMsg).toBe("恢复：上一回合出错。继续当前任务。");
+    expect(zhMsg).not.toMatch(/不要推进|checklist 项/);
+    expect(enMsg).toBe(
+      "Recover: the previous turn ended with an error. Continue the current task.",
+    );
+    expect(enMsg).not.toMatch(/without advancing/i);
   });
 
   it("resolves localized lenses for light mode (3 rounds → 1,2,5)", () => {

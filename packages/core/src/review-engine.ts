@@ -149,7 +149,7 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
         `(never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, just confirm briefly. Phase is done.`
       );
     case "recover":
-      return `Recover: the previous turn ended with an error. Continue the current checklist item without advancing.`;
+      return `Recover: the previous turn ended with an error. Continue the current task.`;
     case "recover_planning":
       return `Recover: the previous turn ended with an error. Continue planning; do not RUN or write product code.`;
     case "recover_ambient":

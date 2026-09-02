@@ -836,7 +836,7 @@ describe("review-engine P0 matrix", () => {
   it("F-ABORT-CLEAR-RECOVER: aborted drops stale recover pending (not fix/confirm)", () => {
     const eng = engine(store, root, { maxErrorsBeforePause: 0 });
     store.updateReviewChain("c1", {
-      pending_followup: "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
+      pending_followup: "恢复：上一回合出错。继续当前任务。",
       pending_followup_at: new Date().toISOString(),
     });
     expect(
@@ -1972,7 +1972,7 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
     expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
 
     store.updateReviewChain("c1", {
-      pending_followup: "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
+      pending_followup: "恢复：上一回合出错。继续当前任务。",
       pending_followup_at: new Date().toISOString(),
     });
     handleBeforeSubmitPrompt(

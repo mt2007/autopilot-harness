@@ -36,7 +36,7 @@
     },
     "advance": "推进下一项：自审确认已干净通过（确认轮不 commit）。先勾选当前项 [x]。若 working tree 仍有本项未提交改动（含 checklist.md，且 plans/ 纳入提交时一并 stage），按安全清单本地 commit（无改动则跳过）：git status/diff → 只 stage 本 checklist 项相关路径；禁止 git add -A、stage .env/密钥/.autopilot 运行时；一次 conventional commit；禁止 push/--no-verify/amend/force（仅用户明确要求才可 push）。勾选后已干净则跳过 commit。然后实现下一项：{nextId} — {nextTitle}。",
     "done": "全部完成。自审确认已干净通过（确认轮不 commit）。勾选最后一项 [x]。若 working tree 仍有本项未提交改动（含 checklist.md，且 plans/ 纳入提交时一并 stage），按安全清单本地 commit（勿 stage .env/密钥/.autopilot 运行时；勿 push，除非用户明确要求）；已干净则只简短确认即可。然后停止。",
-    "recover": "恢复：上一回合出错。继续当前 checklist 项，不要推进。",
+    "recover": "恢复：上一回合出错。继续当前任务。",
     "recover_planning": "恢复：上一回合出错。继续当前规划，不要 RUN 或写产品代码。",
     "recover_ambient": "恢复：上一回合出错。继续当前任务（未在执行 checklist）。",
     "review_complete": "自审完成。连续 {total} 轮确认已通过，自审链已结束。若工作区仍有本会话未提交改动，按安全清单本地 commit（勿 stage .env/密钥/.autopilot 运行时；勿 push，除非用户明确要求）；已干净则只简短确认即可。",

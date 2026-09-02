@@ -139,7 +139,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-REDELIVER-DISARMS: completed-stop redeliver of recover keeps chain_pending=0", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     // No claim hold (pending_redeliver_at null) → host-drop style redeliver.
     store.updateReviewChain("c1", {
       chain_pending: 0,
@@ -167,7 +167,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-REDELIVER-CLAIM-HOLD: claim redeliver hold blocks completed recover inject during sleep", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     // Simulate claim hold for 1000ms debounce against redeliver cooldown clock.
     const holdMs = 1000;
     const at = new Date(
@@ -196,7 +196,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-REDELIVER-LONG-HOLD: holdMs > cooldown still blocks until full debounce", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     // 30s debounce → future pending_redeliver_at (must not clamp to 8s cooldown).
     const holdMs = 30_000;
     const at = new Date(
@@ -274,7 +274,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-DEBOUNCE-ALIVE: after wait, if recover already answered, do not emit", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     const e = eng({
       sleepSync: () => {
         writeTranscript(transcript, [
@@ -323,7 +323,7 @@ describe("error recover debounce (3s window, once)", () => {
     // later error must still inject — finish must not treat historical
     // Recover+assistant as "already alive" for this new claim.
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     writeTranscript(transcript, [
       {
         role: "user",
@@ -350,7 +350,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-DEBOUNCE-STALE-ANSWERED-PENDING: outside-window answered recover is dropped then fresh-claimed for the new error", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     writeTranscript(transcript, [
       {
         role: "user",
@@ -384,7 +384,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-PEER-ANSWERED-HIST-NO-WIPE: peer must not clear in-window claim when prior recover is answered on transcript", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     writeTranscript(transcript, [
       {
         role: "user",
@@ -417,7 +417,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-DEBOUNCE-INFLIGHT: after wait, if recover pending in flight, do not emit again", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     const e = eng({
       recoverDebounceMs: 3000,
       sleepSync: () => {
@@ -471,7 +471,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-INFLIGHT-HOLD-STAMP: must not clear peer redeliver hold on stamp mismatch", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     writeTranscript(transcript, [{ role: "assistant", text: "crashed" }]);
     const e = eng({
       recoverDebounceMs: 50,
@@ -538,7 +538,7 @@ describe("error recover debounce (3s window, once)", () => {
 
   it("F-ERR-DEBOUNCE-RECOVER-INFLIGHT-TIP: stuck recover tip must not suppress coalesce path", () => {
     const recoverMsg =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     writeTranscript(transcript, [
       {
         role: "user",
@@ -1599,9 +1599,67 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.pending_followup).toMatch(/^恢复:/);
   });
 
+  it("F-ERR-RECOVER-COPY: mid-advance error emits neutral recover (no 不要推进)", () => {
+    // Mid-advance: E5 advance was in flight,
+    // Agent mid-turn, then usage-limit error. Recover must not say「不要推进」.
+    const zh = "恢复：上一回合出错。继续当前任务。";
+    const advance =
+      "推进下一项：自审确认已干净通过。先勾选当前项 [x]。然后实现下一项：item-b — next feature。";
+    store.updateReviewChain("c1", {
+      pending_followup: advance,
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+    });
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n${advance}\n</user_query>`,
+      },
+      {
+        role: "assistant",
+        text: "确认链已通过。先勾选 item-a 并提交本项改动…",
+      },
+    ]);
+    const out = eng({
+      recoverDebounceMs: 0,
+      sleepSync: () => {},
+      renderFollowup: (kind) => (kind === "recover" ? zh : ""),
+    }).handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(out?.message).toBe(zh);
+    expect(out?.message).not.toMatch(/不要推进|without advancing|checklist 项/);
+    expect(out?.message).toMatch(/继续当前任务/);
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(zh);
+  });
+
+  it("F-ERR-RECOVER-COPY-EN: defaultRender recover is neutral", () => {
+    const out = eng({
+      recoverDebounceMs: 0,
+      sleepSync: () => {},
+    }).handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(out?.message).toBe(
+      "Recover: the previous turn ended with an error. Continue the current task.",
+    );
+    expect(out?.message).not.toMatch(/without advancing|do not advance/i);
+  });
+
   it("F-ERR-DEBOUNCE-ZH: Chinese recover coalesce + answered-alive", () => {
     const zh =
-      "恢复：上一回合出错。继续当前 checklist 项，不要推进。";
+      "恢复：上一回合出错。继续当前任务。";
     const e = eng({
       renderFollowup: () => zh,
     });

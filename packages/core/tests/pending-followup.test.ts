@@ -653,7 +653,7 @@ describe("pending followup + session round", () => {
     const delivered =
       "Review confirm 1/5 (session round 3; consecutive no-edit confirms, counted on the fix-round counter).";
     const replacement =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     writeTranscript(transcript, [
       {
         role: "user",
@@ -713,7 +713,7 @@ describe("pending followup + session round", () => {
     const delivered =
       "Review confirm 1/5 (session round 3; consecutive no-edit confirms, counted on the fix-round counter).";
     const replacement =
-      "Recover: the previous turn ended with an error. Continue the current checklist item without advancing.";
+      "Recover: the previous turn ended with an error. Continue the current task.";
     const inflightFix = "Review fix round 2/5 (session round 4).";
     writeTranscript(transcript, [
       {
