@@ -29,16 +29,24 @@ import {
   automationFollowupPresent,
   BRIEFLY_PREFIX,
   followupInFlight,
+  harnessTipBeforeTrailingTurnEnded,
   inFlightUserQuery,
   inRecoverDebounceWindow,
+  latestUnresolvedTurnEndedErrorIndex,
   PENDING_REDELIVER_COOLDOWN_MS,
   pendingRedeliverAllowed,
   RECOVER_DEBOUNCE_MS,
   sleepSyncMs,
   readTranscriptTail,
   transcriptTipIsAssistant,
+  userQueryText,
 } from "./transcript-followup.js";
-import { isRecoverFollowupMessage, isRecoverOrStuckFollowupMessage } from "./trigger-parser.js";
+import {
+  firstSubstantiveLine,
+  isRecoverFollowupMessage,
+  isRecoverOrStuckFollowupMessage,
+  substantivePromptBody,
+} from "./trigger-parser.js";
 import {
   defaultVerifyReportPath,
   evaluateVerifyReport,
@@ -325,11 +333,21 @@ export class ReviewEngine {
     }
     try {
       let session = this.store.getSession(input.conversationId);
+      // Host sometimes writes turn_ended status=error into the transcript but
+      // delivers stop as completed (e.g. usage-limit ActionRequiredError). Treat
+      // that orphan transcript error like a real error stop for recover — unless
+      // a recover tip is already unanswered (return null; do not bump error_count).
+      // One transcript snapshot for classify — avoids split-read TOCTOU.
+      const orphanClass =
+        input.status === "completed"
+          ? this.classifyCompletedOrphan(input.transcriptPath)
+          : "none";
       // User Stop / host abort must not bootstrap ambient sessions or recover.
-      // Only genuine `error` turns may ensure + inject recover.
+      // Genuine error stops — and completed stops with orphan transcript errors —
+      // may ensure + inject recover.
       if (
         !session &&
-        input.status === "error" &&
+        (input.status === "error" || orphanClass === "salvage") &&
         this.config.reviewScope === "project"
       ) {
         ensureAmbientReviewSession(
@@ -347,6 +365,23 @@ export class ReviewEngine {
       }
       if (input.status === "error") {
         return this.handleErrorStop(session, input);
+      }
+      // Orphan transcript error on completed → same path as status=error.
+      // Unanswered recover tip: return null (do not re-enter handleErrorStop).
+      // Non-recoverable sessions skip salvage; completed below is gated by
+      // sessionReviewRunnable (paused/disarmed usually return null before
+      // pending redelivery).
+      if (orphanClass === "skip_recover_tip") {
+        return null;
+      }
+      if (
+        orphanClass === "salvage" &&
+        this.sessionErrorRecoverable(session)
+      ) {
+        return this.handleErrorStop(session, {
+          ...input,
+          status: "error",
+        });
       }
 
       // Precondition: review chain may run (executing_only → RUN; project → ambient/planning/executing)
@@ -767,7 +802,7 @@ export class ReviewEngine {
     const transcriptPath = input.transcriptPath?.trim() || undefined;
 
     // Genuine error stop: always attempt recover claim. A dead non-recover
-    // harness tip (fix / confirm / delivery tip) at claim time must still inject —
+    // harness tip (fix / confirm / Briefly) at claim time must still inject —
     // suppressing left the session stuck with no followup. Recover tip falls
     // through so coalesce/CAS can dedupe (finish suppresses double-inject when
     // recover is already the unanswered tip).
@@ -782,7 +817,9 @@ export class ReviewEngine {
     let fixTipAtClaim = false;
     if (transcriptPath) {
       const tipEvents = readTranscriptTail(transcriptPath);
-      const inflightAtClaim = inFlightUserQuery(tipEvents);
+      // Peek past trailing turn_ended so a killed fix/confirm tip still counts
+      // for resumeFix / tip-swap; inFlightUserQuery correctly returns null there.
+      const inflightAtClaim = harnessTipBeforeTrailingTurnEnded(tipEvents);
       if (
         inflightAtClaim &&
         !isRecoverFollowupMessage(inflightAtClaim)
@@ -992,10 +1029,13 @@ export class ReviewEngine {
       // Do not stack a recover inject on top — keep pending for redelivery.
       // Exception: finish tip is still the same dead harness tip from claim
       // (this error killed that turn) → must emit recover or the session stays stuck.
+      // Peek past trailing turn_ended so claim/finish compare the same tip surface.
+      const tipForSwap =
+        harnessTipBeforeTrailingTurnEnded(events) ?? inflight;
       if (
-        inflight &&
-        !isRecoverFollowupMessage(inflight) &&
-        !this.isSameDeadHarnessTip(deadHarnessTipAtClaim, inflight)
+        tipForSwap &&
+        !isRecoverFollowupMessage(tipForSwap) &&
+        !this.isSameDeadHarnessTip(deadHarnessTipAtClaim, tipForSwap)
       ) {
         try {
           this.store.clearPendingRedeliverHoldIfStamp(
@@ -1037,7 +1077,7 @@ export class ReviewEngine {
    * exact match. Only fix tips allow finish starting with claim's 48-char prefix
    * (round digits appear early in en/zh). Confirm is exact-only: English confirm
    * puts {lensTitle} after ~100 chars, so a 48-prefix would treat different
-   * lenses as the same tip. Advance/Hook/Briefly stay exact-only for the same
+   * lenses as the same tip. Advance/Briefly stay exact-only for the same
    * shared-lead-in reason.
    */
   private isSameDeadHarnessTip(
@@ -1045,8 +1085,10 @@ export class ReviewEngine {
     finishTip: string,
   ): boolean {
     if (!claimTip) return false;
-    const a = claimTip.trim();
-    const b = finishTip.trim();
+    // Full substantive bodies — first-line-only would conflate multiline tips that
+    // share a lead-in (e.g. confirm lens on line 2). Strip <user_query>/<timestamp>.
+    const a = substantivePromptBody(claimTip) || claimTip.trim();
+    const b = substantivePromptBody(finishTip) || finishTip.trim();
     if (!a || !b) return false;
     const kind = this.harnessFollowupKind(a);
     if (kind !== this.harnessFollowupKind(b)) return false;
@@ -1062,28 +1104,65 @@ export class ReviewEngine {
     return false;
   }
 
+  /**
+   * Classify completed-stop orphan transcript errors from one tail read.
+   * - none: no unresolved turn_ended error
+   * - skip_recover_tip: unresolved error AND a recover tip after that error
+   *   (do not re-bump error_count / re-enter handleErrorStop)
+   * - salvage: unresolved error with no post-error recover tip yet
+   *
+   * Invariant: a newer turn_ended error after an old unanswered recover tip must
+   * salvage again — the prior tip does not cover the new failure.
+   */
+  private classifyCompletedOrphan(
+    transcriptPath: string | undefined,
+  ): "none" | "salvage" | "skip_recover_tip" {
+    const path = transcriptPath?.trim();
+    if (!path) return "none";
+    try {
+      const events = readTranscriptTail(path);
+      const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
+      if (errIdx < 0) return "none";
+      // Only a recover tip *after* this error owns the orphan (skip). A recover
+      // tip left over from an earlier failure must not suppress salvage.
+      for (let i = events.length - 1; i > errIdx; i--) {
+        const ev = events[i]!;
+        if (ev.role === "assistant") return "none";
+        if (ev.role !== "user") continue;
+        const q = userQueryText(ev);
+        if (!q) continue;
+        if (!substantivePromptBody(q)) continue;
+        if (isRecoverFollowupMessage(q)) return "skip_recover_tip";
+        return "salvage";
+      }
+      return "salvage";
+    } catch {
+      return "none";
+    }
+  }
+
   /** Coarse kind bucket so fix/confirm/advance tips cannot share a prefix match. */
   private harnessFollowupKind(m: string): string {
-    if (this.isFixFollowupMessage(m)) return "fix";
-    if (m.startsWith("Review confirm") || m.startsWith("自审确认")) {
+    const line = firstSubstantiveLine(m) || m.trim();
+    if (this.isFixFollowupMessage(line)) return "fix";
+    if (line.startsWith("Review confirm") || line.startsWith("自审确认")) {
       return "confirm";
     }
-    if (m.startsWith("Advance checklist") || m.startsWith("推进下一项")) {
+    if (line.startsWith("Advance checklist") || line.startsWith("推进下一项")) {
       return "advance";
     }
-    if (m.startsWith("Briefly inform the user about the task result.")) return "hook";
-    if (m.startsWith(BRIEFLY_PREFIX)) return "briefly";
-    if (m.startsWith("Stuck:") || m.startsWith("卡住：") || m.startsWith("卡住:")) {
+    if (line.startsWith(BRIEFLY_PREFIX)) return "briefly";
+    if (line.startsWith("Stuck:") || line.startsWith("卡住：") || line.startsWith("卡住:")) {
       return "stuck";
     }
-    if (m.startsWith("Verify failed") || m.startsWith("校验失败")) {
+    if (line.startsWith("Verify failed") || line.startsWith("校验失败")) {
       return "verify";
     }
     if (
-      m.startsWith("All checklist") ||
-      m.startsWith("全部完成") ||
-      m.startsWith("Review complete") ||
-      m.startsWith("自审完成")
+      line.startsWith("All checklist") ||
+      line.startsWith("全部完成") ||
+      line.startsWith("Review complete") ||
+      line.startsWith("自审完成")
     ) {
       return "terminal";
     }
@@ -1456,8 +1535,8 @@ export class ReviewEngine {
 
   /** Shared with inferPendingKind — locale templates must keep these prefixes. */
   private isFixFollowupMessage(message: string): boolean {
-    const m = message.trim();
-    return m.startsWith("Review fix") || m.startsWith("自审修复");
+    const line = firstSubstantiveLine(message) || message.trim();
+    return line.startsWith("Review fix") || line.startsWith("自审修复");
   }
 
   /** Mid-confirm or E5-ready — must not phantom-arm code_edited over E4/E5. */

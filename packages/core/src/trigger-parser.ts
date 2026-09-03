@@ -70,8 +70,6 @@ export const HARNESS_FOLLOWUP_PREFIXES = [
   // Halfwidth colon variants (same as isRecoverOrStuckFollowupMessage).
   "恢复:",
   "卡住:",
-  // External usage-limit continue (account-pool); must not clear Autopilot chain.
-  "Briefly inform the user about the task result.",
 ];
 
 function stripUserQuery(prompt: string): string {
@@ -79,28 +77,55 @@ function stripUserQuery(prompt: string): string {
   return (m?.[1] ?? prompt).trim();
 }
 
+/**
+ * Prompt body after stripping `<user_query>` and leading markup lines
+ * (`<timestamp>…</timestamp>`, etc.). Keeps the remainder of a multiline tip.
+ */
+export function substantivePromptBody(text: string): string {
+  const body = stripUserQuery(text || "");
+  const lines = body.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i]!.trim();
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+    // Cursor may prepend <timestamp>...</timestamp>.
+    if (trimmed.startsWith("<") && trimmed.includes(">")) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  return lines.slice(i).join("\n").trim();
+}
+
+/** First non-empty line of {@link substantivePromptBody}. */
+export function firstSubstantiveLine(text: string): string {
+  const body = substantivePromptBody(text);
+  if (!body) return "";
+  return body.split(/\r?\n/)[0]?.trim() ?? "";
+}
+
 export function isHarnessFollowupMessage(text: string): boolean {
   // Cursor may wrap the prompt in <user_query> and/or a leading <timestamp> line.
-  const body = stripUserQuery(text);
-  for (const raw of body.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith("<") && line.includes(">")) continue;
-    return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
-  }
-  return false;
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
+  return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
 }
 
 /**
  * Recover automation prompts (not stuck). Used for error-recover coalesce/CAS.
+ * Must tolerate <user_query> / <timestamp> wrappers like isHarnessFollowupMessage.
  */
 export function isRecoverFollowupMessage(text: string): boolean {
-  const m = (text || "").trim();
-  if (!m) return false;
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
   return (
-    m.startsWith("Recover:") ||
-    m.startsWith("恢复：") ||
-    m.startsWith("恢复:")
+    line.startsWith("Recover:") ||
+    line.startsWith("恢复：") ||
+    line.startsWith("恢复:")
   );
 }
 
@@ -109,13 +134,13 @@ export function isRecoverFollowupMessage(text: string): boolean {
  * (unlike fix/confirm pending, which must survive for lens redelivery).
  */
 export function isRecoverOrStuckFollowupMessage(text: string): boolean {
-  const m = (text || "").trim();
-  if (!m) return false;
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
   return (
-    isRecoverFollowupMessage(m) ||
-    m.startsWith("Stuck:") ||
-    m.startsWith("卡住：") ||
-    m.startsWith("卡住:")
+    isRecoverFollowupMessage(line) ||
+    line.startsWith("Stuck:") ||
+    line.startsWith("卡住：") ||
+    line.startsWith("卡住:")
   );
 }
 

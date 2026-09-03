@@ -637,16 +637,33 @@ describe("pending followup + session round", () => {
     expect(store.getReviewChain("c1")!.confirm_left).toBe(4);
   });
 
-  it("transcript helpers: delivered pending clears, delivery tip is noise", () => {
+  it("transcript helpers: delivered pending clears, Briefly tip is noise", () => {
     const pending = "自审确认 2/5（会话第 8 轮；连续无改动确认，计入修复轮计数）。";
     writeTranscript(transcript, [
       { role: "user", text: `<user_query>\n${pending}\n</user_query>` },
-      { role: "user", text: "<user_query>\nBriefly inform the user about the task result.继续\n</user_query>" },
+      {
+        role: "user",
+        text: "<user_query>\nBriefly inform the user about the task result.\n</user_query>",
+      },
       { role: "assistant", text: "ack" },
     ]);
     const events = readTranscriptTail(transcript);
     expect(automationFollowupPresent(events, pending)).toBe(true);
     expect(followupInFlight(events)).toBe(false);
+  });
+
+  it("automationFollowupPresent matches tip when <timestamp> is inside user_query", () => {
+    const pending =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n<timestamp>Thursday, Sep 3, 2026, 5:43 PM (UTC+8)</timestamp>\n${pending}\n</user_query>`,
+      },
+      { role: "assistant", text: "continuing" },
+    ]);
+    const events = readTranscriptTail(transcript);
+    expect(automationFollowupPresent(events, pending)).toBe(true);
   });
 
   it("delivered snapshot clear must not wipe a replaced live pending", () => {

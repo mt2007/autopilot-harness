@@ -105,9 +105,14 @@ export {
   pendingRedeliverAllowed,
   userQueryText,
   inFlightUserQuery,
+  harnessTipBeforeTrailingTurnEnded,
+  isDeliveryNoiseUserQuery,
   inRecoverDebounceWindow,
   sleepSyncMs,
   transcriptTipIsAssistant,
+  latestUnresolvedTurnEndedError,
+  latestUnresolvedTurnEndedErrorIndex,
+  transcriptHasUnresolvedTurnEndedError,
   PENDING_REDELIVER_COOLDOWN_MS,
   RECOVER_DEBOUNCE_MS,
   type TranscriptEvent,
@@ -124,6 +129,8 @@ export {
 
 export {
   parseTrigger,
+  firstSubstantiveLine,
+  substantivePromptBody,
   isHarnessFollowupMessage,
   isRecoverOrStuckFollowupMessage,
   isRecoverFollowupMessage,

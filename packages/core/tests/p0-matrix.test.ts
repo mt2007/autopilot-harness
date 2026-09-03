@@ -2292,26 +2292,25 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
     );
 
     expect(isHarnessFollowupMessage("Review fix round 1: ...")).toBe(true);
-    expect(isHarnessFollowupMessage("Briefly inform the user about the task result.继续")).toBe(true);
     expect(isHarnessFollowupMessage("自审确认 1/5 — 角度")).toBe(true);
     expect(isHarnessFollowupMessage("恢复一下备份")).toBe(false);
     expect(
       isHarnessFollowupMessage(
-        "<user_query>\nBriefly inform the user about the task result.继续\n</user_query>",
+        "<user_query>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
       ),
     ).toBe(true);
     expect(
       isHarnessFollowupMessage(
-        "<user_query>\n<timestamp>Saturday, Aug 29, 2026, 8:14 PM (UTC+8)</timestamp>\nBriefly inform the user about the task result.继续\n</user_query>",
+        "<user_query>\n<timestamp>Saturday, Aug 29, 2026, 8:14 PM (UTC+8)</timestamp>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
       ),
     ).toBe(true);
     expect(parseTrigger({ prompt: "/autopilot-on build comments", conversationId: "c1", projectRoot: root })?.kind).toBe("on");
 
-    // E8: usage-limit continue must not clear chain_pending
+    // E8: Autopilot recover followup must not clear chain_pending
     store.updateReviewChain("c1", { chain_pending: 1 });
     handleBeforeSubmitPrompt(
       store,
-      { conversation_id: "c1", prompt: "Briefly inform the user about the task result.继续" },
+      { conversation_id: "c1", prompt: "恢复：上一回合出错。继续当前任务。" },
       root,
     );
     expect(store.getReviewChain("c1")!.chain_pending).toBe(1);
@@ -2321,7 +2320,8 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
       store,
       {
         conversation_id: "c1",
-        prompt: "<user_query>\nBriefly inform the user about the task result.继续\n</user_query>",
+        prompt:
+          "<user_query>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
       },
       root,
     );
@@ -2333,7 +2333,7 @@ describe("F-RUN / F-E8 triggers + list-tracks", () => {
       {
         conversation_id: "c1",
         prompt:
-          "<user_query>\n<timestamp>t</timestamp>\nBriefly inform the user about the task result.继续\n</user_query>",
+          "<user_query>\n<timestamp>t</timestamp>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
       },
       root,
     );

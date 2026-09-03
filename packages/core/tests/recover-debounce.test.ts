@@ -17,14 +17,25 @@ function tmpRoot(): string {
 
 function writeTranscript(
   file: string,
-  events: Array<{ role: string; text: string }>,
+  events: Array<
+    | { role: string; text: string }
+    | { type: "turn_ended"; status: string; error?: string }
+  >,
 ): void {
-  const lines = events.map((e) =>
-    JSON.stringify({
-      role: e.role,
-      message: { content: [{ type: "text", text: e.text }] },
-    }),
-  );
+  const lines = events.map((e) => {
+    if ("type" in e && e.type === "turn_ended") {
+      return JSON.stringify({
+        type: "turn_ended",
+        status: e.status,
+        ...(e.error !== undefined ? { error: e.error } : {}),
+      });
+    }
+    const row = e as { role: string; text: string };
+    return JSON.stringify({
+      role: row.role,
+      message: { content: [{ type: "text", text: row.text }] },
+    });
+  });
   fs.writeFileSync(file, lines.join("\n") + "\n");
 }
 
@@ -568,34 +579,6 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
   });
 
-  it("F-ERR-DEBOUNCE-TIP-SWAP-HOOK: short Hook tip must not prefix-match a longer different Hook", () => {
-    writeTranscript(transcript, [
-      {
-        role: "user",
-        text: `<user_query>\nBriefly inform the user about the task result.继续\n</user_query>`,
-      },
-    ]);
-    const e = eng({
-      recoverDebounceMs: 3000,
-      sleepSync: () => {
-        writeTranscript(transcript, [
-          {
-            role: "user",
-            text: `<user_query>\nBriefly inform the user about the task result.继续当前额度用尽后的任务\n</user_query>`,
-          },
-        ]);
-      },
-    });
-    const out = e.handleStop({
-      conversationId: "c1",
-      status: "error",
-      loopCount: 0,
-      transcriptPath: transcript,
-    });
-    expect(out).toBeNull();
-    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
-  });
-
   it("F-ERR-DEBOUNCE-TIP-SWAP-ADVANCE: different advance nextIds must not share lead-in as same tip", () => {
     const advA =
       "推进下一项：自审确认已干净通过（确认轮不 commit）。先勾选刚完成的当前项 item-a [x]。然后实现下一项：item-b — B。";
@@ -660,6 +643,36 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
   });
 
+  it("F-ERR-DEBOUNCE-TIP-SWAP-CONFIRM-MULTILINE: same first line + different body must not count as same tip", () => {
+    const cA = "自审确认 2/5\n角度：正确性\nDig A.";
+    const cB = "自审确认 2/5\n角度：空值边界\nDig B.";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n<timestamp>t1</timestamp>\n${cA}\n</user_query>`,
+      },
+    ]);
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\n<timestamp>t2</timestamp>\n${cB}\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
   it("F-ERR-DEBOUNCE-DEAD-BRIEFLY-TIP: same unanswered Briefly tip still injects recover", () => {
     const tip = "Briefly inform the user that the previous turn failed.";
     writeTranscript(transcript, [
@@ -668,6 +681,10 @@ describe("error recover debounce (3s window, once)", () => {
         text: `<user_query>\n${tip}\n</user_query>`,
       },
     ]);
+    store.updateReviewChain("c1", {
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+    });
     const e = eng();
     const out = e.handleStop({
       conversationId: "c1",
@@ -676,6 +693,7 @@ describe("error recover debounce (3s window, once)", () => {
       transcriptPath: transcript,
     });
     expect(out?.kind).toBe("recover");
+    expect(out?.message).toMatch(/恢复|Recover/);
     expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
   });
 
@@ -813,6 +831,57 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.code_edited).toBe(1);
   });
 
+  it("F-ERR-DEAD-FIX-TIP-TRAILING-TURN-ENDED: turn_ended after fix tip still re-arms code_edited", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\nReview fix round 2 (no hard cap)\n</user_query>`,
+      },
+      {
+        type: "turn_ended",
+        status: "error",
+        error: "You've hit your usage limit",
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      pending_followup: null,
+      pending_followup_at: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 2,
+    });
+    const e = eng({ recoverDebounceMs: 0, sleepSync: () => {} });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(store.getReviewChain("c1")!.code_edited).toBe(1);
+  });
+
+  it("F-ERR-DEAD-FIX-TIP-NOT-BEFORE-SUCCESS: success turn_ended must not expose older fix tip", async () => {
+    const { harnessTipBeforeTrailingTurnEnded } = await import("../src/index.js");
+    const events = [
+      {
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "<user_query>\nReview fix round 2 (no hard cap)\n</user_query>",
+            },
+          ],
+        },
+      },
+      { type: "turn_ended", status: "success" },
+      { type: "turn_ended", status: "error", error: "later failure" },
+    ];
+    // Must not peek past success and treat the prior fix tip as this error's dead tip.
+    expect(harnessTipBeforeTrailingTurnEnded(events)).toBeNull();
+  });
+
   it("F-ERR-DEBOUNCE-DEAD-CONFIRM-TIP: error on unanswered confirm tip injects recover and keeps confirm_left", () => {
     writeTranscript(transcript, [
       {
@@ -900,27 +969,269 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverMsg);
   });
 
-  it("F-ERR-DEBOUNCE-DEAD-HOOK-TIP: error on unanswered delivery tip tip still injects recover", () => {
+  it("F-ERR-ORPHAN-SALVAGE: completed stop with unresolved transcript turn_ended error injects recover", () => {
     writeTranscript(transcript, [
       {
         role: "user",
-        text: `<user_query>\nBriefly inform the user about the task result.继续\n</user_query>`,
+        text: `<user_query>\n<timestamp>t</timestamp>\nReview fix round 2 (no hard cap)\n</user_query>`,
+      },
+      { role: "assistant", text: "started review" },
+      {
+        type: "turn_ended",
+        status: "error",
+        error:
+          "You've hit your usage limit Get Cursor Pro for more Agent usage, unlimited Tab, and more.",
       },
     ]);
     store.updateReviewChain("c1", {
-      pending_followup: "Briefly inform the user about the task result.继续",
+      pending_followup: "Review fix round 2 (no hard cap)",
       pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
     });
-    const e = eng();
+    const e = eng({ recoverDebounceMs: 0, sleepSync: () => {} });
     const out = e.handleStop({
       conversationId: "c1",
-      status: "error",
+      status: "completed",
       loopCount: 0,
       transcriptPath: transcript,
     });
     expect(out?.kind).toBe("recover");
     expect(out?.message).toMatch(/恢复|Recover/);
     expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-ORPHAN-SKIP-RECOVER-TIP: unanswered recover tip must not re-enter handleErrorStop", () => {
+    const recoverMsg = "恢复：上一回合出错。继续当前任务。";
+    writeTranscript(transcript, [
+      {
+        type: "turn_ended",
+        status: "error",
+        error: "You've hit your usage limit",
+      },
+      {
+        role: "user",
+        // Host wraps injects with <timestamp>; recover detect must still match.
+        text: `<user_query>\n<timestamp>Thursday, Sep 3, 2026, 5:25 PM (UTC+8)</timestamp>\n${recoverMsg}\n</user_query>`,
+      },
+    ]);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      error_count: 2,
+    });
+    store.updateReviewChain("c1", {
+      pending_followup: recoverMsg,
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+    });
+    const e = eng({ recoverDebounceMs: 0, sleepSync: () => {} });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getSession("c1")!.error_count).toBe(2);
+    // Must not clear recover pending via completed delivered-tip logic.
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverMsg);
+  });
+
+  it("F-ERR-ORPHAN-SALVAGE-AFTER-STALE-RECOVER: newer error after old recover tip must salvage again", () => {
+    const recoverMsg = "恢复：上一回合出错。继续当前任务。";
+    writeTranscript(transcript, [
+      {
+        type: "turn_ended",
+        status: "error",
+        error: "usage limit first",
+      },
+      {
+        role: "user",
+        text: `<user_query>\n${recoverMsg}\n</user_query>`,
+      },
+      // Agent died again before answering recover — new orphan error.
+      {
+        type: "turn_ended",
+        status: "error",
+        error: "usage limit again",
+      },
+    ]);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      error_count: 1,
+      checklist_path: "",
+      track_id: "t",
+    });
+    store.updateReviewChain("c1", {
+      pending_followup: recoverMsg,
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+    });
+    const e = eng({ recoverDebounceMs: 0, sleepSync: () => {} });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(store.getSession("c1")!.error_count).toBe(2);
+  });
+
+  it("F-ERR-ORPHAN-RESOLVED: completed stop does not salvage after assistant moved past transcript error", () => {
+    writeTranscript(transcript, [
+      {
+        type: "turn_ended",
+        status: "error",
+        error: "You've hit your usage limit",
+      },
+      {
+        role: "user",
+        text: `<user_query>\n恢复：上一回合出错。继续当前任务。\n</user_query>`,
+      },
+      { role: "assistant", text: "continuing after recover" },
+      { type: "turn_ended", status: "success" },
+    ]);
+    const e = eng({ recoverDebounceMs: 0, sleepSync: () => {} });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).not.toBe("recover");
+  });
+
+  it("F-ERR-ORPHAN-RESOLVED-FAILED: later non-error turn_ended clears orphan", async () => {
+    const { latestUnresolvedTurnEndedError } = await import("../src/index.js");
+    const events = [
+      { type: "turn_ended", status: "error", error: "usage limit" },
+      { type: "turn_ended", status: "failed" },
+    ];
+    expect(latestUnresolvedTurnEndedError(events)).toBeNull();
+  });
+
+  it("F-ERR-ORPHAN-HELPER-STATUS-CASE: Error status is normalized for orphan detect", async () => {
+    const { latestUnresolvedTurnEndedError } = await import("../src/index.js");
+    expect(
+      latestUnresolvedTurnEndedError([
+        { type: "turn_ended", status: "Error", error: "usage limit" },
+      ])?.status,
+    ).toBe("Error");
+    expect(
+      latestUnresolvedTurnEndedError([
+        { type: "turn_ended", status: " ERROR ", error: "usage limit" },
+      ])?.status,
+    ).toBe(" ERROR ");
+  });
+
+  it("F-ERR-ORPHAN-HELPER: unanswered harness after error stays unresolved", async () => {
+    const { latestUnresolvedTurnEndedError } = await import("../src/index.js");
+    const events = [
+      {
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "<user_query>\nReview fix round 1\n</user_query>",
+            },
+          ],
+        },
+      },
+      { type: "turn_ended", status: "error", error: "usage limit" },
+      {
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "<user_query>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
+            },
+          ],
+        },
+      },
+    ];
+    expect(latestUnresolvedTurnEndedError(events)?.status).toBe("error");
+  });
+
+  it("F-ERR-ORPHAN-HELPER-BRIEFLY-TS: timestamped Briefly after error stays unresolved", async () => {
+    const { latestUnresolvedTurnEndedError, isDeliveryNoiseUserQuery } =
+      await import("../src/index.js");
+    expect(
+      isDeliveryNoiseUserQuery(
+        "<user_query>\n<timestamp>t</timestamp>\nBriefly inform the user about the task result.\n</user_query>",
+      ),
+    ).toBe(true);
+    const events = [
+      { type: "turn_ended", status: "error", error: "usage limit" },
+      {
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "<user_query>\n<timestamp>t</timestamp>\nBriefly inform the user about the task result.\n</user_query>",
+            },
+          ],
+        },
+      },
+    ];
+    expect(latestUnresolvedTurnEndedError(events)?.status).toBe("error");
+  });
+
+  it("F-ERR-ORPHAN-HELPER-TS-ONLY: bare timestamp user row does not resolve orphan", async () => {
+    const { latestUnresolvedTurnEndedError, inFlightUserQuery } = await import(
+      "../src/index.js"
+    );
+    const recover =
+      "<user_query>\n恢复：上一回合出错。继续当前任务。\n</user_query>";
+    const events = [
+      { type: "turn_ended", status: "error", error: "usage limit" },
+      {
+        role: "user",
+        message: { content: [{ type: "text", text: recover }] },
+      },
+      {
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "<timestamp>Thursday, Sep 3, 2026, 4:15 PM (UTC+8)</timestamp>",
+            },
+          ],
+        },
+      },
+    ];
+    expect(latestUnresolvedTurnEndedError(events)?.status).toBe("error");
+    expect(inFlightUserQuery(events)).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-ORPHAN-HELPER-INFLIGHT-TURN-ENDED: turn_ended closes prior recover tip", async () => {
+    const { inFlightUserQuery } = await import("../src/index.js");
+    const events = [
+      {
+        role: "user",
+        message: {
+          content: [
+            {
+              type: "text",
+              text: "<user_query>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
+            },
+          ],
+        },
+      },
+      { type: "turn_ended", status: "error", error: "usage limit again" },
+    ];
+    expect(inFlightUserQuery(events)).toBeNull();
   });
 
   it("inFlightUserQuery returns harness tip or null", async () => {
@@ -955,6 +1266,16 @@ describe("error recover debounce (3s window, once)", () => {
     ).toBeNull();
     expect(isRecoverFollowupMessage("恢复：上一回合出错。")).toBe(true);
     expect(isRecoverFollowupMessage("卡住：x")).toBe(false);
+    expect(
+      isRecoverFollowupMessage(
+        "<user_query>\n<timestamp>t</timestamp>\n恢复：上一回合出错。继续当前任务。\n</user_query>",
+      ),
+    ).toBe(true);
+    expect(
+      isRecoverFollowupMessage(
+        "<user_query>\n<timestamp>t</timestamp>\nStuck: wait\n</user_query>",
+      ),
+    ).toBe(false);
   });
 
   it("F-ERR-DEBOUNCE-USER-TIP: unanswered normal user tip is still dead → emit recover", () => {

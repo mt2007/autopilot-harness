@@ -4,7 +4,12 @@
  * (minus host-/product-specific prefixes).
  */
 import fs from "node:fs";
-import { HARNESS_FOLLOWUP_PREFIXES, isHarnessFollowupMessage } from "./trigger-parser.js";
+import {
+  firstSubstantiveLine,
+  HARNESS_FOLLOWUP_PREFIXES,
+  isHarnessFollowupMessage,
+  substantivePromptBody,
+} from "./trigger-parser.js";
 
 export const TRANSCRIPT_TAIL_BYTES = 512_000;
 export const TRANSCRIPT_TAIL_EVENTS = 80;
@@ -43,9 +48,15 @@ export type TranscriptEvent = Record<string, unknown>;
 /** True when the newest role tip is an assistant turn (session has spoken). */
 export function transcriptTipIsAssistant(events: TranscriptEvent[]): boolean {
   for (let i = events.length - 1; i >= 0; i--) {
-    const role = events[i]!.role;
+    const ev = events[i]!;
+    const role = ev.role;
     if (role === "assistant") return true;
-    if (role === "user") return false;
+    if (role === "user") {
+      const q = userQueryText(ev);
+      // Bare <timestamp> rows are not a real user tip; empty stubs still count.
+      if (q && !substantivePromptBody(q)) continue;
+      return false;
+    }
   }
   return false;
 }
@@ -128,16 +139,86 @@ export function userQueryText(obj: TranscriptEvent): string {
 }
 
 export function isDeliveryNoiseUserQuery(query: string): boolean {
-  const q = (query || "").trim();
-  if (!q) return false;
-  if (q.startsWith(BRIEFLY_PREFIX)) return true;
-  if (q.startsWith("Briefly inform the user about the task result.")) return true;
-  return false;
+  const line = firstSubstantiveLine(query);
+  if (!line) return false;
+  return line.startsWith(BRIEFLY_PREFIX);
+}
+
+/**
+ * Index of the latest `turn_ended` with `status=error` that the session has
+ * not moved past, or -1. See {@link latestUnresolvedTurnEndedError}.
+ */
+export function latestUnresolvedTurnEndedErrorIndex(
+  events: TranscriptEvent[],
+): number {
+  let errIdx = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]!;
+    if (ev.type === "turn_ended" && isTurnEndedErrorStatus(ev.status)) {
+      errIdx = i;
+      break;
+    }
+  }
+  if (errIdx < 0) return -1;
+
+  for (let i = errIdx + 1; i < events.length; i++) {
+    const ev = events[i]!;
+    if (ev.type === "turn_ended") {
+      // A later turn boundary means the session moved on from this error.
+      if (!isTurnEndedErrorStatus(ev.status)) {
+        return -1;
+      }
+      continue;
+    }
+    if (ev.role === "assistant") {
+      return -1;
+    }
+    if (ev.role === "user") {
+      const q = userQueryText(ev);
+      if (!q) continue;
+      // Cursor often inserts timestamp-only user rows; not real progress.
+      if (!substantivePromptBody(q)) continue;
+      if (isDeliveryNoiseUserQuery(q) || isHarnessFollowupMessage(q)) {
+        continue;
+      }
+      return -1;
+    }
+  }
+  return errIdx;
+}
+
+/**
+ * Latest `turn_ended` with `status=error` that the session has not moved past.
+ * Used when the host wrote an error into the transcript but delivered stop as
+ * `completed` (no `status=error` hook) — Autopilot can still salvage recover.
+ *
+ * Resolved when anything after that error shows progress: assistant reply,
+ * non-harness user message, or any later turn_ended that is not another error
+ * (success / aborted / completed / failed / …). Unanswered harness / recover /
+ * Briefly user tips after the error do not resolve.
+ */
+export function latestUnresolvedTurnEndedError(
+  events: TranscriptEvent[],
+): TranscriptEvent | null {
+  const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
+  return errIdx < 0 ? null : events[errIdx]!;
+}
+
+/** Host status strings may vary in case/whitespace; only `error` is an orphan signal. */
+function isTurnEndedErrorStatus(status: unknown): boolean {
+  return String(status ?? "").trim().toLowerCase() === "error";
+}
+
+export function transcriptHasUnresolvedTurnEndedError(
+  events: TranscriptEvent[],
+): boolean {
+  return latestUnresolvedTurnEndedErrorIndex(events) >= 0;
 }
 
 function isInFlightUserQuery(query: string): boolean {
   if (!query) return false;
-  if (query.startsWith(BRIEFLY_PREFIX)) return true;
+  const line = firstSubstantiveLine(query);
+  if (line.startsWith(BRIEFLY_PREFIX)) return true;
   return isHarnessFollowupMessage(query);
 }
 
@@ -148,15 +229,55 @@ export function followupInFlight(events: TranscriptEvent[]): boolean {
 
 /**
  * Latest in-flight automation/Briefly user query, or null if tip is assistant /
- * ordinary user / empty.
+ * ordinary user / empty / turn already ended.
+ *
+ * `turn_ended` closes the prior user tip: it is no longer in-flight. That keeps
+ * orphan salvage able to re-emit recover after a newer error lands on top of an
+ * unanswered recover tip from an earlier failure.
  */
 export function inFlightUserQuery(events: TranscriptEvent[]): string | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i]!;
+    if (ev.type === "turn_ended") return null;
     const role = ev.role;
     if (role === "assistant") return null;
     if (role === "user") {
       const q = userQueryText(ev);
+      if (!q) continue;
+      // Skip markup-only rows (e.g. bare <timestamp>) so a real tip below still counts.
+      if (!substantivePromptBody(q)) continue;
+      return isInFlightUserQuery(q) ? q : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Like {@link inFlightUserQuery}, but ignores trailing *error* `turn_ended` rows
+ * so an error-stop claim can still see the harness tip that the failing turn
+ * killed. Does **not** peek past success/aborted/failed boundaries — those
+ * close prior tips for good (plain {@link inFlightUserQuery} already returns
+ * null on any `turn_ended`).
+ */
+export function harnessTipBeforeTrailingTurnEnded(
+  events: TranscriptEvent[],
+): string | null {
+  let i = events.length - 1;
+  while (
+    i >= 0 &&
+    events[i]!.type === "turn_ended" &&
+    isTurnEndedErrorStatus(events[i]!.status)
+  ) {
+    i--;
+  }
+  for (; i >= 0; i--) {
+    const ev = events[i]!;
+    if (ev.type === "turn_ended") return null;
+    if (ev.role === "assistant") return null;
+    if (ev.role === "user") {
+      const q = userQueryText(ev);
+      if (!q) continue;
+      if (!substantivePromptBody(q)) continue;
       return isInFlightUserQuery(q) ? q : null;
     }
   }
@@ -168,7 +289,7 @@ export function automationFollowupPresent(
   events: TranscriptEvent[],
   message: string,
 ): boolean {
-  const needle = message.trim();
+  const needle = substantivePromptBody(message);
   if (!needle) return false;
   const prefix = needle.slice(0, 48);
   for (let i = events.length - 1; i >= 0; i--) {
@@ -176,7 +297,10 @@ export function automationFollowupPresent(
     if (ev.role !== "user") continue;
     const query = userQueryText(ev);
     if (isDeliveryNoiseUserQuery(query)) continue;
-    return query === needle || (Boolean(prefix) && query.startsWith(prefix));
+    // Host may put <timestamp> inside <user_query>; compare stripped bodies.
+    const body = substantivePromptBody(query);
+    if (!body) continue;
+    return body === needle || (Boolean(prefix) && body.startsWith(prefix));
   }
   return false;
 }

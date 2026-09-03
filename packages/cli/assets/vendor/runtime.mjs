@@ -1854,33 +1854,49 @@ var HARNESS_FOLLOWUP_PREFIXES = [
   "\u5361\u4F4F\uFF1A",
   // Halfwidth colon variants (same as isRecoverOrStuckFollowupMessage).
   "\u6062\u590D:",
-  "\u5361\u4F4F:",
-  // External usage-limit continue (account-pool); must not clear Autopilot chain.
-  "\u3010Hook\xB7\u7EED\u8DD1\u3011"
+  "\u5361\u4F4F:"
 ];
 function stripUserQuery(prompt) {
   const m = prompt.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
   return (m?.[1] ?? prompt).trim();
 }
-function isHarnessFollowupMessage(text) {
-  const body = stripUserQuery(text);
-  for (const raw of body.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith("<") && line.includes(">")) continue;
-    return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
+function substantivePromptBody(text) {
+  const body = stripUserQuery(text || "");
+  const lines = body.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith("<") && trimmed.includes(">")) {
+      i++;
+      continue;
+    }
+    break;
   }
-  return false;
+  return lines.slice(i).join("\n").trim();
+}
+function firstSubstantiveLine(text) {
+  const body = substantivePromptBody(text);
+  if (!body) return "";
+  return body.split(/\r?\n/)[0]?.trim() ?? "";
+}
+function isHarnessFollowupMessage(text) {
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
+  return HARNESS_FOLLOWUP_PREFIXES.some((p) => line.startsWith(p));
 }
 function isRecoverFollowupMessage(text) {
-  const m = (text || "").trim();
-  if (!m) return false;
-  return m.startsWith("Recover:") || m.startsWith("\u6062\u590D\uFF1A") || m.startsWith("\u6062\u590D:");
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
+  return line.startsWith("Recover:") || line.startsWith("\u6062\u590D\uFF1A") || line.startsWith("\u6062\u590D:");
 }
 function isRecoverOrStuckFollowupMessage(text) {
-  const m = (text || "").trim();
-  if (!m) return false;
-  return isRecoverFollowupMessage(m) || m.startsWith("Stuck:") || m.startsWith("\u5361\u4F4F\uFF1A") || m.startsWith("\u5361\u4F4F:");
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
+  return isRecoverFollowupMessage(line) || line.startsWith("Stuck:") || line.startsWith("\u5361\u4F4F\uFF1A") || line.startsWith("\u5361\u4F4F:");
 }
 var USER_ABORT_MARKERS = [
   "user aborted",
@@ -2030,9 +2046,14 @@ function sleepSyncMs(ms) {
 }
 function transcriptTipIsAssistant(events) {
   for (let i = events.length - 1; i >= 0; i--) {
-    const role = events[i].role;
+    const ev = events[i];
+    const role = ev.role;
     if (role === "assistant") return true;
-    if (role === "user") return false;
+    if (role === "user") {
+      const q = userQueryText(ev);
+      if (q && !substantivePromptBody(q)) continue;
+      return false;
+    }
   }
   return false;
 }
@@ -2100,15 +2121,50 @@ function userQueryText(obj) {
   return text.trim();
 }
 function isDeliveryNoiseUserQuery(query) {
-  const q = (query || "").trim();
-  if (!q) return false;
-  if (q.startsWith(BRIEFLY_PREFIX)) return true;
-  if (q.startsWith("\u3010Hook\xB7\u7EED\u8DD1\u3011")) return true;
-  return false;
+  const line = firstSubstantiveLine(query);
+  if (!line) return false;
+  return line.startsWith(BRIEFLY_PREFIX);
+}
+function latestUnresolvedTurnEndedErrorIndex(events) {
+  let errIdx = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i];
+    if (ev.type === "turn_ended" && isTurnEndedErrorStatus(ev.status)) {
+      errIdx = i;
+      break;
+    }
+  }
+  if (errIdx < 0) return -1;
+  for (let i = errIdx + 1; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.type === "turn_ended") {
+      if (!isTurnEndedErrorStatus(ev.status)) {
+        return -1;
+      }
+      continue;
+    }
+    if (ev.role === "assistant") {
+      return -1;
+    }
+    if (ev.role === "user") {
+      const q = userQueryText(ev);
+      if (!q) continue;
+      if (!substantivePromptBody(q)) continue;
+      if (isDeliveryNoiseUserQuery(q) || isHarnessFollowupMessage(q)) {
+        continue;
+      }
+      return -1;
+    }
+  }
+  return errIdx;
+}
+function isTurnEndedErrorStatus(status) {
+  return String(status ?? "").trim().toLowerCase() === "error";
 }
 function isInFlightUserQuery(query) {
   if (!query) return false;
-  if (query.startsWith(BRIEFLY_PREFIX)) return true;
+  const line = firstSubstantiveLine(query);
+  if (line.startsWith(BRIEFLY_PREFIX)) return true;
   return isHarnessFollowupMessage(query);
 }
 function followupInFlight(events) {
@@ -2117,17 +2173,38 @@ function followupInFlight(events) {
 function inFlightUserQuery(events) {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
+    if (ev.type === "turn_ended") return null;
     const role = ev.role;
     if (role === "assistant") return null;
     if (role === "user") {
       const q = userQueryText(ev);
+      if (!q) continue;
+      if (!substantivePromptBody(q)) continue;
+      return isInFlightUserQuery(q) ? q : null;
+    }
+  }
+  return null;
+}
+function harnessTipBeforeTrailingTurnEnded(events) {
+  let i = events.length - 1;
+  while (i >= 0 && events[i].type === "turn_ended" && isTurnEndedErrorStatus(events[i].status)) {
+    i--;
+  }
+  for (; i >= 0; i--) {
+    const ev = events[i];
+    if (ev.type === "turn_ended") return null;
+    if (ev.role === "assistant") return null;
+    if (ev.role === "user") {
+      const q = userQueryText(ev);
+      if (!q) continue;
+      if (!substantivePromptBody(q)) continue;
       return isInFlightUserQuery(q) ? q : null;
     }
   }
   return null;
 }
 function automationFollowupPresent(events, message) {
-  const needle = message.trim();
+  const needle = substantivePromptBody(message);
   if (!needle) return false;
   const prefix = needle.slice(0, 48);
   for (let i = events.length - 1; i >= 0; i--) {
@@ -2135,7 +2212,9 @@ function automationFollowupPresent(events, message) {
     if (ev.role !== "user") continue;
     const query = userQueryText(ev);
     if (isDeliveryNoiseUserQuery(query)) continue;
-    return query === needle || Boolean(prefix) && query.startsWith(prefix);
+    const body = substantivePromptBody(query);
+    if (!body) continue;
+    return body === needle || Boolean(prefix) && body.startsWith(prefix);
   }
   return false;
 }
@@ -2279,7 +2358,8 @@ var ReviewEngine = class {
     }
     try {
       let session = this.store.getSession(input.conversationId);
-      if (!session && input.status === "error" && this.config.reviewScope === "project") {
+      const orphanClass = input.status === "completed" ? this.classifyCompletedOrphan(input.transcriptPath) : "none";
+      if (!session && (input.status === "error" || orphanClass === "salvage") && this.config.reviewScope === "project") {
         ensureAmbientReviewSession(
           this.store,
           input.conversationId,
@@ -2294,6 +2374,15 @@ var ReviewEngine = class {
       }
       if (input.status === "error") {
         return this.handleErrorStop(session, input);
+      }
+      if (orphanClass === "skip_recover_tip") {
+        return null;
+      }
+      if (orphanClass === "salvage" && this.sessionErrorRecoverable(session)) {
+        return this.handleErrorStop(session, {
+          ...input,
+          status: "error"
+        });
       }
       if (!sessionReviewRunnable(session, this.config.reviewScope)) {
         return null;
@@ -2594,7 +2683,7 @@ var ReviewEngine = class {
     let fixTipAtClaim = false;
     if (transcriptPath) {
       const tipEvents = readTranscriptTail(transcriptPath);
-      const inflightAtClaim = inFlightUserQuery(tipEvents);
+      const inflightAtClaim = harnessTipBeforeTrailingTurnEnded(tipEvents);
       if (inflightAtClaim && !isRecoverFollowupMessage(inflightAtClaim)) {
         deadHarnessTipAtClaim = inflightAtClaim;
         if (this.isFixFollowupMessage(inflightAtClaim)) {
@@ -2730,7 +2819,8 @@ var ReviewEngine = class {
         }
         return null;
       }
-      if (inflight && !isRecoverFollowupMessage(inflight) && !this.isSameDeadHarnessTip(deadHarnessTipAtClaim, inflight)) {
+      const tipForSwap = harnessTipBeforeTrailingTurnEnded(events) ?? inflight;
+      if (tipForSwap && !isRecoverFollowupMessage(tipForSwap) && !this.isSameDeadHarnessTip(deadHarnessTipAtClaim, tipForSwap)) {
         try {
           this.store.clearPendingRedeliverHoldIfStamp(
             conversationId,
@@ -2759,13 +2849,13 @@ var ReviewEngine = class {
    * exact match. Only fix tips allow finish starting with claim's 48-char prefix
    * (round digits appear early in en/zh). Confirm is exact-only: English confirm
    * puts {lensTitle} after ~100 chars, so a 48-prefix would treat different
-   * lenses as the same tip. Advance/Hook/Briefly stay exact-only for the same
+   * lenses as the same tip. Advance/Briefly stay exact-only for the same
    * shared-lead-in reason.
    */
   isSameDeadHarnessTip(claimTip, finishTip) {
     if (!claimTip) return false;
-    const a = claimTip.trim();
-    const b = finishTip.trim();
+    const a = substantivePromptBody(claimTip) || claimTip.trim();
+    const b = substantivePromptBody(finishTip) || finishTip.trim();
     if (!a || !b) return false;
     const kind = this.harnessFollowupKind(a);
     if (kind !== this.harnessFollowupKind(b)) return false;
@@ -2778,24 +2868,56 @@ var ReviewEngine = class {
     if (b.length < prefix.length && a.startsWith(b)) return true;
     return false;
   }
+  /**
+   * Classify completed-stop orphan transcript errors from one tail read.
+   * - none: no unresolved turn_ended error
+   * - skip_recover_tip: unresolved error AND a recover tip after that error
+   *   (do not re-bump error_count / re-enter handleErrorStop)
+   * - salvage: unresolved error with no post-error recover tip yet
+   *
+   * Invariant: a newer turn_ended error after an old unanswered recover tip must
+   * salvage again — the prior tip does not cover the new failure.
+   */
+  classifyCompletedOrphan(transcriptPath) {
+    const path9 = transcriptPath?.trim();
+    if (!path9) return "none";
+    try {
+      const events = readTranscriptTail(path9);
+      const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
+      if (errIdx < 0) return "none";
+      for (let i = events.length - 1; i > errIdx; i--) {
+        const ev = events[i];
+        if (ev.role === "assistant") return "none";
+        if (ev.role !== "user") continue;
+        const q = userQueryText(ev);
+        if (!q) continue;
+        if (!substantivePromptBody(q)) continue;
+        if (isRecoverFollowupMessage(q)) return "skip_recover_tip";
+        return "salvage";
+      }
+      return "salvage";
+    } catch {
+      return "none";
+    }
+  }
   /** Coarse kind bucket so fix/confirm/advance tips cannot share a prefix match. */
   harnessFollowupKind(m) {
-    if (this.isFixFollowupMessage(m)) return "fix";
-    if (m.startsWith("Review confirm") || m.startsWith("\u81EA\u5BA1\u786E\u8BA4")) {
+    const line = firstSubstantiveLine(m) || m.trim();
+    if (this.isFixFollowupMessage(line)) return "fix";
+    if (line.startsWith("Review confirm") || line.startsWith("\u81EA\u5BA1\u786E\u8BA4")) {
       return "confirm";
     }
-    if (m.startsWith("Advance checklist") || m.startsWith("\u63A8\u8FDB\u4E0B\u4E00\u9879")) {
+    if (line.startsWith("Advance checklist") || line.startsWith("\u63A8\u8FDB\u4E0B\u4E00\u9879")) {
       return "advance";
     }
-    if (m.startsWith("\u3010Hook\xB7\u7EED\u8DD1\u3011")) return "hook";
-    if (m.startsWith(BRIEFLY_PREFIX)) return "briefly";
-    if (m.startsWith("Stuck:") || m.startsWith("\u5361\u4F4F\uFF1A") || m.startsWith("\u5361\u4F4F:")) {
+    if (line.startsWith(BRIEFLY_PREFIX)) return "briefly";
+    if (line.startsWith("Stuck:") || line.startsWith("\u5361\u4F4F\uFF1A") || line.startsWith("\u5361\u4F4F:")) {
       return "stuck";
     }
-    if (m.startsWith("Verify failed") || m.startsWith("\u6821\u9A8C\u5931\u8D25")) {
+    if (line.startsWith("Verify failed") || line.startsWith("\u6821\u9A8C\u5931\u8D25")) {
       return "verify";
     }
-    if (m.startsWith("All checklist") || m.startsWith("\u5168\u90E8\u5B8C\u6210") || m.startsWith("Review complete") || m.startsWith("\u81EA\u5BA1\u5B8C\u6210")) {
+    if (line.startsWith("All checklist") || line.startsWith("\u5168\u90E8\u5B8C\u6210") || line.startsWith("Review complete") || line.startsWith("\u81EA\u5BA1\u5B8C\u6210")) {
       return "terminal";
     }
     return "other";
@@ -3065,8 +3187,8 @@ var ReviewEngine = class {
   }
   /** Shared with inferPendingKind — locale templates must keep these prefixes. */
   isFixFollowupMessage(message) {
-    const m = message.trim();
-    return m.startsWith("Review fix") || m.startsWith("\u81EA\u5BA1\u4FEE\u590D");
+    const line = firstSubstantiveLine(message) || message.trim();
+    return line.startsWith("Review fix") || line.startsWith("\u81EA\u5BA1\u4FEE\u590D");
   }
   /** Mid-confirm or E5-ready — must not phantom-arm code_edited over E4/E5. */
   isMidConfirmOrE5(chain) {
