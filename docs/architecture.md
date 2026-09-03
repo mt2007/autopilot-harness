@@ -49,7 +49,7 @@ are **not** subject to Cursor’s stop `loop_limit`; they do not emit Autopilot
 followup loops.
 
 A human nudge (e.g. 「继续」) may reset some host counters but is **not** a
-substitute for correct port install. Global Cursor self-review hooks
-already used `loop_limit: null` for this reason.
+substitute for correct port install. Global Cursor self-review hooks that inject
+on every stop typically use `loop_limit: null` for this reason.
 
 See the v0.1 plan for full FSM (E2–E5 review chain, OFF/ON/RESUME side effects).

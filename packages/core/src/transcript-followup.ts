@@ -1,6 +1,7 @@
 /**
  * Transcript helpers for pending-followup redelivery / in-flight gating.
- * Stop-hook followup matching: detect prior Autopilot injects in the transcript (minus host-/product-specific prefixes).
+ * Stop-hook followup matching: detect prior Autopilot injects in the transcript
+ * (minus host-/product-specific prefixes).
  */
 import fs from "node:fs";
 import { HARNESS_FOLLOWUP_PREFIXES, isHarnessFollowupMessage } from "./trigger-parser.js";

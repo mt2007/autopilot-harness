@@ -1600,8 +1600,8 @@ describe("error recover debounce (3s window, once)", () => {
   });
 
   it("F-ERR-RECOVER-COPY: mid-advance error emits neutral recover (no 不要推进)", () => {
-    // Mid-advance: E5 advance was in flight,
-    // Agent mid-turn, then usage-limit error. Recover must not say「不要推进」.
+    // Mid-advance: E5 advance was in flight, Agent mid-turn, then usage-limit
+    // error. Recover must not say「不要推进」.
     const zh = "恢复：上一回合出错。继续当前任务。";
     const advance =
       "推进下一项：自审确认已干净通过。先勾选当前项 [x]。然后实现下一项：item-b — next feature。";
