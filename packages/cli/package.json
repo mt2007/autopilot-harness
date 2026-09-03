@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "bundle-vendor": "node ./scripts/bundle-vendor.mjs",
-    "build": "node ./scripts/bundle-vendor.mjs && tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
+    "build": "pnpm --filter @autopilot-harness/core run build && node ./scripts/bundle-vendor.mjs && tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

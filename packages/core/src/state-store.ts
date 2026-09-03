@@ -971,6 +971,8 @@ export class StateStore {
   /**
    * Ambient error-recover soft-reset columns + clear pending, but refuse when
    * pending is already recover (unlocked compensate TOCTOU defense).
+   * Preserves `reviewing_item_id` so a premature checklist `[x]` cannot retarget
+   * after recover (unlike neutralize/reset, which intentionally clear sticky).
    * Returns true when a row was updated.
    */
   softResetAmbientChainUnlessRecover(
@@ -992,7 +994,6 @@ export class StateStore {
           item_confirm_complete = ?,
           chain_pending = ?,
           code_edited = ?,
-          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,

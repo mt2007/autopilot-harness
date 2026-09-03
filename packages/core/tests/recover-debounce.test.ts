@@ -970,6 +970,7 @@ describe("error recover debounce (3s window, once)", () => {
 
     store.updateReviewChain("c1", {
       pending_followup: "自审修复第 2 轮",
+      reviewing_item_id: "item-under-review",
     });
     expect(
       store.softResetAmbientChainUnlessRecover("c1", {
@@ -983,6 +984,7 @@ describe("error recover debounce (3s window, once)", () => {
     expect(after.pending_followup).toBeNull();
     expect(after.chain_pending).toBe(0);
     expect(after.code_edited).toBe(1);
+    expect(after.reviewing_item_id).toBe("item-under-review");
   });
 
   it("F-ERR-TRYCOMMIT-NOPENDING: savePending no-op must not report ok; later tryCommit stamps", () => {

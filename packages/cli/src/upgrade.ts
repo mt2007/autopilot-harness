@@ -307,15 +307,20 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       };
     }
 
-    // Backup before any StateStore open (migrate).
+    // Backup → migrate → refresh. Additive schema must land before new vendor
+    // runtime is copied; otherwise a migrate throw leaves new hooks + old DB.
+    // Schema ceiling comes from scanning migration SQL on disk (see
+    // getLatestSchemaVersion); cli build compiles core before bundling so the
+    // scanner is present — an older binary with a hardcoded ceiling would still
+    // skip new files until rebuilt.
     written.push(...backupStateDb(projectRoot));
 
     if (stateDbKind === "present") {
       migrateStateDb(projectRoot);
     }
 
-    // Refresh pin/hooks/skills first so a hooks fail-closed path does not
-    // leave config.yml already rewritten with appended keys.
+    // Refresh pin/hooks/skills after migrate so a hooks fail-closed path does
+    // not leave config.yml already rewritten with appended keys.
     const refresh = installInitYes({
       projectRoot,
       platform: "cursor",

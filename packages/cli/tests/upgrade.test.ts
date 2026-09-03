@@ -9,7 +9,7 @@ import {
   mergeMissingKeys,
 } from "../src/init/config-merge.js";
 import { upgradeProject } from "../src/upgrade.js";
-import { StateStore } from "@autopilot-harness/core";
+import { StateStore, getLatestSchemaVersion } from "@autopilot-harness/core";
 
 const require = createRequire(import.meta.url);
 
@@ -254,7 +254,7 @@ review:
       code_root: root,
       phase: "planning",
     });
-    expect(store.getSchemaVersion()).toBe(3);
+    expect(store.getSchemaVersion()).toBe(getLatestSchemaVersion());
     store.close();
 
     const r = upgradeProject({ projectRoot: root });

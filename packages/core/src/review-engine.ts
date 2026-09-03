@@ -213,7 +213,7 @@ export class ReviewEngine {
     currentItem: ChecklistItem | null;
     /** Following unchecked item (after current); used by advance followup text. */
     followingItem: ChecklistItem | null;
-    checklist: ChecklistMd | null;
+    checklist: ChecklistMd;
   } | null {
     const checklistPath = session.checklist_path;
     if (!checklistPath) return null;
@@ -825,8 +825,12 @@ export class ReviewEngine {
     | { role: "coalesced" }
     | { role: "claimer" | "redeliver"; stamp: string }
     | { role: "failed" } {
+    type RecoverClaim =
+      | { role: "coalesced" }
+      | { role: "claimer" | "redeliver"; stamp: string }
+      | { role: "failed" };
     try {
-      return this.store.exclusiveWrite(() => {
+      return this.store.exclusiveWrite<RecoverClaim>(() => {
         const session = this.store.getSession(conversationId);
         if (!session || !this.sessionErrorRecoverable(session)) {
           return { commit: false, value: { role: "failed" as const } };
@@ -1834,7 +1838,6 @@ export class ReviewEngine {
     // Single checklist read for verify + advance/done — avoids TOCTOU between
     // e5Gate and e5bAdvance, and keeps FS I/O outside the write lock.
     let unchecked = 0;
-    let checklistMd: ChecklistMd | null = null;
     if (checklistPath) {
       const parsed = this.parseSessionChecklist(session);
       if (!parsed) {
@@ -1842,7 +1845,7 @@ export class ReviewEngine {
         return null;
       }
       unchecked = parsed.unchecked;
-      checklistMd = parsed.checklist;
+      const checklistMd = parsed.checklist;
       const reviewingId = this.resolveReviewingItemId(chain, checklistMd);
       currentItem =
         (reviewingId &&

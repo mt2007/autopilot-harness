@@ -542,9 +542,6 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 var __dirname = dirname(fileURLToPath(import.meta.url));
-function getLatestSchemaVersion() {
-  return 3;
-}
 function migrationDirs() {
   return [
     join(__dirname, "..", "migrations"),
@@ -568,6 +565,21 @@ function readMigrationSql(version) {
     }
   }
   throw new Error(`Missing migration SQL for version ${version}`);
+}
+function getLatestSchemaVersion() {
+  let latest = 0;
+  for (let v = 1; v <= 999; v++) {
+    try {
+      readMigrationSql(v);
+    } catch {
+      break;
+    }
+    latest = v;
+  }
+  if (latest < 1) {
+    throw new Error("No migration SQL found (expected NNN_*.sql)");
+  }
+  return latest;
 }
 function parseSchemaVersionValue(raw) {
   if (raw == null) return 0;
@@ -1368,6 +1380,8 @@ var StateStore = class _StateStore {
   /**
    * Ambient error-recover soft-reset columns + clear pending, but refuse when
    * pending is already recover (unlocked compensate TOCTOU defense).
+   * Preserves `reviewing_item_id` so a premature checklist `[x]` cannot retarget
+   * after recover (unlike neutralize/reset, which intentionally clear sticky).
    * Returns true when a row was updated.
    */
   softResetAmbientChainUnlessRecover(conversationId, fields) {
@@ -1380,7 +1394,6 @@ var StateStore = class _StateStore {
           item_confirm_complete = ?,
           chain_pending = ?,
           code_edited = ?,
-          reviewing_item_id = NULL,
           pending_followup = NULL,
           pending_followup_at = NULL,
           pending_redeliver_at = NULL,
@@ -3369,14 +3382,13 @@ var ReviewEngine = class {
     const checklistPath = session.checklist_path;
     let currentItem = null;
     let unchecked = 0;
-    let checklistMd = null;
     if (checklistPath) {
       const parsed = this.parseSessionChecklist(session);
       if (!parsed) {
         return null;
       }
       unchecked = parsed.unchecked;
-      checklistMd = parsed.checklist;
+      const checklistMd = parsed.checklist;
       const reviewingId = this.resolveReviewingItemId(chain, checklistMd);
       currentItem = reviewingId && checklistMd.items.find((i) => i.id === reviewingId) || parsed.currentItem;
     }

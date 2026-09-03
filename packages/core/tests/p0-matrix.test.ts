@@ -12,6 +12,7 @@ import {
   evaluateVerifyReport,
   firstUnchecked,
   getCurrentSchemaVersion,
+  getLatestSchemaVersion,
   isHarnessFollowupMessage,
   isLastUnchecked,
   isProductCodeEdit,
@@ -264,9 +265,11 @@ describe("F-MIG migrate", () => {
   it("empty db runs migrations → latest; migrate is idempotent", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
-    expect(store.getSchemaVersion()).toBe(3);
-    expect(migrate(store.db)).toBe(3);
-    expect(store.getSchemaVersion()).toBe(3);
+    const latest = getLatestSchemaVersion();
+    expect(latest).toBeGreaterThanOrEqual(3);
+    expect(store.getSchemaVersion()).toBe(latest);
+    expect(migrate(store.db)).toBe(latest);
+    expect(store.getSchemaVersion()).toBe(latest);
     store.close();
   });
 
@@ -877,6 +880,45 @@ describe("review-engine P0 matrix", () => {
     store.markCodeEdited("sticky-n1", "reply-design");
     expect(store.getReviewChain("sticky-n1")!.reviewing_item_id).toBe(
       "reply-design",
+    );
+  });
+
+  it("F-ADV-STICKY-SOFTRESET: softReset preserves reviewing_item_id", () => {
+    const cp = writeChecklist(
+      root,
+      "sticky-sr",
+      `- [ ] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    sessionExecuting(store, root, "sticky-sr1", cp);
+    store.ensureReviewChain("sticky-sr1");
+    store.markCodeEdited("sticky-sr1", "initial-core");
+    store.updateReviewChain("sticky-sr1", {
+      confirm_left: 2,
+      chain_pending: 1,
+      pending_followup: "自审修复第 2 轮",
+      pending_followup_at: new Date().toISOString(),
+    });
+    expect(
+      store.softResetAmbientChainUnlessRecover("sticky-sr1", {
+        confirm_left: null,
+        item_confirm_complete: 0,
+        chain_pending: 0,
+        code_edited: 0,
+      }),
+    ).toBe(true);
+    const chain = store.getReviewChain("sticky-sr1")!;
+    expect(chain.reviewing_item_id).toBe("initial-core");
+    expect(chain.pending_followup).toBeNull();
+    expect(chain.code_edited).toBe(0);
+
+    // Premature [x] after recover must not retarget sticky on the next edit.
+    fs.writeFileSync(
+      cp,
+      `- [x] initial-core — Core\n- [ ] reply-design — Design\n`,
+    );
+    store.markCodeEdited("sticky-sr1", "reply-design");
+    expect(store.getReviewChain("sticky-sr1")!.reviewing_item_id).toBe(
+      "initial-core",
     );
   });
 

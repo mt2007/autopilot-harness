@@ -5,10 +5,6 @@ import type { SqlDatabase } from "./sqlite.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function getLatestSchemaVersion(): number {
-  return 3;
-}
-
 function migrationDirs(): string[] {
   // Package layout: packages/core/{src,dist}/../migrations
   // Vendor layout: .autopilot/bin/vendor/migrations (beside runtime.mjs)
@@ -35,6 +31,33 @@ export function readMigrationSql(version: number): string {
     }
   }
   throw new Error(`Missing migration SQL for version ${version}`);
+}
+
+/**
+ * Latest schema = highest contiguous version from 001 that `readMigrationSql`
+ * can resolve (not a hardcoded constant). Stops before a missing/ambiguous
+ * file so migrate never claims a ceiling it cannot apply (e.g. stray
+ * `099_*.sql` or two `003_*.sql` in one dir).
+ *
+ * Package layout: `../migrations` is git-tracked SQL next to `dist/`, so a
+ * build that includes this scanner sees new files without bumping a constant —
+ * but the scanner itself must be in the running build (cli `build` compiles
+ * core first).
+ */
+export function getLatestSchemaVersion(): number {
+  let latest = 0;
+  for (let v = 1; v <= 999; v++) {
+    try {
+      readMigrationSql(v);
+    } catch {
+      break;
+    }
+    latest = v;
+  }
+  if (latest < 1) {
+    throw new Error("No migration SQL found (expected NNN_*.sql)");
+  }
+  return latest;
 }
 
 /** Non-finite / non-integer / negative meta must not be treated as "already latest". */
