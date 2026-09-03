@@ -46,9 +46,9 @@ breaker; ports must disable or raise it, or the chain stalls mid-confirm
 | Host (planned) | Mechanism | Default | Autopilot mitigation |
 | --- | --- | --- | --- |
 | **Cursor** (v0.1) | `hooks.json` `loop_limit` on **stop** / **subagentStop** | `5` if omitted | Write `"loop_limit": null` on Autopilot stop (`mergeHooksJson` / init / upgrade). `doctor` WARNs if missing. |
-| **Claude Code** (v0.2) | Stop `decision: "block"` consecutive **block cap** | **8**; override `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (`≤0` disables) | Port install/docs must set/raise the env (or document required shell profile). Not a Cursor-style `loop_limit` field. |
-| **Codex** (later) | Stop continuation / `stop_hook_active`; caps still evolving | Research at port time | Do not assume Cursor’s `loop_limit`; verify current Codex Stop semantics. |
-| **Runner** ports | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. |
+| **Claude Code** (v0.2) | Stop `decision: "block"` consecutive **block cap** | **8**; `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (`0` disables) | Init writes `.claude/settings.json` `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0` (Cursor `loop_limit: null` analogue). `doctor` WARNs if missing. |
+| **Codex** (v0.3/v0.4) | Stop `decision: "block"` + `reason` as next user prompt; `stop_hook_active` | No documented numeric block cap (2026-09 research) | **Hook port** (not Runner-first): `.codex/hooks.json` + `.agents/skills` (`$autopilot-on`); require `/hooks` trust. Measure long chains at implement time. |
+| **Runner** ports | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. For hosts without stop continuation only. |
 
 `beforeSubmitPrompt` / `afterFileEdit` (and Claude `UserPromptSubmit` analogues)
 are **not** subject to Cursor’s stop `loop_limit`; they do not emit Autopilot
