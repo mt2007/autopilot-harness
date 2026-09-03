@@ -1,5 +1,7 @@
 # Architecture
 
+Product front door: English [README.md](../README.md) is authoritative.
+
 Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, …).
 
 Project config (`.autopilot/config.yml`) lists enabled hosts under `platforms:`

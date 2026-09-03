@@ -4,5 +4,5 @@
 - [x] fix-quickstart-portable — Portable commands in docs/autopilot/quickstart.md (keep zh)
 - [x] add-contributing — CONTRIBUTING.md (tests, docs PRs, future translations welcome)
 - [x] add-changelog — CHANGELOG.md with Unreleased + this track’s front-door notes when landing
-- [ ] architecture-backlink — Add short README link at top of docs/architecture.md
+- [x] architecture-backlink — Add short README link at top of docs/architecture.md
 - [ ] cross-link-hygiene — Wire README ↔ architecture/contributing/changelog; badges resolve; no dead locale links
