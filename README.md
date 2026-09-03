@@ -99,8 +99,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js status
 
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
 - [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet  
-- [Contributing](./CONTRIBUTING.md)  
-- [Changelog](./CHANGELOG.md)  
+- [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations welcome later  
+- [Changelog](./CHANGELOG.md) — release notes  
 
 ## Monorepo (short)
 
@@ -120,6 +120,8 @@ pnpm test          # bundle hook vendor, then Vitest
 pnpm bundle-vendor
 pnpm build
 ```
+
+See [Contributing](./CONTRIBUTING.md) for PR expectations, docs PR guidance, and `pnpm bundle-vendor` after i18n/hook edits.
 
 Consumer projects get a vendored hook runtime under `.autopilot/bin/vendor/` so they do not need workspace packages in `node_modules`. Deeper notes (Windows symlink policy, SQLite, host caps): [Architecture](./docs/architecture.md).
 
