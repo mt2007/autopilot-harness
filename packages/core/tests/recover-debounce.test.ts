@@ -469,6 +469,216 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.pending_redeliver_at).toBeNull();
   });
 
+  it("F-ERR-DEBOUNCE-TIP-SWAP: claim fix tip then sleep confirm tip must not stack recover inject", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\nReview fix round 2 (no hard cap)\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      pending_followup: "Review fix round 2 (no hard cap)",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      code_edited: 0,
+      fix_round: 2,
+    });
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\n自审确认 2/5（会话第 6 轮；连续无改动确认，计入修复轮计数）。\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+    expect(store.getReviewChain("c1")!.pending_redeliver_at).toBeNull();
+  });
+
+  it("F-ERR-DEBOUNCE-TIP-SWAP-FIX-ROUNDS: different fix-round tips are not the same dead tip", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\nReview fix round 1 (no hard cap)\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      pending_followup: "Review fix round 1 (no hard cap)",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      code_edited: 0,
+      fix_round: 1,
+    });
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\nReview fix round 2 (no hard cap)\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-DEBOUNCE-TIP-SWAP-BRIEFLY: different Briefly tips must not prefix-match as same", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\nBriefly inform the user that deploy A failed.\n</user_query>`,
+      },
+    ]);
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\nBriefly inform the user that deploy B succeeded.\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-DEBOUNCE-TIP-SWAP-HOOK: short Hook tip must not prefix-match a longer different Hook", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\nBriefly inform the user about the task result.继续\n</user_query>`,
+      },
+    ]);
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\nBriefly inform the user about the task result.继续当前额度用尽后的任务\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-DEBOUNCE-TIP-SWAP-ADVANCE: different advance nextIds must not share lead-in as same tip", () => {
+    const advA =
+      "推进下一项：自审确认已干净通过（确认轮不 commit）。先勾选刚完成的当前项 item-a [x]。然后实现下一项：item-b — B。";
+    const advB =
+      "推进下一项：自审确认已干净通过（确认轮不 commit）。先勾选刚完成的当前项 item-b [x]。然后实现下一项：item-c — C。";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n${advA}\n</user_query>`,
+      },
+    ]);
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\n${advB}\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-DEBOUNCE-TIP-SWAP-CONFIRM-EN: different EN confirm lenses must not share 48-char lead-in", () => {
+    const cA =
+      "Review confirm 3/5 (session round 8; consecutive no-edit confirms, counted on the fix-round counter). Lens 【Correctness & invariants】 (multi-lens confirm, not the same checklist again). Dig A.";
+    const cB =
+      "Review confirm 3/5 (session round 8; consecutive no-edit confirms, counted on the fix-round counter). Lens 【Nulls & boundaries】 (multi-lens confirm, not the same checklist again). Dig B.";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n${cA}\n</user_query>`,
+      },
+    ]);
+    const e = eng({
+      recoverDebounceMs: 3000,
+      sleepSync: () => {
+        writeTranscript(transcript, [
+          {
+            role: "user",
+            text: `<user_query>\n${cB}\n</user_query>`,
+          },
+        ]);
+      },
+    });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
+  it("F-ERR-DEBOUNCE-DEAD-BRIEFLY-TIP: same unanswered Briefly tip still injects recover", () => {
+    const tip = "Briefly inform the user that the previous turn failed.";
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n${tip}\n</user_query>`,
+      },
+    ]);
+    const e = eng();
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+  });
+
   it("F-ERR-INFLIGHT-HOLD-STAMP: must not clear peer redeliver hold on stamp mismatch", () => {
     const recoverMsg =
       "Recover: the previous turn ended with an error. Continue the current task.";
@@ -510,7 +720,7 @@ describe("error recover debounce (3s window, once)", () => {
     );
   });
 
-  it("F-ERR-DEBOUNCE-SKIP-INFLIGHT: do not claim over an already in-flight followup", () => {
+  it("F-ERR-DEBOUNCE-DEAD-FIX-TIP: error on unanswered fix tip still injects recover", () => {
     writeTranscript(transcript, [
       {
         role: "user",
@@ -522,6 +732,7 @@ describe("error recover debounce (3s window, once)", () => {
       pending_followup_at: new Date().toISOString(),
       chain_pending: 1,
       code_edited: 0,
+      fix_round: 2,
     });
     const e = eng();
     const out = e.handleStop({
@@ -530,10 +741,134 @@ describe("error recover debounce (3s window, once)", () => {
       loopCount: 0,
       transcriptPath: transcript,
     });
-    expect(out).toBeNull();
-    expect(store.getReviewChain("c1")!.pending_followup).toBe(
-      "Review fix round 2 (no hard cap)",
-    );
+    expect(out?.kind).toBe("recover");
+    expect(out?.message).toMatch(/恢复|Recover/);
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+    // Executing claim must re-arm so the next completed stop resumes fix/E2.
+    expect(store.getReviewChain("c1")!.code_edited).toBe(1);
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+  });
+
+  it("F-ERR-DEBOUNCE-DEAD-FIX-TIP-PLANNING: planning soft-reset preserves resumeFix", () => {
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      checklist_path: "",
+      track_id: "t",
+    });
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n自审修复第 2 轮（无硬顶；确认阶段需连续 5 轮无改动）。本轮改过代码。\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      pending_followup:
+        "自审修复第 2 轮（无硬顶；确认阶段需连续 5 轮无改动）。本轮改过代码。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      code_edited: 0,
+      fix_round: 2,
+    });
+    const e = eng({ reviewScope: "project" });
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(out?.message).toMatch(/规划|planning|Recover|恢复/i);
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+    expect(store.getReviewChain("c1")!.code_edited).toBe(1);
+  });
+
+  it("F-ERR-DEBOUNCE-DEAD-FIX-TIP-DESYNC: empty pending + fix tip still re-arms code_edited", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\nReview fix round 2 (no hard cap)\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      pending_followup: null,
+      pending_followup_at: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 2,
+    });
+    const e = eng();
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(store.getReviewChain("c1")!.code_edited).toBe(1);
+  });
+
+  it("F-ERR-DEBOUNCE-DEAD-CONFIRM-TIP: error on unanswered confirm tip injects recover and keeps confirm_left", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n自审确认 3/5（会话第 7 轮；连续无改动确认，计入修复轮计数）。\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      pending_followup:
+        "自审确认 3/5（会话第 7 轮；连续无改动确认，计入修复轮计数）。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: 3,
+      fix_round: 2,
+    });
+    const e = eng();
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
+    expect(store.getReviewChain("c1")!.confirm_left).toBe(3);
+    // Confirm tip must not force a phantom fix arm.
+    expect(store.getReviewChain("c1")!.code_edited).toBe(0);
+  });
+
+  it("F-ERR-DEBOUNCE-CONFIRM-NO-PHANTOM-FIX: mid-confirm + stale fix pending must not arm code_edited", () => {
+    writeTranscript(transcript, [
+      {
+        role: "user",
+        text: `<user_query>\n自审确认 2/5（会话第 6 轮；连续无改动确认，计入修复轮计数）。\n</user_query>`,
+      },
+    ]);
+    store.updateReviewChain("c1", {
+      // Desync: tip is confirm, pending still looks like an old fix message.
+      pending_followup: "Review fix round 2 (no hard cap)",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: 2,
+      fix_round: 2,
+    });
+    const e = eng();
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(store.getReviewChain("c1")!.confirm_left).toBe(2);
+    expect(store.getReviewChain("c1")!.code_edited).toBe(0);
   });
 
   it("F-ERR-DEBOUNCE-RECOVER-INFLIGHT-TIP: stuck recover tip must not suppress coalesce path", () => {
@@ -565,7 +900,7 @@ describe("error recover debounce (3s window, once)", () => {
     expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverMsg);
   });
 
-  it("F-ERR-DEBOUNCE-SKIP-HOOK-TIP: Briefly inform the user about the task result.in-flight must not be overwritten", () => {
+  it("F-ERR-DEBOUNCE-DEAD-HOOK-TIP: error on unanswered delivery tip tip still injects recover", () => {
     writeTranscript(transcript, [
       {
         role: "user",
@@ -577,15 +912,15 @@ describe("error recover debounce (3s window, once)", () => {
       pending_followup_at: new Date().toISOString(),
     });
     const e = eng();
-    expect(
-      e.handleStop({
-        conversationId: "c1",
-        status: "error",
-        loopCount: 0,
-        transcriptPath: transcript,
-      }),
-    ).toBeNull();
-    expect(store.getReviewChain("c1")!.pending_followup).toBe("Briefly inform the user about the task result.继续");
+    const out = e.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(out?.message).toMatch(/恢复|Recover/);
+    expect(store.getReviewChain("c1")!.pending_followup).toMatch(/恢复|Recover/);
   });
 
   it("inFlightUserQuery returns harness tip or null", async () => {

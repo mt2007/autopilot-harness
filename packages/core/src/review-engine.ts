@@ -27,6 +27,7 @@ import {
 import { isSafeTrackSlug } from "./track-slug.js";
 import {
   automationFollowupPresent,
+  BRIEFLY_PREFIX,
   followupInFlight,
   inFlightUserQuery,
   inRecoverDebounceWindow,
@@ -765,15 +766,31 @@ export class ReviewEngine {
     const debounceMs = this.resolveRecoverDebounceMs();
     const transcriptPath = input.transcriptPath?.trim() || undefined;
 
-    // Do not claim/overwrite a *non-recover* in-flight harness followup (e.g. fix).
-    // If the tip is already recover, fall through so coalesce/CAS can dedupe —
-    // skipping entirely would permanently suppress recover while that tip sits.
+    // Genuine error stop: always attempt recover claim. A dead non-recover
+    // harness tip (fix / confirm / delivery tip) at claim time must still inject —
+    // suppressing left the session stuck with no followup. Recover tip falls
+    // through so coalesce/CAS can dedupe (finish suppresses double-inject when
+    // recover is already the unanswered tip).
     let recoverAnsweredAtClaim = false;
+    /**
+     * Unanswered non-recover harness tip text at claim time (if any). Finish
+     * may emit over the *same* dead tip; a *different* harness tip that landed
+     * during sleep must not get a stacked recover inject.
+     */
+    let deadHarnessTipAtClaim: string | null = null;
+    /** Claim-time tip was a fix followup (re-arm even if pending was cleared). */
+    let fixTipAtClaim = false;
     if (transcriptPath) {
       const tipEvents = readTranscriptTail(transcriptPath);
-      const inflight = inFlightUserQuery(tipEvents);
-      if (inflight && !isRecoverFollowupMessage(inflight)) {
-        return null;
+      const inflightAtClaim = inFlightUserQuery(tipEvents);
+      if (
+        inflightAtClaim &&
+        !isRecoverFollowupMessage(inflightAtClaim)
+      ) {
+        deadHarnessTipAtClaim = inflightAtClaim;
+        if (this.isFixFollowupMessage(inflightAtClaim)) {
+          fixTipAtClaim = true;
+        }
       }
       // Snapshot before claim: historical Recover+assistant must not be treated
       // as "became alive during sleep" for a brand-new error (same template text).
@@ -789,6 +806,7 @@ export class ReviewEngine {
       debounceMs,
       ambient,
       recoverAnsweredAtClaim,
+      fixTipAtClaim,
     );
     if (claim.role === "coalesced") {
       return null;
@@ -806,6 +824,7 @@ export class ReviewEngine {
       transcriptPath,
       claim.stamp,
       recoverAnsweredAtClaim,
+      deadHarnessTipAtClaim,
     );
   }
 
@@ -821,6 +840,7 @@ export class ReviewEngine {
     debounceMs: number,
     ambient: boolean,
     recoverAnsweredAtClaim = false,
+    fixTipAtClaim = false,
   ):
     | { role: "coalesced" }
     | { role: "claimer" | "redeliver"; stamp: string }
@@ -879,6 +899,28 @@ export class ReviewEngine {
         }
         if (ambient) {
           this.applySoftResetAmbientChainForErrorRecover(conversationId);
+          // Soft-reset already chose code_edited for pending/chain. Only force
+          // when the dead transcript tip was fix but pending was empty/desynced —
+          // and never during mid-confirm / E5 (would phantom-arm E2 over E4/E5).
+          const live = this.store.getReviewChain(conversationId);
+          if (
+            fixTipAtClaim &&
+            live &&
+            !this.isMidConfirmOrE5(live)
+          ) {
+            this.store.updateReviewChain(conversationId, { code_edited: 1 });
+          }
+        } else {
+          // Executing skips ambient soft-reset; re-arm fix for dead fix tip /
+          // pending, but not while confirm_left says mid-confirm or E5-ready.
+          const resumeFix =
+            !this.isMidConfirmOrE5(chain) &&
+            (this.isFixFollowupMessage(pending) ||
+              chain?.code_edited === 1 ||
+              fixTipAtClaim);
+          if (resumeFix) {
+            this.store.updateReviewChain(conversationId, { code_edited: 1 });
+          }
         }
         this.store.savePendingFollowup(conversationId, message, {
           armChain: false,
@@ -889,6 +931,7 @@ export class ReviewEngine {
           return { commit: false, value: { role: "failed" as const } };
         }
         // Executing claim skips ambient soft-reset — still disarm chain_pending.
+        // Ambient soft-reset already cleared chain_pending; clear again is idempotent.
         this.store.clearChainPending(conversationId);
         this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
         return {
@@ -911,6 +954,7 @@ export class ReviewEngine {
     transcriptPath: string | undefined,
     expectedStamp: string,
     recoverAnsweredAtClaim = false,
+    deadHarnessTipAtClaim: string | null = null,
   ): FollowupAction | null {
     if (!expectedStamp) {
       return null;
@@ -928,11 +972,31 @@ export class ReviewEngine {
     const needle = live || message;
     const events = transcriptPath ? readTranscriptTail(transcriptPath) : [];
     if (events.length > 0) {
-      if (followupInFlight(events)) {
+      const inflight = inFlightUserQuery(events);
+      if (inflight && isRecoverFollowupMessage(inflight)) {
         // Keep recover pending for host-drop / later redeliver, but drop THIS
         // stop's claim hold only (stamp-matched). Sleep may have been no-op;
         // an uncleared hold would block redelivery for the full debounceMs.
         // Must not wipe a peer redeliver's newly armed hold after the window.
+        try {
+          this.store.clearPendingRedeliverHoldIfStamp(
+            conversationId,
+            expectedStamp,
+          );
+        } catch {
+          /* best-effort */
+        }
+        return null;
+      }
+      // Tip race during sleep: a *new* non-recover harness landed after claim.
+      // Do not stack a recover inject on top — keep pending for redelivery.
+      // Exception: finish tip is still the same dead harness tip from claim
+      // (this error killed that turn) → must emit recover or the session stays stuck.
+      if (
+        inflight &&
+        !isRecoverFollowupMessage(inflight) &&
+        !this.isSameDeadHarnessTip(deadHarnessTipAtClaim, inflight)
+      ) {
         try {
           this.store.clearPendingRedeliverHoldIfStamp(
             conversationId,
@@ -954,8 +1018,8 @@ export class ReviewEngine {
         this.clearRecoverPendingBestEffort(conversationId);
         return null;
       }
-      // Tip is unanswered user text, or prior assistant without our recover —
-      // still dead; emit recover.
+      // Tip is unanswered user text, same dead harness from claim, or prior
+      // assistant without our recover — still dead; emit recover.
     }
     const emitted = this.tryCasRecoverEmit(
       conversationId,
@@ -965,6 +1029,65 @@ export class ReviewEngine {
     if (!emitted) return null;
     // Pause may land after CAS commit — drop inject + clear recover pending.
     return this.recoverActionIfStillRunnable(conversationId, emitted);
+  }
+
+  /**
+   * True when finish-time inflight is the same dead harness tip snapped at claim.
+   * Requires the same harness kind first (fix vs confirm must not match), then
+   * exact match. Only fix tips allow finish starting with claim's 48-char prefix
+   * (round digits appear early in en/zh). Confirm is exact-only: English confirm
+   * puts {lensTitle} after ~100 chars, so a 48-prefix would treat different
+   * lenses as the same tip. Advance/Hook/Briefly stay exact-only for the same
+   * shared-lead-in reason.
+   */
+  private isSameDeadHarnessTip(
+    claimTip: string | null,
+    finishTip: string,
+  ): boolean {
+    if (!claimTip) return false;
+    const a = claimTip.trim();
+    const b = finishTip.trim();
+    if (!a || !b) return false;
+    const kind = this.harnessFollowupKind(a);
+    if (kind !== this.harnessFollowupKind(b)) return false;
+    if (a === b) return true;
+    // Prefix matching only for fix (round index diverges within 48 chars).
+    if (kind !== "fix") {
+      return false;
+    }
+    const prefix = a.slice(0, 48);
+    if (prefix && b.startsWith(prefix)) return true;
+    // Truncated re-read of the same tip (finish shorter than claim prefix).
+    if (b.length < prefix.length && a.startsWith(b)) return true;
+    return false;
+  }
+
+  /** Coarse kind bucket so fix/confirm/advance tips cannot share a prefix match. */
+  private harnessFollowupKind(m: string): string {
+    if (this.isFixFollowupMessage(m)) return "fix";
+    if (m.startsWith("Review confirm") || m.startsWith("自审确认")) {
+      return "confirm";
+    }
+    if (m.startsWith("Advance checklist") || m.startsWith("推进下一项")) {
+      return "advance";
+    }
+    if (m.startsWith("Briefly inform the user about the task result.")) return "hook";
+    if (m.startsWith(BRIEFLY_PREFIX)) return "briefly";
+    if (m.startsWith("Stuck:") || m.startsWith("卡住：") || m.startsWith("卡住:")) {
+      return "stuck";
+    }
+    if (m.startsWith("Verify failed") || m.startsWith("校验失败")) {
+      return "verify";
+    }
+    if (
+      m.startsWith("All checklist") ||
+      m.startsWith("全部完成") ||
+      m.startsWith("Review complete") ||
+      m.startsWith("自审完成")
+    ) {
+      return "terminal";
+    }
+    return "other";
   }
 
   /**
@@ -1335,6 +1458,18 @@ export class ReviewEngine {
   private isFixFollowupMessage(message: string): boolean {
     const m = message.trim();
     return m.startsWith("Review fix") || m.startsWith("自审修复");
+  }
+
+  /** Mid-confirm or E5-ready — must not phantom-arm code_edited over E4/E5. */
+  private isMidConfirmOrE5(
+    chain: { confirm_left: number | null; item_confirm_complete: number } | null | undefined,
+  ): boolean {
+    if (!chain) return false;
+    if (chain.confirm_left !== null && chain.confirm_left > 0) return true;
+    return (
+      chain.confirm_left === 0 ||
+      (chain.item_confirm_complete === 1 && chain.confirm_left === null)
+    );
   }
 
   /** True when a stop may still advance the review chain (re-check under write lock). */

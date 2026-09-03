@@ -2590,11 +2590,16 @@ var ReviewEngine = class {
     const debounceMs = this.resolveRecoverDebounceMs();
     const transcriptPath = input.transcriptPath?.trim() || void 0;
     let recoverAnsweredAtClaim = false;
+    let deadHarnessTipAtClaim = null;
+    let fixTipAtClaim = false;
     if (transcriptPath) {
       const tipEvents = readTranscriptTail(transcriptPath);
-      const inflight = inFlightUserQuery(tipEvents);
-      if (inflight && !isRecoverFollowupMessage(inflight)) {
-        return null;
+      const inflightAtClaim = inFlightUserQuery(tipEvents);
+      if (inflightAtClaim && !isRecoverFollowupMessage(inflightAtClaim)) {
+        deadHarnessTipAtClaim = inflightAtClaim;
+        if (this.isFixFollowupMessage(inflightAtClaim)) {
+          fixTipAtClaim = true;
+        }
       }
       recoverAnsweredAtClaim = tipEvents.length > 0 && transcriptTipIsAssistant(tipEvents) && automationFollowupPresent(tipEvents, message);
     }
@@ -2603,7 +2608,8 @@ var ReviewEngine = class {
       message,
       debounceMs,
       ambient,
-      recoverAnsweredAtClaim
+      recoverAnsweredAtClaim,
+      fixTipAtClaim
     );
     if (claim.role === "coalesced") {
       return null;
@@ -2617,7 +2623,8 @@ var ReviewEngine = class {
       message,
       transcriptPath,
       claim.stamp,
-      recoverAnsweredAtClaim
+      recoverAnsweredAtClaim,
+      deadHarnessTipAtClaim
     );
   }
   /**
@@ -2626,7 +2633,7 @@ var ReviewEngine = class {
    * - claimer/redeliver: pending written; `stamp` is pending_followup_at for CAS emit
    * - failed: exclusiveWrite threw
    */
-  tryClaimErrorRecoverWindow(conversationId, message, debounceMs, ambient, recoverAnsweredAtClaim = false) {
+  tryClaimErrorRecoverWindow(conversationId, message, debounceMs, ambient, recoverAnsweredAtClaim = false, fixTipAtClaim = false) {
     try {
       return this.store.exclusiveWrite(() => {
         const session = this.store.getSession(conversationId);
@@ -2664,6 +2671,15 @@ var ReviewEngine = class {
         }
         if (ambient) {
           this.applySoftResetAmbientChainForErrorRecover(conversationId);
+          const live = this.store.getReviewChain(conversationId);
+          if (fixTipAtClaim && live && !this.isMidConfirmOrE5(live)) {
+            this.store.updateReviewChain(conversationId, { code_edited: 1 });
+          }
+        } else {
+          const resumeFix = !this.isMidConfirmOrE5(chain) && (this.isFixFollowupMessage(pending) || chain?.code_edited === 1 || fixTipAtClaim);
+          if (resumeFix) {
+            this.store.updateReviewChain(conversationId, { code_edited: 1 });
+          }
         }
         this.store.savePendingFollowup(conversationId, message, {
           armChain: false
@@ -2687,7 +2703,7 @@ var ReviewEngine = class {
    * After debounce: skip inject if the session already revived or recover is
    * already in-flight on the transcript; otherwise CAS-emit on claim stamp.
    */
-  finishErrorRecoverAfterDebounce(conversationId, message, transcriptPath, expectedStamp, recoverAnsweredAtClaim = false) {
+  finishErrorRecoverAfterDebounce(conversationId, message, transcriptPath, expectedStamp, recoverAnsweredAtClaim = false, deadHarnessTipAtClaim = null) {
     if (!expectedStamp) {
       return null;
     }
@@ -2703,7 +2719,18 @@ var ReviewEngine = class {
     const needle = live || message;
     const events = transcriptPath ? readTranscriptTail(transcriptPath) : [];
     if (events.length > 0) {
-      if (followupInFlight(events)) {
+      const inflight = inFlightUserQuery(events);
+      if (inflight && isRecoverFollowupMessage(inflight)) {
+        try {
+          this.store.clearPendingRedeliverHoldIfStamp(
+            conversationId,
+            expectedStamp
+          );
+        } catch {
+        }
+        return null;
+      }
+      if (inflight && !isRecoverFollowupMessage(inflight) && !this.isSameDeadHarnessTip(deadHarnessTipAtClaim, inflight)) {
         try {
           this.store.clearPendingRedeliverHoldIfStamp(
             conversationId,
@@ -2725,6 +2752,53 @@ var ReviewEngine = class {
     );
     if (!emitted) return null;
     return this.recoverActionIfStillRunnable(conversationId, emitted);
+  }
+  /**
+   * True when finish-time inflight is the same dead harness tip snapped at claim.
+   * Requires the same harness kind first (fix vs confirm must not match), then
+   * exact match. Only fix tips allow finish starting with claim's 48-char prefix
+   * (round digits appear early in en/zh). Confirm is exact-only: English confirm
+   * puts {lensTitle} after ~100 chars, so a 48-prefix would treat different
+   * lenses as the same tip. Advance/Hook/Briefly stay exact-only for the same
+   * shared-lead-in reason.
+   */
+  isSameDeadHarnessTip(claimTip, finishTip) {
+    if (!claimTip) return false;
+    const a = claimTip.trim();
+    const b = finishTip.trim();
+    if (!a || !b) return false;
+    const kind = this.harnessFollowupKind(a);
+    if (kind !== this.harnessFollowupKind(b)) return false;
+    if (a === b) return true;
+    if (kind !== "fix") {
+      return false;
+    }
+    const prefix = a.slice(0, 48);
+    if (prefix && b.startsWith(prefix)) return true;
+    if (b.length < prefix.length && a.startsWith(b)) return true;
+    return false;
+  }
+  /** Coarse kind bucket so fix/confirm/advance tips cannot share a prefix match. */
+  harnessFollowupKind(m) {
+    if (this.isFixFollowupMessage(m)) return "fix";
+    if (m.startsWith("Review confirm") || m.startsWith("\u81EA\u5BA1\u786E\u8BA4")) {
+      return "confirm";
+    }
+    if (m.startsWith("Advance checklist") || m.startsWith("\u63A8\u8FDB\u4E0B\u4E00\u9879")) {
+      return "advance";
+    }
+    if (m.startsWith("\u3010Hook\xB7\u7EED\u8DD1\u3011")) return "hook";
+    if (m.startsWith(BRIEFLY_PREFIX)) return "briefly";
+    if (m.startsWith("Stuck:") || m.startsWith("\u5361\u4F4F\uFF1A") || m.startsWith("\u5361\u4F4F:")) {
+      return "stuck";
+    }
+    if (m.startsWith("Verify failed") || m.startsWith("\u6821\u9A8C\u5931\u8D25")) {
+      return "verify";
+    }
+    if (m.startsWith("All checklist") || m.startsWith("\u5168\u90E8\u5B8C\u6210") || m.startsWith("Review complete") || m.startsWith("\u81EA\u5BA1\u5B8C\u6210")) {
+      return "terminal";
+    }
+    return "other";
   }
   /**
    * Atomically take emit ownership: only the stop whose claim stamp still
@@ -2993,6 +3067,12 @@ var ReviewEngine = class {
   isFixFollowupMessage(message) {
     const m = message.trim();
     return m.startsWith("Review fix") || m.startsWith("\u81EA\u5BA1\u4FEE\u590D");
+  }
+  /** Mid-confirm or E5-ready — must not phantom-arm code_edited over E4/E5. */
+  isMidConfirmOrE5(chain) {
+    if (!chain) return false;
+    if (chain.confirm_left !== null && chain.confirm_left > 0) return true;
+    return chain.confirm_left === 0 || chain.item_confirm_complete === 1 && chain.confirm_left === null;
   }
   /** True when a stop may still advance the review chain (re-check under write lock). */
   sessionRunnable(conversationId) {
