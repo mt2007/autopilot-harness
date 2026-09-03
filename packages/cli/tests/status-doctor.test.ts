@@ -67,7 +67,7 @@ describe("formatStatus", () => {
 
     const text = formatStatus(root);
     expect(text).toMatch(/^Autopilot status/m);
-    expect(text).toMatch(/platform:\s*cursor/);
+    expect(text).toMatch(/platforms:\s*cursor\(ide\)/);
     expect(text).toMatch(/locale:\s*en/);
     expect(text).toMatch(/plans:\s*plans/);
     expect(text).toMatch(/sessions:\s*1/);

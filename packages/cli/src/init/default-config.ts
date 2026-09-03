@@ -1,11 +1,48 @@
 import { stockTriggers } from "@autopilot-harness/i18n";
 import type { InitLocale } from "./types.js";
+import {
+  mergePlatformBindings,
+  mergedIncludesAllRequested,
+  normalizeBinding,
+  primaryBinding,
+  MAX_PLATFORM_BINDINGS,
+  type PlatformBinding,
+} from "./platforms.js";
 import { normalizePlansDir } from "./wizard-helpers.js";
+
+function resolveConfigPlatforms(opts: {
+  platform?: string;
+  surface?: string;
+  platforms?: readonly PlatformBinding[];
+}): PlatformBinding[] {
+  if (opts.platforms && opts.platforms.length > 0) {
+    const list = mergePlatformBindings([], opts.platforms);
+    if (!mergedIncludesAllRequested(list, opts.platforms)) {
+      throw new Error(
+        `platforms list exceeds cap of ${MAX_PLATFORM_BINDINGS} unique entries; trim the list and retry`,
+      );
+    }
+    return list;
+  }
+  const b = normalizeBinding(opts.platform ?? "cursor", opts.surface ?? "ide");
+  return b ? [b] : [{ id: "cursor", surface: "ide" }];
+}
+
+function formatPlatformsYamlBlock(platforms: readonly PlatformBinding[]): string {
+  const lines = ["platforms:"];
+  for (const b of platforms) {
+    lines.push(`  - id: ${b.id}`);
+    lines.push(`    surface: ${b.surface}`);
+  }
+  return lines.join("\n");
+}
 
 /** Default `.autopilot/config.yml` body for init (v0.1). */
 export function defaultConfigYaml(opts: {
-  platform: string;
-  surface: string;
+  platform?: string;
+  surface?: string;
+  /** Preferred over legacy platform/surface when non-empty. */
+  platforms?: readonly PlatformBinding[];
   locale: InitLocale;
   plansDir?: string;
   verifyEnabled?: boolean;
@@ -23,6 +60,8 @@ export function defaultConfigYaml(opts: {
     opts.maxErrorsBeforePause >= 0
       ? opts.maxErrorsBeforePause
       : 0;
+  const platforms = resolveConfigPlatforms(opts);
+  const primary = primaryBinding(platforms);
   const triggers = stockTriggers(opts.locale);
   const on = JSON.stringify(triggers.on);
   const run = JSON.stringify(triggers.run);
@@ -32,8 +71,11 @@ export function defaultConfigYaml(opts: {
   const resumeReview = JSON.stringify(triggers.resume_review);
 
   return `# Autopilot Harness — project config (init defaults)
-platform: ${opts.platform}
-surface: ${opts.surface}
+# Enabled hosts (id + surface). surface: ide | cli | runner
+${formatPlatformsYamlBlock(platforms)}
+# Primary host (installable preferred) — kept for older readers
+platform: ${primary.id}
+surface: ${primary.surface}
 integration: hook
 locale: ${opts.locale}
 

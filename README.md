@@ -9,6 +9,8 @@ Install with `npx autopilot-harness init` (interactive) or `init --yes`, then us
 ```bash
 npx autopilot-harness init                  # interactive TUI
 npx autopilot-harness init --platform cursor --yes
+npx autopilot-harness init --platforms cursor --yes
+npx autopilot-harness init --yes --add-platform cursor   # merge into existing install
 npx autopilot-harness status
 npx autopilot-harness doctor
 npx autopilot-harness doctor --prune-stale
@@ -21,7 +23,7 @@ npx autopilot-harness uninstall
 npx autopilot-harness uninstall --purge-all
 ```
 
-`init` writes `.autopilot/`, merges `.cursor/hooks.json`, installs skills/workflows, and prints a cheat sheet. `status` / `doctor` report pin, sessions, schema, and hooks (`doctor --prune-stale` purges old sessions). `session list|rename|purge|reset-review` manages SQLite sessions. `locale set` rewrites skill descriptions and stock triggers (custom triggers kept). `upgrade` refreshes those files, appends missing config keys, and migrates `state.db` (with backup). `uninstall` strips Autopilot hooks and removes skills/workflows/bin/pin (keeps `plans/` and, by default, `config.yml` / `state.db`; `--purge-all` removes `.autopilot/` too). Autopilot **stop** is written with `"loop_limit": null` for Cursor’s default auto-followup cap (5); other hosts (Claude Code block cap, Runner budgets, …) have different breakers — see `docs/architecture.md`.
+`init` writes `.autopilot/` (including `platforms:` in `config.yml`), merges host hooks, installs skills/workflows, and prints a cheat sheet. Use `--platforms` for a multi-host list (currently installable: `cursor`/`ide`); `--add-platform` merges another host into an existing install. `status` / `doctor` report pin, sessions, schema, and hooks (`doctor --prune-stale` purges old sessions). `session list|rename|purge|reset-review` manages SQLite sessions. `locale set` rewrites skill descriptions and stock triggers (custom triggers kept). `upgrade` refreshes those files, appends missing config keys, and migrates `state.db` (with backup). `uninstall` strips Autopilot hooks and removes skills/workflows/bin/pin (keeps `plans/` and, by default, `config.yml` / `state.db`; `--purge-all` removes `.autopilot/` too). Autopilot **stop** is written with `"loop_limit": null` for Cursor’s default auto-followup cap (5); other hosts (Claude Code block cap, Runner budgets, …) have different breakers — see `docs/architecture.md`.
 
 ## Monorepo packages
 

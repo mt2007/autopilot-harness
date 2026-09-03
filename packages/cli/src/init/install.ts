@@ -28,7 +28,17 @@ import {
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
 import { DEFAULT_AUTOPILOT_IGNORE_TEXT } from "@autopilot-harness/core";
-import { readConfigInstallHints } from "./config-merge.js";
+import { readConfigInstallHints, readConfigPlatformsOrThrow } from "./config-merge.js";
+import {
+  applyPlatformsToConfigYaml,
+  assertInstallablePlatforms,
+  MAX_PLATFORM_BINDINGS,
+  mergePlatformBindings,
+  mergedIncludesAllRequested,
+  normalizeBinding,
+  primaryBinding,
+  type PlatformBinding,
+} from "./platforms.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
@@ -436,17 +446,26 @@ function renderSkill(template: string, description: string): string {
   return template.replaceAll("{{description}}", escaped);
 }
 
+function resolveInstallPlatforms(opts: InitYesOptions): PlatformBinding[] {
+  if (opts.platforms && opts.platforms.length > 0) {
+    return mergePlatformBindings([], opts.platforms);
+  }
+  const b = normalizeBinding(opts.platform, opts.surface);
+  return b ? [b] : [{ id: "cursor", surface: "ide" }];
+}
+
+/** True when `opts.platforms` could not fully fit under {@link MAX_PLATFORM_BINDINGS}. */
+function platformsExceedCap(opts: InitYesOptions, resolved: PlatformBinding[]): boolean {
+  if (!opts.platforms || opts.platforms.length === 0) return false;
+  return !mergedIncludesAllRequested(resolved, opts.platforms);
+}
+
 function assertSupported(
-  platform: string,
-  surface: string,
+  platforms: readonly PlatformBinding[],
   locale: string,
 ): string | null {
-  if (platform !== "cursor") {
-    return `Unsupported platform "${platform}" (supported: cursor).`;
-  }
-  if (surface !== "ide") {
-    return `Unsupported surface "${surface}" (supported: ide).`;
-  }
+  const platformErr = assertInstallablePlatforms(platforms);
+  if (platformErr) return platformErr;
   if (locale !== "en" && locale !== "zh-CN") {
     return `Unsupported locale "${locale}" (en | zh-CN).`;
   }
@@ -662,14 +681,22 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
 /**
  * Non-interactive init (`--yes`). Writes .autopilot + merges .cursor/hooks.json.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
- * an existing config.yml (append-keys / reset-config come later).
+ * an existing config.yml, except when `mergePlatforms` / `--add-platform`
+ * updates the `platforms` list (committed only after hooks succeed).
  */
 export function installInitYes(opts: InitYesOptions): InitResult {
   if (typeof opts.projectRoot !== "string" || opts.projectRoot.trim() === "") {
     return { ok: false, error: "projectRoot must be a non-empty string" };
   }
 
-  const unsupported = assertSupported(opts.platform, opts.surface, opts.locale);
+  const requestedPlatforms = resolveInstallPlatforms(opts);
+  if (platformsExceedCap(opts, requestedPlatforms)) {
+    return {
+      ok: false,
+      error: `platforms list exceeds cap of ${MAX_PLATFORM_BINDINGS} unique entries; trim the list and retry`,
+    };
+  }
+  const unsupported = assertSupported(requestedPlatforms, opts.locale);
   if (unsupported) {
     return { ok: false, error: unsupported };
   }
@@ -679,6 +706,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const configPath = path.join(autopilotDir, "config.yml");
   const cursorDir = path.join(projectRoot, ".cursor");
   const hooksPath = path.join(cursorDir, "hooks.json");
+  const mergePlatforms = Boolean(opts.mergePlatforms);
+  // Adding hosts into an existing config requires the force/refresh path.
+  const force = Boolean(opts.force) || mergePlatforms;
 
   try {
     assertNotSymlink(autopilotDir, ".autopilot/");
@@ -711,11 +741,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     configExists = false;
   }
 
-  if (configExists && !opts.force) {
+  if (mergePlatforms && !configExists) {
     return {
       ok: false,
       error:
-        "Project already initialized (.autopilot/config.yml exists). Re-run with --force to refresh (config.yml kept; hooks merge; plans untouched).",
+        "Cannot add a platform before init. Run init first, then --add-platform.",
+    };
+  }
+
+  if (configExists && !force) {
+    return {
+      ok: false,
+      error:
+        "Project already initialized (.autopilot/config.yml exists). Re-run with --force to refresh (config.yml kept; hooks merge; plans untouched), or --add-platform <id> to enable another host.",
     };
   }
 
@@ -749,17 +787,22 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const locale = resolveInstallLocale(
     opts.locale,
     configExists,
-    Boolean(opts.force),
+    force,
     configPath,
   );
 
+  let effectivePlatforms = requestedPlatforms;
+  /** When set, commit a platforms merge after hooks succeed (re-read at write). */
+  let pendingMergePlatforms = false;
   let createdConfig = false;
   try {
     const written: string[] = [];
     mkdirRealDirSync(autopilotDir, ".autopilot/", projectRoot);
 
-    // Only write config on first init — never clobber user config on --force.
-    // wx: fail closed if another process created config.yml between check and write.
+    // Fresh init: write config. --add-platform / mergePlatforms: validate merge
+    // now, but re-read + write only after hooks succeed (avoid half-updated
+    // config on later failure, and shrink TOCTOU vs concurrent editors).
+    // Plain --force: leave config.yml alone.
     if (!configExists) {
       try {
         // Re-check immediately before wx: earlier `configExists` / mkdir leave a window
@@ -767,11 +810,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         // that must not be reported as "already initialized".
         assertParentDirInProject(projectRoot, configPath, ".autopilot/");
         assertNotSymlink(configPath, ".autopilot/config.yml");
+        const primary = primaryBinding(effectivePlatforms);
         fs.writeFileSync(
           configPath,
           defaultConfigYaml({
-            platform: opts.platform,
-            surface: opts.surface,
+            platforms: effectivePlatforms,
+            platform: primary.id,
+            surface: primary.surface,
             locale,
             plansDir,
             verifyEnabled,
@@ -815,14 +860,66 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           return {
             ok: false,
             error:
-              "Project already initialized (.autopilot/config.yml exists). Re-run with --force to refresh (config.yml kept; hooks merge; plans untouched).",
+              "Project already initialized (.autopilot/config.yml exists). Re-run with --force to refresh (config.yml kept; hooks merge; plans untouched), or --add-platform <id> to enable another host.",
           };
         }
         throw err;
       }
       createdConfig = true;
       written.push(path.relative(projectRoot, configPath));
+    } else if (mergePlatforms) {
+      let existingYaml: string;
+      try {
+        existingYaml = readUntrustedUtf8File(
+          configPath,
+          MAX_UNTRUSTED_TEXT_BYTES,
+          ".autopilot/config.yml",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read config.yml: ${msg}` };
+      }
+      let existingPlatforms: PlatformBinding[];
+      try {
+        existingPlatforms = readConfigPlatformsOrThrow(existingYaml);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          error: `Cannot update platforms in config.yml: ${msg}`,
+        };
+      }
+      effectivePlatforms = mergePlatformBindings(
+        existingPlatforms,
+        requestedPlatforms,
+      );
+      // Only the *requested* additions must be installable (checked above).
+      // Existing config may already declare future hosts; do not reject merge
+      // because of those entries — install still only wires installable ports.
+      if (effectivePlatforms.length === 0) {
+        return {
+          ok: false,
+          error: "platforms list is empty after merge; refusing to update config.yml",
+        };
+      }
+      if (!mergedIncludesAllRequested(effectivePlatforms, requestedPlatforms)) {
+        return {
+          ok: false,
+          error:
+            "Cannot add platform(s): platforms list is at capacity. Remove an entry from config.yml and retry.",
+        };
+      }
+      try {
+        // Fail closed early if the current snapshot cannot be rewritten.
+        applyPlatformsToConfigYaml(existingYaml, effectivePlatforms);
+        pendingMergePlatforms = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot update platforms in config.yml: ${msg}` };
+      }
     }
+
+    const primaryPlatform = primaryBinding(effectivePlatforms).id;
 
     const rollbackFreshConfig = (): void => {
       if (!createdConfig) return;
@@ -885,7 +982,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         projectRoot,
         locale,
         plansDir,
-        opts.platform,
+        primaryPlatform,
       );
       if (qsRel && !written.includes(qsRel)) written.push(qsRel);
     }
@@ -914,6 +1011,56 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       ".cursor/",
     );
     written.push(path.relative(projectRoot, hooksPath));
+
+    // Commit platforms merge after hooks: re-read so concurrent edits between
+    // validation and commit are not silently clobbered by a stale snapshot.
+    if (pendingMergePlatforms) {
+      try {
+        const freshYaml = readUntrustedUtf8File(
+          configPath,
+          MAX_UNTRUSTED_TEXT_BYTES,
+          ".autopilot/config.yml",
+        );
+        const freshPlatforms = readConfigPlatformsOrThrow(freshYaml);
+        const mergedPlatforms = mergePlatformBindings(
+          freshPlatforms,
+          requestedPlatforms,
+        );
+        if (mergedPlatforms.length === 0) {
+          return {
+            ok: false,
+            error:
+              "platforms list is empty after merge; refusing to update config.yml",
+          };
+        }
+        if (!mergedIncludesAllRequested(mergedPlatforms, requestedPlatforms)) {
+          return {
+            ok: false,
+            error:
+              "Hooks refreshed, but platforms merge failed: platforms list is at capacity. Remove an entry from config.yml and retry.",
+          };
+        }
+        const nextYaml = applyPlatformsToConfigYaml(
+          freshYaml,
+          mergedPlatforms,
+        );
+        assertParentDirInProject(projectRoot, configPath, ".autopilot/");
+        assertNotSymlink(configPath, ".autopilot/config.yml");
+        writeFileReplaceSync(configPath, nextYaml);
+        assertWrittenInsideProject(
+          projectRoot,
+          configPath,
+          ".autopilot/config.yml",
+        );
+        written.push(path.relative(projectRoot, configPath));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          error: `Hooks refreshed, but platforms merge failed: ${msg}`,
+        };
+      }
+    }
 
     return { ok: true, written };
   } catch (err) {

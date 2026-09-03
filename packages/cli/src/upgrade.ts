@@ -226,14 +226,17 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
     const hints = readConfigInstallHints(existingConfig);
     const locale: InitLocale = hints.locale === "zh-CN" ? "zh-CN" : "en";
-    const platform =
-      typeof hints.platform === "string" && hints.platform.trim() !== ""
-        ? hints.platform
-        : "cursor";
-    // Refresh always uses the supported cursor/ide pair.
+    const platforms =
+      hints.platforms.length > 0
+        ? hints.platforms
+        : [{ id: "cursor", surface: "ide" }];
+    // hints.platform/surface already prefer installable via primaryBinding.
+    const platform = hints.platform || platforms[0]?.id || "cursor";
+    // Defaults include platforms[] so upgrade can append the key to legacy configs.
     const defaultsYaml = defaultConfigYaml({
-      platform: "cursor",
-      surface: "ide",
+      platforms,
+      platform: hints.platform,
+      surface: hints.surface,
       locale,
     });
 

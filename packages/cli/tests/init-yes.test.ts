@@ -10,8 +10,10 @@ import {
   mergeHooksJson,
   preflightForceRefresh,
 } from "../src/init/install.js";
+import { MAX_PLATFORM_BINDINGS } from "../src/init/platforms.js";
 import { autopilotStopHasUnlimitedLoop } from "../src/init/hooks-merge.js";
 import { MAX_UNTRUSTED_TEXT_BYTES } from "../src/read-untrusted-file.js";
+import * as readUntrusted from "../src/read-untrusted-file.js";
 import { runDoctor } from "../src/status-doctor.js";
 
 function tmpProject(): string {
@@ -277,6 +279,9 @@ describe("init --yes install", () => {
       "utf8",
     );
     expect(config).toMatch(/platform:\s*cursor/);
+    expect(config).toMatch(/platforms:/);
+    expect(config).toMatch(/id:\s*cursor/);
+    expect(config).toMatch(/surface:\s*ide/);
     expect(config).toMatch(/locale:\s*en/);
     expect(config).toMatch(/confirm_rounds:\s*5/);
     expect(config).toMatch(/max_before_pause:\s*0/);
@@ -347,6 +352,211 @@ describe("init --yes install", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatch(/unsupported/i);
+    }
+  });
+
+  it("rejects mergePlatforms before init", () => {
+    root = tmpProject();
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      platforms: [{ id: "cursor", surface: "ide" }],
+      mergePlatforms: true,
+      locale: "en",
+      force: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/before init|--add-platform/i);
+    }
+  });
+
+  it("mergePlatforms fails closed on corrupt config without rewriting", () => {
+    root = tmpProject();
+    const first = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(first.ok).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const broken = "platform: [unterminated\n";
+    fs.writeFileSync(configPath, broken, "utf8");
+    const second = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      platforms: [{ id: "cursor", surface: "ide" }],
+      mergePlatforms: true,
+      locale: "en",
+      force: true,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toMatch(/Cannot update platforms in config\.yml/i);
+    }
+    expect(fs.readFileSync(configPath, "utf8")).toBe(broken);
+  });
+
+  it("mergePlatforms fails closed at capacity without dropping existing hosts", () => {
+    root = tmpProject();
+    const first = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(first.ok).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const lines = ["platforms:"];
+    for (let i = 0; i < MAX_PLATFORM_BINDINGS; i++) {
+      lines.push(`  - id: host${i}`);
+      lines.push(`    surface: ide`);
+    }
+    lines.push("platform: host0");
+    lines.push("surface: ide");
+    lines.push("locale: en");
+    const full = `${lines.join("\n")}\n`;
+    fs.writeFileSync(configPath, full, "utf8");
+    const second = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      platforms: [{ id: "cursor", surface: "ide" }],
+      mergePlatforms: true,
+      locale: "en",
+      force: true,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toMatch(/at capacity/i);
+    }
+    expect(fs.readFileSync(configPath, "utf8")).toBe(full);
+  });
+
+  it("mergePlatforms refuses over-cap platforms lists without truncating", () => {
+    root = tmpProject();
+    const first = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(first.ok).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const lines = ["platforms:"];
+    lines.push("  - id: cursor");
+    lines.push("    surface: ide");
+    for (let i = 0; i < MAX_PLATFORM_BINDINGS; i++) {
+      lines.push(`  - id: host${i}`);
+      lines.push(`    surface: ide`);
+    }
+    lines.push("platform: cursor");
+    lines.push("surface: ide");
+    lines.push("locale: en");
+    const oversized = `${lines.join("\n")}\n`;
+    fs.writeFileSync(configPath, oversized, "utf8");
+    // Idempotent add of an already-present installable id must not rewrite+truncate.
+    const second = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      platforms: [{ id: "cursor", surface: "ide" }],
+      mergePlatforms: true,
+      locale: "en",
+      force: true,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) {
+      expect(second.error).toMatch(/exceeds cap|Cannot update platforms/i);
+    }
+    expect(fs.readFileSync(configPath, "utf8")).toBe(oversized);
+  });
+
+  it("refuses over-cap requested platforms without silent truncate", () => {
+    root = tmpProject();
+    const many = Array.from({ length: MAX_PLATFORM_BINDINGS + 1 }, (_, i) => ({
+      id: i === 0 ? "cursor" : `host${i}`,
+      surface: "ide",
+    }));
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      platforms: many,
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/exceeds cap/i);
+    }
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
+    );
+  });
+
+  it("mergePlatforms re-reads config before commit (keeps concurrent list edits)", () => {
+    root = tmpProject();
+    const first = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(first.ok).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+
+    // During merge, rewrite config after the early validate snapshot would have
+    // been taken — commit path must re-read so this declaration is preserved.
+    const origRead = readUntrusted.readUntrustedUtf8File;
+    let configReads = 0;
+    const spy = vi
+      .spyOn(readUntrusted, "readUntrustedUtf8File")
+      .mockImplementation((filePath, maxBytes, label) => {
+        const abs = path.resolve(String(filePath));
+        if (abs === path.resolve(configPath)) {
+          configReads += 1;
+          // Reads before commit: locale resolve + early merge validate.
+          // Commit re-read must pick up a concurrent platforms edit.
+          if (configReads <= 2) {
+            return origRead(filePath, maxBytes, label);
+          }
+          return `platforms:
+  - id: cursor
+    surface: ide
+  - id: claude-code
+    surface: cli
+platform: cursor
+surface: ide
+locale: en
+`;
+        }
+        return origRead(filePath, maxBytes, label);
+      });
+    try {
+      const second = installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        platforms: [{ id: "cursor", surface: "ide" }],
+        mergePlatforms: true,
+        locale: "en",
+        force: true,
+      });
+      expect(second.ok).toBe(true);
+      expect(configReads).toBeGreaterThanOrEqual(2);
+      const config = fs.readFileSync(configPath, "utf8");
+      expect(config).toMatch(/claude-code/);
+      expect(config).toMatch(/id:\s*cursor/);
+    } finally {
+      spy.mockRestore();
     }
   });
 

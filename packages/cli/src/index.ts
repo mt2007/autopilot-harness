@@ -27,6 +27,7 @@ export {
   mergeConfigYamlMissingKeys,
   mergeMissingKeys,
   readConfigInstallHints,
+  readConfigPlatformsOrThrow,
 } from "./init/config-merge.js";
 export {
   collectWizardAnswers,
@@ -43,6 +44,7 @@ export {
   formatHostActivationTips,
   formatPostInstallOutro,
   formatPostInstallFooter,
+  installableHostOptions,
   writeQuickstart,
   normalizePlansDir,
   resolveCliCommand,
@@ -60,6 +62,22 @@ export type {
   PlansGitPolicy,
   ShellAliasTarget,
 } from "./init/wizard-helpers.js";
+export {
+  INSTALLABLE_BINDINGS,
+  MAX_PLATFORM_BINDINGS,
+  applyPlatformsToConfigYaml,
+  assertInstallablePlatforms,
+  defaultSurfaceFor,
+  formatPlatformsDisplay,
+  mergePlatformBindings,
+  mergedIncludesAllRequested,
+  normalizeBinding,
+  parsePlatformBindingsFromConfig,
+  parsePlatformsCliList,
+  primaryBinding,
+  sanitizePlatformId,
+} from "./init/platforms.js";
+export type { PlatformBinding, PlatformSurface } from "./init/platforms.js";
 export { setProjectLocale } from "./locale-set.js";
 export type {
   LocaleSetOptions,

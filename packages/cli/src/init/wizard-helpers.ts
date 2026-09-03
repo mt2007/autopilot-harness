@@ -4,6 +4,16 @@ import { execSync } from "node:child_process";
 import { CLI_NAME } from "../names.js";
 import type { InitLocale, InitYesOptions, PlansGitPolicy } from "./types.js";
 import {
+  formatBindingOptionLabel,
+  INSTALLABLE_BINDINGS,
+  MAX_PLATFORM_BINDINGS,
+  mergePlatformBindings,
+  mergedIncludesAllRequested,
+  primaryBinding,
+  sanitizePlatformId,
+  type PlatformBinding,
+} from "./platforms.js";
+import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
   writeFileReplaceSync,
@@ -73,8 +83,11 @@ export type ShellAliasTarget = "skip" | "zshrc" | "bashrc";
 export interface InitWizardAnswers {
   projectRoot: string;
   locale: InitLocale;
-  platform: "cursor";
-  surface: "ide";
+  platforms: PlatformBinding[];
+  /** @deprecated Prefer platforms[0]; kept for call sites during transition. */
+  platform: "cursor" | string;
+  /** @deprecated Prefer platforms[0].surface */
+  surface: "ide" | string;
   plansDir: string;
   plansGit: PlansGitPolicy;
   verifyEnabled: boolean;
@@ -84,6 +97,8 @@ export interface InitWizardAnswers {
   maxErrorsBeforePause: number;
   shellAlias: ShellAliasTarget;
   force: boolean;
+  /** When true, merge platforms into existing config.yml. */
+  mergePlatforms?: boolean;
   packageVersion?: string;
 }
 
@@ -279,10 +294,30 @@ export function applyAutopilotRuntimeGitignore(
 export function answersToInstallOptions(
   answers: InitWizardAnswers,
 ): InitYesOptions {
+  const raw =
+    answers.platforms && answers.platforms.length > 0
+      ? answers.platforms
+      : [
+          {
+            id: answers.platform || "cursor",
+            surface: answers.surface || "ide",
+          },
+        ];
+  const platforms = mergePlatformBindings([], raw);
+  // Do not pre-truncate then hand a capped list to install (that would bypass
+  // installInitYes platformsExceedCap). Fail closed here instead.
+  if (!mergedIncludesAllRequested(platforms, raw)) {
+    throw new Error(
+      `platforms list exceeds cap of ${MAX_PLATFORM_BINDINGS} unique entries; trim the list and retry`,
+    );
+  }
+  const primary = primaryBinding(platforms);
   return {
     projectRoot: answers.projectRoot,
-    platform: answers.platform,
-    surface: answers.surface,
+    platform: primary.id,
+    surface: primary.surface,
+    platforms,
+    mergePlatforms: Boolean(answers.mergePlatforms),
     locale: answers.locale,
     force: answers.force,
     packageVersion: answers.packageVersion,
@@ -417,15 +452,7 @@ export function appendShellAlias(
  * Allowlist first, then lowercase + length cap, so junk prefixes do not
  * truncate away a real id (e.g. "***…***cursor" → "cursor").
  */
-function sanitizePlatformId(platform: string): string {
-  if (typeof platform !== "string") return "";
-  return platform
-    .replace(/[\u0000-\u001f\u007f]/g, "")
-    .trim()
-    .replace(/[^A-Za-z0-9._+-]/g, "")
-    .toLowerCase()
-    .slice(0, 64);
-}
+// sanitizePlatformId lives in ./platforms.js (shared with config parsing).
 
 /**
  * Human label for an agent host id (init/upgrade tips).
@@ -451,63 +478,125 @@ export function formatHostDisplayName(platform: string): string {
 }
 
 /** Init/upgrade outro — always English (init UX language). */
-export function formatPostInstallOutro(platform: string): string {
-  return `You're all set — try /autopilot-on in ${formatHostDisplayName(platform)}.`;
+export function formatPostInstallOutro(
+  platformOrPlatforms: string | readonly string[],
+): string {
+  const ids = (
+    typeof platformOrPlatforms === "string"
+      ? [platformOrPlatforms]
+      : [...platformOrPlatforms]
+  )
+    .map(sanitizePlatformId)
+    .filter(Boolean);
+  if (ids.length === 0) {
+    return "You're all set — try /autopilot-on in your agent host.";
+  }
+  if (ids.length === 1) {
+    return `You're all set — try /autopilot-on in ${formatHostDisplayName(ids[0]!)}.`;
+  }
+  const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
+  return `You're all set — try /autopilot-on in ${names}.`;
 }
 
 /**
  * Host-specific activation tips after hooks/skills install.
  * Always English (init UX language). Install what you chose → tip for that host.
  */
-export function formatHostActivationTips(platform: string): string[] {
-  const id = sanitizePlatformId(platform);
-  const host = formatHostDisplayName(id);
-  switch (id) {
-    case "cursor":
-      return [
+export function formatHostActivationTips(
+  platformOrPlatforms: string | readonly string[],
+): string[] {
+  const ids = (
+    typeof platformOrPlatforms === "string"
+      ? [platformOrPlatforms]
+      : [...platformOrPlatforms]
+  )
+    .map(sanitizePlatformId)
+    .filter(Boolean);
+  const tips: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const host = formatHostDisplayName(id);
+    if (id === "cursor") {
+      tips.push(
         `If /autopilot-* skills or Autopilot hooks do not appear in ${host}: run Developer: Reload Window, or start a new Agent chat.`,
-      ];
-    default:
-      return [
+      );
+    } else {
+      tips.push(
         `If Autopilot skills or hooks do not appear in ${host}: reload or restart ${host}, then open a new agent session.`,
-      ];
+      );
+    }
   }
+  return tips;
 }
 
 /** Non-interactive init / upgrade footer lines (English). */
-export function formatPostInstallFooter(platform: string): string[] {
-  return [formatPostInstallOutro(platform), ...formatHostActivationTips(platform)];
+export function formatPostInstallFooter(
+  platformOrPlatforms: string | readonly string[],
+): string[] {
+  return [
+    formatPostInstallOutro(platformOrPlatforms),
+    ...formatHostActivationTips(platformOrPlatforms),
+  ];
+}
+
+/** Installable host options for interactive multiselect (English). */
+export function installableHostOptions(): {
+  value: string;
+  label: string;
+  binding: PlatformBinding;
+}[] {
+  return INSTALLABLE_BINDINGS.map((b) => ({
+    value: `${b.id}:${b.surface}`,
+    label: formatBindingOptionLabel(b),
+    binding: { id: b.id, surface: b.surface },
+  }));
 }
 
 /** Plain (no markdown) host tips — cheat sheet / footer. */
 function hostActivationPlainLines(
   locale: InitLocale,
-  platform: string,
+  platformOrPlatforms: string | readonly string[],
 ): string[] {
-  const id = sanitizePlatformId(platform);
-  const host = formatHostDisplayName(id);
-  if (locale === "zh-CN") {
-    if (id === "cursor") {
-      return [
-        `在 ${host} 中试用 /autopilot-on。`,
-        `若 skills / hooks 未出现：执行 Developer: Reload Window，或新开一条 Agent 对话。`,
-      ];
+  const ids = (
+    typeof platformOrPlatforms === "string"
+      ? [platformOrPlatforms]
+      : [...platformOrPlatforms]
+  )
+    .map(sanitizePlatformId)
+    .filter(Boolean);
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids.length > 0 ? ids : ["cursor"]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const host = formatHostDisplayName(id);
+    if (locale === "zh-CN") {
+      if (id === "cursor") {
+        lines.push(
+          `在 ${host} 中试用 /autopilot-on。`,
+          `若 skills / hooks 未出现：执行 Developer: Reload Window，或新开一条 Agent 对话。`,
+        );
+      } else {
+        lines.push(
+          `在 ${host} 中试用 /autopilot-on。`,
+          `若 skills / hooks 未出现：重载或重启 ${host}，再开新会话。`,
+        );
+      }
+    } else if (id === "cursor") {
+      lines.push(
+        `Try /autopilot-on in ${host}.`,
+        `If skills or hooks are missing: Developer: Reload Window, or start a new Agent chat.`,
+      );
+    } else {
+      lines.push(
+        `Try /autopilot-on in ${host}.`,
+        `If skills or hooks are missing: reload or restart ${host}, then open a new agent session.`,
+      );
     }
-    return [
-      `在 ${host} 中试用 /autopilot-on。`,
-      `若 skills / hooks 未出现：重载或重启 ${host}，再开新会话。`,
-    ];
   }
-  if (id === "cursor") {
-    return [
-      `Try /autopilot-on in ${host}.`,
-      `If skills or hooks are missing: Developer: Reload Window, or start a new Agent chat.`,
-    ];
-  }
-  return [
-    `Try /autopilot-on in ${host}.`,
-    `If skills or hooks are missing: reload or restart ${host}, then open a new agent session.`,
-  ];
+  return lines;
 }
 
 /** Markdown bullets for docs/autopilot/quickstart.md. */
@@ -638,11 +727,21 @@ export function formatCheatSheet(
   locale: InitLocale,
   cliCommand: string = resolveCliCommand(),
   plansDir = "plans",
-  platform = "cursor",
+  platformOrPlatforms: string | readonly string[] = "cursor",
 ): string[] {
   const normalized = normalizePlansDir(plansDir);
   const plansLabel = normalized.ok ? normalized.value : "plans";
-  const host = formatHostDisplayName(platform);
+  const ids = (
+    typeof platformOrPlatforms === "string"
+      ? [platformOrPlatforms]
+      : [...platformOrPlatforms]
+  )
+    .map(sanitizePlatformId)
+    .filter(Boolean);
+  const host =
+    ids.length <= 1
+      ? formatHostDisplayName(ids[0] ?? "cursor")
+      : ids.map((id) => formatHostDisplayName(id)).join(" / ");
   if (locale === "zh-CN") {
     return [
       "── 新开任务（Planning）──────────────────",
@@ -664,7 +763,7 @@ export function formatCheatSheet(
       `  ${cliCommand} locale set en`,
       "",
       "── 生效提示 ─────────────────────────────",
-      ...hostActivationPlainLines(locale, platform).map((l) => `  ${l}`),
+      ...hostActivationPlainLines(locale, ids).map((l) => `  ${l}`),
       "",
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
@@ -689,7 +788,7 @@ export function formatCheatSheet(
     `  ${cliCommand} locale set zh-CN`,
     "",
     "── After install ────────────────────────",
-    ...hostActivationPlainLines(locale, platform).map((l) => `  ${l}`),
+    ...hostActivationPlainLines(locale, ids).map((l) => `  ${l}`),
     "",
     `  See: docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
   ];

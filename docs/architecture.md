@@ -2,6 +2,12 @@
 
 Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, …).
 
+Project config (`.autopilot/config.yml`) lists enabled hosts under `platforms:`
+(`id` + `surface`: `ide` | `cli` | `runner`). Legacy `platform` / `surface`
+scalars remain as the primary host for older readers (prefer an installable
+binding when the list mixes wired and future hosts). Init may enable multiple
+installable bindings; this build installs `cursor`/`ide` wiring.
+
 ```
 packages/core          StateStore, ReviewEngine, project-config, checklist, triggers
 packages/ports/cursor  beforeSubmitPrompt / afterFileEdit / stop adapters

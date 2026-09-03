@@ -32,6 +32,7 @@ import {
   type InitPrompts,
 } from "../src/init/tui.js";
 import type { InitWizardAnswers } from "../src/init/wizard-helpers.js";
+import { MAX_PLATFORM_BINDINGS } from "../src/init/platforms.js";
 
 function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-tui-"));
@@ -40,10 +41,12 @@ function tmpProject(): string {
 function scriptedPrompts(script: {
   confirms?: boolean[];
   selects?: unknown[];
+  multiselects?: unknown[][];
   texts?: string[];
 }): InitPrompts {
   const confirms = [...(script.confirms ?? [])];
   const selects = [...(script.selects ?? [])];
+  const multiselects = [...(script.multiselects ?? [])];
   const texts = [...(script.texts ?? [])];
   return {
     intro: () => {},
@@ -59,6 +62,10 @@ function scriptedPrompts(script: {
     select: async <T>() => {
       if (selects.length === 0) throw new Error("unexpected select");
       return selects.shift() as T;
+    },
+    multiselect: async <T>() => {
+      if (multiselects.length === 0) throw new Error("unexpected multiselect");
+      return multiselects.shift()! as T[];
     },
     text: async () => {
       if (texts.length === 0) throw new Error("unexpected text");
@@ -816,8 +823,6 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true], // install here, ready
         selects: [
           "en",
-          "cursor",
-          "ide",
           "plans",
           "commit",
           "executing_only",
@@ -825,10 +830,12 @@ describe("interactive init (scripted prompts)", () => {
           "unlimited",
           "skip",
         ],
+        multiselects: [["cursor:ide"]],
       }),
     });
     expect(answers).not.toBeNull();
     expect(answers!.locale).toBe("en");
+    expect(answers!.platforms).toEqual([{ id: "cursor", surface: "ide" }]);
     expect(answers!.plansDir).toBe("plans");
     expect(answers!.plansGit).toBe("commit");
     expect(answers!.verifyEnabled).toBe(false);
@@ -853,8 +860,6 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "zh-CN",
-          "cursor",
-          "ide",
           "custom",
           "local-only",
           "executing_only",
@@ -862,6 +867,7 @@ describe("interactive init (scripted prompts)", () => {
           "5",
           "skip",
         ],
+        multiselects: [["cursor:ide"]],
         texts: ["docs/plans"],
       }),
     });
@@ -881,8 +887,6 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "en",
-          "cursor",
-          "ide",
           "plans",
           "commit",
           "executing_only",
@@ -890,6 +894,7 @@ describe("interactive init (scripted prompts)", () => {
           "custom",
           "skip",
         ],
+        multiselects: [["cursor:ide"]],
         texts: ["12"],
       }),
     });
@@ -905,8 +910,6 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true],
         selects: [
           "en",
-          "cursor",
-          "ide",
           "plans",
           "commit",
           "executing_only",
@@ -914,6 +917,7 @@ describe("interactive init (scripted prompts)", () => {
           "unlimited",
           "skip",
         ],
+        multiselects: [["cursor:ide"]],
       }),
     });
     expect(code).toBe(0);
@@ -925,6 +929,8 @@ describe("interactive init (scripted prompts)", () => {
       "utf8",
     );
     expect(config).toMatch(/max_before_pause:\s*0/);
+    expect(config).toMatch(/platforms:/);
+    expect(config).toMatch(/id:\s*cursor/);
     expect(
       fs.existsSync(path.join(root, "docs", "autopilot", "quickstart.md")),
     ).toBe(true);
@@ -934,6 +940,7 @@ describe("interactive init (scripted prompts)", () => {
     const answers: InitWizardAnswers = {
       projectRoot: "/tmp/x",
       locale: "en",
+      platforms: [{ id: "cursor", surface: "ide" }],
       platform: "cursor",
       surface: "ide",
       plansDir: "plans",
@@ -950,6 +957,30 @@ describe("interactive init (scripted prompts)", () => {
       reviewScope: "executing_only",
       maxErrorsBeforePause: 0,
       writeQuickstart: true,
+      platforms: [{ id: "cursor", surface: "ide" }],
     });
+  });
+
+  it("answersToInstallOptions refuses over-cap platforms without truncating", () => {
+    const many = Array.from({ length: MAX_PLATFORM_BINDINGS + 1 }, (_, i) => ({
+      id: i === 0 ? "cursor" : `host${i}`,
+      surface: "ide" as const,
+    }));
+    const answers: InitWizardAnswers = {
+      projectRoot: "/tmp/x",
+      locale: "en",
+      platforms: many,
+      platform: "cursor",
+      surface: "ide",
+      plansDir: "plans",
+      plansGit: "leave",
+      verifyEnabled: false,
+      reviewScope: "executing_only",
+      maxErrorsBeforePause: 0,
+      shellAlias: "skip",
+      force: false,
+      packageVersion: "0.1.0",
+    };
+    expect(() => answersToInstallOptions(answers)).toThrow(/exceeds cap/i);
   });
 });

@@ -8,6 +8,7 @@ import {
   appendShellAlias,
   formatCheatSheet,
   formatPostInstallOutro,
+  installableHostOptions,
   normalizePlansDir,
   probeProject,
   resolveCliCommand,
@@ -15,6 +16,10 @@ import {
   type PlansGitPolicy,
   type ShellAliasTarget,
 } from "./wizard-helpers.js";
+import {
+  sanitizePlatformId,
+  type PlatformBinding,
+} from "./platforms.js";
 import { readConfigInstallHints } from "./config-merge.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
@@ -43,6 +48,12 @@ export interface InitPrompts {
     options: SelectOption<T>[];
     initialValue?: T;
   }) => Promise<T | symbol>;
+  multiselect: <T>(opts: {
+    message: string;
+    options: SelectOption<T>[];
+    initialValues?: T[];
+    required?: boolean;
+  }) => Promise<T[] | symbol>;
   text: (opts: {
     message: string;
     placeholder?: string;
@@ -69,6 +80,20 @@ function defaultPrompts(): InitPrompts {
     });
     return result as T | symbol;
   };
+  const multiselect: InitPrompts["multiselect"] = async <T>(opts: {
+    message: string;
+    options: SelectOption<T>[];
+    initialValues?: T[];
+    required?: boolean;
+  }): Promise<T[] | symbol> => {
+    const result = await clack.multiselect({
+      message: opts.message,
+      options: opts.options as never,
+      initialValues: opts.initialValues,
+      required: opts.required ?? true,
+    });
+    return result as T[] | symbol;
+  };
   return {
     intro: clack.intro,
     outro: clack.outro,
@@ -80,6 +105,7 @@ function defaultPrompts(): InitPrompts {
     },
     confirm: clack.confirm,
     select,
+    multiselect,
     text: clack.text,
     isCancel: clack.isCancel,
     spinner: clack.spinner,
@@ -137,7 +163,7 @@ export async function collectWizardAnswers(
       "  1. Plan  — shape the work into a checklist",
       "  2. Run   — implement item by item, with self-review between steps",
       "",
-      `You'll get Cursor hooks, slash skills, and a project config under .autopilot/.`,
+      `You'll get host hooks (for the hosts you pick), slash skills, and a project config under .autopilot/.`,
       `CLI package: ${CLI_NAME}`,
     ].join("\n"),
     "What this installs",
@@ -247,6 +273,7 @@ export async function collectWizardAnswers(
     return {
       projectRoot: probe.projectRoot,
       locale,
+      platforms: [{ id: "cursor", surface: "ide" }],
       platform: "cursor",
       surface: "ide",
       plansDir: "plans",
@@ -284,33 +311,46 @@ export async function collectWizardAnswers(
     return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
-  const platform = await p.select<"cursor">({
-    message: "Which agent host are you using?",
-    options: [
-      {
-        value: "cursor",
-        label: "Cursor",
-      },
-    ],
-    initialValue: "cursor",
+  const hostOptions = installableHostOptions();
+  const wantPlatform = sanitizePlatformId(opts.platform ?? "");
+  const defaultHostKeys = (() => {
+    const fromFlag = wantPlatform
+      ? hostOptions
+          .filter((o) => o.binding.id === wantPlatform)
+          .map((o) => o.value)
+      : [];
+    if (fromFlag.length > 0) return fromFlag;
+    return hostOptions[0] ? [hostOptions[0].value] : [];
+  })();
+  const selectedHosts = await p.multiselect<string>({
+    message: "Which agent hosts should Autopilot install for? (multi-select)",
+    options: hostOptions.map((o) => ({
+      value: o.value,
+      label: o.label,
+    })),
+    initialValues: defaultHostKeys,
+    required: true,
   });
-  if (p.isCancel(platform)) {
+  if (p.isCancel(selectedHosts)) {
     return cancelOut(p, "Cancelled — nothing was changed.");
   }
-
-  const surface = await p.select<"ide">({
-    message: "How should Autopilot plug in?",
-    options: [
-      {
-        value: "ide",
-        label: "IDE hooks (recommended)",
-      },
-    ],
-    initialValue: "ide",
-  });
-  if (p.isCancel(surface)) {
-    return cancelOut(p, "Cancelled — nothing was changed.");
+  if (!Array.isArray(selectedHosts) || selectedHosts.length === 0) {
+    return cancelOut(p, "Cancelled — pick at least one host.");
   }
+  const platforms: PlatformBinding[] = [];
+  const seen = new Set<string>();
+  for (const key of selectedHosts) {
+    const opt = hostOptions.find((o) => o.value === key);
+    if (!opt) continue;
+    if (seen.has(opt.value)) continue;
+    seen.add(opt.value);
+    platforms.push({ id: opt.binding.id, surface: opt.binding.surface });
+  }
+  if (platforms.length === 0) {
+    return cancelOut(p, "Cancelled — no valid hosts selected.");
+  }
+  const platform = platforms[0]!.id;
+  const surface = platforms[0]!.surface;
 
   p.note(
     [
@@ -542,9 +582,12 @@ export async function collectWizardAnswers(
     return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
+  const hostSummary = platforms
+    .map((b) => `${b.id}(${b.surface})`)
+    .join(", ");
   const summary = [
     `Project:  ${probe.projectRoot}`,
-    `Host:     ${platform} (${surface})`,
+    `Hosts:    ${hostSummary}`,
     `Locale:   ${locale}`,
     `Plans:    ${plansDir}/<slug>/checklist.md`,
     `In git:   ${
@@ -562,7 +605,7 @@ export async function collectWizardAnswers(
     }`,
     `CLI:      ${cliCmd}${shellAlias === "skip" ? "" : ` · alias → ~/.${shellAlias}`}`,
     "",
-    "Will write: .autopilot/, .cursor/hooks.json, skills, workflows, quickstart",
+    "Will write: .autopilot/, host hooks, skills, workflows, quickstart",
   ].join("\n");
 
   const ready = await p.confirm({
@@ -576,6 +619,7 @@ export async function collectWizardAnswers(
   return {
     projectRoot: probe.projectRoot,
     locale,
+    platforms,
     platform,
     surface,
     plansDir,
@@ -654,9 +698,13 @@ export async function runInteractiveInit(
     answers.locale,
     resolveCliCommand(),
     answers.plansDir,
-    answers.platform,
+    answers.platforms?.map((b) => b.id) ?? answers.platform,
   );
   p.note(cheat.join("\n"), `${PREFERRED_NAME} is ready`);
-  p.outro(formatPostInstallOutro(answers.platform));
+  p.outro(
+    formatPostInstallOutro(
+      answers.platforms?.map((b) => b.id) ?? answers.platform,
+    ),
+  );
   return 0;
 }

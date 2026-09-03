@@ -11,6 +11,11 @@ import {
 } from "@autopilot-harness/core";
 import { parseDocument } from "yaml";
 import {
+  formatPlatformsDisplay,
+  parsePlatformBindingsFromConfig,
+  type PlatformBinding,
+} from "./init/platforms.js";
+import {
   autopilotStopHasUnlimitedLoop,
   summarizeAutopilotHooks,
   validateHooksShape,
@@ -194,6 +199,7 @@ function parseConfigObject(configYaml: string): Record<string, unknown> | null {
 function readStatusConfig(configYaml: string): {
   configOk: boolean;
   platform: string;
+  platforms: PlatformBinding[];
   locale: string;
   preferredName: string;
   plansDir: string;
@@ -208,6 +214,7 @@ function readStatusConfig(configYaml: string): {
     return {
       configOk: false,
       platform: "?",
+      platforms: [],
       locale: "?",
       preferredName: "Autopilot",
       plansDir: "plans",
@@ -238,12 +245,11 @@ function readStatusConfig(configYaml: string): {
     typeof cli.preferred_name === "string" && cli.preferred_name.trim()
       ? sanitizeSessionDisplayText(cli.preferred_name)
       : "Autopilot";
+  const platforms = parsePlatformBindingsFromConfig(parsed);
   return {
     configOk: true,
-    platform:
-      typeof parsed.platform === "string"
-        ? safeDisplayToken(parsed.platform)
-        : "?",
+    platform: safeDisplayToken(formatPlatformsDisplay(platforms)),
+    platforms,
     locale:
       typeof parsed.locale === "string"
         ? safeDisplayToken(parsed.locale)
@@ -347,7 +353,7 @@ export function formatStatus(projectRoot: string): string {
     `${cfg.preferredName} status`,
     `  project:  ${root}`,
     `  pin:      autopilot-harness@${pin}`,
-    `  platform: ${cfg.platform}`,
+    `  platforms: ${cfg.platform}`,
     `  locale:   ${cfg.locale}`,
     cfg.plansDirError
       ? `  plans:    invalid (${cfg.plansDirError})`

@@ -1,5 +1,7 @@
 /** Shared types for Autopilot init. */
 
+import type { PlatformBinding } from "./platforms.js";
+
 export type InitPlatform = "cursor";
 export type InitSurface = "ide";
 export type InitLocale = "en" | "zh-CN";
@@ -8,8 +10,21 @@ export type PlansGitPolicy = "commit" | "local-only" | "leave";
 
 export interface InitYesOptions {
   projectRoot: string;
+  /** Legacy single host; ignored when `platforms` is non-empty. */
   platform: string;
+  /** Legacy single surface; ignored when `platforms` is non-empty. */
   surface: string;
+  /**
+   * Enabled hosts for this install. When set, wins over platform/surface.
+   * Fresh init writes the full list; with `mergePlatforms` merges into config.
+   */
+  platforms?: PlatformBinding[];
+  /**
+   * When true with an existing config.yml: merge `platforms` into config
+   * (add hosts) instead of leaving config untouched. Implies force semantics
+   * for the refresh path.
+   */
+  mergePlatforms?: boolean;
   locale: string;
   force: boolean;
   packageVersion?: string;

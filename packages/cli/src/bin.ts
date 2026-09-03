@@ -19,6 +19,12 @@ import {
   upgradeProject,
   uninstallProject,
 } from "./index.js";
+import {
+  defaultSurfaceFor,
+  normalizeBinding,
+  parsePlatformsCliList,
+  primaryBinding,
+} from "./init/platforms.js";
 import { loadLocale } from "@autopilot-harness/i18n";
 
 const program = new Command();
@@ -31,9 +37,17 @@ program
 program
   .command("init")
   .description("Install Autopilot into the current project")
-  .option("-p, --platform <platform>", "AI platform", "cursor")
+  .option("-p, --platform <platform>", "AI platform (single)", "cursor")
   .option("--harness <platform>", "Alias for --platform")
-  .option("--surface <surface>", "Surface", "ide")
+  .option(
+    "--platforms <list>",
+    "Comma-separated platforms (e.g. cursor). Wins over --platform",
+  )
+  .option(
+    "--add-platform <platform>",
+    "Merge a platform into an existing install (updates config.yml)",
+  )
+  .option("--surface <surface>", "Surface for a single --platform", "ide")
   .option("--locale <locale>", "Locale", "en")
   .option("-y, --yes", "Non-interactive defaults")
   .option(
@@ -44,21 +58,74 @@ program
     async (opts: {
       platform: string;
       harness?: string;
+      platforms?: string;
+      addPlatform?: string;
       surface: string;
       locale: string;
       yes?: boolean;
       force?: boolean;
     }) => {
-      const platform = opts.harness ?? opts.platform;
+      const addPlatformRaw =
+        typeof opts.addPlatform === "string" ? opts.addPlatform.trim() : "";
+      const mergePlatforms = addPlatformRaw !== "";
+
+      const platformsFlag =
+        typeof opts.platforms === "string" ? opts.platforms.trim() : "";
+      let platforms: ReturnType<typeof parsePlatformsCliList> | null = null;
+      if (platformsFlag !== "") {
+        try {
+          platforms = parsePlatformsCliList(platformsFlag, opts.surface);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`init failed: ${msg}`);
+          process.exitCode = 1;
+          return;
+        }
+        if (!platforms || platforms.length === 0) {
+          console.error(
+            `init failed: invalid --platforms "${platformsFlag}" (no usable platform ids)`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+      }
+
+      if (mergePlatforms) {
+        const added = normalizeBinding(
+          addPlatformRaw,
+          defaultSurfaceFor(addPlatformRaw),
+        );
+        if (!added) {
+          console.error(`init failed: invalid --add-platform "${addPlatformRaw}"`);
+          process.exitCode = 1;
+          return;
+        }
+        platforms = platforms ? [...platforms, added] : [added];
+      }
+
+      if (!platforms || platforms.length === 0) {
+        const single = opts.harness ?? opts.platform;
+        const b = normalizeBinding(single, opts.surface);
+        platforms = b ? [b] : [{ id: "cursor", surface: "ide" }];
+      }
+
+      const primary = primaryBinding(platforms);
 
       if (!opts.yes) {
+        if (mergePlatforms) {
+          console.error(
+            `Interactive --add-platform is not supported. Use: ${CLI_NAME} init --yes --add-platform <id>`,
+          );
+          process.exitCode = 1;
+          return;
+        }
         const code = await runInteractiveInit({
           projectRoot: process.cwd(),
           force: Boolean(opts.force),
           packageVersion: PACKAGE_VERSION,
           locale: opts.locale,
-          platform,
-          surface: opts.surface,
+          platform: primary.id,
+          surface: primary.surface,
         });
         process.exitCode = code;
         return;
@@ -66,10 +133,12 @@ program
 
       const result = installInitYes({
         projectRoot: process.cwd(),
-        platform,
-        surface: opts.surface,
+        platform: primary.id,
+        surface: primary.surface,
+        platforms,
+        mergePlatforms,
         locale: opts.locale,
-        force: Boolean(opts.force),
+        force: Boolean(opts.force) || mergePlatforms,
         packageVersion: PACKAGE_VERSION,
       });
 
@@ -90,7 +159,7 @@ program
       console.log(`  ${CLI_NAME} status`);
       console.log(`  ${CLI_NAME} doctor`);
       console.log("");
-      for (const line of formatPostInstallFooter(platform)) {
+      for (const line of formatPostInstallFooter(platforms.map((p) => p.id))) {
         console.log(line);
       }
     },
