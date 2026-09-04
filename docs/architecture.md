@@ -22,6 +22,8 @@ packages/templates     skills (*.tpl) + planning/executing workflows
 
 State lives in `.autopilot/state.db`. Progress authority is `plans/<slug>/checklist.md`.
 
+`review.scope` in `.autopilot/config.yml`: **`executing_only`** (default) runs fix→confirm only during Autopilot RUN; **`project`** runs on any product-code edit without ON/RUN (idle/ambient or **planning** ends at review-complete, not checklist advance). See README **When does self-review run?**.
+
 ### Hook vendor runtime
 
 The project Stop / submit / edit hooks load a **vendored** ESM bundle so consumer

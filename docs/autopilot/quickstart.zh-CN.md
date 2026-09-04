@@ -61,4 +61,17 @@ node packages/cli/dist/bin.js upgrade --dry-run
 - 在 Cursor 中试用 `/autopilot-on`。
 - 若 skills / hooks 未出现：执行 `Developer: Reload Window`，或新开一条 Agent 对话。
 
+## 自审范围（`review.scope`）
+
+写在 `.autopilot/config.yml`：
+
+| 取值 | 含义 |
+|------|------|
+| **`executing_only`**（默认） | 仅在 `/autopilot-run`（checklist 执行中）且改了产品代码后，才走修复 → 多角度确认 |
+| **`project`** | **任意**产品代码编辑都会自审——**不需要**先 ON / RUN |
+
+产品代码排除命中 `.autopilotignore` 的路径，以及**未跟踪且被 `.gitignore` 忽略**的路径。暂停 / OFF 期间不跑自审链，需 resume。
+
+只开 `/autopilot-on` **不会**启动自审（规划只写方案/文档）。`project` 且**未在** checklist 执行中（含仍在 planning）时，确认链以 **自审完成** 结束（不勾选推进 checklist）；在 RUN 执行中则仍按项推进/完成。若已有全局 Cursor 自审 hook，慎与 `project` 叠用（可能双重注入）。各宿主自带的 Plan 模式与 Autopilot 无关，目前未对接。
+
 方案与清单始终在 `plans/<slug>/`（权威进度是 `checklist.md`）。

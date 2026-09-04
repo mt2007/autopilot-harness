@@ -36,6 +36,8 @@ done (checklist clear)
 | **Advance** | — | Marks the item `[x]`, local commit if dirty (skip if clean; **no auto-push**), then next item | Updated `checklist.md` |
 | **Done** | — | Marks the last item; local commit if dirty (**no auto-push**); stops when checklist is clear | Track complete |
 
+Default self-review is **during RUN** (`review.scope: executing_only`). For review on casual edits without ON/RUN, set `review.scope: project` — see [When does self-review run?](#when-does-self-review-run-reviewscope).
+
 Pause, change the plan, or resume with `/autopilot-off`, `/autopilot-replan`, and `/autopilot-resume` (details in the [quickstart](./docs/autopilot/quickstart.md)).
 
 ### Author note (scale)
@@ -52,7 +54,9 @@ Planning grill rounds are inspired by the **grill-me / grilling** design-tree sk
 
 ### Multi-lens self-review
 
-After product edits, Autopilot drives **fix**, then **confirm** rounds. Each confirm round uses a different lens (not the same checklist reread). Default `review.confirm_rounds: 5`. With `review.confirm_rounds: 3` (light), lenses are **1 → 2 → 5** (skip concurrency & security).
+After **product-code** edits (see below), Autopilot drives **fix**, then **confirm** rounds. Each confirm round uses a different lens (not the same checklist reread). Default `review.confirm_rounds: 5`. With `review.confirm_rounds: 3` (light), lenses are **1 → 2 → 5** (skip concurrency & security).
+
+A path counts as product code unless it is excluded by `.autopilotignore`, or it is **untracked and** ignored by `.gitignore`. Edits under a **paused** / OFF session do not run the chain until you resume.
 
 | Round (default 5) | Lens |
 |------:|------|
@@ -61,6 +65,24 @@ After product edits, Autopilot drives **fix**, then **confirm** rounds. Each con
 | 3 | Concurrency, races & partial failure |
 | 4 | Security & trust boundaries |
 | 5 | Test gaps & regression (read-only: record gaps, don’t add tests in that round) |
+
+#### When does self-review run? (`review.scope`)
+
+Configured in `.autopilot/config.yml` under `review.scope` (chosen at `init`, changeable later):
+
+| `review.scope` | When fix → confirm runs | Typical use |
+|----------------|-------------------------|-------------|
+| **`executing_only`** (default) | Only while Autopilot is in **RUN** (checklist executing) and product code changes | Structured tracks: `/autopilot-on` → `/autopilot-run` → review per item |
+| **`project`** | On **any** product-code edit in the project — **no** `/autopilot-on` or `/autopilot-run` required | Casual coding chats; still want multi-lens pressure-test + error recover |
+
+Notes:
+
+- **`/autopilot-on` alone does not start self-review.** Planning is for grill + `plans/<slug>/` (no product code by design). Review starts only after a **product-code** edit that counts under the scope above.
+- Under **`executing_only`**, editing code outside RUN does **not** open the Autopilot fix/confirm chain.
+- Under **`project`**, confirm still runs the same lenses; when you are **not** checklist-executing (idle ambient, or still **planning**), the chain ends with **review complete** (local commit if dirty) — it does **not** advance/check off checklist items. While **RUN** + executing, the same lenses still end in checklist **advance** / **done** as usual.
+- **Paused** or OFF sessions do not run fix→confirm until resumed (even with `project`).
+- If you also use a **global** Cursor self-review hook, prefer one or the other for `project` scope to avoid **double** followup injection (init TUI warns about this).
+- Host-native **Plan modes** (Cursor Plan Mode, Claude Code Plan mode, etc.) are separate from Autopilot grill/`review.scope`; Autopilot does not yet bridge those host modes.
 
 ## Quick start
 
@@ -101,7 +123,7 @@ node packages/cli/dist/bin.js upgrade --dry-run
 node /path/to/autopilot-harness/packages/cli/dist/bin.js status
 ```
 
-`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. Review-oriented config keys include `locale`, `review.confirm_rounds`, and optional `review.verify.*` (see [Architecture](./docs/architecture.md)).
+`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Architecture](./docs/architecture.md) and **When does self-review run?** above).
 
 ## Docs
 

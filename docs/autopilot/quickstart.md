@@ -61,4 +61,17 @@ node packages/cli/dist/bin.js upgrade --dry-run
 - Try `/autopilot-on` in Cursor.
 - If skills / hooks do not appear: `Developer: Reload Window`, or start a new Agent chat.
 
+## Self-review scope (`review.scope`)
+
+In `.autopilot/config.yml`:
+
+| Value | Meaning |
+|-------|---------|
+| **`executing_only`** (default) | Fix → confirm only after `/autopilot-run` (checklist executing) + product-code edits |
+| **`project`** | Fix → confirm on **any** product-code edit — **no** ON/RUN required |
+
+Product-code paths exclude `.autopilotignore` hits and **untracked** `.gitignore` hits. Paused/OFF skips the chain until resume.
+
+`/autopilot-on` by itself does **not** start self-review (planning writes plans/docs only). With `project` and **not** checklist-executing (including still planning), the chain ends at **review complete** (no checklist advance); during RUN it still advances/done as usual. Avoid stacking a global Cursor self-review hook with `project` (double injection). Host Plan modes are separate; Autopilot does not bridge them yet.
+
 Plans and checklist live under `plans/<slug>/` (progress authority is `checklist.md`).

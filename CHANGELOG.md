@@ -19,3 +19,4 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - `.gitignore`: track `docs/autopilot/quickstart.md` and `docs/autopilot/quickstart.zh-CN.md` for OSS while ignoring other `docs/autopilot/*` dogfood (e.g. installed workflows).
 - Rewrote English `README.md` as the OSS front door: vibecoding harness positioning (grill → checklist → multi-lens review), honest non-guarantee disclaimer, author scale anecdote (Cursor / pure execution; not a benchmark/SLA), CI/License/Node badges, install-from-source while npm is unpublished.
 - Quickstart linked from README is English; Chinese moved to `quickstart.zh-CN.md`.
+- Documented `review.scope` (`executing_only` vs `project`): when fix→confirm runs without `/autopilot-on`, ambient review-complete vs checklist advance, and double-hook caution.
