@@ -110,6 +110,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(tips).toMatch(/loop_limit/);
     expect(tips).toMatch(/double followup/i);
+    expect(tips).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
+    expect(tips).toMatch(/trust/i);
+    expect(tips).toMatch(/--add-platform/);
 
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
     expect(hosts).toMatch(/Cursor/);
@@ -142,8 +145,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/one_executor/);
     expect(config).toMatch(/artifacts\.files\.checklist/);
     expect(config).toMatch(/worktree/);
-    // Honest wiring: do not imply YAML concurrency/triggers.files drive the Cursor hook yet
-    expect(config).toMatch(/not wired into the Cursor hook yet/i);
+    // Honest wiring: do not imply YAML concurrency/triggers.files drive the hook yet
+    expect(config).toMatch(/not wired into the hook runtime yet/i);
     expect(config).toMatch(/DEFAULT_TRIGGERS/);
     expect(config).toMatch(/does \*\*not\*\* yet load this key from YAML/i);
     expect(config).toMatch(/locale set/i);
@@ -159,6 +162,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/\*\*`doctor`\*\*[\s\S]*stale_after_hours/);
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` only/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
+    expect(config).toMatch(/installs Cursor and\/or Claude Code/i);
+    expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
   });
 
   it("quickstarts keep scoped npx Install path", () => {
@@ -243,9 +248,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/发布到 npm 之后/);
   });
 
-  it("hosts.md marks Codex mitigation as Planned and links Plan bridge", () => {
+  it("hosts.md marks Codex mitigation as Planned and Claude as shipped", () => {
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
     expect(hosts).toMatch(/Codex[\s\S]*\*\*Planned\*\*/);
+    expect(hosts).toMatch(/Claude Code[\s\S]*\*\*Shipped\*\*/);
+    expect(hosts).toMatch(/surface: cli.*CLI-only|hooks are \*\*shared across terminal \+ IDE\*\*/i);
+    expect(hosts).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0/);
     expect(hosts).toMatch(/host-plan-bridge\.md/);
   });
 
@@ -260,7 +268,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/slash `\/autopilot-on`/);
   });
 
-  it("architecture: no dangling v0.1 plan; Claude mitigations marked planned", () => {
+  it("architecture: dual port + Claude BLOCK_CAP shipped", () => {
     const body = fs.readFileSync(
       path.join(repoRoot, "docs/architecture.md"),
       "utf8",
@@ -269,25 +277,32 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/ReviewEngine/);
     expect(body).toMatch(/hosts\.md/);
     expect(body).toMatch(/host-plan-bridge\.md/);
-    expect(body).toMatch(/not\*\* loaded by the Cursor hook yet|not loaded by the Cursor hook yet/i);
+    expect(body).toMatch(
+      /not\*\* loaded by the hook runtime yet|not loaded by the hook runtime yet/i,
+    );
     expect(body).toMatch(/on \*\*stop\*\*/);
     expect(body).toMatch(/on \*\*edit\*\*/);
     expect(body).toMatch(/slash `\/autopilot-on` … `\/autopilot-replan` \+ `DEFAULT_TRIGGERS`|slash `\/autopilot-on`/);
-    expect(body).toMatch(/Claude Code[\s\S]*Planned:/);
-    expect(body).not.toMatch(
+    expect(body).toMatch(
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
-    expect(body).toMatch(/only installs Cursor/i);
+    expect(body).toMatch(/installs Cursor and\/or Claude Code/i);
+    expect(body).toMatch(/ports\/claude-code/);
+    expect(body).toMatch(/Cursor and Claude Code/);
     expect(body).toMatch(/npm public/);
     // Forbid recommending bare `npx autopilot-harness …` as an install command.
     // Allow prose that warns against it (e.g. "not bare `npx autopilot-harness`").
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
+    expect(log).toMatch(/## \[0\.2\.0\]/);
+    expect(log).toMatch(/Claude Code/);
     expect(log).toContain(NPM_PACKAGE_NAME);
+    // Release compare URL lands with git-tag / gh release — do not pretentag.
+    expect(log).not.toMatch(/\[0\.2\.0\]:\s*https:\/\/github\.com/);
 
     const contrib = fs.readFileSync(
       path.join(repoRoot, "CONTRIBUTING.md"),

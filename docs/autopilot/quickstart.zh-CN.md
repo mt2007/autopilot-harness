@@ -2,7 +2,7 @@
 
 命令速查 + 每步产物。产品前门：[README.md](../../README.md)（[中文 README](../../README.zh-CN.md)）。英文速查：[quickstart.md](./quickstart.md)。
 
-另见：[配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主路线图](../hosts.md) · [Plan 桥接](../host-plan-bridge.md)。
+另见：[配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主说明](../hosts.md) · [Plan 桥接](../host-plan-bridge.md)。
 
 ## 推荐流程（产物）
 
@@ -16,7 +16,7 @@
 
 ## Planning
 
-推荐：在 Cursor 中使用 `/autopilot-on` 或 `/autopilot-on <需求描述>`
+推荐：`/autopilot-on` 或 `/autopilot-on <需求描述>`（Cursor 或 Claude Code）
 
 也可：行首 `Autopilot ON` / `开启自动驾驶`
 
@@ -40,7 +40,12 @@ CLI 包：`@autopilot-harness/cli`（bin：`autopilot-harness`）。
 
 ```bash
 cd /path/to/your-app
+# Cursor（IDE hooks）
 npx @autopilot-harness/cli init --platform cursor --yes
+# 或 Claude Code（hooks 在终端与 IDE 共用；surface: cli ≠ 仅 CLI）
+npx @autopilot-harness/cli init --platform claude-code --yes
+# 第一个宿主装好后加第二个：
+# npx @autopilot-harness/cli init --yes --add-platform claude-code
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 npx @autopilot-harness/cli upgrade --dry-run
@@ -50,9 +55,10 @@ npx @autopilot-harness/cli upgrade --dry-run
 
 ## 安装后
 
-- 在 Cursor 中试用 `/autopilot-on`。
-- 若 skills / hooks 未出现：执行 `Developer: Reload Window`，或新开一条 Agent 对话。
-- 自审中途停住：确认 Autopilot stop 带 `loop_limit: null`（可 `upgrade`；详见 [排障](../troubleshooting.md)）。
+- 在 Cursor 或 Claude Code 中试用 `/autopilot-on`。
+- 若 skills / hooks 未出现：重载宿主（Cursor：`Developer: Reload Window`；Claude Code：重启 / 新开会话），或新开一条 Agent 对话。
+- 自审中途停住（Cursor）：确认 Autopilot stop 带 `loop_limit: null`（可 `upgrade`；详见 [排障](../troubleshooting.md)）。
+- 自审中途停住（Claude Code）：确认 `.claude/settings.json` 有 `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`。若 cap 环境变量不生效，接受项目 **trust** 对话框（项目 `env` 可能在信任前被拦住）。
 - 更多故障模式见 [排障](../troubleshooting.md)。
 
 ## 自审范围（`review.scope`）

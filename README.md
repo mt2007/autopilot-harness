@@ -14,7 +14,7 @@ Vibe coding is fast until scope drifts, acceptance stays implicit, and “looks 
 2. **Execute against a checklist** (`plans/<slug>/`)  
 3. **Self-review under rotating lenses** before an item is marked done  
 
-It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **v0.1 is Cursor-first**; other hosts are on the roadmap.
+It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **v0.2 ships Cursor and Claude Code**; Codex / Runner remain on the roadmap.
 
 Autopilot does **not** guarantee bug-free software. It **raises confidence** that work was planned, checklist-scoped, and pressure-tested under several review lenses before you call an item complete.
 
@@ -94,7 +94,12 @@ Prefer the scoped package (not a bare `npx autopilot-harness` name). Commands us
 
 ```bash
 cd /path/to/your-app
+# Cursor (IDE hooks)
 npx @autopilot-harness/cli init --platform cursor --yes
+# or Claude Code (hooks shared across terminal + IDE)
+npx @autopilot-harness/cli init --platform claude-code --yes
+# dual-host: after Cursor init, add Claude without re-init
+# npx @autopilot-harness/cli init --yes --add-platform claude-code
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```
@@ -103,21 +108,21 @@ Interactive TUI: omit `--yes` (platform still defaults to cursor). More flags: `
 
 Developing or dogfooding from a clone of this repo: see [Contributing](./CONTRIBUTING.md).
 
-Reload the Cursor window (or start a new Agent chat), then:
+Reload the host window (Cursor: Reload Window; Claude Code: restart / new session), then:
 
 1. `/autopilot-on` — plan (grill → artifacts under `plans/<slug>/`)  
 2. `/autopilot-run` — execute the checklist  
 
 More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md) ([中文](./docs/autopilot/quickstart.zh-CN.md)).
 
-`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Config](./docs/config.md), [Architecture](./docs/architecture.md), and **When does self-review run?** above).
+`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. For Claude Code it also merges `.claude/settings.json` (hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`) and `.claude/skills/autopilot-*`. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Config](./docs/config.md), [Architecture](./docs/architecture.md), and **When does self-review run?** above).
 
 ## Docs
 
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
 - [Config](./docs/config.md) — `.autopilot/config.yml`, triggers, concurrency, `.autopilotignore`  
-- [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills  
-- [Host roadmap](./docs/hosts.md) — Cursor / Claude Code / Codex / Runner  
+- [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills, Claude `BLOCK_CAP`  
+- [Hosts](./docs/hosts.md) — Cursor / Claude Code (shipped) / Codex / Runner  
 - [Host Plan-mode bridge](./docs/host-plan-bridge.md) — design only (not implemented)  
 - [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet ([中文](./docs/autopilot/quickstart.zh-CN.md))  
 - [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations  
@@ -133,6 +138,7 @@ More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quicks
 | `@autopilot-harness/i18n` | Locale strings (`en`, `zh-CN`) |
 | `@autopilot-harness/templates` | Skills + planning/executing workflows |
 | `@autopilot-harness/port-cursor` | Cursor hook adapter |
+| `@autopilot-harness/port-claude-code` | Claude Code hook adapter |
 
 ## Development
 

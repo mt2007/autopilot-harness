@@ -2,7 +2,7 @@
 
 CLI for **Autopilot** — a vibecoding harness that turns open-ended agent chat into **structured planning → checklist execution → multi-lens self-review**.
 
-Bin name: `autopilot-harness`. Requires **Node.js 22+**. **v0.1 is Cursor-first.**
+Bin name: `autopilot-harness`. Requires **Node.js 22+**. **v0.2 ships Cursor and Claude Code.**
 
 Autopilot does **not** guarantee bug-free software. It raises confidence that work was planned, checklist-scoped, and pressure-tested under several review lenses.
 

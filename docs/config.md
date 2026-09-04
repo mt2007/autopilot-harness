@@ -6,19 +6,19 @@ Project settings live in **`.autopilot/config.yml`** (written by `init`, editabl
 
 Canonical defaults: `packages/cli/src/init/default-config.ts`.
 
-**What actually reads which keys (v0.1 Cursor build):**
+**What actually reads which keys (v0.2 Cursor + Claude Code build):**
 
 | Consumer | Keys |
 |----------|------|
 | **Stop hook** (via `loadProjectReviewConfig` / `createConfiguredReviewEngine`) | `locale`, `review.*` |
 | **Edit hook** | `review.scope` only (same loader; other `review.*` / `locale` unused on edit) |
-| **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` + line-start `DEFAULT_TRIGGERS` (incl. resume_review phrases) — does **not** load review config or YAML `triggers.*`. (Cursor skill files only surface slash in the UI; the hook parses typed slash commands either way.) |
+| **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` + line-start `DEFAULT_TRIGGERS` (incl. resume_review phrases) — does **not** load review config or YAML `triggers.*`. (Cursor skill files only surface slash in the UI; Claude skills under `.claude/skills/`; the hook parses typed slash commands either way.) |
 | **`status`** | `locale`, `platforms` (+ legacy `platform`/`surface`), `artifacts.plans_dir`, `cli.preferred_name` |
-| **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable |
+| **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` when that host is installed |
 | **`session list`** | `session.stale_after_hours` only (via `readStaleAfterHours`; invalid → treat as `0` / disabled) |
-| **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML |
+| **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor and/or Claude Code wiring for installable bindings |
 | **`locale set`** | Updates `locale`, rewrites **stock** `triggers.*` lists in config.yml (custom lists preserved), rewrites skill descriptions |
-| **Written by init, not wired into the Cursor hook yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token`, and **line-start phrase lists** under `triggers.*` |
+| **Written by init, not wired into the hook runtime yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token`, and **line-start phrase lists** under `triggers.*` |
 
 Effective RUN concurrency gate is still **`one_executor`** (code default when the hook does not pass `phaseActions`). Changing `concurrency.mode` in YAML alone does **not** switch modes today. The gate matches sessions with `phase=executing`, `armed=1`, and `paused=0`.
 
@@ -27,7 +27,7 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `locale` | `en` | Template / followup **template** language (`en` \| `zh-CN`). User-visible chat replies still follow the **user’s** language. Change later with `locale set <code>`. |
-| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **This build only installs Cursor** wiring. |
+| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **This build installs Cursor and/or Claude Code** when those bindings are present. Claude uses `surface: cli` (hooks shared across terminal + IDE — not CLI-only). Dual-host: `init --yes --add-platform <host>`. |
 | `platform` / `surface` | primary binding | Legacy scalars for older readers; prefer `platforms`. Primary prefers an installable binding when the list mixes wired and future hosts. |
 | `integration` | `hook` | Integration style written by init (`hook`). |
 
@@ -35,10 +35,10 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `artifacts.plans_dir` | `plans` | Track directory used by **init** (creates the folder) and **doctor/status** path checks. Prefer the default `plans/` — init TUI can offer a custom path, but the Cursor hook RUN path currently defaults to `plans/` and does **not** yet load this key from YAML (a non-default value can leave init layout and RUN looking at different trees). |
+| `artifacts.plans_dir` | `plans` | Track directory used by **init** (creates the folder) and **doctor/status** path checks. Prefer the default `plans/` — init TUI can offer a custom path, but the hook RUN path currently defaults to `plans/` and does **not** yet load this key from YAML (a non-default value can leave init layout and RUN looking at different trees). |
 | `artifacts.files.brief` | `brief.md` | Written by init. Filenames are **fixed** in core (`brief.md` / `plan.md` / `checklist.md`) — renaming these keys does not change runtime paths yet. |
 | `artifacts.files.plan` | `plan.md` | Same as above. |
-| `artifacts.files.checklist` | `checklist.md` | Same as above. Checklist is **progress authority**; v0.1 hook/core resolve it as `<plansDir>/<slug>/checklist.md` with **`plansDir` defaulting to `plans`** (YAML `artifacts.files.*` / custom `plans_dir` are not applied by the hook yet). |
+| `artifacts.files.checklist` | `checklist.md` | Same as above. Checklist is **progress authority**; hook/core resolve it as `<plansDir>/<slug>/checklist.md` with **`plansDir` defaulting to `plans`** (YAML `artifacts.files.*` / custom `plans_dir` are not applied by the hook yet). |
 | `cli.preferred_name` | `Autopilot` | Display name in status / some messages (sanitized). |
 
 ## Session
@@ -51,8 +51,8 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `concurrency.mode` | `one_executor` | **Intended** mode. Runtime today always applies the `one_executor` gate (refuse a second **armed executing** session) because the Cursor hook does not load this YAML key. Do not set other values expecting worktree isolation. |
-| `concurrency.worktree` | `false` | Reserved for future per-session git worktrees. **`false` in v0.1** — unused. |
+| `concurrency.mode` | `one_executor` | **Intended** mode. Runtime today always applies the `one_executor` gate (refuse a second **armed executing** session) because the hook does not load this YAML key. Do not set other values expecting worktree isolation. |
+| `concurrency.worktree` | `false` | Reserved for future per-session git worktrees. **Unused** while `false`. |
 | `concurrency.worktrees_dir` | `.autopilot/worktrees` | Intended worktree parent (also listed in default `.autopilotignore`). Unused while `worktree: false`. |
 
 ## Review
@@ -70,12 +70,12 @@ Aliases accepted for scope: `project`, `always`, and `all` all map to **`project
 
 ## Triggers
 
-Init seeds locale stock phrases under `triggers.*`; `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor.
+Init seeds locale stock phrases under `triggers.*`; `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code.
 
 | Key | Role |
 |-----|------|
 | `triggers.match` | Documented as `line_start` (only matcher in the trigger parser). |
-| `triggers.on` / `run` / `off` / `resume` / `replan` / `resume_review` | Phrase lists written for locale migration / future host wiring. **Cursor hook line-start matching does not read these YAML lists yet** — it uses built-in `DEFAULT_TRIGGERS` (hardcoded bilingual phrases). Slash `/autopilot-on` … `/autopilot-replan` is a separate built-in parser path (not these lists; no slash for resume_review). |
+| `triggers.on` / `run` / `off` / `resume` / `replan` / `resume_review` | Phrase lists written for locale migration / future host wiring. **Hook line-start matching does not read these YAML lists yet** — it uses built-in `DEFAULT_TRIGGERS` (hardcoded bilingual phrases). Slash `/autopilot-on` … `/autopilot-replan` is a separate built-in parser path (not these lists; no slash for resume_review). |
 
 ## Security
 
@@ -92,7 +92,7 @@ Init seeds locale stock phrases under `triggers.*`; `locale set` rewrites those 
 
 ## Related
 
-- [Troubleshooting](./troubleshooting.md) — `doctor` WARNs, double hooks, missing skills  
-- [Host roadmap](./hosts.md) — Cursor / Claude Code / Codex stop-loop caps  
+- [Troubleshooting](./troubleshooting.md) — `doctor` WARNs, double hooks, missing skills, Claude `BLOCK_CAP` / trust  
+- [Hosts](./hosts.md) — Cursor / Claude Code (shipped) / Codex / Runner stop-loop caps  
 - [Host Plan-mode bridge](./host-plan-bridge.md) — why Cursor/Claude Plan modes are not Autopilot ON  
 - [Quickstart](./autopilot/quickstart.md) — commands and claim/resume/replan boundaries  

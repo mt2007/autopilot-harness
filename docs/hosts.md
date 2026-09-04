@@ -1,19 +1,19 @@
-# Host roadmap
+# Hosts
 
 Product front door: [README.md](../README.md). Stop-loop internals: [architecture.md](./architecture.md).
 
-Autopilot separates **core** (FSM, SQLite, checklist, review) from **ports** (host adapters). **v0.1 is Cursor-first**; other hosts are planned.
+Autopilot separates **core** (FSM, SQLite, checklist, review) from **ports** (host adapters). **v0.2 ships Cursor and Claude Code**; Codex / Runner remain planned.
 
 ## Status
 
 | Host | Status | Surface | Notes |
 |------|--------|---------|-------|
-| **Cursor** | **v0.1 shipped** | `ide` (hooks) | Skills `/autopilot-*`, Stop / submit / edit hooks, vendored `runtime.mjs`. |
-| **Claude Code** | **v0.2 planned** | `ide` / CLI hooks | Stop `decision: "block"` consecutive **block cap** (default 8); init intended to set `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`. |
+| **Cursor** | **Shipped** (v0.1+) | `ide` (hooks) | Skills `/autopilot-*`, Stop / submit / edit hooks, vendored `runtime.mjs`. |
+| **Claude Code** | **Shipped** (v0.2) | `cli` | Official hooks are **shared across terminal + IDE** (`surface: cli` ≠ CLI-only). Stop inject = `decision: "block"` + `reason`. Init sets `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`. |
 | **Codex** | **v0.3 / v0.4 planned** | hooks (not Runner-first) | `.codex/hooks.json` + skills; require `/hooks` trust; measure long confirm chains at implement time. |
 | **Runner** ports | Later | `runner` | External process loop; size `max iterations` ≥ worst-case review chain, or chunk work. |
 
-`platforms` in `.autopilot/config.yml` lists enabled hosts (`id` + `surface`: `ide` \| `cli` \| `runner`). This build **only installs Cursor** wiring; listing future ids in config does not invent a missing port.
+`platforms` in `.autopilot/config.yml` lists enabled hosts (`id` + `surface`: `ide` \| `cli` \| `runner`). This build installs **Cursor and/or Claude Code** when those bindings are present; listing future ids in config does not invent a missing port. Dual-host: `init --yes --add-platform claude-code` (or `cursor`) after the first host is wired.
 
 ## Stop-loop caps (why ports matter)
 
@@ -22,7 +22,7 @@ Fix + multi-lens confirm needs many consecutive stop continuations. Each host ha
 | Host | Mechanism | Default | Autopilot mitigation |
 |------|-----------|---------|----------------------|
 | **Cursor** | `hooks.json` `loop_limit` on stop / subagentStop | `5` if omitted | `"loop_limit": null` on Autopilot stop; `doctor` WARNs if missing. |
-| **Claude Code** | Stop block consecutive cap | **8** | `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0` (planned init). |
+| **Claude Code** | Stop block consecutive cap | **8** | Init / upgrade sets `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0` in `.claude/settings.json`; `doctor` WARNs when missing or not `0`. Project `env` may need workspace **trust** before Claude applies it. |
 | **Codex** | Stop block + `reason` as next prompt; `stop_hook_active` | No documented numeric cap (2026-09 research) | **Planned** hook port + trust; measure chains when implementing. |
 | **Runner** | External `max iterations` | Port-defined | Budget ≥ worst-case review chain. |
 
@@ -37,5 +37,5 @@ Design sketch and acceptance criteria for a future optional bridge: [host-plan-b
 ## Related
 
 - [Config](./config.md) — `platforms`, `review.*`, triggers, concurrency  
-- [Troubleshooting](./troubleshooting.md) — missing `loop_limit`, double hooks  
+- [Troubleshooting](./troubleshooting.md) — missing `loop_limit` / `BLOCK_CAP`, trust, double hooks  
 - [Host Plan-mode bridge](./host-plan-bridge.md) — Plan UX vs Autopilot grill  

@@ -10,17 +10,30 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`) and skills under the project skills path.
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json` or `.claude/settings.json`) and skills under the project skills path (`.cursor/skills/` or `.claude/skills/`).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
 
-Autopilot fix + multi-lens confirm needs **many consecutive** stop continuations. Cursor’s default stop `loop_limit` is **5** if omitted.
+Autopilot fix + multi-lens confirm needs **many consecutive** stop continuations.
+
+### Cursor
+
+Cursor’s default stop `loop_limit` is **5** if omitted.
 
 - Autopilot stop entries must set `"loop_limit": null` (`init` / `upgrade` / `mergeHooksJson`).
 - `doctor` WARNs when Autopilot stop is missing `loop_limit: null` — run `upgrade`.
 - Typing `continue` may reset some host counters; it is **not** a substitute for correct install.
+
+### Claude Code
+
+Claude’s consecutive Stop **block cap** defaults to **8**.
+
+- Autopilot init / upgrade sets `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0` in `.claude/settings.json`.
+- `doctor` WARNs when Claude is installed but the cap is missing or not `0`.
+- Project `env` may need workspace **trust** before Claude applies it — if the cap never takes effect, accept the trust dialog for the project folder, then restart Claude / open a new session.
+- Dual-host: after Cursor init, `npx @autopilot-harness/cli init --yes --add-platform claude-code`.
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).
 
