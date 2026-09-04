@@ -3,6 +3,7 @@ import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
   defaultSurfaceFor,
+  formatBindingOptionLabel,
   formatPlatformsDisplay,
   MAX_PLATFORM_BINDINGS,
   mergePlatformBindings,
@@ -49,7 +50,13 @@ describe("platforms helpers", () => {
     expect(assertInstallablePlatforms(list)).toBeNull();
     expect(
       assertInstallablePlatforms([{ id: "claude-code", surface: "cli" }]),
+    ).toBeNull();
+    expect(
+      assertInstallablePlatforms([{ id: "claude-code", surface: "ide" }]),
     ).toMatch(/Unsupported platform/);
+    expect(formatBindingOptionLabel({ id: "claude-code", surface: "cli" })).toMatch(
+      /hooks shared: terminal \+ IDE/,
+    );
   });
 
   it("caps platforms list length and does not drop existing for new adds", () => {
@@ -98,7 +105,7 @@ describe("platforms helpers", () => {
     expect(() => parsePlatformsCliList(many)).toThrow(/exceeds cap/i);
   });
 
-  it("readConfigInstallHints prefers installable primary", () => {
+  it("readConfigInstallHints prefers first installable primary", () => {
     const hints = readConfigInstallHints(
       `platforms:
   - id: claude-code
@@ -109,8 +116,8 @@ locale: en
 `,
     );
     expect(hints.platforms).toHaveLength(2);
-    expect(hints.platform).toBe("cursor");
-    expect(hints.surface).toBe("ide");
+    expect(hints.platform).toBe("claude-code");
+    expect(hints.surface).toBe("cli");
   });
 
   it("readConfigPlatformsOrThrow fails closed on bad YAML", () => {
@@ -140,7 +147,7 @@ locale: en
     expect(() => readConfigPlatformsOrThrow(yaml)).toThrow(/exceeds cap/i);
   });
 
-  it("applyPlatformsToConfigYaml keeps keys and prefers installable primary", () => {
+  it("applyPlatformsToConfigYaml keeps keys and prefers first installable primary", () => {
     const next = applyPlatformsToConfigYaml(
       "platform: cursor\nsurface: ide\nlocale: zh-CN\n# keep\n",
       [
@@ -152,8 +159,9 @@ locale: en
     expect(next).toMatch(/claude-code/);
     expect(next).toMatch(/id:\s*cursor/);
     expect(next).toMatch(/locale:\s*zh-CN/);
-    expect(next).toMatch(/platform:\s*cursor/);
-    expect(next).toMatch(/surface:\s*ide/);
+    // First installable binding becomes legacy primary scalars.
+    expect(next).toMatch(/platform:\s*claude-code/);
+    expect(next).toMatch(/surface:\s*cli/);
   });
 
   it("applyPlatformsToConfigYaml refuses over-cap input without truncating", () => {

@@ -10,8 +10,20 @@ export {
   summarizeAutopilotHooks,
   autopilotStopHasUnlimitedLoop,
   autopilotHookCommand,
+  mergeClaudeSettings,
+  validateClaudeSettingsShape,
+  hasClaudeBlockCapZero,
+  hasCompleteClaudeAutopilotHooks,
+  summarizeClaudeAutopilotHooks,
+  CLAUDE_AUTOPILOT_EVENTS,
+  CLAUDE_BLOCK_CAP_ENV,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
+export type {
+  ClaudeSettingsFile,
+  ClaudeMatcherGroup,
+  ClaudeHookHandler,
+} from "./init/claude-settings-merge.js";
 export type { PreflightResult } from "./init/install.js";
 export { PACKAGE_VERSION } from "./init/types.js";
 export { formatStatus, runDoctor, readPinVersion, readStaleAfterHours, hasGlobalSelfReviewHooks } from "./status-doctor.js";
@@ -68,6 +80,7 @@ export {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
   defaultSurfaceFor,
+  formatBindingOptionLabel,
   formatPlatformsDisplay,
   mergePlatformBindings,
   mergedIncludesAllRequested,

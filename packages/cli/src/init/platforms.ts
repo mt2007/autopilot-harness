@@ -15,6 +15,7 @@ export type PlatformSurface = "ide" | "cli" | "runner";
  */
 export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "cursor", surface: "ide" },
+  { id: "claude-code", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -94,6 +95,10 @@ export function primaryBinding(
 export function formatBindingOptionLabel(b: PlatformBinding): string {
   const id = sanitizePlatformId(b.id);
   const surface = sanitizeSurfaceId(b.surface);
+  if (id === "claude-code") {
+    // surface: cli means official hooks shared across terminal + IDE — not CLI-only.
+    return "Claude Code (hooks shared: terminal + IDE)";
+  }
   const host =
     id === "cursor"
       ? "Cursor"

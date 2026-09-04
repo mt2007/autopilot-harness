@@ -548,6 +548,10 @@ export function formatHostActivationTips(
       tips.push(
         `If /autopilot-* skills or Autopilot hooks do not appear in ${host}: run Developer: Reload Window, or start a new Agent chat.`,
       );
+    } else if (id === "claude-code") {
+      tips.push(
+        `${host} hooks are shared across terminal and IDE. If skills/hooks do not appear: restart ${host} and open a new session. Project env (CLAUDE_CODE_STOP_HOOK_BLOCK_CAP) may require trusting this folder.`,
+      );
     } else {
       tips.push(
         `If Autopilot skills or hooks do not appear in ${host}: reload or restart ${host}, then open a new agent session.`,
@@ -604,6 +608,11 @@ function hostActivationPlainLines(
           `在 ${host} 中试用 /autopilot-on。`,
           `若 skills / hooks 未出现：执行 Developer: Reload Window，或新开一条 Agent 对话。`,
         );
+      } else if (id === "claude-code") {
+        lines.push(
+          `在 ${host} 中试用 /autopilot-on（hooks 跨终端与 IDE 共用）。`,
+          `若 skills / hooks 未出现：重启 ${host} 并开新会话；项目 env（BLOCK_CAP）可能需先信任本目录。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -614,6 +623,11 @@ function hostActivationPlainLines(
       lines.push(
         `Try /autopilot-on in ${host}.`,
         `If skills or hooks are missing: Developer: Reload Window, or start a new Agent chat.`,
+      );
+    } else if (id === "claude-code") {
+      lines.push(
+        `Try /autopilot-on in ${host} (hooks shared: terminal + IDE).`,
+        `If skills or hooks are missing: restart ${host} and open a new session; project env (BLOCK_CAP) may require trusting this folder.`,
       );
     } else {
       lines.push(

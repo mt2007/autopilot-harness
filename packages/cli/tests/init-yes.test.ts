@@ -340,7 +340,7 @@ describe("init --yes install", () => {
     }
   });
 
-  it("rejects unsupported platform", () => {
+  it("rejects unsupported platform surface for claude-code", () => {
     root = tmpProject();
     const result = installInitYes({
       projectRoot: root,
@@ -353,6 +353,294 @@ describe("init --yes install", () => {
     if (!result.ok) {
       expect(result.error).toMatch(/unsupported/i);
     }
+  });
+
+  it("inits claude-code with settings.json BLOCK_CAP=0 and skills", () => {
+    root = tmpProject();
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "claude-code",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(true);
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    ) as {
+      env?: Record<string, string>;
+      hooks?: Record<string, unknown>;
+    };
+    expect(settings.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBe("0");
+    expect(JSON.stringify(settings.hooks)).toMatch(/UserPromptSubmit/);
+    expect(JSON.stringify(settings.hooks)).toMatch(/PostToolUse/);
+    expect(JSON.stringify(settings.hooks)).toMatch(/Edit\|Write\|NotebookEdit/);
+    expect(JSON.stringify(settings.hooks)).toMatch(/StopFailure/);
+    expect(JSON.stringify(settings.hooks)).toMatch(/autopilot-harness-hook/);
+
+    expect(
+      fs.existsSync(
+        path.join(root, ".claude", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
+    // Claude-only init must not require Cursor hooks.
+    expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(false);
+
+    const config = fs.readFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "utf8",
+    );
+    expect(config).toMatch(/claude-code/);
+    expect(config).toMatch(/surface:\s*cli/);
+  });
+
+  it("claude-only init ignores corrupt leftover .cursor/hooks.json", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".cursor"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".cursor", "hooks.json"), "{not-json");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "claude-code",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    expect(fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8")).toBe(
+      "{not-json",
+    );
+  });
+
+  it("cursor-only init ignores corrupt leftover .claude/settings.json", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude", "settings.json"), "{not-json");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(true);
+    expect(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    ).toBe("{not-json");
+  });
+
+  it("claude-only init ignores leftover .cursor/hooks.json symlink", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".cursor"), { recursive: true });
+    const outside = path.join(root, "outside-hooks.json");
+    fs.writeFileSync(outside, JSON.stringify({ version: 1, hooks: {} }), "utf8");
+    fs.symlinkSync(outside, path.join(root, ".cursor", "hooks.json"));
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "claude-code",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    expect(fs.lstatSync(path.join(root, ".cursor", "hooks.json")).isSymbolicLink()).toBe(
+      true,
+    );
+  });
+
+  it("dual-host init does not write cursor hooks if claude settings go bad mid-init", () => {
+    root = tmpProject();
+    const claudeDir = path.join(root, ".claude");
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const claudePath = path.join(claudeDir, "settings.json");
+    fs.writeFileSync(claudePath, JSON.stringify({ hooks: {} }), "utf8");
+
+    const orig = readUntrusted.readUntrustedUtf8File;
+    let claudeReads = 0;
+    const spy = vi
+      .spyOn(readUntrusted, "readUntrustedUtf8File")
+      .mockImplementation((filePath, maxBytes, label) => {
+        if (path.resolve(String(filePath)) === path.resolve(claudePath)) {
+          claudeReads += 1;
+          // claudePre ok; claudeFresh (2nd) corrupt — before skills / any write.
+          if (claudeReads >= 2) return "{not-json";
+        }
+        return orig(filePath, maxBytes, label);
+      });
+    try {
+      const result = installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      });
+      expect(result.ok).toBe(false);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(
+        false,
+      );
+      expect(
+        fs.existsSync(path.join(root, ".cursor", "skills", "autopilot-on")),
+      ).toBe(false);
+      expect(
+        fs.existsSync(path.join(root, ".claude", "skills", "autopilot-on")),
+      ).toBe(false);
+      expect(claudeReads).toBeGreaterThanOrEqual(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("dual-host final re-read failure after skills still skips both host writes", () => {
+    root = tmpProject();
+    const claudeDir = path.join(root, ".claude");
+    fs.mkdirSync(claudeDir, { recursive: true });
+    const claudePath = path.join(claudeDir, "settings.json");
+    fs.writeFileSync(claudePath, JSON.stringify({ hooks: {} }), "utf8");
+
+    const orig = readUntrusted.readUntrustedUtf8File;
+    let claudeReads = 0;
+    const spy = vi
+      .spyOn(readUntrusted, "readUntrustedUtf8File")
+      .mockImplementation((filePath, maxBytes, label) => {
+        if (path.resolve(String(filePath)) === path.resolve(claudePath)) {
+          claudeReads += 1;
+          // pre + fresh ok; final re-read after skills (3rd) corrupt.
+          if (claudeReads >= 3) return "{not-json";
+        }
+        return orig(filePath, maxBytes, label);
+      });
+    try {
+      const result = installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      });
+      expect(result.ok).toBe(false);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+        true,
+      );
+      expect(
+        fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+      ).toMatch(/\{\s*"hooks"\s*:\s*\{\s*\}\s*\}/);
+      // Skills may already exist; host settings must not be partially written.
+      expect(claudeReads).toBeGreaterThanOrEqual(3);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("force refresh with non-installable claude surface does not require settings.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    fs.writeFileSync(
+      configPath,
+      `platforms:
+  - id: cursor
+    surface: ide
+  - id: claude-code
+    surface: ide
+platform: cursor
+surface: ide
+locale: en
+plans_dir: plans
+`,
+      "utf8",
+    );
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude", "settings.json"), "{not-json");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    ).toBe("{not-json");
+  });
+
+  it("add-platform claude-code merges settings without dropping Cursor hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const add = installInitYes({
+      projectRoot: root,
+      platform: "claude-code",
+      surface: "cli",
+      platforms: [{ id: "claude-code", surface: "cli" }],
+      mergePlatforms: true,
+      locale: "en",
+      force: true,
+    });
+    expect(add.ok).toBe(true);
+
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
+    );
+    expect(
+      hooks.hooks.beforeSubmitPrompt.some((h: { command: string }) =>
+        h.command.includes("autopilot-harness"),
+      ),
+    ).toBe(true);
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    );
+    expect(settings.env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBe("0");
+    expect(
+      fs.existsSync(
+        path.join(root, ".claude", "skills", "autopilot-run", "SKILL.md"),
+      ),
+    ).toBe(true);
+
+    const config = fs.readFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "utf8",
+    );
+    expect(config).toMatch(/id:\s*cursor/);
+    expect(config).toMatch(/id:\s*claude-code/);
   });
 
   it("rejects mergePlatforms before init", () => {
@@ -577,6 +865,29 @@ locale: en
     }
     expect(fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8")).toBe(
       "{not-json",
+    );
+  });
+
+  it("refuses to overwrite corrupt .claude/settings.json", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude", "settings.json"), "{not-json");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "claude-code",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/not valid json/i);
+    }
+    expect(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    ).toBe("{not-json");
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
     );
   });
 

@@ -256,7 +256,7 @@ dist/
     expect(qsZh).toMatch(/快速开始/);
     expect(qsZh).toMatch(/推荐流程/);
     expect(qsZh).toMatch(/status/);
-    expect(qsZh).toMatch(/\/path\/to\/autopilot-harness/);
+    expect(qsZh).toMatch(/npx @autopilot-harness\/cli|autopilot-harness/);
     expect(qsZh).toMatch(/在 Cursor 中/);
     expect(qsZh).toMatch(/Reload Window/);
     expect(qsZh).toMatch(/自审范围/);
@@ -275,7 +275,7 @@ dist/
       expect(qsEn).toMatch(/Recommended flow/);
       expect(qsEn).toMatch(/no product code/);
       expect(qsEn).toMatch(/no auto-push/);
-      expect(qsEn).toMatch(/\/path\/to\/autopilot-harness/);
+      expect(qsEn).toMatch(/npx @autopilot-harness\/cli|autopilot-harness/);
       expect(qsEn).toMatch(/Self-review scope/);
       expect(qsEn).toMatch(/review\.scope/);
       expect(qsEn).toMatch(/executing_only/);
@@ -322,14 +322,17 @@ dist/
     expect(cursorTips).toMatch(/Reload Window/);
     expect(cursorTips).toMatch(/Agent chat/);
     expect(formatHostActivationTips("claude-code").join("\n")).toMatch(
-      /Claude Code/,
+      /hooks are shared across terminal and IDE/i,
+    );
+    expect(formatHostActivationTips("claude-code").join("\n")).toMatch(
+      /BLOCK_CAP|trusting/i,
     );
     const footer = formatPostInstallFooter("cursor").join("\n");
     expect(footer).toMatch(/You're all set/);
     expect(footer).toMatch(/Reload Window/);
     expect(
       formatCheatSheet("en", "cmd", "plans", "claude-code").join("\n"),
-    ).toMatch(/in Claude Code/);
+    ).toMatch(/hooks shared: terminal \+ IDE/);
     // Hostile platform ids must not leak C0 controls into terminal tips.
     expect(formatHostDisplayName("cur\nsor")).toBe("Cursor");
     expect(formatHostDisplayName("claude-\x00code")).toBe("Claude Code");
@@ -720,7 +723,7 @@ dist/
       "utf8",
     );
 
-    // preflight + hooksPre succeed; hooksFresh (3rd) returns corrupt JSON.
+    // hooksPre (1st) succeeds; hooksFresh (2nd, after config/pin) is corrupt.
     const orig = readUntrusted.readUntrustedUtf8File;
     let hooksReads = 0;
     const spy = vi
@@ -728,7 +731,7 @@ dist/
       .mockImplementation((filePath, maxBytes, label) => {
         if (path.resolve(String(filePath)) === path.resolve(hooksPath)) {
           hooksReads += 1;
-          if (hooksReads >= 3) return "{not-json";
+          if (hooksReads >= 2) return "{not-json";
         }
         return orig(filePath, maxBytes, label);
       });
@@ -748,7 +751,7 @@ dist/
       expect(fs.existsSync(path.join(root, ".autopilot", "pin.json"))).toBe(
         true,
       );
-      expect(hooksReads).toBeGreaterThanOrEqual(3);
+      expect(hooksReads).toBeGreaterThanOrEqual(2);
     } finally {
       spy.mockRestore();
     }

@@ -4,6 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultConfigYaml } from "./default-config.js";
 import { mergeHooksJson, validateHooksShape } from "./hooks-merge.js";
+import {
+  mergeClaudeSettings,
+  validateClaudeSettingsShape,
+  type ClaudeSettingsFile,
+} from "./claude-settings-merge.js";
 import type {
   HooksFile,
   InitLocale,
@@ -32,11 +37,13 @@ import { readConfigInstallHints, readConfigPlatformsOrThrow } from "./config-mer
 import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
+  isInstallableBinding,
   MAX_PLATFORM_BINDINGS,
   mergePlatformBindings,
   mergedIncludesAllRequested,
   normalizeBinding,
   primaryBinding,
+  sanitizePlatformId,
   type PlatformBinding,
 } from "./platforms.js";
 import {
@@ -59,6 +66,20 @@ export {
   autopilotStopHasUnlimitedLoop,
   autopilotHookCommand,
 } from "./hooks-merge.js";
+export {
+  mergeClaudeSettings,
+  validateClaudeSettingsShape,
+  hasClaudeBlockCapZero,
+  hasCompleteClaudeAutopilotHooks,
+  summarizeClaudeAutopilotHooks,
+  CLAUDE_AUTOPILOT_EVENTS,
+  CLAUDE_BLOCK_CAP_ENV,
+} from "./claude-settings-merge.js";
+export type {
+  ClaudeSettingsFile,
+  ClaudeMatcherGroup,
+  ClaudeHookHandler,
+} from "./claude-settings-merge.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -260,6 +281,23 @@ type HooksRead =
   | { ok: true; value: HooksFile | null }
   | { ok: false; error: string };
 
+type ClaudeSettingsRead =
+  | { ok: true; value: ClaudeSettingsFile | null }
+  | { ok: false; error: string };
+
+function platformsWantHost(
+  platforms: readonly PlatformBinding[],
+  hostId: string,
+): boolean {
+  const want = sanitizePlatformId(hostId);
+  // Only installable bindings wire host settings. A hand-edited
+  // `claude-code`/`cursor` with the wrong surface must not force reads/writes
+  // (e.g. corrupt leftover settings blocking --add-platform of another host).
+  return platforms.some(
+    (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
+  );
+}
+
 /** Read hooks.json; refuse to clobber an existing unreadable file. */
 function readHooksFile(filePath: string): HooksRead {
   let raw: string;
@@ -304,6 +342,45 @@ function readHooksFile(filePath: string): HooksRead {
       };
     }
     const shapeError = validateHooksShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
+/** Read `.claude/settings.json`; refuse to clobber an existing unreadable file. */
+function readClaudeSettingsFile(filePath: string): ClaudeSettingsRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".claude/settings.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as ClaudeSettingsFile;
+    const shapeError = validateClaudeSettingsShape(obj);
     if (shapeError) {
       return { ok: false, error: `${filePath}: ${shapeError}` };
     }
@@ -499,17 +576,20 @@ function installSkills(
   templatesRoot: string,
   projectRoot: string,
   locale: InitLocale,
+  /** Host skills root relative to project, e.g. `.cursor` or `.claude`. */
+  hostSkillsParent: ".cursor" | ".claude",
 ): string[] {
   const written: string[] = [];
   const descriptions = skillDescriptions(locale);
-  const skillsRoot = path.join(projectRoot, ".cursor", "skills");
-  assertNotSymlink(skillsRoot, ".cursor/skills/");
+  const skillsRoot = path.join(projectRoot, hostSkillsParent, "skills");
+  const skillsLabel = `${hostSkillsParent}/skills/`;
+  assertNotSymlink(skillsRoot, skillsLabel);
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
     assertPresentRealFile(tplPath, `skill template ${name}`);
     const destDir = path.join(skillsRoot, name);
-    mkdirRealDirSync(destDir, `.cursor/skills/${name}/`, projectRoot);
-    assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
+    mkdirRealDirSync(destDir, `${skillsLabel}${name}/`, projectRoot);
+    assertRealpathInside(projectRoot, destDir, `${skillsLabel}${name}/`);
     const body = renderSkill(
       readUntrustedUtf8File(
         tplPath,
@@ -519,12 +599,12 @@ function installSkills(
       descriptions[name] ?? name,
     );
     const dest = path.join(destDir, "SKILL.md");
-    assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
+    assertNotSymlink(dest, `${skillsLabel}${name}/SKILL.md`);
     writeFileAtomic(
       dest,
       body,
       projectRoot,
-      `.cursor/skills/${name}/`,
+      `${skillsLabel}${name}/`,
     );
     written.push(path.relative(projectRoot, dest));
   }
@@ -670,16 +750,14 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
         "Missing assets/vendor/runtime.mjs or migrations — run pnpm bundle-vendor (or pnpm build)",
     };
   }
-  const hooksPath = path.join(root, ".cursor", "hooks.json");
-  const hooksRead = readHooksFile(hooksPath);
-  if (!hooksRead.ok) {
-    return { ok: false, error: hooksRead.error };
-  }
+  // Host settings (`.cursor/hooks.json` / `.claude/settings.json`) are validated
+  // only for platforms that will be wired — see installInitYes.
   return { ok: true };
 }
 
 /**
- * Non-interactive init (`--yes`). Writes .autopilot + merges .cursor/hooks.json.
+ * Non-interactive init (`--yes`). Writes .autopilot + host hooks/skills
+ * (`.cursor/hooks.json` and/or `.claude/settings.json` per platforms).
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
  * updates the `platforms` list (committed only after hooks succeed).
@@ -706,6 +784,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const configPath = path.join(autopilotDir, "config.yml");
   const cursorDir = path.join(projectRoot, ".cursor");
   const hooksPath = path.join(cursorDir, "hooks.json");
+  const claudeDir = path.join(projectRoot, ".claude");
+  const claudeSettingsPath = path.join(claudeDir, "settings.json");
   const mergePlatforms = Boolean(opts.mergePlatforms);
   // Adding hosts into an existing config requires the force/refresh path.
   const force = Boolean(opts.force) || mergePlatforms;
@@ -713,8 +793,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   try {
     assertNotSymlink(autopilotDir, ".autopilot/");
     assertNotSymlink(configPath, ".autopilot/config.yml");
-    assertNotSymlink(cursorDir, ".cursor/");
-    assertNotSymlink(hooksPath, ".cursor/hooks.json");
+    // Host path symlink checks happen only for platforms we are about to wire
+    // (Claude-only must not fail on a leftover `.cursor/hooks.json` symlink).
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
@@ -763,11 +843,6 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   }
 
   const { cliRoot, templatesRoot } = resolvePackageRoots();
-  // Fail closed on corrupt hooks before any mutate.
-  const hooksPre = readHooksFile(hooksPath);
-  if (!hooksPre.ok) {
-    return { ok: false, error: hooksPre.error };
-  }
 
   const plansNorm = normalizePlansDir(opts.plansDir);
   if (!plansNorm.ok) {
@@ -799,10 +874,117 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const written: string[] = [];
     mkdirRealDirSync(autopilotDir, ".autopilot/", projectRoot);
 
-    // Fresh init: write config. --add-platform / mergePlatforms: validate merge
-    // now, but re-read + write only after hooks succeed (avoid half-updated
-    // config on later failure, and shrink TOCTOU vs concurrent editors).
-    // Plain --force: leave config.yml alone.
+    // Resolve hosts to wire before any config write (fail closed on corrupt
+    // host settings without leaving an orphan config.yml).
+    // --add-platform / mergePlatforms: validate merge now, but re-read + write
+    // only after hooks succeed. Plain --force: wire hosts listed in config.
+    if (configExists && mergePlatforms) {
+      let existingYaml: string;
+      try {
+        existingYaml = readUntrustedUtf8File(
+          configPath,
+          MAX_UNTRUSTED_TEXT_BYTES,
+          ".autopilot/config.yml",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read config.yml: ${msg}` };
+      }
+      let existingPlatforms: PlatformBinding[];
+      try {
+        existingPlatforms = readConfigPlatformsOrThrow(existingYaml);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          error: `Cannot update platforms in config.yml: ${msg}`,
+        };
+      }
+      effectivePlatforms = mergePlatformBindings(
+        existingPlatforms,
+        requestedPlatforms,
+      );
+      // Only the *requested* additions must be installable (checked above).
+      // Existing config may already declare future hosts; do not reject merge
+      // because of those entries — install still only wires installable ports.
+      if (effectivePlatforms.length === 0) {
+        return {
+          ok: false,
+          error: "platforms list is empty after merge; refusing to update config.yml",
+        };
+      }
+      if (!mergedIncludesAllRequested(effectivePlatforms, requestedPlatforms)) {
+        return {
+          ok: false,
+          error:
+            "Cannot add platform(s): platforms list is at capacity. Remove an entry from config.yml and retry.",
+        };
+      }
+      try {
+        // Fail closed early if the current snapshot cannot be rewritten.
+        applyPlatformsToConfigYaml(existingYaml, effectivePlatforms);
+        pendingMergePlatforms = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot update platforms in config.yml: ${msg}` };
+      }
+    } else if (configExists && force) {
+      // Plain --force: wire hosts declared in config.yml (installable only).
+      try {
+        const yaml = readUntrustedUtf8File(
+          configPath,
+          MAX_UNTRUSTED_TEXT_BYTES,
+          ".autopilot/config.yml",
+        );
+        const fromConfig = readConfigPlatformsOrThrow(yaml);
+        const installable = fromConfig.filter((b) => isInstallableBinding(b));
+        if (installable.length > 0) {
+          effectivePlatforms = installable;
+        }
+      } catch {
+        // Keep requestedPlatforms — still refresh the CLI-selected host.
+      }
+    }
+
+    const wantCursor = platformsWantHost(effectivePlatforms, "cursor");
+    const wantClaude = platformsWantHost(effectivePlatforms, "claude-code");
+    if (!wantCursor && !wantClaude) {
+      return {
+        ok: false,
+        error:
+          "No installable host platform to wire (need cursor and/or claude-code).",
+      };
+    }
+
+    // Fail closed on corrupt/symlink settings only for hosts we are about to wire.
+    if (wantCursor) {
+      try {
+        assertNotSymlink(cursorDir, ".cursor/");
+        assertNotSymlink(hooksPath, ".cursor/hooks.json");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const hooksPre = readHooksFile(hooksPath);
+      if (!hooksPre.ok) {
+        return { ok: false, error: hooksPre.error };
+      }
+    }
+    if (wantClaude) {
+      try {
+        assertNotSymlink(claudeDir, ".claude/");
+        assertNotSymlink(claudeSettingsPath, ".claude/settings.json");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const claudePre = readClaudeSettingsFile(claudeSettingsPath);
+      if (!claudePre.ok) {
+        return { ok: false, error: claudePre.error };
+      }
+    }
+
+    // Fresh init: write config only after host settings preflight succeeded.
     if (!configExists) {
       try {
         // Re-check immediately before wx: earlier `configExists` / mkdir leave a window
@@ -867,56 +1049,6 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       }
       createdConfig = true;
       written.push(path.relative(projectRoot, configPath));
-    } else if (mergePlatforms) {
-      let existingYaml: string;
-      try {
-        existingYaml = readUntrustedUtf8File(
-          configPath,
-          MAX_UNTRUSTED_TEXT_BYTES,
-          ".autopilot/config.yml",
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: `Cannot read config.yml: ${msg}` };
-      }
-      let existingPlatforms: PlatformBinding[];
-      try {
-        existingPlatforms = readConfigPlatformsOrThrow(existingYaml);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          ok: false,
-          error: `Cannot update platforms in config.yml: ${msg}`,
-        };
-      }
-      effectivePlatforms = mergePlatformBindings(
-        existingPlatforms,
-        requestedPlatforms,
-      );
-      // Only the *requested* additions must be installable (checked above).
-      // Existing config may already declare future hosts; do not reject merge
-      // because of those entries — install still only wires installable ports.
-      if (effectivePlatforms.length === 0) {
-        return {
-          ok: false,
-          error: "platforms list is empty after merge; refusing to update config.yml",
-        };
-      }
-      if (!mergedIncludesAllRequested(effectivePlatforms, requestedPlatforms)) {
-        return {
-          ok: false,
-          error:
-            "Cannot add platform(s): platforms list is at capacity. Remove an entry from config.yml and retry.",
-        };
-      }
-      try {
-        // Fail closed early if the current snapshot cannot be rewritten.
-        applyPlatformsToConfigYaml(existingYaml, effectivePlatforms);
-        pendingMergePlatforms = true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: `Cannot update platforms in config.yml: ${msg}` };
-      }
     }
 
     const primaryPlatform = primaryBinding(effectivePlatforms).id;
@@ -956,7 +1088,6 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       ),
     );
 
-    written.push(...installSkills(templatesRoot, projectRoot, locale));
     written.push(...installWorkflows(templatesRoot, projectRoot));
 
     const ignoreRel = ensureAutopilotIgnore(projectRoot, templatesRoot);
@@ -987,30 +1118,122 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (qsRel && !written.includes(qsRel)) written.push(qsRel);
     }
 
-    // Re-read hooks immediately before write to shrink TOCTOU with other tools.
-    const hooksFresh = readHooksFile(hooksPath);
-    if (!hooksFresh.ok) {
-      rollbackFreshConfig();
-      return { ok: false, error: hooksFresh.error };
+    // Re-read every host we will write *before* mutating any of them, so a
+    // dual-host TOCTOU failure does not leave only one side refreshed.
+    let hooksFresh: HooksRead | null = null;
+    let claudeFresh: ClaudeSettingsRead | null = null;
+    if (wantCursor) {
+      hooksFresh = readHooksFile(hooksPath);
+      if (!hooksFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: hooksFresh.error };
+      }
+      try {
+        assertNotSymlink(cursorDir, ".cursor/");
+        assertNotSymlink(hooksPath, ".cursor/hooks.json");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
     }
+    if (wantClaude) {
+      claudeFresh = readClaudeSettingsFile(claudeSettingsPath);
+      if (!claudeFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: claudeFresh.error };
+      }
+      try {
+        assertNotSymlink(claudeDir, ".claude/");
+        assertNotSymlink(claudeSettingsPath, ".claude/settings.json");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
+
+    // Fail-fast: merge the pre-skills snapshot in memory so shape errors cannot
+    // leave orphan host skills. Final re-read+merge happens immediately before
+    // writes (below) to shrink TOCTOU after skills I/O.
     try {
-      assertNotSymlink(cursorDir, ".cursor/");
-      assertNotSymlink(hooksPath, ".cursor/hooks.json");
+      if (wantCursor && hooksFresh?.ok) {
+        mergeHooksJson(hooksFresh.value);
+      }
+      if (wantClaude && claudeFresh?.ok) {
+        mergeClaudeSettings(claudeFresh.value);
+      }
     } catch (err) {
       rollbackFreshConfig();
       const msg = err instanceof Error ? err.message : String(err);
       return { ok: false, error: msg };
     }
-    mkdirRealDirSync(path.dirname(hooksPath), ".cursor/", projectRoot);
-    assertRealpathInside(projectRoot, path.dirname(hooksPath), ".cursor/");
-    const merged = mergeHooksJson(hooksFresh.value);
-    writeFileAtomic(
-      hooksPath,
-      JSON.stringify(merged, null, 2) + "\n",
-      projectRoot,
-      ".cursor/",
-    );
-    written.push(path.relative(projectRoot, hooksPath));
+
+    // Host skills only after settings preflight + merge dry-run succeeded.
+    if (wantCursor) {
+      written.push(
+        ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
+      );
+    }
+    if (wantClaude) {
+      written.push(
+        ...installSkills(templatesRoot, projectRoot, locale, ".claude"),
+      );
+    }
+
+    // Final re-read + merge immediately before any host settings write.
+    let mergedHooks: ReturnType<typeof mergeHooksJson> | null = null;
+    let mergedClaude: ReturnType<typeof mergeClaudeSettings> | null = null;
+    try {
+      if (wantCursor) {
+        const hooksFinal = readHooksFile(hooksPath);
+        if (!hooksFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: hooksFinal.error };
+        }
+        assertNotSymlink(cursorDir, ".cursor/");
+        assertNotSymlink(hooksPath, ".cursor/hooks.json");
+        mergedHooks = mergeHooksJson(hooksFinal.value);
+      }
+      if (wantClaude) {
+        const claudeFinal = readClaudeSettingsFile(claudeSettingsPath);
+        if (!claudeFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: claudeFinal.error };
+        }
+        assertNotSymlink(claudeDir, ".claude/");
+        assertNotSymlink(claudeSettingsPath, ".claude/settings.json");
+        mergedClaude = mergeClaudeSettings(claudeFinal.value);
+      }
+    } catch (err) {
+      rollbackFreshConfig();
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+
+    if (mergedHooks) {
+      mkdirRealDirSync(path.dirname(hooksPath), ".cursor/", projectRoot);
+      assertRealpathInside(projectRoot, path.dirname(hooksPath), ".cursor/");
+      writeFileAtomic(
+        hooksPath,
+        JSON.stringify(mergedHooks, null, 2) + "\n",
+        projectRoot,
+        ".cursor/",
+      );
+      written.push(path.relative(projectRoot, hooksPath));
+    }
+
+    if (mergedClaude) {
+      mkdirRealDirSync(path.dirname(claudeSettingsPath), ".claude/", projectRoot);
+      assertRealpathInside(projectRoot, path.dirname(claudeSettingsPath), ".claude/");
+      writeFileAtomic(
+        claudeSettingsPath,
+        JSON.stringify(mergedClaude, null, 2) + "\n",
+        projectRoot,
+        ".claude/",
+      );
+      written.push(path.relative(projectRoot, claudeSettingsPath));
+    }
 
     // Commit platforms merge after hooks: re-read so concurrent edits between
     // validation and commit are not silently clobbered by a stale snapshot.
