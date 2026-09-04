@@ -21,6 +21,14 @@ export default defineConfig({
         __dirname,
         "packages/cli/src/index.ts",
       ),
+      "@autopilot-harness/port-claude-code": path.resolve(
+        __dirname,
+        "packages/ports/claude-code/src/index.ts",
+      ),
+      "@autopilot-harness/port-cursor": path.resolve(
+        __dirname,
+        "packages/ports/cursor/src/index.ts",
+      ),
     },
   },
 });

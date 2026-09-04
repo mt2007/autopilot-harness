@@ -58,7 +58,15 @@ importers:
         specifier: ^5.8.2
         version: 5.9.3
 
-  packages/ports/claude-code: {}
+  packages/ports/claude-code:
+    dependencies:
+      '@autopilot-harness/core':
+        specifier: workspace:*
+        version: link:../../core
+    devDependencies:
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
 
   packages/ports/cursor:
     dependencies:

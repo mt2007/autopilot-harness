@@ -1,1 +1,43 @@
-{"name":"@autopilot-harness/port-claude-code","version":"0.1.0","private":true,"description":"Coming v0.2"}
+{
+  "name": "@autopilot-harness/port-claude-code",
+  "version": "0.1.0",
+  "description": "Autopilot harness Claude Code host port",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mt2007/autopilot-harness.git",
+    "directory": "packages/ports/claude-code"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness#readme",
+  "bugs": {
+    "url": "https://github.com/mt2007/autopilot-harness/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@autopilot-harness/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
