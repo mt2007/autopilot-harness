@@ -2,7 +2,7 @@
 
 **autopilot-harness** — 把开放式 Agent 对话收成 **结构化规划 → checklist 执行 → 多角度自审** 的 vibecoding harness。
 
-行为以英文 [README.md](./README.md) 为准；本文是中文前门。徽章与安装步骤与英文版一致。
+行为以英文 [README.md](./README.md) 为准；本文是中文前门。行为变更时请与英文 README **同一 PR** 更新（见 [CONTRIBUTING.md](./CONTRIBUTING.md)）。
 
 [![CI](https://github.com/mt2007/autopilot-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mt2007/autopilot-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -38,7 +38,7 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 | **推进** | — | 勾选 `[x]`；dirty 则本地 commit（干净跳过；**不**自动 push），然后下一项 | 更新 `checklist.md` |
 | **完成** | — | 勾选最后一项；dirty 则本地 commit（**不**自动 push）；清单清空后停止 | 该轨结束 |
 
-默认自审在 **RUN 中**（`review.scope: executing_only`）。想在闲聊改代码时也自审，设 `review.scope: project` — 详见英文 README [When does self-review run?](./README.md#when-does-self-review-run-reviewscope) 与 [配置说明](./docs/config.md)。
+默认自审在 **RUN 中**（`review.scope: executing_only`）。想在闲聊改代码时也自审，设 `review.scope: project` — 见下方专节与英文 README。
 
 暂停 / 改方案 / 恢复：`/autopilot-off`、`/autopilot-replan`、`/autopilot-resume`（细节见 [快速开始](./docs/autopilot/quickstart.zh-CN.md)）。
 
@@ -66,25 +66,64 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 | 4 | 安全与信任边界 |
 | 5 | 测试缺口与回归（只读记录缺口，本轮不补测） |
 
-`review.scope` 细则见英文 README 专节；配置键表见 [docs/config.md](./docs/config.md)。
+#### 何时跑自审（`review.scope`）
+
+写在 `.autopilot/config.yml`（`init` 可选，之后可改）：
+
+| `review.scope` | 何时走修复 → 确认 | 典型用途 |
+|----------------|-------------------|----------|
+| **`executing_only`**（默认） | 仅在 Autopilot **RUN**（checklist 执行中）且改了产品代码 | 结构化轨：`/autopilot-on` → `/autopilot-run` → 按项自审 |
+| **`project`** | 项目内**任意**产品代码编辑——**不需要**先 ON / RUN | 闲聊改代码仍要多角度压测 + 错误恢复 |
+
+要点：
+
+- 只开 `/autopilot-on` **不会**启动自审（规划只写方案/文档）。
+- `executing_only` 下，非 RUN 改代码**不会**打开 Autopilot 自审链。
+- `project` 且**未在** checklist 执行中（含仍在 planning）时，确认链以 **自审完成** 结束（不勾选推进）；RUN 执行中仍按项推进/完成。
+- 暂停 / OFF 期间不跑链（即使 `project`），需 resume。
+- 慎与全局 Cursor 自审 hook 叠用（双重注入）。
+- 宿主自带 Plan 模式与 Autopilot **未对接**（设计草案：[host-plan-bridge.md](./docs/host-plan-bridge.md)）。
+
+完整键表见 [docs/config.md](./docs/config.md)。英文权威专节：[When does self-review run?](./README.md#when-does-self-review-run-reviewscope)。
 
 ## 快速开始
 
-需要 **Node.js 22+** 与 **pnpm**。CLI 包 `@autopilot-harness/cli`（bin：`autopilot-harness`）**尚未上公共 npm**，请从本仓库安装：
+需要 **Node.js 22+** 与 **pnpm**。CLI 包 `@autopilot-harness/cli`（bin：`autopilot-harness`）。
+
+### 今天（尚未上公共 npm）
+
+从本仓库安装，再调用**已构建**二进制。命令以 **当前工作目录** 为项目根：
 
 ```bash
 git clone https://github.com/mt2007/autopilot-harness.git
 cd autopilot-harness && pnpm install && pnpm build
+
+cd /path/to/your-app
+node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
+# 交互 TUI：省略 --yes（platform 仍默认 cursor）
+# 更多参数：node …/bin.js init --help   （如 --platforms、--add-platform）
 ```
 
-**先 `cd` 到要接入的项目**（`init` / `status` / `doctor` / `upgrade` 以 **当前工作目录** 为项目根），再通过路径调用构建好的 CLI：
+本仓库 dogfood（在 harness 克隆里 `pnpm build` 之后）：
+
+```bash
+node packages/cli/dist/bin.js status
+node packages/cli/dist/bin.js doctor
+node packages/cli/dist/bin.js upgrade --dry-run
+```
+
+### 发布到 npm 之后
+
+优先用 scoped 包名（不要用不存在的裸 `npx autopilot-harness`）：
 
 ```bash
 cd /path/to/your-app
-node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
+npx @autopilot-harness/cli init --platform cursor --yes
+npx @autopilot-harness/cli status
+npx @autopilot-harness/cli doctor
 ```
 
-发布后计划入口为 `npx @autopilot-harness/cli …`（不是裸的 `npx autopilot-harness` 包名）。
+在未上架前，请用上面的「今天」路径。
 
 重载 Cursor 窗口（或新开 Agent 聊天），然后：
 
@@ -99,6 +138,7 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor 
 - [配置说明](./docs/config.md)  
 - [排障](./docs/troubleshooting.md)  
 - [宿主路线图](./docs/hosts.md)  
+- [宿主 Plan 桥接（设计）](./docs/host-plan-bridge.md)  
 - [快速开始（中文）](./docs/autopilot/quickstart.zh-CN.md)  
 - [Contributing](./CONTRIBUTING.md)  
 - [Changelog](./CHANGELOG.md)  

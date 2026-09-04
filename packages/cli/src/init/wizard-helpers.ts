@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { CLI_NAME } from "../names.js";
+import { CLI_NAME, NPM_PACKAGE_NAME } from "../names.js";
 import type { InitLocale, InitYesOptions, PlansGitPolicy } from "./types.js";
 import {
   formatBindingOptionLabel,
@@ -335,6 +335,9 @@ export function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+/** Refuse path chars that break shell rc / single-line docs embedding. */
+const SHELL_UNSAFE_PATH_CHARS = /[\0\n\r\u2028\u2029]/;
+
 /**
  * Absolute path of the running CLI entry (e.g. …/dist/bin.js), or null.
  * Used so local checkouts write a working alias before the package is on npm.
@@ -345,8 +348,7 @@ export function tryResolveRunningCliScript(): string | null {
   try {
     const abs = fs.realpathSync(path.resolve(argv1));
     if (!fs.statSync(abs).isFile()) return null;
-    // Refuse control chars that break shell rc lines.
-    if (/[\0\n\r]/.test(abs)) return null;
+    if (SHELL_UNSAFE_PATH_CHARS.test(abs)) return null;
     if (!isTrustedCliEntrypoint(abs)) return null;
     return abs;
   } catch {
@@ -357,37 +359,61 @@ export function tryResolveRunningCliScript(): string | null {
 /**
  * argv[1] is often some other .js under test runners / wrappers.
  * Only accept known Autopilot CLI entry names (and bin.js under our package paths).
+ *
+ * Deliberately small allowlist: monorepo `packages/cli/.../bin.js` (no
+ * `node_modules/` in the path), npm `node_modules/<pkg>/.../bin.js`, and
+ * project `node_modules/.bin` shims. Global / version-manager shims fall
+ * through to `npx ${NPM_PACKAGE_NAME}`.
  */
+const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Matched against lowercased paths (see isTrustedCliEntrypoint).
+const TRUSTED_MONOREPO_CLI_BIN = /(^|\/)packages\/cli\/(dist|src)\/bin\.js$/;
+const TRUSTED_NPM_SCOPED_CLI_BIN = new RegExp(
+  `(^|/)node_modules/${escRe(NPM_PACKAGE_NAME.toLowerCase())}/(dist|src)/bin\\.js$`,
+);
+const TRUSTED_NPM_LEGACY_CLI_BIN = new RegExp(
+  `(^|/)node_modules/${escRe(CLI_NAME.toLowerCase())}/(dist|src)/bin\\.js$`,
+);
+
 export function isTrustedCliEntrypoint(absPath: string): boolean {
   if (typeof absPath !== "string" || !absPath.trim()) return false;
+  // Same refuse set as tryResolveRunningCliScript (shell rc / docs).
+  if (SHELL_UNSAFE_PATH_CHARS.test(absPath)) return false;
   // Normalize before basename — on POSIX, path.basename ignores `\`, so a
   // Windows-style path would otherwise never look like `bin.js`.
   const norm = absPath.split(/[/\\]+/).filter(Boolean).join("/");
-  const base = path.posix.basename(norm);
+  // Match path segments case-insensitively (Windows / macOS default volumes).
+  const normLower = norm.toLowerCase();
+  const base = path.posix.basename(normLower);
   if (
-    base === "autopilot-harness" ||
-    base === "autopilot-harness.js" ||
-    base === "autopilot-harness.mjs"
+    base === CLI_NAME ||
+    base === `${CLI_NAME}.js` ||
+    base === `${CLI_NAME}.mjs`
   ) {
-    return true;
+    // pnpm/npm project shims only (not arbitrary …/bin/<name>).
+    return /(^|\/)node_modules\/\.bin\/[^/]+$/.test(normLower);
   }
   if (base !== "bin.js") return false;
-  // Local monorepo, scoped package, or npm-installed package root.
+  // Local monorepo checkout, or npm layout under node_modules/ (scoped / legacy).
+  // Package-name paths require a node_modules/<pkg>/ segment. Monorepo paths
+  // must not contain node_modules/ at all (blocks …/node_modules/**/packages/cli
+  // decoys that only share the packages/cli/.../bin.js suffix).
   return (
-    /(^|\/)packages\/cli\/(dist|src)\/bin\.js$/.test(norm) ||
-    /(^|\/)@autopilot-harness\/cli\/(dist|src)\/bin\.js$/.test(norm) ||
-    /(^|\/)autopilot-harness\/(dist|src)\/bin\.js$/.test(norm)
+    (TRUSTED_MONOREPO_CLI_BIN.test(normLower) &&
+      !/(^|\/)node_modules\//.test(normLower)) ||
+    TRUSTED_NPM_SCOPED_CLI_BIN.test(normLower) ||
+    TRUSTED_NPM_LEGACY_CLI_BIN.test(normLower)
   );
 }
 
 /**
  * Runnable CLI command for docs / cheat sheets.
- * Prefers `node <this-bin>`; falls back to `npx autopilot-harness`.
+ * Prefers `node <this-bin>`; falls back to `npx` + {@link NPM_PACKAGE_NAME}.
  */
 export function resolveCliCommand(): string {
   const script = tryResolveRunningCliScript();
   if (script) return `node ${shellSingleQuote(script)}`;
-  return `npx ${CLI_NAME}`;
+  return `npx ${NPM_PACKAGE_NAME}`;
 }
 
 /**
@@ -400,7 +426,7 @@ export function autopilotShellAliasLine(): string {
   if (script) {
     return `autopilot() { command node ${shellSingleQuote(script)} "$@"; }`;
   }
-  return `autopilot() { command npx ${CLI_NAME} "$@"; }`;
+  return `autopilot() { command npx ${NPM_PACKAGE_NAME} "$@"; }`;
 }
 
 function shellRcDefinesAutopilot(body: string): boolean {
@@ -681,13 +707,15 @@ export function writeQuickstart(
 
 ## 终端
 
-CLI 尚未发布到 npm 时，用已构建的二进制（把路径换成你的 harness 克隆；\`cwd\` = 目标项目）：
+**今天（尚未上公共 npm）：** 用已构建的二进制（把路径换成你的 harness 克隆；\`cwd\` = 目标项目）：
 
 \`\`\`bash
 node /path/to/autopilot-harness/packages/cli/dist/bin.js status
 node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 \`\`\`
+
+**发布到 npm 之后：** \`npx ${NPM_PACKAGE_NAME} …\`（scoped 包名——不要用不存在的裸 \`npx ${CLI_NAME}\`）。未上架前用「今天」路径。
 
 ## 安装后
 
@@ -747,13 +775,15 @@ Also: \`Autopilot RUN\`
 
 ## Terminal
 
-CLI is not on public npm yet. Use the built binary (replace the path with your harness clone; \`cwd\` = the app):
+**Today (not on public npm yet):** use the built binary (replace the path with your harness clone; \`cwd\` = the app):
 
 \`\`\`bash
 node /path/to/autopilot-harness/packages/cli/dist/bin.js status
 node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 \`\`\`
+
+**After npm publish:** \`npx ${NPM_PACKAGE_NAME} …\` (scoped name — not bare \`npx ${CLI_NAME}\`). Until then, use the **Today** path.
 
 ## After install
 

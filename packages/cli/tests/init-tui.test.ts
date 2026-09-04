@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -33,6 +34,7 @@ import {
 } from "../src/init/tui.js";
 import type { InitWizardAnswers } from "../src/init/wizard-helpers.js";
 import { MAX_PLATFORM_BINDINGS } from "../src/init/platforms.js";
+import { CLI_NAME, NPM_PACKAGE_NAME } from "../src/names.js";
 
 function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-tui-"));
@@ -374,13 +376,35 @@ dist/
     }
   });
 
+  it("resolveCliCommand accepts npm-installed scoped package dist/bin.js", () => {
+    root = tmpProject();
+    const prev = process.argv[1];
+    const fakeBin = path.join(
+      root,
+      "node_modules",
+      ...NPM_PACKAGE_NAME.split("/"),
+      "dist",
+      "bin.js",
+    );
+    fs.mkdirSync(path.dirname(fakeBin), { recursive: true });
+    fs.writeFileSync(fakeBin, "#!/usr/bin/env node\n", "utf8");
+    process.argv[1] = fakeBin;
+    try {
+      const abs = fs.realpathSync(fakeBin);
+      expect(isTrustedCliEntrypoint(abs)).toBe(true);
+      expect(resolveCliCommand()).toBe(`node ${shellSingleQuote(abs)}`);
+    } finally {
+      process.argv[1] = prev;
+    }
+  });
+
   it("resolveCliCommand accepts npm-installed package dist/bin.js", () => {
     root = tmpProject();
     const prev = process.argv[1];
     const fakeBin = path.join(
       root,
       "node_modules",
-      "autopilot-harness",
+      CLI_NAME,
       "dist",
       "bin.js",
     );
@@ -395,10 +419,15 @@ dist/
     }
   });
 
-  it("isTrustedCliEntrypoint accepts Windows-style separators", () => {
+  it("isTrustedCliEntrypoint accepts package bin.js and project .bin only", () => {
     expect(
       isTrustedCliEntrypoint(
         "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\autopilot-harness\\dist\\bin.js",
+      ),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(
+        `C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\${NPM_PACKAGE_NAME.replace(/\//g, "\\")}\\dist\\bin.js`,
       ),
     ).toBe(true);
     expect(
@@ -410,6 +439,93 @@ dist/
     expect(
       isTrustedCliEntrypoint("C:\\tmp\\evil-autopilot-harness\\bin.js"),
     ).toBe(false);
+    // Basename shims: only node_modules/.bin (globals fall back to npx)
+    expect(isTrustedCliEntrypoint(`/tmp/evil/${CLI_NAME}`)).toBe(false);
+    expect(isTrustedCliEntrypoint(`/tmp/evil/bin/${CLI_NAME}`)).toBe(false);
+    expect(isTrustedCliEntrypoint(`/usr/local/bin/${CLI_NAME}`)).toBe(false);
+    expect(isTrustedCliEntrypoint(`/opt/homebrew/bin/${CLI_NAME}`)).toBe(false);
+    expect(isTrustedCliEntrypoint(`/home/dev/.local/bin/${CLI_NAME}`)).toBe(
+      false,
+    );
+    expect(
+      isTrustedCliEntrypoint(
+        `C:\\Users\\dev\\.nvm\\versions\\node\\v22.0.0\\bin\\${CLI_NAME}`,
+      ),
+    ).toBe(false);
+    expect(
+      isTrustedCliEntrypoint(
+        "C:\\Users\\dev\\AppData\\Roaming\\npm\\autopilot-harness",
+      ),
+    ).toBe(false);
+    expect(
+      isTrustedCliEntrypoint(`/proj/node_modules/.bin/${CLI_NAME}`),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(`/proj/node_modules/.bin/${CLI_NAME}.mjs`),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(`/private/tmp/ci/node_modules/.bin/${CLI_NAME}`),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(`/tmp/ci/node_modules/.bin/${CLI_NAME}`),
+    ).toBe(true);
+    // Same basename/folder as the package, but not under node_modules/
+    expect(isTrustedCliEntrypoint(`/tmp/${CLI_NAME}/dist/bin.js`)).toBe(false);
+    expect(
+      isTrustedCliEntrypoint(`/tmp/${NPM_PACKAGE_NAME}/dist/bin.js`),
+    ).toBe(false);
+    // Decoy that only shares the packages/cli/.../bin.js suffix under node_modules
+    expect(
+      isTrustedCliEntrypoint(`/tmp/node_modules/packages/cli/dist/bin.js`),
+    ).toBe(false);
+    expect(
+      isTrustedCliEntrypoint(`/tmp/node_modules/x/packages/cli/dist/bin.js`),
+    ).toBe(false);
+    // pnpm content-addressable layout still ends in node_modules/<scoped>/...
+    expect(
+      isTrustedCliEntrypoint(
+        `/proj/node_modules/.pnpm/@autopilot-harness+cli@0.1.0/node_modules/${NPM_PACKAGE_NAME}/dist/bin.js`,
+      ),
+    ).toBe(true);
+    // Case-insensitive path segments (Windows / macOS volumes)
+    expect(
+      isTrustedCliEntrypoint(
+        `/Proj/Node_Modules/.bin/${CLI_NAME.toUpperCase()}`,
+      ),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(
+        `/Proj/Node_Modules/${NPM_PACKAGE_NAME}/Dist/Bin.js`,
+      ),
+    ).toBe(true);
+    expect(
+      isTrustedCliEntrypoint(`/proj/node_modules/.bin/${CLI_NAME}\n`),
+    ).toBe(false);
+    expect(
+      isTrustedCliEntrypoint(`/proj/packages/cli/dist/bin.js\0`),
+    ).toBe(false);
+    expect(
+      isTrustedCliEntrypoint(
+        `/proj/packages/cli/dist/bin.js\u2028`,
+      ),
+    ).toBe(false);
+  });
+
+  it("NPM_PACKAGE_NAME matches package.json and differs from bin CLI_NAME", () => {
+    const pkg = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          path.dirname(fileURLToPath(import.meta.url)),
+          "../package.json",
+        ),
+        "utf8",
+      ),
+    ) as { name: string; bin: Record<string, string> };
+    expect(NPM_PACKAGE_NAME).toBe("@autopilot-harness/cli");
+    expect(NPM_PACKAGE_NAME).toBe(pkg.name);
+    expect(CLI_NAME).toBe("autopilot-harness");
+    expect(pkg.bin[CLI_NAME]).toBe("./dist/bin.js");
+    expect(NPM_PACKAGE_NAME).not.toBe(CLI_NAME);
   });
 
   it("resolveCliCommand ignores non-CLI argv[1] (e.g. test runners)", () => {
@@ -419,9 +535,9 @@ dist/
     fs.writeFileSync(decoy, "#!/usr/bin/env node\n", "utf8");
     process.argv[1] = decoy;
     try {
-      expect(resolveCliCommand()).toBe(`npx autopilot-harness`);
+      expect(resolveCliCommand()).toBe(`npx ${NPM_PACKAGE_NAME}`);
       expect(autopilotShellAliasLine()).toBe(
-        `autopilot() { command npx autopilot-harness "$@"; }`,
+        `autopilot() { command npx ${NPM_PACKAGE_NAME} "$@"; }`,
       );
     } finally {
       process.argv[1] = prev;
@@ -435,7 +551,7 @@ dist/
     fs.writeFileSync(decoy, "#!/usr/bin/env node\n", "utf8");
     process.argv[1] = decoy;
     try {
-      expect(resolveCliCommand()).toBe(`npx autopilot-harness`);
+      expect(resolveCliCommand()).toBe(`npx ${NPM_PACKAGE_NAME}`);
     } finally {
       process.argv[1] = prev;
     }

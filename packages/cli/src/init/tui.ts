@@ -1,5 +1,5 @@
 import * as clack from "@clack/prompts";
-import { CLI_NAME, PREFERRED_NAME } from "../names.js";
+import { CLI_NAME, NPM_PACKAGE_NAME, PREFERRED_NAME } from "../names.js";
 import { PACKAGE_VERSION } from "./types.js";
 import type { InitLocale, InitResult } from "./types.js";
 import { installInitYes } from "./install.js";
@@ -164,7 +164,7 @@ export async function collectWizardAnswers(
       "  2. Run   — implement item by item, with self-review between steps",
       "",
       `You'll get host hooks (for the hosts you pick), slash skills, and a project config under .autopilot/.`,
-      `CLI package: ${CLI_NAME}`,
+      `CLI package: ${NPM_PACKAGE_NAME} (bin: ${CLI_NAME})`,
     ].join("\n"),
     "What this installs",
   );

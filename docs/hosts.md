@@ -32,7 +32,10 @@ Submit / edit hooks (and Claude `UserPromptSubmit` analogues) are **not** subjec
 
 Host-native **Plan modes** (Cursor Plan Mode, Claude Code Plan mode, etc.) are separate from Autopilot grill and `review.scope`. Autopilot does not currently map those modes onto ON / RUN / review.
 
+Design sketch and acceptance criteria for a future optional bridge: [host-plan-bridge.md](./host-plan-bridge.md).
+
 ## Related
 
-- [Config](./config.md) — `platforms`, `review.*`  
+- [Config](./config.md) — `platforms`, `review.*`, triggers, concurrency  
 - [Troubleshooting](./troubleshooting.md) — missing `loop_limit`, double hooks  
+- [Host Plan-mode bridge](./host-plan-bridge.md) — Plan UX vs Autopilot grill  

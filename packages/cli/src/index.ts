@@ -1,4 +1,4 @@
-export { CLI_NAME, PREFERRED_NAME } from "./names.js";
+export { CLI_NAME, NPM_PACKAGE_NAME, PREFERRED_NAME } from "./names.js";
 export {
   installInitYes,
   preflightForceRefresh,

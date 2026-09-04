@@ -2,7 +2,7 @@
 
 命令速查 + 每步产物。产品前门：[README.md](../../README.md)（[中文 README](../../README.zh-CN.md)）。英文速查：[quickstart.md](./quickstart.md)。
 
-另见：[配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主路线图](../hosts.md)。
+另见：[配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主路线图](../hosts.md) · [Plan 桥接](../host-plan-bridge.md)。
 
 ## 推荐流程（产物）
 
@@ -34,7 +34,9 @@
 
 ## 终端
 
-CLI 包：`@autopilot-harness/cli`（bin：`autopilot-harness`）。**尚未发布到公共 npm。** 先克隆并构建本仓库，再用**已构建二进制**；**cwd = 要接入 Autopilot 的项目**：
+CLI 包：`@autopilot-harness/cli`（bin：`autopilot-harness`）。
+
+**今天（尚未上公共 npm）：** 先克隆并构建本仓库，再用**已构建二进制**；**cwd = 要接入 Autopilot 的项目**：
 
 ```bash
 # 一次性：在 autopilot-harness 克隆里
@@ -58,6 +60,8 @@ node packages/cli/dist/bin.js doctor
 node packages/cli/dist/bin.js upgrade --dry-run
 ```
 
+**发布到 npm 之后：** `npx @autopilot-harness/cli …`（scoped 包名——不要用不存在的裸 `npx autopilot-harness`）。未上架前用「今天」路径。
+
 ## 安装后
 
 - 在 Cursor 中试用 `/autopilot-on`。
@@ -76,6 +80,6 @@ node packages/cli/dist/bin.js upgrade --dry-run
 
 产品代码排除命中 `.autopilotignore` 的路径，以及**未跟踪且被 `.gitignore` 忽略**的路径。暂停 / OFF 期间不跑自审链，需 resume。
 
-只开 `/autopilot-on` **不会**启动自审（规划只写方案/文档）。`project` 且**未在** checklist 执行中（含仍在 planning）时，确认链以 **自审完成** 结束（不勾选推进 checklist）；在 RUN 执行中则仍按项推进/完成。若已有全局 Cursor 自审 hook，慎与 `project` 叠用（可能双重注入）。各宿主自带的 Plan 模式与 Autopilot 无关，目前未对接。
+只开 `/autopilot-on` **不会**启动自审（规划只写方案/文档）。`project` 且**未在** checklist 执行中（含仍在 planning）时，确认链以 **自审完成** 结束（不勾选推进 checklist）；在 RUN 执行中则仍按项推进/完成。若已有全局 Cursor 自审 hook，慎与 `project` 叠用（可能双重注入）。各宿主自带的 Plan 模式与 Autopilot 无关，目前未对接（[设计草案](../host-plan-bridge.md)）。
 
 方案与清单始终在 `plans/<slug>/`（权威进度是 `checklist.md`）。

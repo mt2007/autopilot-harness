@@ -2,7 +2,7 @@
 
 Command cheat sheet + per-step artifacts. Product front door: [README.md](../../README.md). Chinese: [quickstart.zh-CN.md](./quickstart.zh-CN.md).
 
-Also: [Config](../config.md) · [Troubleshooting](../troubleshooting.md) · [Hosts](../hosts.md).
+Also: [Config](../config.md) · [Troubleshooting](../troubleshooting.md) · [Hosts](../hosts.md) · [Plan bridge](../host-plan-bridge.md).
 
 ## Recommended flow (artifacts)
 
@@ -34,7 +34,9 @@ Also: `Autopilot RUN`
 
 ## Terminal
 
-CLI package: `@autopilot-harness/cli` (bin: `autopilot-harness`). **Not on the public npm registry yet.** Clone and build this repo, then run the built binary with **cwd = the project you want to instrument**:
+CLI package: `@autopilot-harness/cli` (bin: `autopilot-harness`).
+
+**Today (not on public npm yet):** clone and build this repo, then run the built binary with **cwd = the project you want to instrument**:
 
 ```bash
 # once: in the autopilot-harness clone
@@ -58,6 +60,8 @@ node packages/cli/dist/bin.js doctor
 node packages/cli/dist/bin.js upgrade --dry-run
 ```
 
+**After npm publish:** `npx @autopilot-harness/cli …` (scoped name — not bare `npx autopilot-harness`). Until then, use the **Today** path.
+
 ## After install
 
 - Try `/autopilot-on` in Cursor.
@@ -76,6 +80,6 @@ In `.autopilot/config.yml` (full key list: [Config](../config.md)):
 
 Product-code paths exclude `.autopilotignore` hits and **untracked** `.gitignore` hits. Paused/OFF skips the chain until resume.
 
-`/autopilot-on` by itself does **not** start self-review (planning writes plans/docs only). With `project` and **not** checklist-executing (including still planning), the chain ends at **review complete** (no checklist advance); during RUN it still advances/done as usual. Avoid stacking a global Cursor self-review hook with `project` (double injection). Host Plan modes are separate; Autopilot does not bridge them yet.
+`/autopilot-on` by itself does **not** start self-review (planning writes plans/docs only). With `project` and **not** checklist-executing (including still planning), the chain ends at **review complete** (no checklist advance); during RUN it still advances/done as usual. Avoid stacking a global Cursor self-review hook with `project` (double injection). Host Plan modes are separate; Autopilot does not bridge them yet ([design](../host-plan-bridge.md)).
 
 Plans and checklist live under `plans/<slug>/` (progress authority is `checklist.md`).

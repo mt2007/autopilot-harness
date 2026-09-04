@@ -2,7 +2,7 @@
 
 Product front door: English [README.md](../README.md) is authoritative.
 
-Also: [CONTRIBUTING.md](../CONTRIBUTING.md) · [CHANGELOG.md](../CHANGELOG.md) · [Config](./config.md) · [Troubleshooting](./troubleshooting.md) · [Hosts](./hosts.md).
+Also: [CONTRIBUTING.md](../CONTRIBUTING.md) · [CHANGELOG.md](../CHANGELOG.md) · [Config](./config.md) · [Troubleshooting](./troubleshooting.md) · [Hosts](./hosts.md) · [Plan bridge](./host-plan-bridge.md).
 
 Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, …).
 
@@ -36,8 +36,13 @@ repos do not need `@autopilot-harness/core` in `node_modules`:
 2. **Installed into each project:** `.autopilot/bin/vendor/` (copied by `init` / `upgrade`)
 3. **Entry:** `.autopilot/bin/autopilot-harness-hook.mjs` imports `./vendor/runtime.mjs`
 
-The vendor runtime reads `.autopilot/config.yml` at hook time (`locale`,
-`review.scope`, `confirm_rounds`, verify, stuck, errors). Commit order prefers migration then runtime so a torn
+The vendor runtime reads `.autopilot/config.yml` on **stop** (`locale`,
+`review.*`) and on **edit** (`review.scope` only). Submit does not load review
+config (built-in slash `/autopilot-on` … `/autopilot-replan` + `DEFAULT_TRIGGERS`; not YAML
+`triggers.*`). Other init keys
+(`concurrency.*`, `triggers.*` phrase lists, `artifacts.files.*`, …) are
+**not** loaded by the Cursor hook yet — see [Config](./config.md) wiring table.
+Commit order prefers migration then runtime so a torn
 upgrade keeps a loadable (old runtime + new SQL) pair rather than the reverse.
 
 Hostile-workspace I/O helpers live in `packages/cli/src/read-untrusted-file.ts`

@@ -24,13 +24,15 @@ pnpm exec vitest run packages/cli/tests
 
 ## Docs PRs
 
-- Product front door: English [README.md](./README.md) is authoritative; Chinese [README.zh-CN.md](./README.zh-CN.md) tracks behavior in translation.
-- User cheat sheet: English [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md); Chinese [docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md).
+- Product front door: English [README.md](./README.md) is **authoritative for behavior**.
+- Chinese [README.zh-CN.md](./README.zh-CN.md) must stay behavior-aligned: when you change Why / How-it-works / `review.scope` / install paths / Docs list in English, update `README.zh-CN.md` **in the same PR** (or immediately after in the same change set). Do not leave the Chinese front door describing old scope or install rules.
+- User cheat sheet: English [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md); Chinese [docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md) — keep trigger aliases and claim/resume boundaries in sync.
 - Design depth: [docs/architecture.md](./docs/architecture.md).
-- Config / FAQ / hosts: [docs/config.md](./docs/config.md), [docs/troubleshooting.md](./docs/troubleshooting.md), [docs/hosts.md](./docs/hosts.md).
+- Config / FAQ / hosts / Plan bridge: [docs/config.md](./docs/config.md), [docs/troubleshooting.md](./docs/troubleshooting.md), [docs/hosts.md](./docs/hosts.md), [docs/host-plan-bridge.md](./docs/host-plan-bridge.md).
 - Release notes: [CHANGELOG.md](./CHANGELOG.md).
 - Prefer small, reviewable doc PRs; match existing tone (no usage-limit / recover marketing in the front door).
-- If you change CLI install paths or skills/triggers, update README (and `README.zh-CN.md` when behavior-facing), both quickstarts, and keep `writeQuickstart` in `packages/cli` aligned with the OSS quickstart sections that consumers receive on `init`.
+- If you change CLI install paths or skills/triggers, update README + `README.zh-CN.md`, both quickstarts, and keep `writeQuickstart` in `packages/cli` aligned with the OSS quickstart sections that consumers receive on `init`.
+- After npm publish of `@autopilot-harness/cli`, flip README / quickstart “Today” vs “After npm publish” so the scoped `npx @autopilot-harness/cli` path is primary (never document a bare `npx autopilot-harness` package name as the install).
 
 ## Translations
 

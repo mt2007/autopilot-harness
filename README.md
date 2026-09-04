@@ -82,27 +82,47 @@ Notes:
 - Under **`project`**, confirm still runs the same lenses; when you are **not** checklist-executing (idle ambient, or still **planning**), the chain ends with **review complete** (local commit if dirty) — it does **not** advance/check off checklist items. While **RUN** + executing, the same lenses still end in checklist **advance** / **done** as usual.
 - **Paused** or OFF sessions do not run fix→confirm until resumed (even with `project`).
 - If you also use a **global** Cursor self-review hook, prefer one or the other for `project` scope to avoid **double** followup injection (init TUI warns about this).
-- Host-native **Plan modes** (Cursor Plan Mode, Claude Code Plan mode, etc.) are separate from Autopilot grill/`review.scope`; Autopilot does not yet bridge those host modes.
+- Host-native **Plan modes** (Cursor Plan Mode, Claude Code Plan mode, etc.) are separate from Autopilot grill/`review.scope`; Autopilot does not yet bridge those host modes ([design sketch](./docs/host-plan-bridge.md)).
 
 ## Quick start
 
-Requires **Node.js 22+** and **pnpm**. The CLI package is `@autopilot-harness/cli` (bin: `autopilot-harness`). It is **not on the public npm registry yet**, so install from this repo:
+Requires **Node.js 22+** and **pnpm**. The CLI package is `@autopilot-harness/cli` (bin: `autopilot-harness`).
+
+### Today (not on public npm yet)
+
+Install from this repo, then call the **built** binary. Commands use the **current working directory** as the project root.
 
 ```bash
 git clone https://github.com/mt2007/autopilot-harness.git
 cd autopilot-harness && pnpm install && pnpm build
-```
 
-**`cd` into the project you want to instrument** (`init`, `status`, `doctor`, `upgrade`, and related commands use the **current working directory** as the project root), then run the built CLI via path:
-
-```bash
+# instrument your app (cwd = that app):
 cd /path/to/your-app
 node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
 # interactive TUI: omit --yes (platform still defaults to cursor)
 # more flags: node …/bin.js init --help   (e.g. --platforms, --add-platform)
 ```
 
-After publish, the same entrypoint is intended as `npx @autopilot-harness/cli …` (not a bare `npx autopilot-harness` package name).
+Dogfood this clone after `pnpm build`:
+
+```bash
+node packages/cli/dist/bin.js status
+node packages/cli/dist/bin.js doctor
+node packages/cli/dist/bin.js upgrade --dry-run
+```
+
+### After npm publish
+
+Prefer the scoped package (not a bare `npx autopilot-harness` name):
+
+```bash
+cd /path/to/your-app
+npx @autopilot-harness/cli init --platform cursor --yes
+npx @autopilot-harness/cli status
+npx @autopilot-harness/cli doctor
+```
+
+Until the package is on the public registry, use the **Today** path above.
 
 Reload the Cursor window (or start a new Agent chat), then:
 
@@ -111,26 +131,15 @@ Reload the Cursor window (or start a new Agent chat), then:
 
 More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md) ([中文](./docs/autopilot/quickstart.zh-CN.md)).
 
-Useful CLI — call the built binary (there is no root `pnpm exec autopilot-harness` alias). Commands apply to the **current working directory**:
-
-```bash
-# dogfood this repo (cwd = clone):
-node packages/cli/dist/bin.js status
-node packages/cli/dist/bin.js doctor
-node packages/cli/dist/bin.js upgrade --dry-run
-
-# or from another app (cwd = that app):
-node /path/to/autopilot-harness/packages/cli/dist/bin.js status
-```
-
 `init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Config](./docs/config.md), [Architecture](./docs/architecture.md), and **When does self-review run?** above).
 
 ## Docs
 
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
-- [Config](./docs/config.md) — `.autopilot/config.yml`, `.autopilotignore`, verify/stuck/errors  
+- [Config](./docs/config.md) — `.autopilot/config.yml`, triggers, concurrency, `.autopilotignore`  
 - [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills  
 - [Host roadmap](./docs/hosts.md) — Cursor / Claude Code / Codex / Runner  
+- [Host Plan-mode bridge](./docs/host-plan-bridge.md) — design only (not implemented)  
 - [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet ([中文](./docs/autopilot/quickstart.zh-CN.md))  
 - [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations  
 - [Changelog](./CHANGELOG.md) — release notes  
