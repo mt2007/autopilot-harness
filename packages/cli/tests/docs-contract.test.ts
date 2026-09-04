@@ -170,6 +170,37 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(zh).toContain(`裸 \`npx ${CLI_NAME}\``);
   });
 
+  it("package npm READMEs keep install entrypoints", () => {
+    const cliReadme = fs.readFileSync(
+      path.join(repoRoot, "packages/cli/README.md"),
+      "utf8",
+    );
+    expect(cliReadme).toContain(`# ${NPM_PACKAGE_NAME}`);
+    expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} init`);
+    expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} status`);
+    expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
+    expect(cliReadme).toMatch(/Node\.js 22\+/);
+    expect(cliReadme).toMatch(/no bare npm package named `autopilot-harness`/i);
+    // Forbid recommending bare `npx autopilot-harness …` as an install command.
+    expect(cliReadme).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
+
+    for (const rel of [
+      "packages/core/README.md",
+      "packages/i18n/README.md",
+      "packages/ports/cursor/README.md",
+    ] as const) {
+      const pkgDir = path.dirname(path.join(repoRoot, rel));
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"),
+      ) as { name: string };
+      const body = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+      expect(body).toContain(`# ${pkg.name}`);
+      expect(body).toContain(NPM_PACKAGE_NAME);
+      expect(body).toMatch(/MIT/);
+      expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
+    }
+  });
+
   it("README English keeps review.scope section markers", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
     expect(body).toMatch(/When does self-review run\?/);
