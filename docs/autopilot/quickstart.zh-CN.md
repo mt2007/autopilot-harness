@@ -1,16 +1,18 @@
 # Autopilot 快速开始
 
-命令速查 + 每步产物。英文入口与安装细节见仓库根目录 [README.md](../../README.md)；英文速查：[quickstart.md](./quickstart.md)。
+命令速查 + 每步产物。产品前门：[README.md](../../README.md)（[中文 README](../../README.zh-CN.md)）。英文速查：[quickstart.md](./quickstart.md)。
+
+另见：[配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主路线图](../hosts.md)。
 
 ## 推荐流程（产物）
 
 | 步骤 | 你做什么 | Autopilot 做什么 | 产物 |
 |------|----------|------------------|------|
 | **1. 规划** | `/autopilot-on`（可带需求描述）；逐轮回答 grill | 写 `plans/<slug>/`（可改文档），**不写产品代码** | `plans/<slug>/brief.md`、`plan.md`、`checklist.md` |
-| **2. 执行** | `/autopilot-run`（或带 `<slug>`） | 按 checklist **一项一项**：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；**推进/完成**时若有未提交改动则本地 commit（干净则跳过；确认轮不 commit；**默认不自动 push**） |
-| **3. 完成** | — | 勾选最后一项；有未提交改动则本地 commit（干净则跳过；**默认不自动 push**）；checklist 清空后停止 | 该轨结束 |
+| **2. 执行** | `/autopilot-run`（或带 `<slug>`） | 一项一项：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；推进/完成时 dirty 则本地 commit（干净则跳过；确认轮不 commit；默认**不**自动 push） |
+| **3. 完成** | — | 勾选最后一项；dirty 则本地 commit（干净则跳过；默认**不**自动 push）；checklist 清空后停止 | 该轨结束 |
 
-中途可暂停 / 改方案 / 在新聊天认领旧轨（见下）。
+暂停、改方案，或从新聊天认领旧轨（见下）。
 
 ## Planning
 
@@ -26,20 +28,20 @@
 
 ## 暂停 / 恢复 / 改方案
 
-- 暂停：`/autopilot-off` 或行首 `Autopilot OFF` / `关闭自动驾驶`
-- 恢复：`/autopilot-resume` 或 `/autopilot-resume <slug>`（新聊天可认领旧轨）；也可行首 `Autopilot RESUME` / `继续执行`
-- 改方案：`/autopilot-replan` 或行首 `Autopilot REPLAN` / `修改方案`
+- **暂停**（`/autopilot-off` 或行首 `Autopilot OFF` / `关闭自动驾驶`）：暂停**本**会话；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；`done` → `idle`）。
+- **恢复**（`/autopilot-resume` 或 `/autopilot-resume <slug>`；也可行首 `Autopilot RESUME` / `继续执行`）：清 pause，**保留**自审链。新聊天可从另一会话**认领**正在执行的轨（同项目）：优先**未 pause** 的执行会话，也可回退到唯一一条**已 pause** 的执行轨（旧聊天已死时恢复）。多轨时用 `<slug>` 指定。认领后以**本聊天**为执行会话；勿在旧聊天继续跑同一轨。
+- **改方案**（`/autopilot-replan` 或行首 `Autopilot REPLAN` / `修改方案`）：回到 planning，并**重置**自审链。只改 `plan.md` 与未勾选项；勿静默删除已完成的 `[x]`。改完再 `/autopilot-run`。
 
 ## 终端
 
-CLI 包为 `@autopilot-harness/cli`（bin：`autopilot-harness`），目前**尚未发布到 npm**。先克隆并构建本仓库，再在**目标项目目录**（`cwd` = 该项目）调用已构建的二进制：
+CLI 包：`@autopilot-harness/cli`（bin：`autopilot-harness`）。**尚未发布到公共 npm。** 先克隆并构建本仓库，再用**已构建二进制**；**cwd = 要接入 Autopilot 的项目**：
 
 ```bash
-# 一次性：在 autopilot-harness 克隆目录
+# 一次性：在 autopilot-harness 克隆里
 git clone https://github.com/mt2007/autopilot-harness.git
 cd autopilot-harness && pnpm install && pnpm build
 
-# 在你要接入 Autopilot 的项目目录
+# 在目标应用里
 cd /path/to/your-app
 node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
 node /path/to/autopilot-harness/packages/cli/dist/bin.js status
@@ -47,7 +49,7 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 ```
 
-若当前就在 harness 克隆根目录做 dogfood（需已 `pnpm build`），可用相对路径：
+在本 harness 克隆里 dogfood（`pnpm build` 之后）：
 
 ```bash
 node packages/cli/dist/bin.js init --platform cursor --yes
@@ -60,10 +62,12 @@ node packages/cli/dist/bin.js upgrade --dry-run
 
 - 在 Cursor 中试用 `/autopilot-on`。
 - 若 skills / hooks 未出现：执行 `Developer: Reload Window`，或新开一条 Agent 对话。
+- 自审中途停住：确认 Autopilot stop 带 `loop_limit: null`（可 `upgrade`；详见 [排障](../troubleshooting.md)）。
+- 更多故障模式见 [排障](../troubleshooting.md)。
 
 ## 自审范围（`review.scope`）
 
-写在 `.autopilot/config.yml`：
+写在 `.autopilot/config.yml`（完整键表见 [配置说明](../config.md)）：
 
 | 取值 | 含义 |
 |------|------|

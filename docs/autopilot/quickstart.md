@@ -2,6 +2,8 @@
 
 Command cheat sheet + per-step artifacts. Product front door: [README.md](../../README.md). Chinese: [quickstart.zh-CN.md](./quickstart.zh-CN.md).
 
+Also: [Config](../config.md) · [Troubleshooting](../troubleshooting.md) · [Hosts](../hosts.md).
+
 ## Recommended flow (artifacts)
 
 | Step | You do | Autopilot does | Artifacts |
@@ -26,9 +28,9 @@ Also: `Autopilot RUN`
 
 ## Pause / resume / replan
 
-- Pause: `/autopilot-off` or line-start `Autopilot OFF`
-- Resume: `/autopilot-resume` or `/autopilot-resume <slug>` (new chat can claim a track); also line-start `Autopilot RESUME`
-- Replan: `/autopilot-replan` or line-start `Autopilot REPLAN`
+- **Pause** (`/autopilot-off` or line-start `Autopilot OFF`): pauses **this** conversation; no checklist advance and no self-review until resume (phase usually unchanged; `done` → `idle`).
+- **Resume** (`/autopilot-resume` or `/autopilot-resume <slug>`; also `Autopilot RESUME`): clears pause and **keeps** the review chain. A new chat may **claim** an executing track from another conversation (same project): prefers an **unpaused** worker, and can fall back to a single **paused** executing session (dead-chat recovery). Use `<slug>` when several tracks are executing. After a claim, **this** chat owns the session; do not keep running the same track in the old chat.
+- **Replan** (`/autopilot-replan` or `Autopilot REPLAN`): returns to planning and **resets** the review chain. Revise `plan.md` and unchecked checklist items only; do not silently delete completed `[x]`. When ready, `/autopilot-run`.
 
 ## Terminal
 
@@ -60,10 +62,12 @@ node packages/cli/dist/bin.js upgrade --dry-run
 
 - Try `/autopilot-on` in Cursor.
 - If skills / hooks do not appear: `Developer: Reload Window`, or start a new Agent chat.
+- Review stops mid-chain: ensure Autopilot stop has `loop_limit: null` (run `upgrade` / see [Troubleshooting](../troubleshooting.md)).
+- More failure modes: [Troubleshooting](../troubleshooting.md).
 
 ## Self-review scope (`review.scope`)
 
-In `.autopilot/config.yml`:
+In `.autopilot/config.yml` (full key list: [Config](../config.md)):
 
 | Value | Meaning |
 |-------|---------|

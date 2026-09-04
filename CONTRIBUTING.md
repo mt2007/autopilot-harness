@@ -24,16 +24,15 @@ pnpm exec vitest run packages/cli/tests
 
 ## Docs PRs
 
-- Product front door: English [README.md](./README.md) is authoritative.
+- Product front door: English [README.md](./README.md) is authoritative; Chinese [README.zh-CN.md](./README.zh-CN.md) tracks behavior in translation.
 - User cheat sheet: English [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md); Chinese [docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md).
 - Design depth: [docs/architecture.md](./docs/architecture.md).
+- Config / FAQ / hosts: [docs/config.md](./docs/config.md), [docs/troubleshooting.md](./docs/troubleshooting.md), [docs/hosts.md](./docs/hosts.md).
 - Release notes: [CHANGELOG.md](./CHANGELOG.md).
 - Prefer small, reviewable doc PRs; match existing tone (no usage-limit / recover marketing in the front door).
-- If you change CLI install paths or skills/triggers, update README and both quickstarts (`quickstart.md` / `quickstart.zh-CN.md`) in the same PR.
+- If you change CLI install paths or skills/triggers, update README (and `README.zh-CN.md` when behavior-facing), both quickstarts, and keep `writeQuickstart` in `packages/cli` aligned with the OSS quickstart sections that consumers receive on `init`.
 
 ## Translations
-
-README / docs translations are welcome later (e.g. `README.zh-CN.md`).
 
 - Keep the English README as the source of truth for behavior.
 - When behavior changes, update English first (or in the same PR as the translation).

@@ -1,6 +1,6 @@
 # Autopilot
 
-**autopilot-harness** — a vibecoding harness that turns open-ended agent chat into **structured planning → checklist execution → multi-lens self-review**.
+**autopilot-harness** — a vibecoding harness that turns open-ended agent chat into **structured planning → checklist execution → multi-lens self-review**. ([中文说明](./README.zh-CN.md))
 
 [![CI](https://github.com/mt2007/autopilot-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mt2007/autopilot-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -123,14 +123,18 @@ node packages/cli/dist/bin.js upgrade --dry-run
 node /path/to/autopilot-harness/packages/cli/dist/bin.js status
 ```
 
-`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Architecture](./docs/architecture.md) and **When does self-review run?** above).
+`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Config](./docs/config.md), [Architecture](./docs/architecture.md), and **When does self-review run?** above).
 
 ## Docs
 
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
+- [Config](./docs/config.md) — `.autopilot/config.yml`, `.autopilotignore`, verify/stuck/errors  
+- [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills  
+- [Host roadmap](./docs/hosts.md) — Cursor / Claude Code / Codex / Runner  
 - [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet ([中文](./docs/autopilot/quickstart.zh-CN.md))  
-- [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations welcome later  
+- [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations  
 - [Changelog](./CHANGELOG.md) — release notes  
+- [中文 README](./README.zh-CN.md) — Chinese front door (English remains authoritative for behavior)  
 
 ## Monorepo (short)
 

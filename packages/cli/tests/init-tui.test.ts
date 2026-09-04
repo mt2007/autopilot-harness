@@ -257,6 +257,12 @@ dist/
     expect(qsZh).toMatch(/\/path\/to\/autopilot-harness/);
     expect(qsZh).toMatch(/在 Cursor 中/);
     expect(qsZh).toMatch(/Reload Window/);
+    expect(qsZh).toMatch(/自审范围/);
+    expect(qsZh).toMatch(/review\.scope/);
+    expect(qsZh).toMatch(/executing_only/);
+    expect(qsZh).toMatch(/认领/);
+    expect(qsZh).toMatch(/排障速查/);
+    expect(qsZh).toMatch(/loop_limit/);
 
     const rootEn = tmpProject();
     try {
@@ -268,6 +274,12 @@ dist/
       expect(qsEn).toMatch(/no product code/);
       expect(qsEn).toMatch(/no auto-push/);
       expect(qsEn).toMatch(/\/path\/to\/autopilot-harness/);
+      expect(qsEn).toMatch(/Self-review scope/);
+      expect(qsEn).toMatch(/review\.scope/);
+      expect(qsEn).toMatch(/executing_only/);
+      expect(qsEn).toMatch(/claim/);
+      expect(qsEn).toMatch(/Troubleshooting/);
+      expect(qsEn).toMatch(/loop_limit/);
       expect(qsEn).not.toMatch(/快速开始/);
     } finally {
       fs.rmSync(rootEn, { recursive: true, force: true });

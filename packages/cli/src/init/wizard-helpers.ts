@@ -675,9 +675,9 @@ export function writeQuickstart(
 
 ## 暂停 / 恢复 / 改方案
 
-- 暂停：\`/autopilot-off\` 或行首 \`Autopilot OFF\` / \`关闭自动驾驶\`
-- 恢复：\`/autopilot-resume\` 或 \`/autopilot-resume <slug>\`（新聊天可认领旧轨）；也可行首 \`Autopilot RESUME\` / \`继续执行\`
-- 改方案：\`/autopilot-replan\` 或行首 \`Autopilot REPLAN\` / \`修改方案\`
+- 暂停：\`/autopilot-off\` 或行首 \`Autopilot OFF\` / \`关闭自动驾驶\` — 本会话 paused；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；\`done\` → \`idle\`）。
+- 恢复：\`/autopilot-resume\` 或 \`/autopilot-resume <slug>\`（新聊天可认领旧轨）；也可行首 \`Autopilot RESUME\` / \`继续执行\` — 清 pause，**保留**自审链进度；多轨执行中时用 \`<slug>\` 指定。认领后以**本聊天**为执行会话；勿在旧聊天继续跑同一轨。认领优先未 pause 的执行会话，也可回退到唯一一条**已 pause** 的执行轨（旧聊天已死时恢复）。
+- 改方案：\`/autopilot-replan\` 或行首 \`Autopilot REPLAN\` / \`修改方案\` — 回到 planning，**重置**自审链；只改 \`plan.md\` 与未勾选项，勿静默删已完成 \`[x]\`；改完再 \`/autopilot-run\`。
 
 ## 终端
 
@@ -692,6 +692,26 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 ## 安装后
 
 ${afterInstall.map((l) => `- ${l}`).join("\n")}
+
+## 自审范围（\`review.scope\`）
+
+写在 \`.autopilot/config.yml\`：
+
+| 取值 | 含义 |
+|------|------|
+| **\`executing_only\`**（默认） | 仅在 \`/autopilot-run\`（checklist 执行中）且改了产品代码后，才走修复 → 多角度确认 |
+| **\`project\`** | **任意**产品代码编辑都会自审——**不需要**先 ON / RUN |
+
+产品代码排除命中 \`.autopilotignore\` 的路径，以及**未跟踪且被 \`.gitignore\` 忽略**的路径。暂停 / OFF 期间不跑自审链，需 resume。
+
+只开 \`/autopilot-on\` **不会**启动自审（规划只写方案/文档）。\`project\` 且**未在** checklist 执行中（含仍在 planning）时，确认链以 **自审完成** 结束（不勾选推进 checklist）；在 RUN 执行中则仍按项推进/完成。若已有全局 Cursor 自审 hook，慎与 \`project\` 叠用（可能双重注入）。各宿主自带的 Plan 模式与 Autopilot 无关，目前未对接。
+
+## 排障速查
+
+- skills / hooks 未出现：\`Developer: Reload Window\`，或新开 Agent 对话；再跑 \`doctor\`。
+- 自审中途停住：确认 Autopilot stop 带 \`loop_limit: null\`（缺则 \`upgrade\`）；Cursor 默认 stop 上限为 5。
+- \`project\` 下双重 followup：关掉 \`~/.cursor\` 全局自审，或只用 Autopilot。
+- 改了代码却不自审：检查 \`review.scope\`、是否 paused/OFF、路径是否被 \`.autopilotignore\` / 未跟踪+\`.gitignore\` 排除。
 
 方案与清单在 \`${plansLabel}/<slug>/\`（权威进度是 \`checklist.md\`）。
 `
@@ -721,9 +741,9 @@ Also: \`Autopilot RUN\`
 
 ## Pause / resume / replan
 
-- Pause: \`/autopilot-off\` or line-start \`Autopilot OFF\`
-- Resume: \`/autopilot-resume\` or \`/autopilot-resume <slug>\` (new chat can claim a track); also line-start \`Autopilot RESUME\`
-- Replan: \`/autopilot-replan\` or line-start \`Autopilot REPLAN\`
+- Pause: \`/autopilot-off\` or line-start \`Autopilot OFF\` — pauses this conversation; no checklist advance and no self-review until resume (phase usually unchanged; \`done\` → \`idle\`).
+- Resume: \`/autopilot-resume\` or \`/autopilot-resume <slug>\` (new chat can claim a track); also line-start \`Autopilot RESUME\` — clears pause, **keeps** the review chain; use \`<slug>\` when several tracks are executing. After a claim, **this** chat owns the session; do not keep executing the same track in the old chat. Claim prefers an unpaused executing worker, and can fall back to a single **paused** executing session (dead-chat recovery).
+- Replan: \`/autopilot-replan\` or line-start \`Autopilot REPLAN\` — returns to planning and **resets** the review chain; revise \`plan.md\` and unchecked items only (do not silently delete completed \`[x]\`); then \`/autopilot-run\` when ready.
 
 ## Terminal
 
@@ -738,6 +758,26 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 ## After install
 
 ${afterInstall.map((l) => `- ${l}`).join("\n")}
+
+## Self-review scope (\`review.scope\`)
+
+In \`.autopilot/config.yml\`:
+
+| Value | Meaning |
+|-------|---------|
+| **\`executing_only\`** (default) | Fix → confirm only after \`/autopilot-run\` (checklist executing) + product-code edits |
+| **\`project\`** | Fix → confirm on **any** product-code edit — **no** ON/RUN required |
+
+Product-code paths exclude \`.autopilotignore\` hits and **untracked** \`.gitignore\` hits. Paused/OFF skips the chain until resume.
+
+\`/autopilot-on\` by itself does **not** start self-review (planning writes plans/docs only). With \`project\` and **not** checklist-executing (including still planning), the chain ends at **review complete** (no checklist advance); during RUN it still advances/done as usual. Avoid stacking a global Cursor self-review hook with \`project\` (double injection). Host Plan modes are separate; Autopilot does not bridge them yet.
+
+## Troubleshooting
+
+- Skills / hooks missing: \`Developer: Reload Window\`, or a new Agent chat; then run \`doctor\`.
+- Review stops mid-chain: ensure Autopilot stop has \`loop_limit: null\` (run \`upgrade\` if missing); Cursor defaults stop hooks to 5.
+- Double followups under \`project\`: disable \`~/.cursor\` global self-review, or use Autopilot alone.
+- Edited code but no self-review: check \`review.scope\`, paused/OFF, and whether the path is excluded by \`.autopilotignore\` or untracked+\`.gitignore\`.
 
 Artifacts live under \`${plansLabel}/<slug>/\` (progress authority is \`checklist.md\`).
 `;
