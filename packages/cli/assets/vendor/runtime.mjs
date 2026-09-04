@@ -1748,7 +1748,27 @@ function getLens(roundIndex, confirmRounds) {
 }
 
 // ../core/src/review-scope.ts
-function ensureAmbientReviewSession(store, conversationId, projectRoot, reviewScope) {
+var MAX_SESSION_PLATFORM_CHARS = 64;
+function normalizeSessionPlatform(raw) {
+  if (typeof raw !== "string") return "cursor";
+  if (raw.includes("\0")) return "cursor";
+  const trimmed = raw.trim();
+  if (!trimmed) return "cursor";
+  if (trimmed.length > MAX_SESSION_PLATFORM_CHARS) return "cursor";
+  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/i.test(trimmed)) return "cursor";
+  return trimmed.toLowerCase();
+}
+function resolveSessionPlatform(optsPlatform, fallback = "cursor") {
+  const fb = normalizeSessionPlatform(fallback);
+  if (optsPlatform === void 0 || optsPlatform === null) return fb;
+  if (typeof optsPlatform !== "string") return fb;
+  const raw = optsPlatform.trim();
+  if (!raw) return fb;
+  const n = normalizeSessionPlatform(optsPlatform);
+  if (n === "cursor" && raw.toLowerCase() !== "cursor") return fb;
+  return n;
+}
+function ensureAmbientReviewSession(store, conversationId, projectRoot, reviewScope, platform) {
   if (reviewScope !== "project") return false;
   if (!store.isConversationIdOk(conversationId)) return false;
   const root = normalizeProjectRoot(store.projectRoot) ?? normalizeProjectRoot(projectRoot);
@@ -1763,6 +1783,7 @@ function ensureAmbientReviewSession(store, conversationId, projectRoot, reviewSc
           if (!fresh || fresh.paused !== 0 || !(fresh.phase === "done" || fresh.phase === "idle" && fresh.armed === 0)) {
             return { commit: false, value: void 0 };
           }
+          const host2 = resolveSessionPlatform(platform, fresh.platform);
           store.upsertSession({
             conversation_id: conversationId,
             project_root: root,
@@ -1770,14 +1791,26 @@ function ensureAmbientReviewSession(store, conversationId, projectRoot, reviewSc
             phase: "idle",
             armed: 1,
             paused: 0,
-            paused_reason: null
+            paused_reason: null,
+            platform: host2
           });
           store.neutralizeReviewChain(conversationId);
           return { commit: true, value: void 0 };
         });
+      } else {
+        const host2 = resolveSessionPlatform(platform, existing.platform);
+        if (host2 !== existing.platform) {
+          store.upsertSession({
+            conversation_id: conversationId,
+            project_root: existing.project_root,
+            code_root: existing.code_root,
+            platform: host2
+          });
+        }
       }
       return true;
     }
+    const host = normalizeSessionPlatform(platform);
     store.exclusiveWrite(() => {
       if (store.getSession(conversationId)) {
         return { commit: false, value: void 0 };
@@ -1786,7 +1819,7 @@ function ensureAmbientReviewSession(store, conversationId, projectRoot, reviewSc
         conversation_id: conversationId,
         project_root: root,
         code_root: root,
-        platform: "cursor",
+        platform: host,
         phase: "idle",
         armed: 1,
         paused: 0,
@@ -2365,7 +2398,8 @@ var ReviewEngine = class {
           this.store,
           input.conversationId,
           this.config.projectRoot,
-          this.config.reviewScope
+          this.config.reviewScope,
+          input.platform
         );
         session = this.store.getSession(input.conversationId);
       }
@@ -3943,6 +3977,10 @@ function applyOn(store, conversationId, projectRoot, opts) {
     };
   }
   const trackId = opts?.slug ?? session?.track_id ?? "_pending";
+  const platform = resolveSessionPlatform(
+    opts?.platform,
+    session?.platform ?? "cursor"
+  );
   if (session?.phase === "done") {
     const s2 = store.upsertSession({
       conversation_id: conversationId,
@@ -3953,7 +3991,7 @@ function applyOn(store, conversationId, projectRoot, opts) {
       paused: 0,
       paused_reason: null,
       track_id: opts?.slug ?? session.track_id,
-      platform: session.platform
+      platform
     });
     return { ok: true, session: s2 };
   }
@@ -3961,7 +3999,7 @@ function applyOn(store, conversationId, projectRoot, opts) {
     conversation_id: conversationId,
     project_root: projectRoot,
     code_root: projectRoot,
-    platform: session?.platform ?? "cursor",
+    platform,
     phase: "planning",
     armed: 0,
     paused: 0,
@@ -4645,14 +4683,25 @@ function isChecklistPathAllowed(projectRoot, checklistPath) {
     return isLexicallyInsideProject(root, checklistPath);
   }
 }
-function ensureSession(store, conversationId, projectRoot) {
+function ensureSession(store, conversationId, projectRoot, platform) {
   const existing = store.getSession(conversationId);
-  if (existing) return existing;
+  if (existing) {
+    const want = resolveSessionPlatform(platform, existing.platform);
+    if (want !== existing.platform) {
+      return store.upsertSession({
+        conversation_id: conversationId,
+        project_root: existing.project_root,
+        code_root: existing.code_root,
+        platform: want
+      });
+    }
+    return existing;
+  }
   return store.upsertSession({
     conversation_id: conversationId,
     project_root: projectRoot,
     code_root: projectRoot,
-    platform: "cursor",
+    platform: normalizeSessionPlatform(platform),
     phase: "idle",
     armed: 0,
     paused: 0,
@@ -4755,7 +4804,12 @@ function applyRun(store, conversationId, projectRoot, opts) {
     return { ok: false, userMessage: "Invalid plans directory." };
   }
   const concurrencyMode = opts?.config?.concurrencyMode ?? "one_executor";
-  const session = ensureSession(store, conversationId, projectRoot);
+  const session = ensureSession(
+    store,
+    conversationId,
+    projectRoot,
+    opts?.platform
+  );
   const resolved = resolveRunSlug(
     store,
     session,
@@ -4886,7 +4940,12 @@ function applyReplan(store, conversationId, projectRoot, opts) {
   if (!plansDir) {
     return { ok: false, userMessage: "Invalid plans directory." };
   }
-  const session = ensureSession(store, conversationId, projectRoot);
+  const session = ensureSession(
+    store,
+    conversationId,
+    projectRoot,
+    opts?.platform
+  );
   let slug = opts?.slug ?? session.track_id;
   if (slug && slug !== "_pending" && !isSafeTrackSlug(slug)) {
     return {
@@ -5030,12 +5089,14 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
   if (pending === "replan") {
     return applyReplan(store, conversationId, projectRoot, {
       slug,
-      config: opts?.config
+      config: opts?.config,
+      platform: opts?.platform
     });
   }
   return applyRun(store, conversationId, projectRoot, {
     slug,
-    config: opts?.config
+    config: opts?.config,
+    platform: opts?.platform
   });
 }
 
@@ -5529,6 +5590,7 @@ function handleStop(engine, payload) {
 }
 
 // ../ports/claude-code/src/index.ts
+var CLAUDE_PLATFORM = "claude-code";
 function sid(p) {
   return (p.session_id ?? p.sessionId ?? p.conversation_id ?? p.conversationId ?? "").trim();
 }
@@ -5559,6 +5621,16 @@ function isClaudeEditTool(toolName) {
   const n = toolName.trim();
   return n === "Edit" || n === "Write" || n === "NotebookEdit";
 }
+function stampClaudePlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === CLAUDE_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: CLAUDE_PLATFORM
+  });
+}
 function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
   const conversationId = sid(payload);
   if (!conversationId) return {};
@@ -5582,14 +5654,17 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
   if (trigger) {
     if (trigger.kind === "off") {
       applyOff(store, conversationId);
+      stampClaudePlatform(store, conversationId, projectRoot);
       return {};
     }
     if (trigger.kind === "on") {
       const result = applyOn(store, conversationId, projectRoot, {
         initialBrief: trigger.initialBrief,
-        slug: trigger.slug
+        slug: trigger.slug,
+        platform: CLAUDE_PLATFORM
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
@@ -5602,23 +5677,28 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
         slug: trigger.slug
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
         };
       }
+      stampClaudePlatform(store, conversationId, projectRoot);
       return {};
     }
     if (trigger.kind === "resume_review") {
       applyResumeReview(store, conversationId);
+      stampClaudePlatform(store, conversationId, projectRoot);
       return {};
     }
     if (trigger.kind === "run") {
       const result = applyRun(store, conversationId, projectRoot, {
         slug: trigger.slug,
-        config: actionConfig
+        config: actionConfig,
+        platform: CLAUDE_PLATFORM
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
@@ -5629,9 +5709,11 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
     if (trigger.kind === "replan") {
       const result = applyReplan(store, conversationId, projectRoot, {
         slug: trigger.slug,
-        config: actionConfig
+        config: actionConfig,
+        platform: CLAUDE_PLATFORM
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
@@ -5645,9 +5727,10 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
         conversationId,
         projectRoot,
         trigger.trackPick,
-        { config: actionConfig }
+        { config: actionConfig, platform: CLAUDE_PLATFORM }
       );
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
@@ -5660,6 +5743,7 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
   if (!isHarnessFollowupMessage(prompt)) {
     store.clearChainPending(conversationId);
   }
+  stampClaudePlatform(store, conversationId, projectRoot);
   return {};
 }
 function handlePostToolUse(store, payload, projectRoot) {
@@ -5675,9 +5759,11 @@ function handlePostToolUse(store, payload, projectRoot) {
       store,
       conversationId,
       projectRoot,
-      cfg.reviewScope
+      cfg.reviewScope,
+      CLAUDE_PLATFORM
     );
   }
+  stampClaudePlatform(store, conversationId, projectRoot);
   const session = store.getSession(conversationId);
   const checklistPath = session?.checklist_path?.trim() ?? "";
   let checklistSnap = null;
@@ -5711,7 +5797,8 @@ function handleStop2(engine, payload, opts) {
     conversationId,
     status,
     loopCount: loopCountFromStopHookActive(payload),
-    transcriptPath
+    transcriptPath,
+    platform: CLAUDE_PLATFORM
   });
   if (!action?.message) return {};
   const reason = blockReason(action.message, "Autopilot followup");

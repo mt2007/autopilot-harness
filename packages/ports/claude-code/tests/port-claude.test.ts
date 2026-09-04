@@ -83,6 +83,72 @@ describe("port-claude-code adapters", () => {
     }
   });
 
+  it("ON stamps session platform as claude-code (not cursor default)", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    expect(
+      handleUserPromptSubmit(
+        store,
+        { session_id: "claude-s1", prompt: "/autopilot-on plat-tag" },
+        root,
+      ),
+    ).toEqual({});
+    expect(store.getSession("claude-s1")?.platform).toBe("claude-code");
+    expect(store.getSession("claude-s1")?.phase).toBe("planning");
+    store.close();
+  });
+
+  it("submit stamp canonicalizes mixed-case Claude platform", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    store.upsertSession({
+      conversation_id: "s-case",
+      project_root: root,
+      code_root: root,
+      platform: "Claude-Code",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "_pending",
+      checklist_path: "",
+    });
+    expect(
+      handleUserPromptSubmit(
+        store,
+        { session_id: "s-case", prompt: "hello" },
+        root,
+      ),
+    ).toEqual({});
+    expect(store.getSession("s-case")?.platform).toBe("claude-code");
+    store.close();
+  });
+
+  it("blocked ON while executing still stamps claude-code platform", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "s-block",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      checklist_path: cp,
+      track_id: "demo",
+    });
+    const blocked = handleUserPromptSubmit(
+      store,
+      { session_id: "s-block", prompt: "/autopilot-on nope" },
+      root,
+    );
+    expect(blocked.decision).toBe("block");
+    expect(store.getSession("s-block")?.platform).toBe("claude-code");
+    expect(store.getSession("s-block")?.phase).toBe("executing");
+    store.close();
+  });
+
   it("fail-closes ON while executing; ignores hostile cwd for store bind", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
@@ -148,6 +214,7 @@ describe("port-claude-code adapters", () => {
       root,
     );
     expect(store.getReviewChain("s1")?.code_edited).toBe(1);
+    expect(store.getSession("s1")?.platform).toBe("claude-code");
 
     store.updateReviewChain("s1", { code_edited: 0 });
     handlePostToolUse(
@@ -230,6 +297,28 @@ describe("port-claude-code adapters", () => {
     const errOut = handleStopFailure(eng, { session_id: "s1" });
     expect(errOut.decision).toBe("block");
     expect(errOut.reason).toMatch(/Recover|恢复/i);
+    store.close();
+  });
+
+  it("StopFailure ambient bootstrap uses claude-code platform", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const eng = new ReviewEngine(store, {
+      confirmRounds: 5,
+      reviewScope: "project",
+      verifyEnabled: false,
+      verifyCommands: [],
+      maxIdleStops: 5,
+      maxErrorsBeforePause: 0,
+      projectRoot: root,
+      recoverDebounceMs: 0,
+    });
+    const out = handleStopFailure(eng, {
+      session_id: "ambient-new",
+      hook_event_name: "StopFailure",
+    });
+    expect(out.decision).toBe("block");
+    expect(store.getSession("ambient-new")?.platform).toBe("claude-code");
     store.close();
   });
 });

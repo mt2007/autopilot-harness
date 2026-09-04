@@ -3,10 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  applyOn,
   applyReplan,
   applyRun,
   applyTrackPick,
   countUnchecked,
+  ensureAmbientReviewSession,
+  normalizeSessionPlatform,
+  resolveSessionPlatform,
   parseChecklist,
   StateStore,
 } from "../src/index.js";
@@ -679,6 +683,132 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
     );
     expect(blocked.continue).toBe(false);
     expect(blocked.userMessage).toMatch(/already executing/i);
+    store.close();
+  });
+});
+
+describe("session platform normalization", () => {
+  it("normalizeSessionPlatform rejects hostile / empty / overlong values", () => {
+    expect(normalizeSessionPlatform("claude-code")).toBe("claude-code");
+    expect(normalizeSessionPlatform("Cursor")).toBe("cursor");
+    expect(normalizeSessionPlatform("")).toBe("cursor");
+    expect(normalizeSessionPlatform(null)).toBe("cursor");
+    expect(normalizeSessionPlatform("../etc")).toBe("cursor");
+    expect(normalizeSessionPlatform("a".repeat(100))).toBe("cursor");
+    expect(normalizeSessionPlatform("bad\0id")).toBe("cursor");
+  });
+
+  it("resolveSessionPlatform keeps fallback when opts platform is hostile", () => {
+    expect(resolveSessionPlatform("../etc", "claude-code")).toBe("claude-code");
+    expect(resolveSessionPlatform("claude-code", "cursor")).toBe("claude-code");
+    expect(resolveSessionPlatform(undefined, "claude-code")).toBe("claude-code");
+    expect(resolveSessionPlatform("cursor", "claude-code")).toBe("cursor");
+  });
+
+  it("applyOn hostile platform opts do not wipe existing claude-code", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "claude-code",
+      phase: "idle",
+      armed: 0,
+      paused: 0,
+      track_id: "_pending",
+      checklist_path: "",
+    });
+    const out = applyOn(store, "c1", root, {
+      slug: "keep-host",
+      platform: "../evil",
+    });
+    expect(out.ok).toBe(true);
+    expect(store.getSession("c1")?.platform).toBe("claude-code");
+    store.close();
+  });
+
+  it("applyRun upgrades legacy cursor platform when host opts.platform is set", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: cp,
+    });
+    const out = applyRun(store, "c1", root, {
+      slug: "demo",
+      platform: "claude-code",
+    });
+    expect(out.ok).toBe(true);
+    expect(store.getSession("c1")?.platform).toBe("claude-code");
+    store.close();
+  });
+
+  it("ambient revive without platform keeps existing claude-code host", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    store.upsertSession({
+      conversation_id: "c-amb",
+      project_root: root,
+      code_root: root,
+      platform: "claude-code",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "",
+      checklist_path: "",
+    });
+    expect(
+      ensureAmbientReviewSession(store, "c-amb", root, "project"),
+    ).toBe(true);
+    expect(store.getSession("c-amb")?.platform).toBe("claude-code");
+    expect(store.getSession("c-amb")?.phase).toBe("idle");
+    expect(store.getSession("c-amb")?.armed).toBe(1);
+    store.close();
+  });
+
+  it("touches canonicalize mixed-case and scrub invalid platform rows", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    store.upsertSession({
+      conversation_id: "c-case",
+      project_root: root,
+      code_root: root,
+      platform: "Claude-Code",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: "",
+    });
+    expect(
+      ensureAmbientReviewSession(store, "c-case", root, "project"),
+    ).toBe(true);
+    expect(store.getSession("c-case")?.platform).toBe("claude-code");
+
+    store.upsertSession({
+      conversation_id: "c-bad",
+      project_root: root,
+      code_root: root,
+      platform: "../evil",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: "",
+    });
+    expect(
+      ensureAmbientReviewSession(store, "c-bad", root, "project"),
+    ).toBe(true);
+    expect(store.getSession("c-bad")?.platform).toBe("cursor");
     store.close();
   });
 });

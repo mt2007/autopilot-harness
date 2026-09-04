@@ -14,6 +14,7 @@ import { getLens, type ConfirmLens } from "./review-lenses.js";
 import {
   ensureAmbientReviewSession,
   isChecklistExecuting,
+  resolveSessionPlatform,
   sessionReviewRunnable,
 } from "./review-scope.js";
 import type { ReviewScope } from "./project-config.js";
@@ -81,6 +82,8 @@ export interface StopHandlerInput {
   loopCount: number;
   /** Cursor transcript path — enables pending redelivery / in-flight gating. */
   transcriptPath?: string;
+  /** Host id for ambient session bootstrap (default cursor). */
+  platform?: string;
 }
 
 export interface ReviewEngineConfig {
@@ -355,6 +358,7 @@ export class ReviewEngine {
           input.conversationId,
           this.config.projectRoot,
           this.config.reviewScope,
+          input.platform,
         );
         session = this.store.getSession(input.conversationId);
       }
@@ -2503,7 +2507,7 @@ export function applyOn(
   store: StateStore,
   conversationId: string,
   projectRoot: string,
-  opts?: { initialBrief?: string; slug?: string },
+  opts?: { initialBrief?: string; slug?: string; platform?: string },
 ): { ok: true; session: SessionRow } | { ok: false; userMessage: string } {
   const root =
     normalizeProjectRoot(store.projectRoot) ??
@@ -2533,6 +2537,11 @@ export function applyOn(
 
   const trackId = opts?.slug ?? session?.track_id ?? "_pending";
 
+  const platform = resolveSessionPlatform(
+    opts?.platform,
+    session?.platform ?? "cursor",
+  );
+
   if (session?.phase === "done") {
     const s = store.upsertSession({
       conversation_id: conversationId,
@@ -2543,7 +2552,7 @@ export function applyOn(
       paused: 0,
       paused_reason: null,
       track_id: opts?.slug ?? session.track_id,
-      platform: session.platform,
+      platform,
     });
     return { ok: true, session: s };
   }
@@ -2552,7 +2561,7 @@ export function applyOn(
     conversation_id: conversationId,
     project_root: projectRoot,
     code_root: projectRoot,
-    platform: session?.platform ?? "cursor",
+    platform,
     phase: "planning",
     armed: 0,
     paused: 0,

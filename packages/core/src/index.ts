@@ -72,6 +72,8 @@ export {
 export {
   ensureAmbientReviewSession,
   isChecklistExecuting,
+  normalizeSessionPlatform,
+  resolveSessionPlatform,
   sessionReviewRunnable,
 } from "./review-scope.js";
 

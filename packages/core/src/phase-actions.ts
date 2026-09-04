@@ -15,6 +15,7 @@ import {
 import { firstUnchecked, parseChecklist } from "./checklist-md.js";
 import type { SessionRow, StateStore } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
+import { normalizeSessionPlatform, resolveSessionPlatform } from "./review-scope.js";
 
 export type ConcurrencyMode = "one_executor" | "worktree_per_session";
 
@@ -120,14 +121,27 @@ function ensureSession(
   store: StateStore,
   conversationId: string,
   projectRoot: string,
+  platform?: string,
 ): SessionRow {
   const existing = store.getSession(conversationId);
-  if (existing) return existing;
+  if (existing) {
+    const want = resolveSessionPlatform(platform, existing.platform);
+    // Compare raw DB value so we also canonicalize case / scrub invalid rows.
+    if (want !== existing.platform) {
+      return store.upsertSession({
+        conversation_id: conversationId,
+        project_root: existing.project_root,
+        code_root: existing.code_root,
+        platform: want,
+      });
+    }
+    return existing;
+  }
   return store.upsertSession({
     conversation_id: conversationId,
     project_root: projectRoot,
     code_root: projectRoot,
-    platform: "cursor",
+    platform: normalizeSessionPlatform(platform),
     phase: "idle",
     armed: 0,
     paused: 0,
@@ -269,6 +283,7 @@ export function applyRun(
   opts?: {
     slug?: string;
     config?: PhaseActionConfig;
+    platform?: string;
   },
 ): PhaseActionResult {
   const root = requireProjectRoot(store, projectRoot);
@@ -281,7 +296,12 @@ export function applyRun(
     return { ok: false, userMessage: "Invalid plans directory." };
   }
   const concurrencyMode = opts?.config?.concurrencyMode ?? "one_executor";
-  const session = ensureSession(store, conversationId, projectRoot);
+  const session = ensureSession(
+    store,
+    conversationId,
+    projectRoot,
+    opts?.platform,
+  );
 
   const resolved = resolveRunSlug(
     store,
@@ -434,7 +454,7 @@ export function applyReplan(
   store: StateStore,
   conversationId: string,
   projectRoot: string,
-  opts?: { slug?: string; config?: PhaseActionConfig },
+  opts?: { slug?: string; config?: PhaseActionConfig; platform?: string },
 ): PhaseActionResult {
   const root = requireProjectRoot(store, projectRoot);
   if (!root) {
@@ -445,7 +465,12 @@ export function applyReplan(
   if (!plansDir) {
     return { ok: false, userMessage: "Invalid plans directory." };
   }
-  const session = ensureSession(store, conversationId, projectRoot);
+  const session = ensureSession(
+    store,
+    conversationId,
+    projectRoot,
+    opts?.platform,
+  );
 
   let slug = opts?.slug ?? session.track_id;
   if (slug && slug !== "_pending" && !isSafeTrackSlug(slug)) {
@@ -529,7 +554,7 @@ export function applyTrackPick(
   conversationId: string,
   projectRoot: string,
   pick: string,
-  opts?: { config?: PhaseActionConfig },
+  opts?: { config?: PhaseActionConfig; platform?: string },
 ): PhaseActionResult {
   const root = requireProjectRoot(store, projectRoot);
   if (!root) {
@@ -625,11 +650,13 @@ export function applyTrackPick(
     return applyReplan(store, conversationId, projectRoot, {
       slug,
       config: opts?.config,
+      platform: opts?.platform,
     });
   }
   return applyRun(store, conversationId, projectRoot, {
     slug,
     config: opts?.config,
+    platform: opts?.platform,
   });
 }
 

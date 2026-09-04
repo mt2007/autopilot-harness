@@ -74,6 +74,8 @@ export interface ClaudePortConfig {
   phaseActions?: PhaseActionConfig;
 }
 
+const CLAUDE_PLATFORM = "claude-code";
+
 /** Claude UserPromptSubmit / decision-control stdout. */
 export interface ClaudeSubmitResult {
   decision?: "block";
@@ -156,6 +158,23 @@ export function isClaudeEditTool(toolName: string): boolean {
   return n === "Edit" || n === "Write" || n === "NotebookEdit";
 }
 
+/** Persist host id on the session row (core defaults to "cursor"). */
+function stampClaudePlatform(
+  store: StateStore,
+  conversationId: string,
+  projectRoot: string,
+): void {
+  const session = store.getSession(conversationId);
+  // Raw equality so mixed-case / scrubbed hosts still get canonicalized.
+  if (!session || session.platform === CLAUDE_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: CLAUDE_PLATFORM,
+  });
+}
+
 /**
  * UserPromptSubmit → core triggers / fail-closed.
  * Fail-closed uses Claude `decision: "block"` (erases prompt) + `reason`.
@@ -197,14 +216,17 @@ export function handleUserPromptSubmit(
   if (trigger) {
     if (trigger.kind === "off") {
       applyOff(store, conversationId);
+      stampClaudePlatform(store, conversationId, projectRoot);
       return {};
     }
     if (trigger.kind === "on") {
       const result = applyOn(store, conversationId, projectRoot, {
         initialBrief: trigger.initialBrief,
         slug: trigger.slug,
+        platform: CLAUDE_PLATFORM,
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
@@ -217,23 +239,28 @@ export function handleUserPromptSubmit(
         slug: trigger.slug,
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
         };
       }
+      stampClaudePlatform(store, conversationId, projectRoot);
       return {};
     }
     if (trigger.kind === "resume_review") {
       applyResumeReview(store, conversationId);
+      stampClaudePlatform(store, conversationId, projectRoot);
       return {};
     }
     if (trigger.kind === "run") {
       const result = applyRun(store, conversationId, projectRoot, {
         slug: trigger.slug,
         config: actionConfig,
+        platform: CLAUDE_PLATFORM,
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
@@ -245,8 +272,10 @@ export function handleUserPromptSubmit(
       const result = applyReplan(store, conversationId, projectRoot, {
         slug: trigger.slug,
         config: actionConfig,
+        platform: CLAUDE_PLATFORM,
       });
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
@@ -260,9 +289,10 @@ export function handleUserPromptSubmit(
         conversationId,
         projectRoot,
         trigger.trackPick,
-        { config: actionConfig },
+        { config: actionConfig, platform: CLAUDE_PLATFORM },
       );
       if (!result.ok) {
+        stampClaudePlatform(store, conversationId, projectRoot);
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
@@ -276,6 +306,7 @@ export function handleUserPromptSubmit(
   if (!isHarnessFollowupMessage(prompt)) {
     store.clearChainPending(conversationId);
   }
+  stampClaudePlatform(store, conversationId, projectRoot);
   return {};
 }
 
@@ -301,8 +332,10 @@ export function handlePostToolUse(
       conversationId,
       projectRoot,
       cfg.reviewScope,
+      CLAUDE_PLATFORM,
     );
   }
+  stampClaudePlatform(store, conversationId, projectRoot);
   const session = store.getSession(conversationId);
   const checklistPath = session?.checklist_path?.trim() ?? "";
   let checklistSnap: ReturnType<typeof parseChecklist> | null = null;
@@ -357,6 +390,7 @@ export function handleStop(
     status,
     loopCount: loopCountFromStopHookActive(payload),
     transcriptPath,
+    platform: CLAUDE_PLATFORM,
   });
 
   if (!action?.message) return {};
