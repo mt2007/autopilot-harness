@@ -83,7 +83,7 @@ export {
 
 export { createConfiguredReviewEngine } from "./review-runtime.js";
 
-export { isSafeTrackSlug } from "./track-slug.js";
+export { isSafeTrackSlug, MAX_SLUG_LEN } from "./track-slug.js";
 
 export {
   applyRun,

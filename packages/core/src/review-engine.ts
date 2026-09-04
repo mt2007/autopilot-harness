@@ -2521,10 +2521,13 @@ export function applyOn(
     };
   }
 
-  if (opts?.slug && !isSafeTrackSlug(opts.slug)) {
+  // Explicit slug (incl. "") must pass the shared gate — do not use truthiness
+  // (empty string would otherwise skip validation and bind track_id "").
+  if (opts?.slug !== undefined && !isSafeTrackSlug(opts.slug)) {
+    const raw = typeof opts.slug === "string" ? opts.slug : String(opts.slug);
     return {
       ok: false,
-      userMessage: `Invalid track slug "${opts.slug}".`,
+      userMessage: `Invalid track slug "${sanitizeSessionDisplayText(raw).slice(0, 64)}".`,
     };
   }
 

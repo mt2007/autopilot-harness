@@ -657,9 +657,10 @@ function openDatabase(filename) {
 }
 
 // ../core/src/track-slug.ts
-var SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+var SLUG_RE = /^[a-z0-9]+([.-][a-z0-9]+)*$/;
+var MAX_SLUG_LEN = 128;
 function isSafeTrackSlug(slug) {
-  return typeof slug === "string" && SLUG_RE.test(slug) && !slug.includes("..") && !slug.includes("/") && !slug.includes("\\");
+  return typeof slug === "string" && slug.length > 0 && slug.length <= MAX_SLUG_LEN && SLUG_RE.test(slug) && !slug.includes("..") && !slug.includes("/") && !slug.includes("\\");
 }
 
 // ../core/src/state-store.ts
@@ -1926,11 +1927,11 @@ function parseSlugAndBrief(rest) {
   const parts = rest.split(/\s*·\s*/);
   if (parts.length >= 2) {
     const maybeSlug = parts[1].trim();
-    if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(maybeSlug)) {
+    if (isSafeTrackSlug(maybeSlug)) {
       return { slug: maybeSlug, initialBrief: parts.slice(2).join(" \xB7 ").trim() || void 0 };
     }
   }
-  if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(rest)) {
+  if (isSafeTrackSlug(rest)) {
     return { slug: rest };
   }
   return { initialBrief: rest };
@@ -2009,7 +2010,7 @@ function parseTrigger(options) {
     return event;
   }
   if (pendingAction === "run" || pendingAction === "replan") {
-    if (/^\d+$/.test(line) || /^[a-z0-9]+(-[a-z0-9]+)*$/.test(line)) {
+    if (/^\d+$/.test(line) || isSafeTrackSlug(line)) {
       return {
         kind: "track_pick",
         source: "text",
@@ -3934,10 +3935,11 @@ function applyOn(store, conversationId, projectRoot, opts) {
       userMessage: "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON."
     };
   }
-  if (opts?.slug && !isSafeTrackSlug(opts.slug)) {
+  if (opts?.slug !== void 0 && !isSafeTrackSlug(opts.slug)) {
+    const raw = typeof opts.slug === "string" ? opts.slug : String(opts.slug);
     return {
       ok: false,
-      userMessage: `Invalid track slug "${opts.slug}".`
+      userMessage: `Invalid track slug "${sanitizeSessionDisplayText(raw).slice(0, 64)}".`
     };
   }
   const trackId = opts?.slug ?? session?.track_id ?? "_pending";

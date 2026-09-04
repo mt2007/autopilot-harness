@@ -1,3 +1,5 @@
+import { isSafeTrackSlug } from "./track-slug.js";
+
 export type TriggerKind =
   | "on"
   | "run"
@@ -181,11 +183,11 @@ function parseSlugAndBrief(rest: string): { slug?: string; initialBrief?: string
   const parts = rest.split(/\s*·\s*/);
   if (parts.length >= 2) {
     const maybeSlug = parts[1]!.trim();
-    if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(maybeSlug)) {
+    if (isSafeTrackSlug(maybeSlug)) {
       return { slug: maybeSlug, initialBrief: parts.slice(2).join(" · ").trim() || undefined };
     }
   }
-  if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(rest)) {
+  if (isSafeTrackSlug(rest)) {
     return { slug: rest };
   }
   return { initialBrief: rest };
@@ -282,7 +284,7 @@ export function parseTrigger(options: {
 
   // track_pick when pending
   if (pendingAction === "run" || pendingAction === "replan") {
-    if (/^\d+$/.test(line) || /^[a-z0-9]+(-[a-z0-9]+)*$/.test(line)) {
+    if (/^\d+$/.test(line) || isSafeTrackSlug(line)) {
       return {
         kind: "track_pick",
         source: "text",
