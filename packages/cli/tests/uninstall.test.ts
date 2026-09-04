@@ -594,4 +594,42 @@ describe("uninstallProject", () => {
     if (r.ok) return;
     expect(r.error).toMatch(/settings\.json/i);
   });
+
+  it("dual-host uninstall strips Cursor hooks and Claude settings", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
+    );
+    expect(JSON.stringify(hooks)).not.toMatch(/autopilot-harness-hook\.mjs/);
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    );
+    expect(JSON.stringify(settings)).not.toMatch(/autopilot-harness-hook\.mjs/);
+    expect(settings.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBeUndefined();
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".claude", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+  });
 });

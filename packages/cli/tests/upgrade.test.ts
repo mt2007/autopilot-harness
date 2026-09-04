@@ -671,4 +671,56 @@ review:
     };
     expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBe("0");
   });
+
+  it("Cursor-only upgrade ignores corrupt leftover .claude/settings.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const leftover = path.join(root, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(leftover), { recursive: true });
+    const corrupt = "{not-json";
+    fs.writeFileSync(leftover, corrupt, "utf8");
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(true);
+    if (!dry.ok) return;
+    expect(dry.actions.some((a) => /\.claude\/settings\.json/i.test(a))).toBe(
+      false,
+    );
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.2.0" });
+    expect(r.ok).toBe(true);
+    // Leftover must stay untouched (no merge/write-through on Cursor-only).
+    expect(fs.readFileSync(leftover, "utf8")).toBe(corrupt);
+  });
+
+  it("dual-host dry-run lists Cursor and Claude host actions", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.cursor\/hooks\.json/i.test(a))).toBe(true);
+    expect(r.actions.some((a) => /\.claude\/settings\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(true);
+  });
 });

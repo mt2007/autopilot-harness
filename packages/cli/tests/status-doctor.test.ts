@@ -1218,4 +1218,82 @@ describe("runDoctor", () => {
     expect(joined).toMatch(/OK\s+skills \(5\)/);
     expect(joined).not.toMatch(/hooks\.json Autopilot entries/);
   });
+
+  it("FAILs when Claude settings.json is missing on a Claude-enabled project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".claude", "settings.json"), { force: true });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/\.claude\/settings\.json missing/i);
+  });
+
+  it("OKs dual-host doctor for Cursor hooks + Claude settings (skills 10)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/OK\s+hooks\.json Autopilot entries/);
+    expect(joined).toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
+    expect(joined).toMatch(/OK\s+skills \(10\)/);
+  });
+
+  it("Claude-only doctor does not WARN about global Cursor self-review hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-home-claude-"));
+    try {
+      const cursorDir = path.join(fakeHome, ".cursor");
+      fs.mkdirSync(cursorDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(cursorDir, "hooks.json"),
+        JSON.stringify({
+          version: 1,
+          hooks: {
+            stop: [
+              {
+                command: "python3 ./hooks/run-global-self-review.py stop",
+              },
+            ],
+          },
+        }),
+      );
+      const { ok, lines } = runDoctor(root, { homeDir: fakeHome });
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).not.toMatch(/global self-review/i);
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
 });

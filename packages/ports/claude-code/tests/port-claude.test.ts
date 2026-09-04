@@ -41,10 +41,46 @@ describe("port-claude-code adapters", () => {
     ).toBe("src/a.ts");
     expect(
       filePathFromClaudeEdit({
+        tool_input: { notebook_path: "notes/demo.ipynb" },
+      }),
+    ).toBe("notes/demo.ipynb");
+    expect(
+      filePathFromClaudeEdit({
+        toolInput: { notebookPath: "notes/camel.ipynb" },
+      }),
+    ).toBe("notes/camel.ipynb");
+    expect(
+      filePathFromClaudeEdit({
         tool_input: [] as unknown as Record<string, unknown>,
       }),
     ).toBe("");
     expect(filePathFromClaudeEdit({ tool_input: undefined })).toBe("");
+  });
+
+  it("Stop with no followup returns {}; empty session_id is a no-op", () => {
+    const root = tmpRoot();
+    try {
+      const store = StateStore.openMemory(root);
+      const eng = new ReviewEngine(store, {
+        confirmRounds: 5,
+        reviewScope: "executing_only",
+        verifyEnabled: false,
+        verifyCommands: [],
+        maxIdleStops: 5,
+        maxErrorsBeforePause: 0,
+        projectRoot: root,
+        recoverDebounceMs: 0,
+      });
+      expect(handleStop(eng, { session_id: "" })).toEqual({});
+      expect(
+        handleUserPromptSubmit(store, { session_id: "", prompt: "x" }, root),
+      ).toEqual({});
+      // Idle / no session → allow stop (empty object, not decision:block).
+      expect(handleStop(eng, { session_id: "missing-session" })).toEqual({});
+      store.close();
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("fail-closes ON while executing; ignores hostile cwd for store bind", () => {
