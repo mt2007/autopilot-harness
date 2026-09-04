@@ -87,7 +87,7 @@ Reload the Cursor window (or start a new Agent chat), then:
 1. `/autopilot-on` — plan (grill → artifacts under `plans/<slug>/`)  
 2. `/autopilot-run` — execute the checklist  
 
-More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md) (Chinese cheat sheet).
+More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md) ([中文](./docs/autopilot/quickstart.zh-CN.md)).
 
 Useful CLI — call the built binary (there is no root `pnpm exec autopilot-harness` alias). Commands apply to the **current working directory**:
 
@@ -106,7 +106,7 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js status
 ## Docs
 
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
-- [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet  
+- [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet ([中文](./docs/autopilot/quickstart.zh-CN.md))  
 - [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations welcome later  
 - [Changelog](./CHANGELOG.md) — release notes  
 

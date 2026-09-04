@@ -248,13 +248,30 @@ dist/
 
   it("writeQuickstart + formatCheatSheet locale", () => {
     root = tmpProject();
-    const rel = writeQuickstart(root, "zh-CN");
-    expect(rel).toBe(path.join("docs", "autopilot", "quickstart.md"));
-    const qs = fs.readFileSync(path.join(root, rel!), "utf8");
-    expect(qs).toMatch(/快速开始/);
-    expect(qs).toMatch(/status/);
-    expect(qs).toMatch(/在 Cursor 中/);
-    expect(qs).toMatch(/Reload Window/);
+    const relZh = writeQuickstart(root, "zh-CN");
+    expect(relZh).toBe(path.join("docs", "autopilot", "quickstart.md"));
+    const qsZh = fs.readFileSync(path.join(root, relZh!), "utf8");
+    expect(qsZh).toMatch(/快速开始/);
+    expect(qsZh).toMatch(/推荐流程/);
+    expect(qsZh).toMatch(/status/);
+    expect(qsZh).toMatch(/\/path\/to\/autopilot-harness/);
+    expect(qsZh).toMatch(/在 Cursor 中/);
+    expect(qsZh).toMatch(/Reload Window/);
+
+    const rootEn = tmpProject();
+    try {
+      const relEn = writeQuickstart(rootEn, "en");
+      expect(relEn).toBe(path.join("docs", "autopilot", "quickstart.md"));
+      const qsEn = fs.readFileSync(path.join(rootEn, relEn!), "utf8");
+      expect(qsEn).toMatch(/Autopilot quickstart/);
+      expect(qsEn).toMatch(/Recommended flow/);
+      expect(qsEn).toMatch(/no product code/);
+      expect(qsEn).toMatch(/no auto-push/);
+      expect(qsEn).toMatch(/\/path\/to\/autopilot-harness/);
+      expect(qsEn).not.toMatch(/快速开始/);
+    } finally {
+      fs.rmSync(rootEn, { recursive: true, force: true });
+    }
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /Planning/,
     );

@@ -1,45 +1,45 @@
-# Autopilot 快速开始
+# Autopilot quickstart
 
-命令速查 + 每步产物。英文入口与安装细节见仓库根目录 [README.md](../../README.md)。
+Command cheat sheet + per-step artifacts. Product front door: [README.md](../../README.md). Chinese: [quickstart.zh-CN.md](./quickstart.zh-CN.md).
 
-## 推荐流程（产物）
+## Recommended flow (artifacts)
 
-| 步骤 | 你做什么 | Autopilot 做什么 | 产物 |
-|------|----------|------------------|------|
-| **1. 规划** | `/autopilot-on`（可带需求描述）；逐轮回答 grill | 写 `plans/<slug>/`（可改文档），**不写产品代码** | `plans/<slug>/brief.md`、`plan.md`、`checklist.md` |
-| **2. 执行** | `/autopilot-run`（或带 `<slug>`） | 按 checklist **一项一项**：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；**推进/完成**时若有未提交改动则本地 commit（干净则跳过；确认轮不 commit；**默认不自动 push**） |
-| **3. 完成** | — | 勾选最后一项；有未提交改动则本地 commit（**默认不自动 push**）；checklist 清空后停止 | 该轨结束 |
+| Step | You do | Autopilot does | Artifacts |
+|------|--------|----------------|-----------|
+| **1. Plan** | `/autopilot-on` (optional description); reply to each grill round | Writes `plans/<slug>/` (may edit docs); **no product code** | `plans/<slug>/brief.md`, `plan.md`, `checklist.md` |
+| **2. Run** | `/autopilot-run` (or with `<slug>`) | One checklist item at a time: implement → fix → multi-lens confirm → advance | Code/docs for that item; on **advance/done**, local commit if dirty (skip if clean; confirm rounds do not commit; **no auto-push**) |
+| **3. Done** | — | Marks the last item; local commit if dirty (skip if clean; **no auto-push**); stops when the checklist is clear | Track complete |
 
-中途可暂停 / 改方案 / 在新聊天认领旧轨（见下）。
+Pause, replan, or claim a track from a new chat (see below).
 
 ## Planning
 
-推荐：在 Cursor 中使用 `/autopilot-on` 或 `/autopilot-on <需求描述>`
+Preferred: in Cursor, `/autopilot-on` or `/autopilot-on <what to build>`
 
-也可：行首 `Autopilot ON` / `开启自动驾驶`
+Also: line-start `Autopilot ON`
 
 ## Executing
 
-`/autopilot-run` 或 `/autopilot-run <slug>`
+`/autopilot-run` or `/autopilot-run <slug>`
 
-也可：`Autopilot RUN` / `开始执行`
+Also: `Autopilot RUN`
 
-## 暂停 / 恢复 / 改方案
+## Pause / resume / replan
 
-- 暂停：`/autopilot-off` 或行首 `Autopilot OFF` / `关闭自动驾驶`
-- 恢复：`/autopilot-resume` 或 `/autopilot-resume <slug>`（新聊天可认领旧轨）；也可行首 `Autopilot RESUME` / `继续执行`
-- 改方案：`/autopilot-replan` 或行首 `Autopilot REPLAN` / `修改方案`
+- Pause: `/autopilot-off` or line-start `Autopilot OFF`
+- Resume: `/autopilot-resume` or `/autopilot-resume <slug>` (new chat can claim a track); also line-start `Autopilot RESUME`
+- Replan: `/autopilot-replan` or line-start `Autopilot REPLAN`
 
-## 终端
+## Terminal
 
-CLI 包为 `@autopilot-harness/cli`（bin：`autopilot-harness`），目前**尚未发布到 npm**。先克隆并构建本仓库，再在**目标项目目录**（`cwd` = 该项目）调用已构建的二进制：
+CLI package: `@autopilot-harness/cli` (bin: `autopilot-harness`). **Not on the public npm registry yet.** Clone and build this repo, then run the built binary with **cwd = the project you want to instrument**:
 
 ```bash
-# 一次性：在 autopilot-harness 克隆目录
+# once: in the autopilot-harness clone
 git clone https://github.com/mt2007/autopilot-harness.git
 cd autopilot-harness && pnpm install && pnpm build
 
-# 在你要接入 Autopilot 的项目目录
+# in the app you want Autopilot on
 cd /path/to/your-app
 node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
 node /path/to/autopilot-harness/packages/cli/dist/bin.js status
@@ -47,7 +47,7 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 ```
 
-若当前就在 harness 克隆根目录做 dogfood（需已 `pnpm build`），可用相对路径：
+Dogfooding this harness clone (after `pnpm build`):
 
 ```bash
 node packages/cli/dist/bin.js init --platform cursor --yes
@@ -56,9 +56,9 @@ node packages/cli/dist/bin.js doctor
 node packages/cli/dist/bin.js upgrade --dry-run
 ```
 
-## 安装后
+## After install
 
-- 在 Cursor 中试用 `/autopilot-on`。
-- 若 skills / hooks 未出现：执行 `Developer: Reload Window`，或新开一条 Agent 对话。
+- Try `/autopilot-on` in Cursor.
+- If skills / hooks do not appear: `Developer: Reload Window`, or start a new Agent chat.
 
-方案与清单始终在 `plans/<slug>/`（权威进度是 `checklist.md`）。
+Plans and checklist live under `plans/<slug>/` (progress authority is `checklist.md`).

@@ -10,9 +10,10 @@ plans/
 !.cursor/rules/
 !.cursor/rules/**
 # Autopilot dogfood workflows under docs/autopilot (init per machine)
-# Keep user-facing quickstart tracked for OSS README links
+# Keep user-facing quickstarts tracked for OSS README links
 docs/autopilot/*
 !docs/autopilot/quickstart.md
+!docs/autopilot/quickstart.zh-CN.md
 
 # Environment
 .env

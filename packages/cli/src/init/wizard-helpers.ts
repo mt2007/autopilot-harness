@@ -645,12 +645,21 @@ export function writeQuickstart(
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code !== "ENOENT") throw err;
   }
-  const cliCmd = resolveCliCommand();
   const host = formatHostDisplayName(platform);
   const afterInstall = hostActivationDocLines(locale, platform);
   const body =
     locale === "zh-CN"
       ? `# Autopilot 快速开始
+
+命令速查 + 每步产物。
+
+## 推荐流程（产物）
+
+| 步骤 | 你做什么 | Autopilot 做什么 | 产物 |
+|------|----------|------------------|------|
+| **1. 规划** | \`/autopilot-on\`（可带需求描述）；逐轮回答 grill | 写 \`${plansLabel}/<slug>/\`（可改文档），**不写产品代码** | \`brief.md\`、\`plan.md\`、\`checklist.md\` |
+| **2. 执行** | \`/autopilot-run\`（或带 \`<slug>\`） | 一项一项：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；推进/完成时 dirty 则本地 commit（干净则跳过；确认轮不 commit；默认不自动 push） |
+| **3. 完成** | — | 勾选最后一项；dirty 则本地 commit（干净则跳过；默认不自动 push）；checklist 清空后停止 | 该轨结束 |
 
 ## Planning
 
@@ -666,25 +675,37 @@ export function writeQuickstart(
 
 ## 暂停 / 恢复 / 改方案
 
-- 暂停：\`Autopilot OFF\`
-- 恢复：\`Autopilot RESUME\` / \`/autopilot-resume\` / \`/autopilot-resume <slug>\`（新聊天可认领旧轨）
-- 改方案：\`Autopilot REPLAN\` / \`/autopilot-replan\`
+- 暂停：\`/autopilot-off\` 或行首 \`Autopilot OFF\` / \`关闭自动驾驶\`
+- 恢复：\`/autopilot-resume\` 或 \`/autopilot-resume <slug>\`（新聊天可认领旧轨）；也可行首 \`Autopilot RESUME\` / \`继续执行\`
+- 改方案：\`/autopilot-replan\` 或行首 \`Autopilot REPLAN\` / \`修改方案\`
 
 ## 终端
 
+CLI 尚未发布到 npm 时，用已构建的二进制（把路径换成你的 harness 克隆；\`cwd\` = 目标项目）：
+
 \`\`\`bash
-${cliCmd} status
-${cliCmd} doctor
-${cliCmd} upgrade --dry-run
+node /path/to/autopilot-harness/packages/cli/dist/bin.js status
+node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
+node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 \`\`\`
 
 ## 安装后
 
 ${afterInstall.map((l) => `- ${l}`).join("\n")}
 
-方案与清单在 \`${plansLabel}/<slug>/\`。
+方案与清单在 \`${plansLabel}/<slug>/\`（权威进度是 \`checklist.md\`）。
 `
       : `# Autopilot quickstart
+
+Command cheat sheet + per-step artifacts.
+
+## Recommended flow (artifacts)
+
+| Step | You do | Autopilot does | Artifacts |
+|------|--------|----------------|-----------|
+| **1. Plan** | \`/autopilot-on\` (optional description); reply to each grill round | Writes \`${plansLabel}/<slug>/\` (may edit docs); **no product code** | \`brief.md\`, \`plan.md\`, \`checklist.md\` |
+| **2. Run** | \`/autopilot-run\` (or with \`<slug>\`) | One item at a time: implement → fix → multi-lens confirm → advance | Code/docs for that item; on advance/done, local commit if dirty (skip if clean; confirm rounds do not commit; no auto-push) |
+| **3. Done** | — | Marks the last item; local commit if dirty (skip if clean; no auto-push); stops when the checklist is clear | Track complete |
 
 ## Planning
 
@@ -700,23 +721,25 @@ Also: \`Autopilot RUN\`
 
 ## Pause / resume / replan
 
-- Pause: \`Autopilot OFF\`
-- Resume: \`Autopilot RESUME\` / \`/autopilot-resume\` / \`/autopilot-resume <slug>\` (new chat can claim a track)
-- Replan: \`Autopilot REPLAN\` / \`/autopilot-replan\`
+- Pause: \`/autopilot-off\` or line-start \`Autopilot OFF\`
+- Resume: \`/autopilot-resume\` or \`/autopilot-resume <slug>\` (new chat can claim a track); also line-start \`Autopilot RESUME\`
+- Replan: \`/autopilot-replan\` or line-start \`Autopilot REPLAN\`
 
 ## Terminal
 
+CLI is not on public npm yet. Use the built binary (replace the path with your harness clone; \`cwd\` = the app):
+
 \`\`\`bash
-${cliCmd} status
-${cliCmd} doctor
-${cliCmd} upgrade --dry-run
+node /path/to/autopilot-harness/packages/cli/dist/bin.js status
+node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
+node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
 \`\`\`
 
 ## After install
 
 ${afterInstall.map((l) => `- ${l}`).join("\n")}
 
-Artifacts live under \`${plansLabel}/<slug>/\`.
+Artifacts live under \`${plansLabel}/<slug>/\` (progress authority is \`checklist.md\`).
 `;
   assertNotSymlink(dest, "docs/autopilot/quickstart.md");
   writeTextFileReplace(dest, body, root);

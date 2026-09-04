@@ -25,11 +25,11 @@ pnpm exec vitest run packages/cli/tests
 ## Docs PRs
 
 - Product front door: English [README.md](./README.md) is authoritative.
-- User cheat sheet (zh): [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md).
+- User cheat sheet: English [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md); Chinese [docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md).
 - Design depth: [docs/architecture.md](./docs/architecture.md).
 - Release notes: [CHANGELOG.md](./CHANGELOG.md).
 - Prefer small, reviewable doc PRs; match existing tone (no usage-limit / recover marketing in the front door).
-- If you change CLI install paths or skills/triggers, update README and quickstart in the same PR.
+- If you change CLI install paths or skills/triggers, update README and both quickstarts (`quickstart.md` / `quickstart.zh-CN.md`) in the same PR.
 
 ## Translations
 
