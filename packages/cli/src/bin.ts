@@ -47,7 +47,10 @@ program
     "--add-platform <platform>",
     "Merge a platform into an existing install (updates config.yml)",
   )
-  .option("--surface <surface>", "Surface for a single --platform", "ide")
+  .option(
+    "--surface <surface>",
+    "Surface for a single --platform (omit for host default: cursor→ide, claude-code→cli)",
+  )
   .option("--locale <locale>", "Locale", "en")
   .option("-y, --yes", "Non-interactive defaults")
   .option(
@@ -60,7 +63,7 @@ program
       harness?: string;
       platforms?: string;
       addPlatform?: string;
-      surface: string;
+      surface?: string;
       locale: string;
       yes?: boolean;
       force?: boolean;
@@ -68,13 +71,17 @@ program
       const addPlatformRaw =
         typeof opts.addPlatform === "string" ? opts.addPlatform.trim() : "";
       const mergePlatforms = addPlatformRaw !== "";
+      const surfaceOpt =
+        typeof opts.surface === "string" && opts.surface.trim() !== ""
+          ? opts.surface.trim()
+          : undefined;
 
       const platformsFlag =
         typeof opts.platforms === "string" ? opts.platforms.trim() : "";
       let platforms: ReturnType<typeof parsePlatformsCliList> | null = null;
       if (platformsFlag !== "") {
         try {
-          platforms = parsePlatformsCliList(platformsFlag, opts.surface);
+          platforms = parsePlatformsCliList(platformsFlag, surfaceOpt);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(`init failed: ${msg}`);
@@ -105,7 +112,7 @@ program
 
       if (!platforms || platforms.length === 0) {
         const single = opts.harness ?? opts.platform;
-        const b = normalizeBinding(single, opts.surface);
+        const b = normalizeBinding(single, surfaceOpt);
         platforms = b ? [b] : [{ id: "cursor", surface: "ide" }];
       }
 
