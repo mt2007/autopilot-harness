@@ -58,7 +58,7 @@ breaker; ports must disable or raise it, or the chain stalls mid-confirm
 are **not** subject to Cursor’s stop `loop_limit`; they do not emit Autopilot
 followup loops.
 
-A human nudge (e.g. 「继续」) may reset some host counters but is **not** a
+A human nudge (e.g. typing `continue`) may reset some host counters but is **not** a
 substitute for correct port install. Global Cursor self-review hooks that inject
 on every stop typically use `loop_limit: null` for this reason.
 
