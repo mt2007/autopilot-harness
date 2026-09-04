@@ -10,7 +10,7 @@ import {
 /** Advance/done: mark [x] must appear before the commit instruction. */
 function markComesBeforeCommit(text: string): boolean {
   const markIdx = text.search(
-    /First mark the current item \[x\]|先勾选当前项 \[x\]|Mark the last item \[x\]|勾选最后一项 \[x\]/i,
+    /First mark the completed current item \{currentId\} \[x\]|先勾选刚完成的当前项 \{currentId\} \[x\]|Mark the last item \[x\]|勾选最后一项 \[x\]/i,
   );
   const commitIdx = text.search(/conventional commit|本地 commit/i);
   return markIdx >= 0 && commitIdx > markIdx;
