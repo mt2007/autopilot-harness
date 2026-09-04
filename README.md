@@ -28,6 +28,14 @@ Autopilot does **not** guarantee bug-free software. It **raises confidence** tha
 done (checklist clear)
 ```
 
+| Step | You do | Autopilot does | Artifacts |
+|------|--------|----------------|-----------|
+| **Plan** | Start `/autopilot-on`; reply to each grill round | Writes `plans/<slug>/` (may edit docs); **no product code** | `plans/<slug>/brief.md`, `plan.md`, `checklist.md` |
+| **Run** | Start `/autopilot-run` | Implements **one** checklist item | Code / docs for that item |
+| **Review** | (Usually nothing — stop followups drive the loop) | Fix → confirm under rotating lenses | Item stays open until confirm rounds pass |
+| **Advance** | — | Marks the item `[x]`, local commit if dirty (skip if clean; **no auto-push**), then next item | Updated `checklist.md` |
+| **Done** | — | Marks the last item; local commit if dirty (**no auto-push**); stops when checklist is clear | Track complete |
+
 Pause, change the plan, or resume with `/autopilot-off`, `/autopilot-replan`, and `/autopilot-resume` (details in the [quickstart](./docs/autopilot/quickstart.md)).
 
 ### Author note (scale)
