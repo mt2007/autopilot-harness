@@ -12,6 +12,7 @@ import {
   isHarnessFollowupMessage,
   isProductCodeEdit,
   isRecoverOrStuckFollowupMessage,
+  isUserAbortText,
   loadProjectReviewConfig,
   parseAdvanceNextItemId,
   parseChecklist,
@@ -58,6 +59,11 @@ export interface ClaudeStopPayload {
   cwd?: string;
   transcript_path?: string;
   transcriptPath?: string;
+  /**
+   * Cursor (and similar) may invoke `.claude` Stop hooks with IDE stop status.
+   * When present, must drive abort vs recover (do not ignore).
+   */
+  status?: string;
   /** True when this stop is already a stop-hook continuation. */
   stop_hook_active?: boolean;
   stopHookActive?: boolean;
@@ -68,6 +74,9 @@ export interface ClaudeStopPayload {
   error?: unknown;
   message?: unknown;
   reason?: unknown;
+  status_message?: unknown;
+  detail?: unknown;
+  title?: unknown;
 }
 
 export interface ClaudePortConfig {
@@ -124,6 +133,97 @@ export function loopCountFromStopHookActive(
 ): number {
   const active = payload.stop_hook_active ?? payload.stopHookActive;
   return active === true ? 1 : 0;
+}
+
+/** Flatten stop error fields for abort-marker checks (Cursor may cross-fire). */
+export function collectClaudeStopErrorText(payload: ClaudeStopPayload): string {
+  if (!payload || typeof payload !== "object") return "";
+  const MAX_CHARS = 8_192;
+  const parts: string[] = [];
+  try {
+    const push = (value: unknown) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value.slice(0, 8)) {
+          if (typeof item === "string" && item.trim()) parts.push(item);
+        }
+        return;
+      }
+      if (value && typeof value === "object") {
+        const o = value as Record<string, unknown>;
+        for (const key of [
+          "message",
+          "error",
+          "name",
+          "stack",
+          "detail",
+          "title",
+        ]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.status_message);
+    push(payload.reason);
+    push(payload.detail);
+    push(payload.title);
+  } catch {
+    return "";
+  }
+  const joined = parts.join("\n");
+  return joined.length > MAX_CHARS ? joined.slice(0, MAX_CHARS) : joined;
+}
+
+/**
+ * Map Claude Stop / StopFailure (+ Cursor cross-fire) → engine status.
+ *
+ * Cursor IDE may run `.claude/settings.json` Stop hooks on user Stop with
+ * `status: "aborted"`. Ignoring that used to inject recover and fight the
+ * Cursor abort path (loop with BLOCK_CAP=0).
+ */
+export function normalizeClaudeStopStatus(
+  payload: ClaudeStopPayload,
+  opts?: { status?: "completed" | "error" | "aborted" },
+): "completed" | "error" | "aborted" {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "")
+    .toLowerCase()
+    .trim();
+  const errText = collectClaudeStopErrorText(payload);
+  if (
+    statusRaw === "aborted" ||
+    statusRaw === "cancelled" ||
+    statusRaw === "canceled"
+  ) {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  const hookName = String(
+    payload.hook_event_name ?? payload.hookEventName ?? "",
+  ).trim();
+  if (/^stopfailure$/i.test(hookName)) {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
 }
 
 /** Non-empty reason required by Claude when decision is "block". */
@@ -371,12 +471,7 @@ export function handleStop(
   const conversationId = sid(payload);
   if (!conversationId) return {};
 
-  const hookName = String(
-    payload.hook_event_name ?? payload.hookEventName ?? "",
-  ).trim();
-  const status: "completed" | "error" | "aborted" =
-    opts?.status ??
-    (hookName === "StopFailure" ? "error" : "completed");
+  const status = normalizeClaudeStopStatus(payload, opts);
 
   const transcriptRaw =
     payload.transcript_path ?? payload.transcriptPath;

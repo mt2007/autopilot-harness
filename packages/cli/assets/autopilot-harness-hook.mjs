@@ -166,7 +166,18 @@ function createEngine(coreMod, store) {
 }
 
 function cursorStopHandler(port) {
-  return port.handleCursorStop ?? port.handleStop;
+  if (typeof port.handleCursorStop === "function") {
+    return port.handleCursorStop;
+  }
+  // Dual/legacy vendor: deprecated handleStop === Cursor only when Cursor
+  // submit exists. Never fall through to Claude-only package handleStop.
+  if (
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt === "function"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
 }
 
 /**
@@ -186,6 +197,68 @@ function claudeStopHandler(port) {
     return port.handleStop;
   }
   return undefined;
+}
+
+/**
+ * Cursor IDE may also execute `.claude/settings.json` Stop hooks ("claude-project
+ * config") on the same user Stop. Those payloads are Cursor-shaped (`status`,
+ * lowercase `hook_event_name: "stop"`). Route them to the Cursor port so abort
+ * halts instead of Claude recover (decision:block), which Cursor merges back
+ * into followup and fights the real abort path.
+ *
+ * Heuristic (order matters):
+ * 1) Explicit Claude hook names (`Stop` / `StopFailure`) → not Cursor
+ * 2) Lowercase `stop` → Cursor
+ * 3) `stop_hook_active` present (Claude continuum) → not Cursor
+ * 4) Cursor status vocab + `conversation_id` → Cursor; bare `session_id` → Claude
+ */
+function isCursorShapedStopPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const hookName = String(
+    payload.hook_event_name ?? payload.hookEventName ?? "",
+  ).trim();
+  if (hookName === "Stop" || /^stopfailure$/i.test(hookName)) return false;
+  if (hookName === "stop") return true;
+
+  // Claude Stop threads stop_hook_active (bool); Cursor uses loop_count.
+  if (
+    typeof payload.stop_hook_active === "boolean" ||
+    typeof payload.stopHookActive === "boolean"
+  ) {
+    return false;
+  }
+
+  const statusRaw = String(payload.status ?? "")
+    .toLowerCase()
+    .trim();
+  const cursorStatus =
+    statusRaw === "aborted" ||
+    statusRaw === "cancelled" ||
+    statusRaw === "canceled" ||
+    statusRaw === "completed" ||
+    statusRaw === "error" ||
+    statusRaw === "failed";
+  if (!cursorStatus) return false;
+
+  const conversationId = String(
+    payload.conversation_id ?? payload.conversationId ?? "",
+  ).trim();
+  if (conversationId) return true;
+
+  const sessionId = String(
+    payload.session_id ?? payload.sessionId ?? "",
+  ).trim();
+  // Claude-shaped id without conversation_id → keep Claude path
+  if (sessionId) return false;
+
+  // Abort/cancel with no ids: prefer Cursor halt (no-op {}) over Claude recover
+  return (
+    statusRaw === "aborted" ||
+    statusRaw === "cancelled" ||
+    statusRaw === "canceled"
+  );
 }
 
 let bootEvent = "beforeSubmitPrompt";
@@ -254,6 +327,17 @@ async function main() {
         return;
       }
       if (event === "Stop") {
+        // Cursor cross-fires claude-project Stop hooks with IDE stop payloads.
+        if (isCursorShapedStopPayload(payload)) {
+          const stopFn = cursorStopHandler(port);
+          if (typeof stopFn !== "function") {
+            failOpen(event);
+            return;
+          }
+          const result = stopFn(createEngine(coreMod, store), payload);
+          writeReply(JSON.stringify(result ?? {}));
+          return;
+        }
         const stopFn = claudeStopHandler(port);
         if (typeof stopFn !== "function") {
           failOpen(event);

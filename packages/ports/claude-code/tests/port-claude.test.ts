@@ -11,6 +11,7 @@ import {
   handleUserPromptSubmit,
   isClaudeEditTool,
   loopCountFromStopHookActive,
+  normalizeClaudeStopStatus,
 } from "../src/index.js";
 
 function tmpRoot(): string {
@@ -55,6 +56,39 @@ describe("port-claude-code adapters", () => {
       }),
     ).toBe("");
     expect(filePathFromClaudeEdit({ tool_input: undefined })).toBe("");
+    expect(
+      normalizeClaudeStopStatus({ status: "aborted", hook_event_name: "stop" }),
+    ).toBe("aborted");
+    expect(
+      normalizeClaudeStopStatus(
+        { hook_event_name: "StopFailure" },
+        { status: "error" },
+      ),
+    ).toBe("error");
+    expect(
+      normalizeClaudeStopStatus(
+        { error: "User aborted/interrupted manually." },
+        { status: "error" },
+      ),
+    ).toBe("aborted");
+    expect(
+      normalizeClaudeStopStatus({
+        status: "completed",
+        hook_event_name: "Stop",
+      }),
+    ).toBe("completed");
+    expect(
+      normalizeClaudeStopStatus(
+        { status: "aborted", hook_event_name: "Stop" },
+        { status: "error" },
+      ),
+    ).toBe("aborted");
+    expect(normalizeClaudeStopStatus({ hook_event_name: "stopfailure" })).toBe(
+      "error",
+    );
+    expect(
+      normalizeClaudeStopStatus([] as unknown as { status?: string }),
+    ).toBe("completed");
   });
 
   it("Stop with no followup returns {}; empty session_id is a no-op", () => {
@@ -297,6 +331,49 @@ describe("port-claude-code adapters", () => {
     const errOut = handleStopFailure(eng, { session_id: "s1" });
     expect(errOut.decision).toBe("block");
     expect(errOut.reason).toMatch(/Recover|恢复/i);
+    store.close();
+  });
+
+  it("Stop with Cursor status=aborted does not recover (cross-fire halt)", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "s1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      checklist_path: cp,
+      track_id: "demo",
+      error_count: 0,
+    });
+    store.updateReviewChain("s1", {
+      pending_followup:
+        "恢复：上一回合出错。继续当前规划，不要 RUN 或写产品代码。",
+    });
+
+    const eng = new ReviewEngine(store, {
+      confirmRounds: 5,
+      reviewScope: "project",
+      verifyEnabled: false,
+      verifyCommands: [],
+      maxIdleStops: 5,
+      maxErrorsBeforePause: 0,
+      projectRoot: root,
+      recoverDebounceMs: 0,
+    });
+
+    const before = store.getSession("s1")!.error_count;
+    const out = handleStop(eng, {
+      session_id: "s1",
+      status: "aborted",
+      hook_event_name: "stop",
+    });
+    expect(out).toEqual({});
+    expect(store.getSession("s1")!.error_count).toBe(before);
+    expect(store.getReviewChain("s1")?.pending_followup ?? null).toBeNull();
     store.close();
   });
 

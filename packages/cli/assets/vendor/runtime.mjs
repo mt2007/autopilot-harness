@@ -5598,6 +5598,78 @@ function loopCountFromStopHookActive(payload) {
   const active = payload.stop_hook_active ?? payload.stopHookActive;
   return active === true ? 1 : 0;
 }
+function collectClaudeStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const MAX_CHARS = 8192;
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        for (const item of value.slice(0, 8)) {
+          if (typeof item === "string" && item.trim()) parts.push(item);
+        }
+        return;
+      }
+      if (value && typeof value === "object") {
+        const o = value;
+        for (const key of [
+          "message",
+          "error",
+          "name",
+          "stack",
+          "detail",
+          "title"
+        ]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.status_message);
+    push(payload.reason);
+    push(payload.detail);
+    push(payload.title);
+  } catch {
+    return "";
+  }
+  const joined = parts.join("\n");
+  return joined.length > MAX_CHARS ? joined.slice(0, MAX_CHARS) : joined;
+}
+function normalizeClaudeStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "").toLowerCase().trim();
+  const errText = collectClaudeStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  const hookName = String(
+    payload.hook_event_name ?? payload.hookEventName ?? ""
+  ).trim();
+  if (/^stopfailure$/i.test(hookName)) {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
+}
 function blockReason(message, fallback) {
   const m = typeof message === "string" ? message.trim() : "";
   return m || fallback;
@@ -5787,10 +5859,7 @@ function handlePostToolUse(store, payload, projectRoot) {
 function handleStop2(engine, payload, opts) {
   const conversationId = sid(payload);
   if (!conversationId) return {};
-  const hookName = String(
-    payload.hook_event_name ?? payload.hookEventName ?? ""
-  ).trim();
-  const status = opts?.status ?? (hookName === "StopFailure" ? "error" : "completed");
+  const status = normalizeClaudeStopStatus(payload, opts);
   const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
   const transcriptPath = typeof transcriptRaw === "string" && transcriptRaw.trim() ? transcriptRaw.trim() : void 0;
   const action = engine.handleStop({

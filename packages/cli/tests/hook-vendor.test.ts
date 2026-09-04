@@ -190,6 +190,39 @@ describe("hook vendor runtime", () => {
     expect(stopOut.followup_message).toBeUndefined();
     expect(stopOut.loop).toBeUndefined();
 
+    // Cursor IDE may cross-fire --event Stop with aborted status; must halt.
+    const abortCid = "hook-claude-aaaa-bbbb-cccc-ddddeeee0097";
+    const storeAbort = new StateStore(root);
+    storeAbort.upsertSession({
+      conversation_id: abortCid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    storeAbort.close();
+    const abortStop = spawnSync(process.execPath, [hook, "--event", "Stop"], {
+      cwd: root,
+      input: JSON.stringify({
+        conversation_id: abortCid,
+        session_id: abortCid,
+        status: "aborted",
+        hook_event_name: "stop",
+        loop_count: 0,
+      }),
+      encoding: "utf8",
+      timeout: 15_000,
+    });
+    expect(abortStop.status).toBe(0);
+    expect(JSON.parse(abortStop.stdout.trim() || "{}")).toEqual({});
+    const abortVerify = new StateStore(root);
+    expect(abortVerify.getSession(abortCid)?.error_count ?? 0).toBe(0);
+    abortVerify.close();
+
     const failCid = "hook-claude-aaaa-bbbb-cccc-ddddeeee0098";
     const store2 = new StateStore(root);
     store2.upsertSession({
