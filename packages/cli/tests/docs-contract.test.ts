@@ -64,10 +64,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       const rel = writeQuickstart(root, "en");
       const body = fs.readFileSync(path.join(root, rel!), "utf8");
       for (const re of EN_MARKERS) expect(body).toMatch(re);
-      expect(body).toMatch(/Today \(not on public npm yet\)/);
-      expect(body).toMatch(/After npm publish/);
+      expect(body).toMatch(/### Install|\*\*Install\*\*/);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
       expect(body).toContain(`not bare \`npx ${CLI_NAME}\``);
+      expect(body).not.toMatch(/Today \(not on public npm yet\)/);
+      expect(body).not.toMatch(/After npm publish/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -79,10 +80,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       const rel = writeQuickstart(root, "zh-CN");
       const body = fs.readFileSync(path.join(root, rel!), "utf8");
       for (const re of ZH_MARKERS) expect(body).toMatch(re);
-      expect(body).toMatch(/今天（尚未上公共 npm）/);
-      expect(body).toMatch(/发布到 npm 之后/);
+      expect(body).toMatch(/### 安装|\*\*安装\*\*/);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
       expect(body).toContain(`裸 \`npx ${CLI_NAME}\``);
+      expect(body).not.toMatch(/今天（尚未上公共 npm）/);
+      expect(body).not.toMatch(/发布到 npm 之后/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -151,7 +153,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/init TUI can offer a custom path/i);
   });
 
-  it("quickstarts keep Today vs After-npm install paths", () => {
+  it("quickstarts keep scoped npx Install path", () => {
     const en = fs.readFileSync(
       path.join(repoRoot, "docs/autopilot/quickstart.md"),
       "utf8",
@@ -160,14 +162,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       path.join(repoRoot, "docs/autopilot/quickstart.zh-CN.md"),
       "utf8",
     );
-    expect(en).toMatch(/Today \(not on public npm yet\)/);
-    expect(en).toMatch(/After npm publish/);
+    expect(en).toMatch(/\*\*Install\*\*/);
     expect(en).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(en).toContain(`not bare \`npx ${CLI_NAME}\``);
-    expect(zh).toMatch(/今天（尚未上公共 npm）/);
-    expect(zh).toMatch(/发布到 npm 之后/);
+    expect(en).not.toMatch(/Today \(not on public npm yet\)/);
+    expect(en).not.toMatch(/After npm publish/);
+    expect(zh).toMatch(/\*\*安装\*\*/);
     expect(zh).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(zh).toContain(`裸 \`npx ${CLI_NAME}\``);
+    expect(zh).not.toMatch(/今天（尚未上公共 npm）/);
+    expect(zh).not.toMatch(/发布到 npm 之后/);
   });
 
   it("package npm READMEs keep install entrypoints", () => {
@@ -207,11 +211,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/review\.scope/);
     expect(body).toMatch(/executing_only/);
     expect(body).toMatch(/\*\*`project`\*\*/);
-    expect(body).toMatch(/After npm publish/);
+    expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
+    expect(body).not.toMatch(/Today \(not on public npm yet\)/);
+    expect(body).not.toMatch(/After npm publish/);
   });
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
@@ -223,6 +229,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/host-plan-bridge\.md/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
+    expect(body).not.toMatch(/今天（尚未上公共 npm）/);
+    expect(body).not.toMatch(/发布到 npm 之后/);
   });
 
   it("hosts.md marks Codex mitigation as Planned and links Plan bridge", () => {

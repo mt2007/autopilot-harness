@@ -86,34 +86,11 @@ Notes:
 
 ## Quick start
 
-Requires **Node.js 22+** and **pnpm**. The CLI package is `@autopilot-harness/cli` (bin: `autopilot-harness`).
+Requires **Node.js 22+**. The CLI package is `@autopilot-harness/cli` (bin: `autopilot-harness`).
 
-### Today (not on public npm yet)
+### Install
 
-Install from this repo, then call the **built** binary. Commands use the **current working directory** as the project root.
-
-```bash
-git clone https://github.com/mt2007/autopilot-harness.git
-cd autopilot-harness && pnpm install && pnpm build
-
-# instrument your app (cwd = that app):
-cd /path/to/your-app
-node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
-# interactive TUI: omit --yes (platform still defaults to cursor)
-# more flags: node …/bin.js init --help   (e.g. --platforms, --add-platform)
-```
-
-Dogfood this clone after `pnpm build`:
-
-```bash
-node packages/cli/dist/bin.js status
-node packages/cli/dist/bin.js doctor
-node packages/cli/dist/bin.js upgrade --dry-run
-```
-
-### After npm publish
-
-Prefer the scoped package (not a bare `npx autopilot-harness` name):
+Prefer the scoped package (not a bare `npx autopilot-harness` name). Commands use the **current working directory** as the project root:
 
 ```bash
 cd /path/to/your-app
@@ -122,7 +99,9 @@ npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```
 
-Until the package is on the public registry, use the **Today** path above.
+Interactive TUI: omit `--yes` (platform still defaults to cursor). More flags: `npx @autopilot-harness/cli init --help`.
+
+Developing or dogfooding from a clone of this repo: see [Contributing](./CONTRIBUTING.md).
 
 Reload the Cursor window (or start a new Agent chat), then:
 

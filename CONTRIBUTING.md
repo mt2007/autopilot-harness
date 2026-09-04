@@ -22,6 +22,30 @@ pnpm exec vitest run packages/core/tests/recover-debounce.test.ts
 pnpm exec vitest run packages/cli/tests
 ```
 
+### Dogfood from a clone
+
+Consumers should prefer `npx @autopilot-harness/cli` (see README). To run the **built** binary against a target app while developing this repo:
+
+```bash
+git clone https://github.com/mt2007/autopilot-harness.git
+cd autopilot-harness && pnpm install && pnpm build
+
+cd /path/to/your-app
+node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
+node /path/to/autopilot-harness/packages/cli/dist/bin.js status
+node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
+```
+
+Inside this clone after `pnpm build`:
+
+```bash
+node packages/cli/dist/bin.js status
+node packages/cli/dist/bin.js doctor
+node packages/cli/dist/bin.js upgrade --dry-run
+```
+
+Never document a bare `npx autopilot-harness` package name as the install — use scoped `@autopilot-harness/cli`.
+
 ## Docs PRs
 
 - Product front door: English [README.md](./README.md) is **authoritative for behavior**.
@@ -32,7 +56,7 @@ pnpm exec vitest run packages/cli/tests
 - Release notes: [CHANGELOG.md](./CHANGELOG.md).
 - Prefer small, reviewable doc PRs; match existing tone (no usage-limit / recover marketing in the front door).
 - If you change CLI install paths or skills/triggers, update README + `README.zh-CN.md`, both quickstarts, and keep `writeQuickstart` in `packages/cli` aligned with the OSS quickstart sections that consumers receive on `init`.
-- After npm publish of `@autopilot-harness/cli`, flip README / quickstart “Today” vs “After npm publish” so the scoped `npx @autopilot-harness/cli` path is primary (never document a bare `npx autopilot-harness` package name as the install).
+- User-facing install docs should keep scoped `npx @autopilot-harness/cli` as the primary path (never bare `npx autopilot-harness`). Source-build dogfood belongs in this CONTRIBUTING section.
 
 ## Translations
 

@@ -16,7 +16,7 @@ other ids are reserved for future ports.
 ```
 packages/core          StateStore, ReviewEngine, project-config, checklist, triggers
 packages/ports/cursor  beforeSubmitPrompt / afterFileEdit / stop adapters
-packages/cli           @autopilot-harness/cli (bin: autopilot-harness; not on public npm yet)
+packages/cli           @autopilot-harness/cli (bin: autopilot-harness; npm public)
 packages/i18n          en + zh-CN (v0.1.0)
 packages/templates     skills (*.tpl) + planning/executing workflows
 ```

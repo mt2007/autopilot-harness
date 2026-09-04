@@ -88,33 +88,11 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 
 ## 快速开始
 
-需要 **Node.js 22+** 与 **pnpm**。CLI 包 `@autopilot-harness/cli`（bin：`autopilot-harness`）。
+需要 **Node.js 22+**。CLI 包 `@autopilot-harness/cli`（bin：`autopilot-harness`）。
 
-### 今天（尚未上公共 npm）
+### 安装
 
-从本仓库安装，再调用**已构建**二进制。命令以 **当前工作目录** 为项目根：
-
-```bash
-git clone https://github.com/mt2007/autopilot-harness.git
-cd autopilot-harness && pnpm install && pnpm build
-
-cd /path/to/your-app
-node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
-# 交互 TUI：省略 --yes（platform 仍默认 cursor）
-# 更多参数：node …/bin.js init --help   （如 --platforms、--add-platform）
-```
-
-本仓库 dogfood（在 harness 克隆里 `pnpm build` 之后）：
-
-```bash
-node packages/cli/dist/bin.js status
-node packages/cli/dist/bin.js doctor
-node packages/cli/dist/bin.js upgrade --dry-run
-```
-
-### 发布到 npm 之后
-
-优先用 scoped 包名（不要用不存在的裸 `npx autopilot-harness`）：
+优先用 scoped 包名（不要用不存在的裸 `npx autopilot-harness`）。命令以 **当前工作目录** 为项目根：
 
 ```bash
 cd /path/to/your-app
@@ -123,7 +101,9 @@ npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```
 
-在未上架前，请用上面的「今天」路径。
+交互 TUI：省略 `--yes`（platform 仍默认 cursor）。更多参数：`npx @autopilot-harness/cli init --help`。
+
+从本仓库克隆开发或 dogfood：见 [Contributing](./CONTRIBUTING.md)。
 
 重载 Cursor 窗口（或新开 Agent 聊天），然后：
 

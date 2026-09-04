@@ -36,31 +36,17 @@ Also: `Autopilot RUN`
 
 CLI package: `@autopilot-harness/cli` (bin: `autopilot-harness`).
 
-**Today (not on public npm yet):** clone and build this repo, then run the built binary with **cwd = the project you want to instrument**:
+**Install** with the scoped package (not bare `npx autopilot-harness`). **cwd = the project you want to instrument**:
 
 ```bash
-# once: in the autopilot-harness clone
-git clone https://github.com/mt2007/autopilot-harness.git
-cd autopilot-harness && pnpm install && pnpm build
-
-# in the app you want Autopilot on
 cd /path/to/your-app
-node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
-node /path/to/autopilot-harness/packages/cli/dist/bin.js status
-node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
-node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
+npx @autopilot-harness/cli init --platform cursor --yes
+npx @autopilot-harness/cli status
+npx @autopilot-harness/cli doctor
+npx @autopilot-harness/cli upgrade --dry-run
 ```
 
-Dogfooding this harness clone (after `pnpm build`):
-
-```bash
-node packages/cli/dist/bin.js init --platform cursor --yes
-node packages/cli/dist/bin.js status
-node packages/cli/dist/bin.js doctor
-node packages/cli/dist/bin.js upgrade --dry-run
-```
-
-**After npm publish:** `npx @autopilot-harness/cli …` (scoped name — not bare `npx autopilot-harness`). Until then, use the **Today** path.
+Developing or dogfooding from a clone of this repo: see [Contributing](../../CONTRIBUTING.md).
 
 ## After install
 

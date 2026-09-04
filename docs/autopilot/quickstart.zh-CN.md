@@ -36,31 +36,17 @@
 
 CLI 包：`@autopilot-harness/cli`（bin：`autopilot-harness`）。
 
-**今天（尚未上公共 npm）：** 先克隆并构建本仓库，再用**已构建二进制**；**cwd = 要接入 Autopilot 的项目**：
+**安装**用 scoped 包名（不要用不存在的裸 `npx autopilot-harness`）。**cwd = 要接入 Autopilot 的项目**：
 
 ```bash
-# 一次性：在 autopilot-harness 克隆里
-git clone https://github.com/mt2007/autopilot-harness.git
-cd autopilot-harness && pnpm install && pnpm build
-
-# 在目标应用里
 cd /path/to/your-app
-node /path/to/autopilot-harness/packages/cli/dist/bin.js init --platform cursor --yes
-node /path/to/autopilot-harness/packages/cli/dist/bin.js status
-node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
-node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
+npx @autopilot-harness/cli init --platform cursor --yes
+npx @autopilot-harness/cli status
+npx @autopilot-harness/cli doctor
+npx @autopilot-harness/cli upgrade --dry-run
 ```
 
-在本 harness 克隆里 dogfood（`pnpm build` 之后）：
-
-```bash
-node packages/cli/dist/bin.js init --platform cursor --yes
-node packages/cli/dist/bin.js status
-node packages/cli/dist/bin.js doctor
-node packages/cli/dist/bin.js upgrade --dry-run
-```
-
-**发布到 npm 之后：** `npx @autopilot-harness/cli …`（scoped 包名——不要用不存在的裸 `npx autopilot-harness`）。未上架前用「今天」路径。
+从本仓库克隆开发或 dogfood：见 [Contributing](../../CONTRIBUTING.md)。
 
 ## 安装后
 

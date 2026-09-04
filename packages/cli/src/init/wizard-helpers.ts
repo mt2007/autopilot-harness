@@ -707,15 +707,16 @@ export function writeQuickstart(
 
 ## 终端
 
-**今天（尚未上公共 npm）：** 用已构建的二进制（把路径换成你的 harness 克隆；\`cwd\` = 目标项目）：
+**安装**用 scoped 包名（不要用不存在的裸 \`npx ${CLI_NAME}\`）。\`cwd\` = 目标项目：
 
 \`\`\`bash
-node /path/to/autopilot-harness/packages/cli/dist/bin.js status
-node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
-node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
+npx ${NPM_PACKAGE_NAME} init --platform cursor --yes
+npx ${NPM_PACKAGE_NAME} status
+npx ${NPM_PACKAGE_NAME} doctor
+npx ${NPM_PACKAGE_NAME} upgrade --dry-run
 \`\`\`
 
-**发布到 npm 之后：** \`npx ${NPM_PACKAGE_NAME} …\`（scoped 包名——不要用不存在的裸 \`npx ${CLI_NAME}\`）。未上架前用「今天」路径。
+从本仓库克隆开发或 dogfood：见 https://github.com/mt2007/autopilot-harness/blob/main/CONTRIBUTING.md 。
 
 ## 安装后
 
@@ -775,15 +776,16 @@ Also: \`Autopilot RUN\`
 
 ## Terminal
 
-**Today (not on public npm yet):** use the built binary (replace the path with your harness clone; \`cwd\` = the app):
+**Install** with the scoped package (not bare \`npx ${CLI_NAME}\`). \`cwd\` = the app:
 
 \`\`\`bash
-node /path/to/autopilot-harness/packages/cli/dist/bin.js status
-node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
-node /path/to/autopilot-harness/packages/cli/dist/bin.js upgrade --dry-run
+npx ${NPM_PACKAGE_NAME} init --platform cursor --yes
+npx ${NPM_PACKAGE_NAME} status
+npx ${NPM_PACKAGE_NAME} doctor
+npx ${NPM_PACKAGE_NAME} upgrade --dry-run
 \`\`\`
 
-**After npm publish:** \`npx ${NPM_PACKAGE_NAME} …\` (scoped name — not bare \`npx ${CLI_NAME}\`). Until then, use the **Today** path.
+Developing or dogfooding from a clone of this repo: see https://github.com/mt2007/autopilot-harness/blob/main/CONTRIBUTING.md .
 
 ## After install
 
