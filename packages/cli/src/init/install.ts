@@ -72,6 +72,8 @@ export {
   hasClaudeBlockCapZero,
   hasCompleteClaudeAutopilotHooks,
   summarizeClaudeAutopilotHooks,
+  stripAutopilotClaudeSettings,
+  claudeSettingsContainAutopilot,
   CLAUDE_AUTOPILOT_EVENTS,
   CLAUDE_BLOCK_CAP_ENV,
 } from "./claude-settings-merge.js";

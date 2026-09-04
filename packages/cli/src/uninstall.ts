@@ -6,6 +6,14 @@ import {
   isAutopilotCommand,
 } from "./init/hooks-merge.js";
 import {
+  stripAutopilotClaudeSettings,
+  claudeSettingsContainAutopilot,
+  validateClaudeSettingsShape,
+  type ClaudeSettingsFile,
+} from "./init/claude-settings-merge.js";
+import { readConfigInstallHints } from "./init/config-merge.js";
+import { configWantsInstallableHost } from "./init/platforms.js";
+import {
   AUTOPILOT_SKILL_NAMES,
   AUTOPILOT_WORKFLOW_FILES,
 } from "./init/install.js";
@@ -144,6 +152,64 @@ function hooksContainAutopilot(hooks: HooksFile): boolean {
   return false;
 }
 
+function readClaudeSettingsFile(
+  settingsPath: string,
+):
+  | { ok: true; value: ClaudeSettingsFile | null }
+  | { ok: false; error: string } {
+  try {
+    assertNotSymlink(settingsPath, ".claude/settings.json");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(settingsPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: ".claude/settings.json is a symlink; refusing to open",
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error:
+          ".claude/settings.json exists and is not a regular file; refusing to uninstall",
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access settings.json: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      settingsPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".claude/settings.json",
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error:
+          ".claude/settings.json is not a JSON object; fix or remove it before uninstall.",
+      };
+    }
+    const settings = parsed as ClaudeSettingsFile;
+    const shape = validateClaudeSettingsShape(settings);
+    if (shape) return { ok: false, error: shape };
+    return { ok: true, value: settings };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read settings.json: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -207,6 +273,30 @@ function pathExistsViaLstat(p: string): boolean {
   }
 }
 
+/** Collapse controls / whitespace before reflecting FS errors into action lines. */
+function formatUninstallSkipDetail(raw: string): string {
+  return raw
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+}
+
+/** Best-effort: config declares installable Claude Code (missing/unreadable → false). */
+function projectWantsClaudeHost(configPath: string): boolean {
+  try {
+    const yaml = readUntrustedUtf8File(
+      configPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".autopilot/config.yml",
+    );
+    const platforms = readConfigInstallHints(yaml).platforms;
+    return configWantsInstallableHost(platforms, "claude-code");
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Before mutating hooks.json: ensure any non-symlink removal target realpaths
  * inside the project (bind mounts / junctions under skills etc.).
@@ -265,22 +355,34 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const cursorDir = path.join(projectRoot, ".cursor");
     const hooksPath = path.join(cursorDir, "hooks.json");
     const skillsRoot = path.join(cursorDir, "skills");
+    const claudeDir = path.join(projectRoot, ".claude");
+    const claudeSettingsPath = path.join(claudeDir, "settings.json");
+    const claudeSkillsRoot = path.join(claudeDir, "skills");
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
+
+    const wantClaude = projectWantsClaudeHost(configPath);
+    // Only fail-closed on .claude tree when config declares Claude. Leftover
+    // Cursor-only .claude (incl. symlinked trees with Autopilot skills) must not
+    // block uninstall — Claude skill/settings cleanup soft-skips on error below.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
     // isRealDirectory is false for symlinks — probe with lstat so links are caught.
     // Include skills/workflows so a planted link fails closed *before* hooks.json write.
     try {
-      for (const [dir, label] of [
+      const dirs: Array<readonly [string, string]> = [
         [cursorDir, ".cursor/"],
         [skillsRoot, ".cursor/skills/"],
         [autopilotDir, ".autopilot/"],
         [binDir, ".autopilot/bin/"],
         [docsAutopilotDir, "docs/autopilot/"],
         [workflowsDir, "docs/autopilot/workflows/"],
-      ] as const) {
+      ];
+      if (wantClaude) {
+        dirs.push([claudeDir, ".claude/"], [claudeSkillsRoot, ".claude/skills/"]);
+      }
+      for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
         assertNotSymlink(dir, label);
         assertRealpathInside(projectRoot, dir, label);
@@ -298,6 +400,13 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
           path.join(skillsRoot, name),
           `.cursor/skills/${name}`,
         );
+        if (wantClaude) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(claudeSkillsRoot, name),
+            `.claude/skills/${name}`,
+          );
+        }
       }
       for (const name of AUTOPILOT_WORKFLOW_FILES) {
         assertRemovalTargetSafe(
@@ -323,7 +432,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
 
     let found = false;
 
-    // --- hooks ---
+    // --- Cursor hooks ---
     const hooksPre = readHooksFile(hooksPath);
     if (!hooksPre.ok) {
       return { ok: false, error: hooksPre.error };
@@ -360,7 +469,72 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
     }
 
-    // --- skills (lstat so symlink skills are not silently ignored) ---
+    // --- Claude settings ---
+    // Cursor-only (etc.): ignore unreadable leftover settings (init/upgrade parity).
+    // Claude-enabled configs still fail closed so Autopilot markers are not left behind.
+    // When !wantClaude, never abort uninstall after Cursor work — soft-skip Claude strip
+    // failures (corrupt/symlink parent/TOCTOU) instead of failing the whole command.
+    const claudePre = readClaudeSettingsFile(claudeSettingsPath);
+    if (!claudePre.ok) {
+      if (wantClaude) {
+        return { ok: false, error: claudePre.error };
+      }
+      actions.push(
+        `skip .claude/settings.json (${formatUninstallSkipDetail(claudePre.error)})`,
+      );
+    } else if (claudeSettingsContainAutopilot(claudePre.value)) {
+      const stripClaudeSettings = (): void => {
+        assertNotSymlink(claudeDir, ".claude/");
+        assertNotSymlink(claudeSettingsPath, ".claude/settings.json");
+        if (dryRun) {
+          found = true;
+          actions.push("strip Autopilot entries from .claude/settings.json");
+          return;
+        }
+        const claudeFresh = readClaudeSettingsFile(claudeSettingsPath);
+        if (!claudeFresh.ok) {
+          throw new Error(claudeFresh.error);
+        }
+        const freshSettings = claudeFresh.value;
+        if (
+          freshSettings == null ||
+          !claudeSettingsContainAutopilot(freshSettings)
+        ) {
+          found = true;
+          actions.push("strip Autopilot entries from .claude/settings.json");
+          actions.push(
+            "settings.json no longer has Autopilot entries (skipped write)",
+          );
+          return;
+        }
+        const stripped = stripAutopilotClaudeSettings(freshSettings);
+        writeJsonAtomic(
+          claudeSettingsPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          ".claude/settings.json",
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push("strip Autopilot entries from .claude/settings.json");
+        removed.push(
+          path.relative(projectRoot, claudeSettingsPath) +
+            " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripClaudeSettings();
+      } catch (err) {
+        if (wantClaude) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .claude/settings.json (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Cursor skills (lstat so symlink skills are not silently ignored) ---
     for (const name of AUTOPILOT_SKILL_NAMES) {
       const skillDir = path.join(skillsRoot, name);
       if (!pathExistsViaLstat(skillDir)) continue;
@@ -373,6 +547,37 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         dryRun,
         actions,
       );
+    }
+
+    // --- Claude skills ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(claudeSkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        // Probe escape before marking found (Cursor-only soft-skip must not claim work).
+        if (!wantClaude) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.claude/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.claude/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantClaude) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .claude/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
     }
 
     // --- workflows ---
@@ -464,7 +669,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const note = hooksStripped
-      ? " (Autopilot hooks were already stripped; fix the error and re-run uninstall)"
+      ? " (Autopilot host settings were already stripped; fix the error and re-run uninstall)"
       : "";
     return { ok: false, error: `${msg}${note}` };
   }

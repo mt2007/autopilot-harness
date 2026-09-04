@@ -231,10 +231,100 @@ export function mergeClaudeSettings(
   return base;
 }
 
+/**
+ * Remove Autopilot Claude hook handlers and BLOCK_CAP env; keep foreign hooks/env.
+ * Does not delete settings.json — caller decides write/unlink.
+ */
+export function stripAutopilotClaudeSettings(
+  existing: ClaudeSettingsFile,
+): ClaudeSettingsFile {
+  const shapeError = validateClaudeSettingsShape(existing);
+  if (shapeError) {
+    throw new Error(shapeError);
+  }
+
+  const base: ClaudeSettingsFile = {};
+  for (const [key, value] of Object.entries(existing)) {
+    if (isUnsafeKey(key)) continue;
+    base[key] = value;
+  }
+
+  if (base.env && typeof base.env === "object" && !Array.isArray(base.env)) {
+    const nextEnv: Record<string, unknown> = Object.create(null);
+    for (const [key, value] of Object.entries(base.env)) {
+      if (isUnsafeKey(key)) continue;
+      if (key === CLAUDE_BLOCK_CAP_ENV) continue;
+      nextEnv[key] = value;
+    }
+    if (Object.keys(nextEnv).length === 0) {
+      delete base.env;
+    } else {
+      base.env = nextEnv;
+    }
+  }
+
+  const prevHooks = base.hooks;
+  if (prevHooks && typeof prevHooks === "object" && !Array.isArray(prevHooks)) {
+    const nextHooks: Record<string, ClaudeMatcherGroup[]> = Object.create(null);
+    for (const [key, value] of Object.entries(prevHooks)) {
+      if (isUnsafeKey(key)) continue;
+      if (!Array.isArray(value)) continue;
+      const kept = stripAutopilotFromGroups(value as ClaudeMatcherGroup[]);
+      // Drop empty event lists so uninstall does not leave Stop: [].
+      if (kept.length > 0) nextHooks[key] = kept;
+    }
+    if (Object.keys(nextHooks).length === 0) {
+      delete base.hooks;
+    } else {
+      base.hooks = nextHooks;
+    }
+  }
+
+  return base;
+}
+
+/**
+ * True when Autopilot Claude markers remain (hook commands and/or BLOCK_CAP env).
+ * BLOCK_CAP alone counts so uninstall can clear leftover env after partial strip.
+ */
+export function claudeSettingsContainAutopilot(
+  settings: ClaudeSettingsFile | null,
+): boolean {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return false;
+  }
+  const env = settings.env;
+  if (
+    env &&
+    typeof env === "object" &&
+    !Array.isArray(env) &&
+    Object.prototype.hasOwnProperty.call(env, CLAUDE_BLOCK_CAP_ENV)
+  ) {
+    return true;
+  }
+  const bag =
+    settings.hooks &&
+    typeof settings.hooks === "object" &&
+    !Array.isArray(settings.hooks)
+      ? settings.hooks
+      : {};
+  for (const value of Object.values(bag)) {
+    if (!Array.isArray(value)) continue;
+    for (const g of value as ClaudeMatcherGroup[]) {
+      const hooks = Array.isArray(g?.hooks) ? g.hooks : [];
+      if (hooks.some((h) => isAutopilotCommand(h?.command))) return true;
+    }
+  }
+  return false;
+}
+
 /** True when BLOCK_CAP is present and set to "0" (string or number). */
 export function hasClaudeBlockCapZero(settings: ClaudeSettingsFile): boolean {
   const env = settings.env;
   if (!env || typeof env !== "object" || Array.isArray(env)) return false;
+  if (!Object.prototype.hasOwnProperty.call(env, CLAUDE_BLOCK_CAP_ENV)) {
+    return false;
+  }
   const raw = (env as Record<string, unknown>)[CLAUDE_BLOCK_CAP_ENV];
   if (raw === 0) return true;
   if (typeof raw === "string" && raw.trim() === "0") return true;

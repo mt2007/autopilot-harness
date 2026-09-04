@@ -12,6 +12,7 @@ import {
 import { parseDocument } from "yaml";
 import {
   formatPlatformsDisplay,
+  configWantsInstallableHost,
   parsePlatformBindingsFromConfig,
   type PlatformBinding,
 } from "./init/platforms.js";
@@ -20,6 +21,12 @@ import {
   summarizeAutopilotHooks,
   validateHooksShape,
 } from "./init/hooks-merge.js";
+import {
+  hasClaudeBlockCapZero,
+  summarizeClaudeAutopilotHooks,
+  validateClaudeSettingsShape,
+  type ClaudeSettingsFile,
+} from "./init/claude-settings-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside, normalizePlansDir } from "./init/wizard-helpers.js";
 import {
@@ -578,73 +585,141 @@ export function runDoctor(
   }
 
   const hooksPath = path.join(root, ".cursor", "hooks.json");
-  try {
-    // Avoid existsSync: dangling symlinks look missing but must FAIL as unreadable.
-    const raw = readUntrustedUtf8File(
-      hooksPath,
-      MAX_CONFIG_BYTES,
-      ".cursor/hooks.json",
-    );
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      lines.push("FAIL  hooks.json is not a JSON object");
-      ok = false;
-    } else {
-      const hooks = parsed as HooksFile;
-      const shapeError = validateHooksShape(
-        hooks.hooks ? hooks : { version: 1, hooks: {} },
+  const wantCursor = configWantsInstallableHost(cfg.platforms, "cursor");
+  const wantClaude = configWantsInstallableHost(cfg.platforms, "claude-code");
+
+  if (wantCursor) {
+    try {
+      // Avoid existsSync: dangling symlinks look missing but must FAIL as unreadable.
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_CONFIG_BYTES,
+        ".cursor/hooks.json",
       );
-      if (shapeError) {
-        lines.push(`FAIL  ${safeDisplayToken(shapeError, "invalid hooks.json")}`);
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push("FAIL  hooks.json is not a JSON object");
         ok = false;
       } else {
-        const { missingEvents, duplicates } = summarizeAutopilotHooks(hooks);
-        if (missingEvents.length > 0) {
-          lines.push(
-            `FAIL  hooks.json missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
-          );
+        const hooks = parsed as HooksFile;
+        const shapeError = validateHooksShape(
+          hooks.hooks ? hooks : { version: 1, hooks: {} },
+        );
+        if (shapeError) {
+          lines.push(`FAIL  ${safeDisplayToken(shapeError, "invalid hooks.json")}`);
           ok = false;
-        }
-        if (duplicates > 0) {
-          lines.push(
-            `WARN  hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
-          );
-        }
-        // Warn even when other events are missing/duplicated — stop can still
-        // be present without loop_limit:null and get Cursor-capped mid-chain.
-        if (
-          !missingEvents.includes("stop") &&
-          !autopilotStopHasUnlimitedLoop(hooks)
-        ) {
-          lines.push(
-            "WARN  Autopilot stop missing loop_limit:null — Cursor defaults to 5 and may skip mid review chain; run upgrade",
-          );
-        }
-        if (
-          missingEvents.length === 0 &&
-          duplicates === 0 &&
-          autopilotStopHasUnlimitedLoop(hooks)
-        ) {
-          lines.push("OK    hooks.json Autopilot entries");
+        } else {
+          const { missingEvents, duplicates } = summarizeAutopilotHooks(hooks);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  hooks.json missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          // Warn even when other events are missing/duplicated — stop can still
+          // be present without loop_limit:null and get Cursor-capped mid-chain.
+          if (
+            !missingEvents.includes("stop") &&
+            !autopilotStopHasUnlimitedLoop(hooks)
+          ) {
+            lines.push(
+              "WARN  Autopilot stop missing loop_limit:null — Cursor defaults to 5 and may skip mid review chain; run upgrade",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            autopilotStopHasUnlimitedLoop(hooks)
+          ) {
+            lines.push("OK    hooks.json Autopilot entries");
+          }
         }
       }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push("FAIL  .cursor/hooks.json missing");
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  hooks.json unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
     }
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === "ENOENT") {
-      lines.push("FAIL  .cursor/hooks.json missing");
-      ok = false;
-    } else {
-      const msg = err instanceof Error ? err.message : String(err);
-      lines.push(
-        `FAIL  hooks.json unreadable (${safeDisplayToken(msg, "error")})`,
+  }
+
+  if (wantClaude) {
+    const claudeSettingsPath = path.join(root, ".claude", "settings.json");
+    try {
+      const raw = readUntrustedUtf8File(
+        claudeSettingsPath,
+        MAX_CONFIG_BYTES,
+        ".claude/settings.json",
       );
-      ok = false;
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push("FAIL  .claude/settings.json is not a JSON object");
+        ok = false;
+      } else {
+        const settings = parsed as ClaudeSettingsFile;
+        const shapeError = validateClaudeSettingsShape(settings);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${safeDisplayToken(shapeError, "invalid settings.json")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeClaudeAutopilotHooks(settings);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  settings.json missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  settings.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (!hasClaudeBlockCapZero(settings)) {
+            lines.push(
+              "WARN  CLAUDE_CODE_STOP_HOOK_BLOCK_CAP missing or not 0 — Stop may be capped mid review chain; run upgrade",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            hasClaudeBlockCapZero(settings)
+          ) {
+            lines.push("OK    .claude/settings.json Autopilot entries");
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push("FAIL  .claude/settings.json missing");
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  settings.json unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
     }
   }
 
   const homeDir = opts.homeDir ?? os.homedir();
-  if (hasGlobalSelfReviewHooks(homeDir)) {
+  if (wantCursor && hasGlobalSelfReviewHooks(homeDir)) {
     lines.push(
       "WARN  ~/.cursor global self-review hooks detected — may double-inject with Autopilot; disable run-global-self-review or rely on Autopilot alone",
     );
@@ -696,27 +771,40 @@ export function runDoctor(
   }
 
   let missingSkills = 0;
-  for (const name of SKILL_NAMES) {
-    const skillPath = path.join(root, ".cursor", "skills", name, "SKILL.md");
-    try {
-      const st = fs.lstatSync(skillPath);
-      // existsSync follows pointing symlinks / lies on dangling — require a real file.
-      if (st.isSymbolicLink() || !st.isFile()) {
+  const skillHosts: Array<{ parent: ".cursor" | ".claude"; label: string }> = [];
+  if (wantCursor) skillHosts.push({ parent: ".cursor", label: ".cursor/skills/" });
+  if (wantClaude) skillHosts.push({ parent: ".claude", label: ".claude/skills/" });
+  for (const host of skillHosts) {
+    for (const name of SKILL_NAMES) {
+      const skillPath = path.join(root, host.parent, "skills", name, "SKILL.md");
+      try {
+        const st = fs.lstatSync(skillPath);
+        // existsSync follows pointing symlinks / lies on dangling — require a real file.
+        if (st.isSymbolicLink() || !st.isFile()) {
+          missingSkills += 1;
+          continue;
+        }
+        // Skill dir itself may be a symlink escape; realpath must stay in-project.
+        assertRealpathInside(
+          root,
+          skillPath,
+          `${host.parent}/skills/${name}/SKILL.md`,
+        );
+      } catch {
         missingSkills += 1;
-        continue;
       }
-      // Skill dir itself may be a symlink escape; realpath must stay in-project.
-      assertRealpathInside(root, skillPath, `.cursor/skills/${name}/SKILL.md`);
-    } catch {
-      missingSkills += 1;
     }
   }
-  if (missingSkills > 0) {
+  if (skillHosts.length === 0) {
+    // No installable hosts declared — skip skills check.
+  } else if (missingSkills > 0) {
+    const where = skillHosts.map((h) => h.label).join(" / ");
     lines.push(
-      `WARN  ${missingSkills} skill(s) missing under .cursor/skills/ — run upgrade`,
+      `WARN  ${missingSkills} skill(s) missing under ${where} — run upgrade`,
     );
   } else {
-    lines.push("OK    skills (5)");
+    const n = skillHosts.length * SKILL_NAMES.length;
+    lines.push(`OK    skills (${n})`);
   }
 
   const opened = openStateStore(root);

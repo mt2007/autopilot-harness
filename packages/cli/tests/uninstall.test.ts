@@ -302,4 +302,296 @@ describe("uninstallProject", () => {
     ).toBe(true);
     fs.rmSync(outside, { recursive: true, force: true });
   });
+
+  it("uninstalls Claude settings Autopilot entries and skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+      hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
+    };
+    settings.hooks = settings.hooks ?? {};
+    settings.hooks.Stop = [
+      ...(settings.hooks.Stop ?? []),
+      { hooks: [{ command: "echo foreign-stop" }] },
+    ];
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.claude\/settings\.json/i.test(a))).toBe(
+      true,
+    );
+
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+      hooks?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(after).includes("autopilot-harness-hook.mjs")).toBe(
+      false,
+    );
+    expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBeUndefined();
+    expect(JSON.stringify(after.hooks?.Stop)).toMatch(/foreign-stop/);
+    expect(
+      fs.existsSync(
+        path.join(root, ".claude", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+  });
+
+  it("uninstalls Claude BLOCK_CAP-only leftovers without Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          env: { CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "0", KEEP: "yes" },
+          hooks: {
+            Stop: [{ hooks: [{ type: "command", command: "echo foreign" }] }],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+      hooks?: Record<string, unknown>;
+    };
+    expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBeUndefined();
+    expect(after.env?.KEEP).toBe("yes");
+    expect(JSON.stringify(after.hooks?.Stop)).toMatch(/echo foreign/);
+  });
+
+  it("Cursor-only uninstall strips in-project leftover Claude Autopilot settings and skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    // Simulate leftover Claude wiring after platforms were narrowed to Cursor-only.
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          env: { CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "0", KEEP: "yes" },
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command:
+                      "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+                  },
+                  { type: "command", command: "echo foreign-stop" },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    const skillDir = path.join(root, ".claude", "skills", "autopilot-on");
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# leftover\n");
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+      hooks?: Record<string, unknown>;
+    };
+    expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBeUndefined();
+    expect(after.env?.KEEP).toBe("yes");
+    expect(JSON.stringify(after)).not.toMatch(/autopilot-harness-hook\.mjs/);
+    expect(JSON.stringify(after.hooks?.Stop)).toMatch(/foreign-stop/);
+    expect(fs.existsSync(path.join(skillDir, "SKILL.md"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+  });
+
+  it("Cursor-only uninstall skips corrupt leftover .claude/settings.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".claude", "settings.json"),
+      "{not-json",
+      "utf8",
+    );
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /skip \.claude\/settings\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+  });
+
+  it("Cursor-only uninstall soft-skips Autopilot Claude settings under symlinked .claude", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-claude-link-"));
+    fs.writeFileSync(
+      path.join(outside, "settings.json"),
+      JSON.stringify(
+        {
+          env: { CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "0" },
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command: "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    fs.symlinkSync(outside, path.join(root, ".claude"));
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /skip \.claude\/settings\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+    // Outside tree must remain untouched (no write-through).
+    expect(
+      JSON.stringify(
+        JSON.parse(fs.readFileSync(path.join(outside, "settings.json"), "utf8")),
+      ),
+    ).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("Cursor-only uninstall soft-skips Claude skills under symlinked .claude", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-claude-skill-"));
+    const skillOutside = path.join(outside, "skills", "autopilot-on");
+    fs.mkdirSync(skillOutside, { recursive: true });
+    fs.writeFileSync(path.join(skillOutside, "SKILL.md"), "# outside\n");
+    fs.symlinkSync(outside, path.join(root, ".claude"));
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      r.actions.some((a) => /skip \.claude\/skills\/autopilot-on/i.test(a)),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+    expect(fs.existsSync(path.join(skillOutside, "SKILL.md"))).toBe(true);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("Claude-only uninstall fails closed on corrupt settings.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".claude", "settings.json"),
+      "{not-json",
+      "utf8",
+    );
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/settings\.json/i);
+  });
 });

@@ -522,6 +522,65 @@ review:
     expect(r.ok).toBe(false);
   });
 
+  it("dry-run fails closed when Claude settings.json is corrupt", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".claude", "settings.json"),
+      "{not-json",
+      "utf8",
+    );
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(false);
+  });
+
+  it("fails closed before backup when Claude settings.json is a dangling symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "c-claude-dang",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+    });
+    store.close();
+
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    fs.rmSync(settingsPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-settings.json"), settingsPath);
+
+    const beforeDb = fs.readFileSync(
+      path.join(root, ".autopilot", "state.db"),
+    );
+    const r = upgradeProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/symlink|Cannot read/i);
+    const bak = fs
+      .readdirSync(path.join(root, ".autopilot"))
+      .filter((n) => n.startsWith("state.db.bak."));
+    expect(bak).toEqual([]);
+    expect(fs.readFileSync(path.join(root, ".autopilot", "state.db"))).toEqual(
+      beforeDb,
+    );
+  });
+
   it("preserves user hooks and does not touch plans/<slug>", () => {
     root = tmpProject();
     expect(
@@ -559,5 +618,57 @@ review:
       ),
     ).toBe(true);
     expect(fs.readFileSync(planFile, "utf8")).toBe("# keep me\n");
+  });
+
+  it("dry-run lists Claude settings/skills actions when claude-code is enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(true);
+    expect(r.actions.some((a) => /\.claude\/settings\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(r.actions.some((a) => /\.cursor\/hooks\.json/i.test(a))).toBe(false);
+  });
+
+  it("upgrade refreshes Claude BLOCK_CAP to 0", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+    };
+    settings.env = {
+      ...(settings.env ?? {}),
+      CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "8",
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.2.0" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+    };
+    expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBe("0");
   });
 });

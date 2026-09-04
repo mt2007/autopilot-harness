@@ -79,6 +79,22 @@ export function isInstallableBinding(b: PlatformBinding): boolean {
 }
 
 /**
+ * Whether doctor/upgrade should require wiring for `hostId`.
+ * Empty / legacy platforms lists (no installable bindings) default to Cursor-only.
+ */
+export function configWantsInstallableHost(
+  platforms: readonly PlatformBinding[],
+  hostId: string,
+): boolean {
+  const want = sanitizePlatformId(hostId);
+  const installable = platforms.filter((b) => isInstallableBinding(b));
+  if (installable.length === 0) {
+    return want === "cursor";
+  }
+  return installable.some((b) => sanitizePlatformId(b.id) === want);
+}
+
+/**
  * Legacy `platform`/`surface` primary: prefer an installable binding so older
  * readers are not pointed at a declared-but-unwired future host.
  */

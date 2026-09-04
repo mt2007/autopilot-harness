@@ -8,7 +8,15 @@ import {
   readConfigInstallHints,
 } from "./init/config-merge.js";
 import { installInitYes, preflightForceRefresh } from "./init/install.js";
-import { PACKAGE_VERSION } from "./init/types.js";
+import { configWantsInstallableHost } from "./init/platforms.js";
+import {
+  validateHooksShape,
+} from "./init/hooks-merge.js";
+import {
+  validateClaudeSettingsShape,
+  type ClaudeSettingsFile,
+} from "./init/claude-settings-merge.js";
+import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import type { InitLocale } from "./init/types.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
@@ -26,6 +34,100 @@ import {
 import { runDoctor } from "./status-doctor.js";
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Fail closed on corrupt/symlink host settings for platforms we will refresh.
+ * Must run before state.db backup (and for dry-run honesty).
+ */
+function preflightHostSettings(
+  projectRoot: string,
+  wantCursor: boolean,
+  wantClaude: boolean,
+): { ok: true } | { ok: false; error: string } {
+  if (wantCursor) {
+    const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".cursor"), ".cursor/");
+      assertNotSymlink(hooksPath, ".cursor/hooks.json");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        ".cursor/hooks.json",
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${hooksPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const hooks = parsed as HooksFile;
+      if (hooks.hooks != null && typeof hooks.hooks !== "object") {
+        return {
+          ok: false,
+          error: `${hooksPath} has invalid "hooks" field; fix or remove it before upgrade.`,
+        };
+      }
+      if (Array.isArray(hooks.hooks)) {
+        return {
+          ok: false,
+          error: `${hooksPath}: "hooks" must be an object, not an array.`,
+        };
+      }
+      const shape = validateHooksShape(
+        hooks.hooks ? hooks : { version: hooks.version ?? 1, hooks: {} },
+      );
+      if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
+      }
+      // Missing hooks.json is OK — force refresh will create it.
+    }
+  }
+
+  if (wantClaude) {
+    const settingsPath = path.join(projectRoot, ".claude", "settings.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".claude"), ".claude/");
+      assertNotSymlink(settingsPath, ".claude/settings.json");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        settingsPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        ".claude/settings.json",
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${settingsPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateClaudeSettingsShape(parsed as ClaudeSettingsFile);
+      if (shape) return { ok: false, error: `${settingsPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${settingsPath}: ${msg}` };
+      }
+    }
+  }
+
+  return { ok: true };
+}
 
 export interface UpgradeOptions {
   projectRoot: string;
@@ -281,10 +383,20 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
 
     actions.push(`update pin.json → ${version}`);
     actions.push("refresh .autopilot/bin/autopilot-harness-hook.mjs");
-    actions.push("refresh .cursor/skills/autopilot-*");
     actions.push("refresh docs/autopilot/workflows/*");
     actions.push("merge .autopilotignore (append missing default patterns)");
-    actions.push("merge .cursor/hooks.json (Autopilot entries)");
+    const wantCursor = configWantsInstallableHost(platforms, "cursor");
+    const wantClaude = configWantsInstallableHost(platforms, "claude-code");
+    if (wantCursor) {
+      actions.push("refresh .cursor/skills/autopilot-*");
+      actions.push("merge .cursor/hooks.json (Autopilot entries)");
+    }
+    if (wantClaude) {
+      actions.push("refresh .claude/skills/autopilot-*");
+      actions.push(
+        "merge .claude/settings.json (Autopilot hooks + BLOCK_CAP=0)",
+      );
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -293,6 +405,10 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
 
     // Fail closed before any backup/migrate/write (incl. dry-run honesty).
+    const hostPre = preflightHostSettings(projectRoot, wantCursor, wantClaude);
+    if (!hostPre.ok) {
+      return { ok: false, error: hostPre.error };
+    }
     const preflight = preflightForceRefresh(projectRoot);
     if (!preflight.ok) {
       return { ok: false, error: preflight.error };

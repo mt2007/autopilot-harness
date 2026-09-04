@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   CLAUDE_AUTOPILOT_EVENTS,
   CLAUDE_BLOCK_CAP_ENV,
+  claudeSettingsContainAutopilot,
   hasClaudeBlockCapZero,
   hasCompleteClaudeAutopilotHooks,
   mergeClaudeSettings,
+  stripAutopilotClaudeSettings,
   summarizeClaudeAutopilotHooks,
   validateClaudeSettingsShape,
 } from "../src/init/claude-settings-merge.js";
@@ -172,5 +174,61 @@ describe("claude settings merge", () => {
     expect(summarizeClaudeAutopilotHooks(twice).duplicates).toBe(0);
     expect(JSON.stringify(once.hooks)).toBe(JSON.stringify(twice.hooks));
     expect(once.env?.[CLAUDE_BLOCK_CAP_ENV]).toBe("0");
+  });
+
+  it("stripAutopilotClaudeSettings removes Autopilot hooks and BLOCK_CAP", () => {
+    const merged = mergeClaudeSettings({
+      env: { MY_KEY: "keep", [CLAUDE_BLOCK_CAP_ENV]: "0" },
+      hooks: {
+        Stop: [
+          {
+            hooks: [{ type: "command", command: "echo foreign-stop" }],
+          },
+        ],
+        SessionStart: [
+          {
+            hooks: [{ type: "command", command: "echo session" }],
+          },
+        ],
+      },
+    });
+    expect(claudeSettingsContainAutopilot(merged)).toBe(true);
+    const stripped = stripAutopilotClaudeSettings(merged);
+    expect(claudeSettingsContainAutopilot(stripped)).toBe(false);
+    expect(hasClaudeBlockCapZero(stripped)).toBe(false);
+    expect(stripped.env?.MY_KEY).toBe("keep");
+    expect(stripped.env?.[CLAUDE_BLOCK_CAP_ENV]).toBeUndefined();
+    expect(JSON.stringify(stripped.hooks?.Stop)).toMatch(/foreign-stop/);
+    expect(JSON.stringify(stripped.hooks?.SessionStart)).toMatch(/echo session/);
+    expect(hasCompleteClaudeAutopilotHooks(stripped)).toBe(false);
+  });
+
+  it("claudeSettingsContainAutopilot is true for BLOCK_CAP-only leftovers", () => {
+    const leftover = {
+      env: { [CLAUDE_BLOCK_CAP_ENV]: "0" },
+      hooks: {
+        Stop: [{ hooks: [{ type: "command", command: "echo foreign" }] }],
+      },
+    };
+    expect(claudeSettingsContainAutopilot(leftover)).toBe(true);
+    const stripped = stripAutopilotClaudeSettings(leftover);
+    expect(claudeSettingsContainAutopilot(stripped)).toBe(false);
+    expect(stripped.env).toBeUndefined();
+    expect(JSON.stringify(stripped.hooks?.Stop)).toMatch(/echo foreign/);
+  });
+
+  it("strip does not invent hooks when only BLOCK_CAP env is present", () => {
+    const leftover = { env: { [CLAUDE_BLOCK_CAP_ENV]: "8" } };
+    expect(claudeSettingsContainAutopilot(leftover)).toBe(true);
+    const stripped = stripAutopilotClaudeSettings(leftover);
+    expect(stripped).toEqual({});
+    expect(Object.prototype.hasOwnProperty.call(stripped, "hooks")).toBe(false);
+  });
+
+  it("strip drops Autopilot-only event keys instead of leaving empty arrays", () => {
+    const merged = mergeClaudeSettings(null);
+    const stripped = stripAutopilotClaudeSettings(merged);
+    expect(stripped.hooks).toBeUndefined();
+    expect(stripped.env).toBeUndefined();
   });
 });

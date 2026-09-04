@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
+  configWantsInstallableHost,
   defaultSurfaceFor,
   formatBindingOptionLabel,
   formatPlatformsDisplay,
@@ -23,6 +24,29 @@ describe("platforms helpers", () => {
     });
     expect(defaultSurfaceFor("claude-code")).toBe("cli");
     expect(defaultSurfaceFor("runner")).toBe("runner");
+  });
+
+  it("configWantsInstallableHost defaults empty installable list to Cursor", () => {
+    expect(configWantsInstallableHost([], "cursor")).toBe(true);
+    expect(configWantsInstallableHost([], "claude-code")).toBe(false);
+    expect(
+      configWantsInstallableHost(
+        [{ id: "kimi-code", surface: "cli" }],
+        "cursor",
+      ),
+    ).toBe(true);
+    expect(
+      configWantsInstallableHost(
+        [{ id: "claude-code", surface: "cli" }],
+        "cursor",
+      ),
+    ).toBe(false);
+    expect(
+      configWantsInstallableHost(
+        [{ id: "claude-code", surface: "cli" }],
+        "claude-code",
+      ),
+    ).toBe(true);
   });
 
   it("parsePlatformBindingsFromConfig prefers platforms[] over legacy", () => {

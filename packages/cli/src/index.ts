@@ -15,6 +15,8 @@ export {
   hasClaudeBlockCapZero,
   hasCompleteClaudeAutopilotHooks,
   summarizeClaudeAutopilotHooks,
+  stripAutopilotClaudeSettings,
+  claudeSettingsContainAutopilot,
   CLAUDE_AUTOPILOT_EVENTS,
   CLAUDE_BLOCK_CAP_ENV,
 } from "./init/install.js";
@@ -79,6 +81,7 @@ export {
   MAX_PLATFORM_BINDINGS,
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
+  configWantsInstallableHost,
   defaultSurfaceFor,
   formatBindingOptionLabel,
   formatPlatformsDisplay,

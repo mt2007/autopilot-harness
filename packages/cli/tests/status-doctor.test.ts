@@ -1170,4 +1170,52 @@ describe("runDoctor", () => {
     expect(text).not.toMatch(/\u001b/);
     expect(text).toMatch(/hooks\.before \[2JSubmit/);
   });
+
+  it("WARNs when Claude BLOCK_CAP missing or not 0", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      env?: Record<string, string>;
+    };
+    settings.env = { ...(settings.env ?? {}), CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "8" };
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/i);
+    expect(joined).not.toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
+    expect(joined).not.toMatch(/FAIL\s+\.cursor\/hooks\.json missing/);
+  });
+
+  it("OKs Claude-only doctor without requiring Cursor hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
+    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).not.toMatch(/hooks\.json Autopilot entries/);
+  });
 });
