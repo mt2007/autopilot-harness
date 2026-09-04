@@ -1,10 +1,14 @@
 /**
- * Cursor hook entry — marker: autopilot-harness
+ * Autopilot hook entry — marker: autopilot-harness
  * Installed at .autopilot/bin/autopilot-harness-hook.mjs (copy, not symlink).
  *
  * Prefers bundled vendor/runtime.mjs (shipped by init/upgrade) so empty
  * consumer projects work without @autopilot-harness/* in node_modules.
  * Falls back to project-local packages, then fail-open.
+ *
+ * Events:
+ *   Cursor: beforeSubmitPrompt | afterFileEdit | stop
+ *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -12,14 +16,29 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "..", "..");
+const projectRoot = (() => {
+  const resolved = path.resolve(__dirname, "..", "..");
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+})();
+
+const CURSOR_EVENTS = new Set([
+  "beforeSubmitPrompt",
+  "afterFileEdit",
+  "stop",
+]);
+const CLAUDE_EVENTS = new Set([
+  "UserPromptSubmit",
+  "PostToolUse",
+  "Stop",
+  "StopFailure",
+]);
 
 function parseArgs(argv) {
-  const allowed = new Set([
-    "beforeSubmitPrompt",
-    "afterFileEdit",
-    "stop",
-  ]);
+  const allowed = new Set([...CURSOR_EVENTS, ...CLAUDE_EVENTS]);
   const out = { event: "beforeSubmitPrompt" };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--event" && argv[i + 1]) {
@@ -28,6 +47,10 @@ function parseArgs(argv) {
     }
   }
   return out;
+}
+
+function isClaudeEvent(event) {
+  return CLAUDE_EVENTS.has(event);
 }
 
 async function readStdin() {
@@ -91,10 +114,10 @@ async function loadVendorRuntime() {
   return tryImport(pathToFileURL(vendor).href);
 }
 
-async function loadPortFromNodeModules() {
+async function loadPortPackage(pkgName) {
   try {
     const require = createRequire(path.join(projectRoot, "package.json"));
-    const resolved = require.resolve("@autopilot-harness/port-cursor");
+    const resolved = require.resolve(pkgName);
     return tryImport(pathToFileURL(resolved).href);
   } catch {
     return null;
@@ -102,15 +125,15 @@ async function loadPortFromNodeModules() {
 }
 
 async function loadCoreFromNodeModules() {
-  try {
-    const require = createRequire(path.join(projectRoot, "package.json"));
-    const resolved = require.resolve("@autopilot-harness/core");
-    return tryImport(pathToFileURL(resolved).href);
-  } catch {
-    return null;
-  }
+  return loadPortPackage("@autopilot-harness/core");
 }
 
+/**
+ * Fail-open shapes must match the host:
+ * - Cursor submit → { continue: true }
+ * - Claude UserPromptSubmit → {} (allow; no decision:block)
+ * - other events → {}
+ */
 function failOpen(event) {
   if (event === "beforeSubmitPrompt") {
     writeReply(JSON.stringify({ continue: true }));
@@ -128,15 +151,64 @@ function writeReply(text) {
   replied = true;
 }
 
+function createEngine(coreMod, store) {
+  return typeof coreMod.createConfiguredReviewEngine === "function"
+    ? coreMod.createConfiguredReviewEngine(store, projectRoot)
+    : new coreMod.ReviewEngine(store, {
+        confirmRounds: 5,
+        reviewScope: "executing_only",
+        verifyEnabled: false,
+        verifyCommands: [],
+        maxIdleStops: 5,
+        maxErrorsBeforePause: 0,
+        projectRoot,
+      });
+}
+
+function cursorStopHandler(port) {
+  return port.handleCursorStop ?? port.handleStop;
+}
+
+/**
+ * Resolve Claude Stop handler without falling through to Cursor's handleStop
+ * on the dual-port vendor (where deprecated `handleStop` === handleCursorStop).
+ * node_modules `@autopilot-harness/port-claude-code` exports Claude as handleStop
+ * and has no Cursor submit handler.
+ */
+function claudeStopHandler(port) {
+  if (typeof port.handleClaudeStop === "function") {
+    return port.handleClaudeStop;
+  }
+  if (
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+let bootEvent = "beforeSubmitPrompt";
+
 async function main() {
   const { event } = parseArgs(process.argv.slice(2));
+  bootEvent = event;
   try {
     const payload = await readStdin();
+    const claude = isClaudeEvent(event);
 
     const vendor = await loadVendorRuntime();
-    const port = vendor ?? (await loadPortFromNodeModules());
+    const port = vendor
+      ? vendor
+      : claude
+        ? await loadPortPackage("@autopilot-harness/port-claude-code")
+        : await loadPortPackage("@autopilot-harness/port-cursor");
     const coreMod = vendor ?? (await loadCoreFromNodeModules());
-    if (!port?.handleBeforeSubmitPrompt || !coreMod?.StateStore) {
+
+    const portReady = claude
+      ? typeof port?.handleUserPromptSubmit === "function"
+      : typeof port?.handleBeforeSubmitPrompt === "function";
+    if (!portReady || !coreMod?.StateStore) {
       failOpen(event);
       return;
     }
@@ -144,8 +216,12 @@ async function main() {
     const store = new coreMod.StateStore(projectRoot);
     try {
       if (event === "beforeSubmitPrompt") {
-        const result = port.handleBeforeSubmitPrompt(store, payload, projectRoot);
-        writeReply(JSON.stringify(result));
+        const result = port.handleBeforeSubmitPrompt(
+          store,
+          payload,
+          projectRoot,
+        );
+        writeReply(JSON.stringify(result ?? {}));
         return;
       }
       if (event === "afterFileEdit") {
@@ -154,21 +230,52 @@ async function main() {
         return;
       }
       if (event === "stop") {
-        // Vendor injects locale; core still applies config.yml. Fall back if
-        // an older vendor/runtime lacks the factory (upgrade mid-flight).
-        const engine =
-          typeof coreMod.createConfiguredReviewEngine === "function"
-            ? coreMod.createConfiguredReviewEngine(store, projectRoot)
-            : new coreMod.ReviewEngine(store, {
-                confirmRounds: 5,
-                reviewScope: "executing_only",
-                verifyEnabled: false,
-                verifyCommands: [],
-                maxIdleStops: 5,
-                maxErrorsBeforePause: 0,
-                projectRoot,
-              });
-        const result = port.handleStop(engine, payload);
+        const stopFn = cursorStopHandler(port);
+        if (typeof stopFn !== "function") {
+          failOpen(event);
+          return;
+        }
+        const result = stopFn(createEngine(coreMod, store), payload);
+        writeReply(JSON.stringify(result ?? {}));
+        return;
+      }
+      if (event === "UserPromptSubmit") {
+        const result = port.handleUserPromptSubmit(
+          store,
+          payload,
+          projectRoot,
+        );
+        writeReply(JSON.stringify(result ?? {}));
+        return;
+      }
+      if (event === "PostToolUse") {
+        port.handlePostToolUse?.(store, payload, projectRoot);
+        writeReply("{}");
+        return;
+      }
+      if (event === "Stop") {
+        const stopFn = claudeStopHandler(port);
+        if (typeof stopFn !== "function") {
+          failOpen(event);
+          return;
+        }
+        const result = stopFn(createEngine(coreMod, store), payload);
+        writeReply(JSON.stringify(result ?? {}));
+        return;
+      }
+      if (event === "StopFailure") {
+        let failFn = port.handleStopFailure;
+        if (typeof failFn !== "function") {
+          const stopFn = claudeStopHandler(port);
+          if (typeof stopFn === "function") {
+            failFn = (engine, p) => stopFn(engine, p, { status: "error" });
+          }
+        }
+        if (typeof failFn !== "function") {
+          failOpen(event);
+          return;
+        }
+        const result = failFn(createEngine(coreMod, store), payload);
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
@@ -188,6 +295,7 @@ async function main() {
 
 main().catch((err) => {
   console.error("[autopilot-harness] hook error:", err?.message ?? err);
-  failOpen("beforeSubmitPrompt");
+  // Prefer the parsed event when main() assigned it; else Cursor-safe default.
+  failOpen(bootEvent);
   process.exitCode = 0;
 });

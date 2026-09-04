@@ -230,6 +230,30 @@ export function isAutopilotIgnoredPath(
   return ignored;
 }
 
+/** Resolve existing path; for missing files, realpath the nearest existing ancestor. */
+function realpathForCompare(absPath: string): string {
+  try {
+    return fs.realpathSync(absPath);
+  } catch {
+    /* file may not exist yet (Write) — walk up */
+  }
+  let dir = path.dirname(absPath);
+  const base = path.basename(absPath);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      const realDir = fs.realpathSync(dir);
+      return path.join(realDir, ...missing, base);
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) return absPath;
+      // Prepend so join order stays parent→…→leaf without mutating via reverse().
+      missing.unshift(path.basename(dir));
+      dir = parent;
+    }
+  }
+}
+
 /** Resolve repo-relative posix path from hook file_path + optional project root. */
 export function toProjectRelativePath(
   filePath: string,
@@ -239,10 +263,12 @@ export function toProjectRelativePath(
   if (!projectRoot?.trim()) {
     return normalizeRelativePath(posix);
   }
-  const root = path.resolve(projectRoot);
-  const abs = path.isAbsolute(posix)
-    ? path.resolve(posix)
-    : path.resolve(root, posix);
+  // Canonicalize so macOS /var vs /private/var (and other symlinked roots)
+  // do not look like path-escapes when the host and hook disagree on form.
+  const root = realpathForCompare(path.resolve(projectRoot));
+  const abs = realpathForCompare(
+    path.isAbsolute(posix) ? path.resolve(posix) : path.resolve(root, posix),
+  );
   const rel = path.relative(root, abs);
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     return "";

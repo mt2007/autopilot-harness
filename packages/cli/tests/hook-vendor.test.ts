@@ -82,6 +82,156 @@ describe("hook vendor runtime", () => {
     expect(fs.existsSync(path.join(root, ".autopilot", "state.db"))).toBe(true);
   });
 
+  it("Claude UserPromptSubmit / Stop dispatch via same vendor (no Cursor regression)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const cid = "hook-claude-aaaa-bbbb-cccc-ddddeeee0099";
+
+    const submit = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          prompt: "hello claude submit",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(submit.status).toBe(0);
+    const submitOut = JSON.parse(submit.stdout.trim() || "{}") as {
+      continue?: boolean;
+      decision?: string;
+    };
+    // Claude fail-open / allow = {} (not Cursor { continue: true })
+    expect(submitOut.continue).toBeUndefined();
+    expect(submitOut.decision).toBeUndefined();
+
+    const editPath = path.join(root, "src", "app.ts");
+    fs.mkdirSync(path.dirname(editPath), { recursive: true });
+    fs.writeFileSync(editPath, "export {}\n");
+    fs.mkdirSync(path.join(root, "plans", "demo"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "plans", "demo", "checklist.md"),
+      "- [ ] a — A\n- [ ] b — B\n",
+    );
+
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "claude-code",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    store.close();
+
+    const postEdit = spawnSync(
+      process.execPath,
+      [hook, "--event", "PostToolUse"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          tool_name: "Edit",
+          tool_input: { file_path: editPath },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(postEdit.status).toBe(0);
+    expect(JSON.parse(postEdit.stdout.trim() || "{}")).toEqual({});
+
+    const verify = new StateStore(root);
+    expect(verify.getReviewChain(cid)?.code_edited).toBe(1);
+    verify.close();
+
+    const stop = spawnSync(process.execPath, [hook, "--event", "Stop"], {
+      cwd: root,
+      input: JSON.stringify({
+        session_id: cid,
+        stop_hook_active: false,
+      }),
+      encoding: "utf8",
+      timeout: 15_000,
+    });
+    expect(stop.status).toBe(0);
+    const stopOut = JSON.parse(stop.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      followup_message?: string;
+      loop?: boolean;
+    };
+    expect(stopOut.decision).toBe("block");
+    expect(stopOut.reason).toBeTruthy();
+    // Must not emit Cursor-shaped stop stdout
+    expect(stopOut.followup_message).toBeUndefined();
+    expect(stopOut.loop).toBeUndefined();
+
+    const failCid = "hook-claude-aaaa-bbbb-cccc-ddddeeee0098";
+    const store2 = new StateStore(root);
+    store2.upsertSession({
+      conversation_id: failCid,
+      project_root: root,
+      code_root: root,
+      platform: "claude-code",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    store2.close();
+
+    const stopFail = spawnSync(
+      process.execPath,
+      [hook, "--event", "StopFailure"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: failCid,
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopFail.status).toBe(0);
+    const failOut = JSON.parse(stopFail.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      followup_message?: string;
+      loop?: boolean;
+    };
+    // StopFailure → Claude-shaped recover (not Cursor followup_message)
+    expect(failOut.followup_message).toBeUndefined();
+    expect(failOut.loop).toBeUndefined();
+    expect(failOut.decision).toBe("block");
+    expect(failOut.reason).toMatch(/Recover|恢复/i);
+  });
+
   it("stop hook reads confirm_rounds + locale from config.yml", () => {
     root = tmpProject();
     expect(

@@ -5237,13 +5237,35 @@ function isAutopilotIgnoredPath(relativePath, patterns) {
   }
   return ignored;
 }
+function realpathForCompare(absPath) {
+  try {
+    return fs10.realpathSync(absPath);
+  } catch {
+  }
+  let dir = path8.dirname(absPath);
+  const base = path8.basename(absPath);
+  const missing = [];
+  for (; ; ) {
+    try {
+      const realDir = fs10.realpathSync(dir);
+      return path8.join(realDir, ...missing, base);
+    } catch {
+      const parent = path8.dirname(dir);
+      if (parent === dir) return absPath;
+      missing.unshift(path8.basename(dir));
+      dir = parent;
+    }
+  }
+}
 function toProjectRelativePath(filePath, projectRoot) {
   const posix = filePath.replace(/\\/g, "/");
   if (!projectRoot?.trim()) {
     return normalizeRelativePath(posix);
   }
-  const root = path8.resolve(projectRoot);
-  const abs = path8.isAbsolute(posix) ? path8.resolve(posix) : path8.resolve(root, posix);
+  const root = realpathForCompare(path8.resolve(projectRoot));
+  const abs = realpathForCompare(
+    path8.isAbsolute(posix) ? path8.resolve(posix) : path8.resolve(root, posix)
+  );
   const rel = path8.relative(root, abs);
   if (rel.startsWith("..") || path8.isAbsolute(rel)) {
     return "";
@@ -5506,6 +5528,205 @@ function handleStop(engine, payload) {
   return { followup_message: action.message, loop: true };
 }
 
+// ../ports/claude-code/src/index.ts
+function sid(p) {
+  return (p.session_id ?? p.sessionId ?? p.conversation_id ?? p.conversationId ?? "").trim();
+}
+function loopCountFromStopHookActive(payload) {
+  const active = payload.stop_hook_active ?? payload.stopHookActive;
+  return active === true ? 1 : 0;
+}
+function blockReason(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function filePathFromClaudeEdit(payload) {
+  const input = payload.tool_input ?? payload.toolInput ?? {};
+  if (!input || typeof input !== "object" || Array.isArray(input)) return "";
+  const candidates = [
+    input.file_path,
+    input.filePath,
+    input.notebook_path,
+    input.notebookPath,
+    input.path
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
+  return "";
+}
+function isClaudeEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "Edit" || n === "Write" || n === "NotebookEdit";
+}
+function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
+  const conversationId = sid(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action
+  });
+  const actionConfig = portConfig?.phaseActions;
+  const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        return {
+          decision: "block",
+          reason: blockReason(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        return {
+          decision: "block",
+          reason: blockReason(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig
+      });
+      if (!result.ok) {
+        return {
+          decision: "block",
+          reason: blockReason(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig
+      });
+      if (!result.ok) {
+        return {
+          decision: "block",
+          reason: blockReason(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig }
+      );
+      if (!result.ok) {
+        return {
+          decision: "block",
+          reason: blockReason(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  return {};
+}
+function handlePostToolUse(store, payload, projectRoot) {
+  const conversationId = sid(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isClaudeEditTool(toolName)) return;
+  const filePath = filePathFromClaudeEdit(payload);
+  if (!filePath) return;
+  if (!isProductCodeEdit(filePath, { projectRoot })) return;
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope
+    );
+  }
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handleStop2(engine, payload, opts) {
+  const conversationId = sid(payload);
+  if (!conversationId) return {};
+  const hookName = String(
+    payload.hook_event_name ?? payload.hookEventName ?? ""
+  ).trim();
+  const status = opts?.status ?? (hookName === "StopFailure" ? "error" : "completed");
+  const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
+  const transcriptPath = typeof transcriptRaw === "string" && transcriptRaw.trim() ? transcriptRaw.trim() : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromStopHookActive(payload),
+    transcriptPath
+  });
+  if (!action?.message) return {};
+  const reason = blockReason(action.message, "Autopilot followup");
+  if (!action.loop) {
+    return { continue: false, stopReason: reason };
+  }
+  return {
+    decision: "block",
+    reason
+  };
+}
+function handleStopFailure(engine, payload) {
+  return handleStop2(engine, payload, { status: "error" });
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -5519,6 +5740,11 @@ export {
   getLatestSchemaVersion,
   handleAfterFileEdit,
   handleBeforeSubmitPrompt,
+  handleStop2 as handleClaudeStop,
+  handleStop as handleCursorStop,
+  handlePostToolUse,
   handleStop,
+  handleStopFailure,
+  handleUserPromptSubmit,
   loadProjectReviewConfig
 };

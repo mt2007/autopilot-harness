@@ -10,6 +10,7 @@ import {
   isAutopilotIgnoredPath,
   loadAutopilotIgnorePatterns,
   parseAutopilotIgnore,
+  toProjectRelativePath,
 } from "../src/autopilot-ignore.js";
 import { isProductCodeEdit } from "../src/code-edit-detector.js";
 
@@ -165,6 +166,61 @@ describe("isProductCodeEdit + autopilotignore", () => {
     fs.mkdirSync(path.join(root, "src"), { recursive: true });
     const abs = path.join(root, "src", "index.ts");
     expect(isProductCodeEdit(abs, { projectRoot: root })).toBe(true);
+  });
+
+  it("canonicalizes symlinked roots (e.g. macOS /var vs /private/var)", () => {
+    const root = tmpRoot();
+    const alias = `${root}-alias`;
+    try {
+      fs.symlinkSync(root, alias);
+    } catch {
+      // Platform may disallow dir symlinks (e.g. Windows without privilege).
+      return;
+    }
+    try {
+      fs.mkdirSync(path.join(root, "src"), { recursive: true });
+      fs.writeFileSync(path.join(root, "src", "app.ts"), "export {}\n");
+      const viaAlias = path.join(alias, "src", "app.ts");
+
+      expect(toProjectRelativePath(viaAlias, root)).toBe("src/app.ts");
+      expect(toProjectRelativePath(path.join(root, "src", "app.ts"), alias)).toBe(
+        "src/app.ts",
+      );
+      expect(isProductCodeEdit(viaAlias, { projectRoot: root })).toBe(true);
+      // Missing file under an existing parent still resolves.
+      expect(
+        toProjectRelativePath(path.join(alias, "src", "new.ts"), root),
+      ).toBe("src/new.ts");
+      // Symlink that escapes the project must not count as in-repo.
+      const outside = path.join(path.dirname(root), `outside-${path.basename(root)}.ts`);
+      fs.writeFileSync(outside, "// x", "utf8");
+      try {
+        fs.symlinkSync(outside, path.join(root, "leak.ts"));
+        expect(toProjectRelativePath(path.join(root, "leak.ts"), root)).toBe(
+          "",
+        );
+        expect(
+          isProductCodeEdit(path.join(root, "leak.ts"), { projectRoot: root }),
+        ).toBe(false);
+      } finally {
+        try {
+          fs.unlinkSync(path.join(root, "leak.ts"));
+        } catch {
+          /* ignore */
+        }
+        try {
+          fs.unlinkSync(outside);
+        } catch {
+          /* ignore */
+        }
+      }
+    } finally {
+      try {
+        fs.rmSync(alias, { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
   });
 
   it("rejects paths outside projectRoot", () => {
