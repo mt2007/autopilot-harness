@@ -1,6 +1,17 @@
 {
   "name": "@autopilot-harness/i18n",
   "version": "0.1.0",
+  "description": "Autopilot harness locale strings (en, zh-CN)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mt2007/autopilot-harness.git",
+    "directory": "packages/i18n"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness#readme",
+  "bugs": {
+    "url": "https://github.com/mt2007/autopilot-harness/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,5 +32,11 @@
   },
   "devDependencies": {
     "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

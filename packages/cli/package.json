@@ -1,6 +1,17 @@
 {
   "name": "@autopilot-harness/cli",
   "version": "0.1.0",
+  "description": "Autopilot harness CLI (bin: autopilot-harness)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mt2007/autopilot-harness.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness#readme",
+  "bugs": {
+    "url": "https://github.com/mt2007/autopilot-harness/issues"
+  },
   "type": "module",
   "bin": {
     "autopilot-harness": "./dist/bin.js"
@@ -36,5 +47,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
