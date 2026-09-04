@@ -66,6 +66,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       for (const re of EN_MARKERS) expect(body).toMatch(re);
       expect(body).toMatch(/### Install|\*\*Install\*\*/);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
+      expect(body).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
+      expect(body).toContain(
+        "https://github.com/mt2007/autopilot-harness/blob/main/CONTRIBUTING.md",
+      );
       expect(body).toContain(`not bare \`npx ${CLI_NAME}\``);
       expect(body).not.toMatch(/Today \(not on public npm yet\)/);
       expect(body).not.toMatch(/After npm publish/);
@@ -82,6 +86,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       for (const re of ZH_MARKERS) expect(body).toMatch(re);
       expect(body).toMatch(/### 安装|\*\*安装\*\*/);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
+      expect(body).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
+      expect(body).toContain(
+        "https://github.com/mt2007/autopilot-harness/blob/main/CONTRIBUTING.md",
+      );
       expect(body).toContain(`裸 \`npx ${CLI_NAME}\``);
       expect(body).not.toMatch(/今天（尚未上公共 npm）/);
       expect(body).not.toMatch(/发布到 npm 之后/);
@@ -164,11 +172,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(en).toMatch(/\*\*Install\*\*/);
     expect(en).toContain(`npx ${NPM_PACKAGE_NAME}`);
+    expect(en).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
     expect(en).toContain(`not bare \`npx ${CLI_NAME}\``);
     expect(en).not.toMatch(/Today \(not on public npm yet\)/);
     expect(en).not.toMatch(/After npm publish/);
     expect(zh).toMatch(/\*\*安装\*\*/);
     expect(zh).toContain(`npx ${NPM_PACKAGE_NAME}`);
+    expect(zh).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
     expect(zh).toContain(`裸 \`npx ${CLI_NAME}\``);
     expect(zh).not.toMatch(/今天（尚未上公共 npm）/);
     expect(zh).not.toMatch(/发布到 npm 之后/);
@@ -268,8 +278,23 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
     expect(body).toMatch(/only installs Cursor/i);
+    expect(body).toMatch(/npm public/);
     // Forbid recommending bare `npx autopilot-harness …` as an install command.
     // Allow prose that warns against it (e.g. "not bare `npx autopilot-harness`").
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
+  });
+
+  it("CHANGELOG records 0.1.0 and CONTRIBUTING keeps dogfood", () => {
+    const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
+    expect(log).toMatch(/## \[0\.1\.0\]/);
+    expect(log).toContain(NPM_PACKAGE_NAME);
+
+    const contrib = fs.readFileSync(
+      path.join(repoRoot, "CONTRIBUTING.md"),
+      "utf8",
+    );
+    expect(contrib).toMatch(/Dogfood from a clone/);
+    expect(contrib).toContain(`npx ${NPM_PACKAGE_NAME}`);
+    expect(contrib).toMatch(/node packages\/cli\/dist\/bin\.js/);
   });
 });
