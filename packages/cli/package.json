@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/cli",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Autopilot harness CLI — structured planning, checklist execution, and multi-lens self-review for Cursor and Claude Code (bin: autopilot-harness)",
   "license": "MIT",
   "repository": {

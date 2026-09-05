@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/core",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Autopilot harness core — state store, review engine, and checklist execution primitives",
   "license": "MIT",
   "repository": {

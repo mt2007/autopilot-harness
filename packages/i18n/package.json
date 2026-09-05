@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/i18n",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Autopilot harness i18n locale strings (en, zh-CN)",
   "license": "MIT",
   "repository": {

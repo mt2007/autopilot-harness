@@ -3,8 +3,32 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { writeQuickstart } from "../src/init/wizard-helpers.js";
+import { PACKAGE_VERSION } from "../src/init/types.js";
 import { CLI_NAME, NPM_PACKAGE_NAME } from "../src/names.js";
 import os from "node:os";
+
+/** Public npm packages that must share PACKAGE_VERSION on release bumps. */
+const PUBLIC_PACKAGE_JSON_PATHS = [
+  "packages/cli/package.json",
+  "packages/core/package.json",
+  "packages/i18n/package.json",
+  "packages/ports/cursor/package.json",
+  "packages/ports/claude-code/package.json",
+] as const;
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Slice Keep-a-Changelog section for `version` through the next `## [` heading. */
+function changelogSection(log: string, version: string): string {
+  const re = new RegExp(
+    `## \\[${escapeRegExp(version)}\\][\\s\\S]*?(?=\\n## \\[|$)`,
+  );
+  const m = log.match(re);
+  expect(m, `missing CHANGELOG section ${version}`).toBeTruthy();
+  return m![0];
+}
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -295,14 +319,23 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
     expect(log).toMatch(/## \[0\.2\.1\]/);
     expect(log).toMatch(/## \[0\.2\.2\]/);
     expect(log).toMatch(/## \[0\.2\.3\]/);
+    expect(log).toMatch(/## \[0\.2\.4\]/);
+    expect(log).toMatch(
+      new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
+    );
     expect(log).toMatch(/assets\/templates|bundled templates|Ship skill\/workflow templates/i);
+    // 0.2.4 themes must live under that release section (not leftover prose).
+    const section024 = changelogSection(log, "0.2.4");
+    expect(section024).toMatch(/keywords/i);
+    expect(section024).toMatch(/author/i);
+    expect(section024).toMatch(/files:\s*\["dist"\]|dist\/assets/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
@@ -314,5 +347,14 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(contrib).toMatch(/Dogfood from a clone/);
     expect(contrib).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(contrib).toMatch(/node packages\/cli\/dist\/bin\.js/);
+  });
+
+  it("PACKAGE_VERSION matches every public package.json version", () => {
+    for (const rel of PUBLIC_PACKAGE_JSON_PATHS) {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, rel), "utf8"),
+      ) as { version?: string };
+      expect(pkg.version, rel).toBe(PACKAGE_VERSION);
+    }
   });
 });

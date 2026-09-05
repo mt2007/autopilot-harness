@@ -9,6 +9,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-09-05
+
+### Added
+
+- npm `keywords` and `author` on public packages for better discoverability.
+
+### Fixed
+
+- CLI publish layout is `files: ["dist"]` only; build syncs `assets/` into `dist/assets/` so the tarball no longer ships a duplicate root `assets/` tree.
+
 ## [0.2.3] — 2026-09-05
 
 ### Fixed
