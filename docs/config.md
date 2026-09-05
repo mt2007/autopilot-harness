@@ -87,7 +87,7 @@ Init seeds locale stock phrases under `triggers.*`; `locale set` rewrites those 
 
 | File | Role |
 |------|------|
-| **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
+| **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `.cursor/**`, `.claude/**`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
 | **`.gitignore`** | Untracked ignored paths are also skipped as product code; **tracked** files still count even if listed in `.gitignore`. |
 
 ## Related

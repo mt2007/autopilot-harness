@@ -9,6 +9,8 @@ plans/
 .cursor/*
 !.cursor/rules/
 !.cursor/rules/**
+# Claude Code Autopilot install residue (settings/skills); not shipped in OSS
+.claude/
 # Autopilot dogfood workflows under docs/autopilot (init per machine)
 # Keep user-facing quickstarts tracked for OSS README links
 docs/autopilot/*

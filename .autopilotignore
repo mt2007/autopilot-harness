@@ -18,6 +18,7 @@
 # Runtime / editor (prefer also listing these in .gitignore)
 .autopilot/**
 .cursor/**
+.claude/**
 
 # Planning artifacts
 plans/**

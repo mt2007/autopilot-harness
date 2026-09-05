@@ -22,6 +22,7 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 # Runtime / editor (prefer also listing these in .gitignore)
 .autopilot/**
 .cursor/**
+.claude/**
 
 # Planning artifacts
 plans/**

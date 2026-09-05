@@ -5126,6 +5126,7 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 # Runtime / editor (prefer also listing these in .gitignore)
 .autopilot/**
 .cursor/**
+.claude/**
 
 # Planning artifacts
 plans/**

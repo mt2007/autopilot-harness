@@ -83,6 +83,9 @@ describe("isAutopilotIgnoredPath", () => {
       isAutopilotIgnoredPath(".cursor/hooks.json", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(true);
     expect(
+      isAutopilotIgnoredPath(".claude/settings.json", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(true);
+    expect(
       isAutopilotIgnoredPath("docs/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(false);
     expect(
@@ -128,9 +131,10 @@ describe("loadAutopilotIgnorePatterns", () => {
 });
 
 describe("isProductCodeEdit + autopilotignore", () => {
-  it("excludes .autopilot/.cursor via default ignore (overridable)", () => {
+  it("excludes .autopilot/.cursor/.claude via default ignore (overridable)", () => {
     expect(isProductCodeEdit(".autopilot/config.yml")).toBe(false);
     expect(isProductCodeEdit(".cursor/hooks.json")).toBe(false);
+    expect(isProductCodeEdit(".claude/settings.json")).toBe(false);
 
     const root = tmpRoot();
     // Empty ignore file → no patterns → runtime paths count as product.
