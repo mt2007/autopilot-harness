@@ -1,7 +1,7 @@
 {
   "name": "@autopilot-harness/core",
   "version": "0.2.3",
-  "description": "Autopilot harness core: state store, review engine, checklist",
+  "description": "Autopilot harness core — state store, review engine, and checklist execution primitives",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -37,5 +37,19 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "author": "mt2007 (https://github.com/mt2007)",
+  "keywords": [
+    "autopilot",
+    "harness",
+    "agent",
+    "ai",
+    "vibecoding",
+    "cursor",
+    "claude-code",
+    "checklist",
+    "code-review",
+    "state-machine",
+    "review"
+  ]
 }

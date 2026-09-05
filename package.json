@@ -2,7 +2,7 @@
   "name": "autopilot-harness",
   "version": "0.2.3",
   "private": true,
-  "description": "Project-level agent harness: Planning → Executing with review chains",
+  "description": "Autopilot harness monorepo — vibecoding structured planning → checklist execution → multi-lens self-review (Cursor & Claude Code)",
   "license": "MIT",
   "engines": {
     "node": ">=22"
@@ -19,5 +19,6 @@
     "@types/node": "^22.13.10",
     "typescript": "^5.8.2",
     "vitest": "^3.0.9"
-  }
+  },
+  "author": "mt2007 (https://github.com/mt2007)"
 }

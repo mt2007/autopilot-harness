@@ -1,7 +1,7 @@
 {
   "name": "@autopilot-harness/i18n",
   "version": "0.2.3",
-  "description": "Autopilot harness locale strings (en, zh-CN)",
+  "description": "Autopilot harness i18n locale strings (en, zh-CN)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -38,5 +38,19 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "author": "mt2007 (https://github.com/mt2007)",
+  "keywords": [
+    "autopilot",
+    "harness",
+    "agent",
+    "ai",
+    "vibecoding",
+    "cursor",
+    "claude-code",
+    "checklist",
+    "code-review",
+    "i18n",
+    "locale"
+  ]
 }

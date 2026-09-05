@@ -1,7 +1,7 @@
 {
   "name": "@autopilot-harness/cli",
   "version": "0.2.3",
-  "description": "Autopilot harness CLI (bin: autopilot-harness)",
+  "description": "Autopilot harness CLI — structured planning, checklist execution, and multi-lens self-review for Cursor and Claude Code (bin: autopilot-harness)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -52,5 +52,19 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "author": "mt2007 (https://github.com/mt2007)",
+  "keywords": [
+    "autopilot",
+    "harness",
+    "agent",
+    "ai",
+    "vibecoding",
+    "cursor",
+    "claude-code",
+    "checklist",
+    "code-review",
+    "cli",
+    "npx"
+  ]
 }
