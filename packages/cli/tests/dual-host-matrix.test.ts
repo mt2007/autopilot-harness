@@ -24,17 +24,19 @@ function runHook(
   root: string,
   event: string,
   payload: Record<string, unknown>,
+  platform?: string,
 ): { status: number | null; out: Record<string, unknown>; stderr: string } {
-  const proc = spawnSync(
-    process.execPath,
-    [hookPath(root), "--event", event],
-    {
-      cwd: root,
-      input: JSON.stringify(payload),
-      encoding: "utf8",
-      timeout: 15_000,
-    },
-  );
+  const args = [hookPath(root)];
+  if (platform) {
+    args.push("--platform", platform);
+  }
+  args.push("--event", event);
+  const proc = spawnSync(process.execPath, args, {
+    cwd: root,
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    timeout: 15_000,
+  });
   let out: Record<string, unknown> = {};
   try {
     out = JSON.parse(proc.stdout.trim() || "{}") as Record<string, unknown>;
@@ -80,6 +82,154 @@ describe("dual-host Cursor non-regression matrix", () => {
     if (root && fs.existsSync(root)) {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("install stamps --platform on Cursor + Claude Autopilot commands", () => {
+    root = tmpProject();
+    installDualHost(root);
+
+    const hooks = JSON.parse(
+      fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
+    ) as { hooks: Record<string, { command: string }[]> };
+    for (const event of ["beforeSubmitPrompt", "afterFileEdit", "stop"]) {
+      const ap = hooks.hooks[event]?.filter((h) =>
+        h.command.includes("autopilot-harness"),
+      );
+      expect(ap?.length).toBe(1);
+      expect(ap![0].command).toMatch(/--platform cursor/);
+      expect(ap![0].command).toMatch(new RegExp(`--event ${event}`));
+    }
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
+    ) as {
+      hooks: Record<string, { hooks?: { command?: string }[] }[]>;
+    };
+    for (const event of [
+      "UserPromptSubmit",
+      "PostToolUse",
+      "Stop",
+      "StopFailure",
+    ]) {
+      const cmds = (settings.hooks[event] ?? [])
+        .flatMap((g) => g.hooks ?? [])
+        .map((h) => h.command ?? "")
+        .filter((c) => c.includes("autopilot-harness"));
+      expect(cmds.length).toBeGreaterThanOrEqual(1);
+      expect(cmds.every((c) => /--platform claude-code/.test(c))).toBe(true);
+      expect(cmds.some((c) => c.includes(`--event ${event}`))).toBe(true);
+    }
+  });
+
+  it("Stop cross-fire with --platform claude-code + Cursor aborted → {}", () => {
+    root = tmpProject();
+    installDualHost(root);
+    const cp = seedChecklist(root);
+    const cid = "dual-plat-aaaa-bbbb-cccc-ddddeeee0011";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: cp,
+    });
+    store.updateReviewChain(cid, {
+      pending_followup: "恢复：上一回合出错。继续当前规划。",
+    });
+    store.close();
+
+    const r = runHook(
+      root,
+      "Stop",
+      {
+        conversation_id: cid,
+        session_id: cid,
+        status: "aborted",
+        hook_event_name: "stop",
+        loop_count: 0,
+      },
+      "claude-code",
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toEqual({});
+    expect(r.out.decision).toBeUndefined();
+  });
+
+  it("Cursor native stop with --platform cursor aborted → halt {}", () => {
+    root = tmpProject();
+    installDualHost(root);
+    const cp = seedChecklist(root);
+    const cid = "dual-plat-aaaa-bbbb-cccc-ddddeeee0012";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: cp,
+    });
+    store.close();
+
+    const r = runHook(
+      root,
+      "stop",
+      {
+        conversation_id: cid,
+        status: "aborted",
+        loop_count: 0,
+      },
+      "cursor",
+    );
+    expect(r.status).toBe(0);
+    expect(r.out).toEqual({});
+  });
+
+  it("malformed --platform without value does not swallow --event Stop", () => {
+    root = tmpProject();
+    installDualHost(root);
+    const cp = seedChecklist(root);
+    const cid = "dual-plat-aaaa-bbbb-cccc-ddddeeee0013";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: cp,
+    });
+    store.close();
+
+    const proc = spawnSync(
+      process.execPath,
+      [hookPath(root), "--platform", "--event", "Stop"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          session_id: cid,
+          status: "aborted",
+          hook_event_name: "stop",
+          loop_count: 0,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(proc.status).toBe(0);
+    expect(JSON.parse(proc.stdout.trim() || "{}")).toEqual({});
   });
 
   it("Stop cross-fire: --event Stop + Cursor aborted → {} (no recover)", () => {
@@ -331,7 +481,8 @@ describe("dual-host Cursor non-regression matrix", () => {
     };
     expect(
       hooksAfter.hooks.beforeSubmitPrompt?.some((h) =>
-        h.command.includes("autopilot-harness"),
+        h.command.includes("autopilot-harness") &&
+        h.command.includes("--platform cursor"),
       ),
     ).toBe(true);
 

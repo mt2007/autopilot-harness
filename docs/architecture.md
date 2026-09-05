@@ -37,7 +37,7 @@ repos do not need `@autopilot-harness/core` in `node_modules`:
    - `runtime.mjs` — esbuild bundle of core + **Cursor and Claude Code** ports (`pnpm bundle-vendor`)
    - `migrations/001_initial.sql` — schema the runtime applies on first open
 2. **Installed into each project:** `.autopilot/bin/vendor/` (copied by `init` / `upgrade`)
-3. **Entry:** `.autopilot/bin/autopilot-harness-hook.mjs` imports `./vendor/runtime.mjs` and dispatches by host event shape
+3. **Entry:** `.autopilot/bin/autopilot-harness-hook.mjs` imports `./vendor/runtime.mjs` and dispatches by **`--platform <id>`** (when present) + host event + payload conflict resolver (cross-fire)
 
 The vendor runtime reads `.autopilot/config.yml` on **stop** (`locale`,
 `review.*`) and on **edit** (`review.scope` only). Submit does not load review

@@ -1,9 +1,51 @@
 import type { HookCommand, HooksFile } from "./types.js";
 import { AUTOPILOT_EVENTS } from "./types.js";
 
+/** Installed `--platform` ids (argv primary dispatch). */
+export const HOOK_PLATFORM_CURSOR = "cursor";
+export const HOOK_PLATFORM_CLAUDE_CODE = "claude-code";
+
+/** Canonical Autopilot hook command line (platform + event). */
+export function autopilotHookCommandLine(
+  platform: string,
+  event: string,
+): string {
+  // Defense in depth: only allow safe argv tokens (callers pass constants).
+  // Reject (do not silently rewrite) if sanitization would change the token —
+  // rewriting could invent a different platform id.
+  if (typeof platform !== "string" || typeof event !== "string") {
+    throw new Error("autopilotHookCommandLine: invalid platform or event");
+  }
+  const safePlatform = platform.replace(/[^A-Za-z0-9._+-]/g, "").slice(0, 64);
+  const safeEvent = event.replace(/[^A-Za-z0-9._+-]/g, "").slice(0, 64);
+  if (
+    !safePlatform ||
+    !safeEvent ||
+    safePlatform !== platform ||
+    safeEvent !== event
+  ) {
+    throw new Error("autopilotHookCommandLine: invalid platform or event");
+  }
+  return `node .autopilot/bin/autopilot-harness-hook.mjs --platform ${safePlatform} --event ${safeEvent}`;
+}
+
+/** True when an Autopilot command stamps the expected `--platform <id>`. */
+export function commandHasPlatformStamp(
+  cmd: string | undefined,
+  platform: string,
+): boolean {
+  if (typeof cmd !== "string" || !platform) return false;
+  const needle = `--platform ${platform}`;
+  // Token boundary: avoid matching `--platform cursor-extra`
+  const re = new RegExp(
+    `(?:^|\\s)${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`,
+  );
+  return re.test(cmd);
+}
+
 export function autopilotHookCommand(event: string): HookCommand {
   const base: HookCommand = {
-    command: `node .autopilot/bin/autopilot-harness-hook.mjs --event ${event}`,
+    command: autopilotHookCommandLine(HOOK_PLATFORM_CURSOR, event),
   };
   // Cursor defaults loop_limit to 5 for stop hooks that omit the field.
   // Autopilot's fix + multi-angle confirm chain routinely exceeds 5
@@ -150,4 +192,29 @@ export function hasCompleteAutopilotHooks(hooks: HooksFile): boolean {
 /** Count duplicate Autopilot commands per event (doctor WARN). */
 export function countAutopilotDuplicates(hooks: HooksFile): number {
   return summarizeAutopilotHooks(hooks).duplicates;
+}
+
+/**
+ * True when every Autopilot command for required Cursor events stamps
+ * `--platform cursor`. Empty / incomplete installs return false.
+ */
+export function cursorHooksHavePlatformStamp(hooks: HooksFile): boolean {
+  const bag =
+    hooks.hooks && typeof hooks.hooks === "object" && !Array.isArray(hooks.hooks)
+      ? hooks.hooks
+      : {};
+  let seen = 0;
+  for (const event of AUTOPILOT_EVENTS) {
+    const list = Array.isArray(bag[event])
+      ? (bag[event] as HookCommand[])
+      : [];
+    for (const h of list) {
+      if (!isAutopilotCommand(h?.command)) continue;
+      seen += 1;
+      if (!commandHasPlatformStamp(h.command, HOOK_PLATFORM_CURSOR)) {
+        return false;
+      }
+    }
+  }
+  return seen > 0;
 }

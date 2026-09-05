@@ -18,10 +18,12 @@ import {
 } from "./init/platforms.js";
 import {
   autopilotStopHasUnlimitedLoop,
+  cursorHooksHavePlatformStamp,
   summarizeAutopilotHooks,
   validateHooksShape,
 } from "./init/hooks-merge.js";
 import {
+  claudeHooksHavePlatformStamp,
   hasClaudeBlockCapZero,
   summarizeClaudeAutopilotHooks,
   validateClaudeSettingsShape,
@@ -633,8 +635,17 @@ export function runDoctor(
           }
           if (
             missingEvents.length === 0 &&
+            !cursorHooksHavePlatformStamp(hooks)
+          ) {
+            lines.push(
+              "WARN  Autopilot hooks missing --platform cursor — run upgrade",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
             duplicates === 0 &&
-            autopilotStopHasUnlimitedLoop(hooks)
+            autopilotStopHasUnlimitedLoop(hooks) &&
+            cursorHooksHavePlatformStamp(hooks)
           ) {
             lines.push("OK    hooks.json Autopilot entries");
           }
@@ -696,8 +707,17 @@ export function runDoctor(
           }
           if (
             missingEvents.length === 0 &&
+            !claudeHooksHavePlatformStamp(settings)
+          ) {
+            lines.push(
+              "WARN  Autopilot Claude hooks missing --platform claude-code — run upgrade",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
             duplicates === 0 &&
-            hasClaudeBlockCapZero(settings)
+            hasClaudeBlockCapZero(settings) &&
+            claudeHooksHavePlatformStamp(settings)
           ) {
             lines.push("OK    .claude/settings.json Autopilot entries");
           }

@@ -4,6 +4,8 @@ Product front door: [README.md](../README.md). Stop-loop internals: [architectur
 
 Autopilot separates **core** (FSM, SQLite, checklist, review) from **ports** (host adapters). **v0.2 ships Cursor and Claude Code**; Codex / Runner remain planned.
 
+Installed hook commands stamp **`--platform <id>`** (e.g. `cursor` / `claude-code`) as the primary dispatch switch. Runtime still applies **universal abort** and a **payload conflict resolver** so IDE cross-fire (Cursor-shaped stdin on a Claude-stamped command) cannot recover into `decision:block`.
+
 ## Status
 
 | Host | Status | Surface | Notes |

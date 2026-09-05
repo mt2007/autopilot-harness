@@ -11,7 +11,11 @@ import {
   preflightForceRefresh,
 } from "../src/init/install.js";
 import { MAX_PLATFORM_BINDINGS } from "../src/init/platforms.js";
-import { autopilotStopHasUnlimitedLoop } from "../src/init/hooks-merge.js";
+import {
+  autopilotHookCommandLine,
+  autopilotStopHasUnlimitedLoop,
+  commandHasPlatformStamp,
+} from "../src/init/hooks-merge.js";
 import { MAX_UNTRUSTED_TEXT_BYTES } from "../src/read-untrusted-file.js";
 import * as readUntrusted from "../src/read-untrusted-file.js";
 import { runDoctor } from "../src/status-doctor.js";
@@ -25,6 +29,7 @@ describe("hooks.json merge", () => {
     const merged = mergeHooksJson(null);
     expect(merged.hooks.beforeSubmitPrompt).toHaveLength(1);
     expect(JSON.stringify(merged)).toMatch(/autopilot-harness/);
+    expect(JSON.stringify(merged)).toMatch(/--platform cursor/);
     expect(merged.hooks.afterFileEdit).toHaveLength(1);
     expect(merged.hooks.stop).toHaveLength(1);
   });
@@ -39,6 +44,45 @@ describe("hooks.json merge", () => {
     expect(stop?.loop_limit).toBeNull();
     const submit = merged.hooks.beforeSubmitPrompt?.[0];
     expect(submit && "loop_limit" in submit).toBe(false);
+  });
+
+  it("commandHasPlatformStamp matches token boundaries", () => {
+    expect(
+      commandHasPlatformStamp(
+        "node x.mjs --platform cursor --event stop",
+        "cursor",
+      ),
+    ).toBe(true);
+    expect(
+      commandHasPlatformStamp(
+        "node x.mjs --platform cursor-extra --event stop",
+        "cursor",
+      ),
+    ).toBe(false);
+    expect(
+      commandHasPlatformStamp(
+        "node x.mjs --platform claude-code --event Stop",
+        "claude-code",
+      ),
+    ).toBe(true);
+    expect(commandHasPlatformStamp("node x.mjs --event stop", "cursor")).toBe(
+      false,
+    );
+  });
+
+  it("autopilotHookCommandLine rejects unsafe tokens / empty", () => {
+    expect(() => autopilotHookCommandLine("cursor;rm -rf", "stop")).toThrow(
+      /invalid platform or event/i,
+    );
+    expect(() => autopilotHookCommandLine("", "stop")).toThrow(
+      /invalid platform or event/i,
+    );
+    expect(() => autopilotHookCommandLine("@@@", "stop")).toThrow(
+      /invalid platform or event/i,
+    );
+    expect(autopilotHookCommandLine("cursor", "stop")).toMatch(
+      /--platform cursor --event stop/,
+    );
   });
 
   it("replaces legacy Autopilot stop (no loop_limit) with unlimited stop", () => {
@@ -207,7 +251,7 @@ describe("init --yes install", () => {
     const pin = JSON.parse(
       fs.readFileSync(path.join(root, ".autopilot", "pin.json"), "utf8"),
     );
-    expect(pin["autopilot-harness"]).toBe("0.1.0");
+    expect(pin["autopilot-harness"]).toBe("0.2.0");
 
     const hook = path.join(
       root,

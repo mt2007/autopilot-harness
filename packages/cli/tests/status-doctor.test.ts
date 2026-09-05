@@ -162,6 +162,53 @@ describe("runDoctor", () => {
     expect(joined).not.toMatch(/OK\s+hooks\.json Autopilot entries/);
   });
 
+  it("WARNs when Autopilot hooks omit --platform stamp (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    fs.writeFileSync(
+      path.join(root, ".cursor", "hooks.json"),
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          beforeSubmitPrompt: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event beforeSubmitPrompt",
+            },
+          ],
+          afterFileEdit: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event afterFileEdit",
+            },
+          ],
+          stop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event stop",
+              loop_limit: null,
+            },
+          ],
+        },
+      }),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing --platform cursor/i);
+    expect(joined).not.toMatch(/OK\s+hooks\.json Autopilot entries/);
+  });
+
   it("WARNs loop_limit even when another Autopilot event is missing", () => {
     root = tmpProject();
     expect(
@@ -1169,6 +1216,80 @@ describe("runDoctor", () => {
     const text = lines.join("\n");
     expect(text).not.toMatch(/\u001b/);
     expect(text).toMatch(/hooks\.before \[2JSubmit/);
+  });
+
+  it("WARNs when Claude Autopilot hooks omit --platform stamp (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        env: { CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "0" },
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event UserPromptSubmit",
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "Edit|Write|NotebookEdit",
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event PostToolUse",
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+                },
+              ],
+            },
+          ],
+          StopFailure: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event StopFailure",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing --platform claude-code/i);
+    expect(joined).not.toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
   });
 
   it("WARNs when Claude BLOCK_CAP missing or not 0", () => {

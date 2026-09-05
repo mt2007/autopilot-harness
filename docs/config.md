@@ -27,7 +27,7 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `locale` | `en` | Template / followup **template** language (`en` \| `zh-CN`). User-visible chat replies still follow the **user’s** language. Change later with `locale set <code>`. |
-| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **This build installs Cursor and/or Claude Code** when those bindings are present. Claude uses `surface: cli` (hooks shared across terminal + IDE — not CLI-only). Dual-host: `init --yes --add-platform <host>`. |
+| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **This build installs Cursor and/or Claude Code** when those bindings are present. Claude uses `surface: cli` (hooks shared across terminal + IDE — not CLI-only). Dual-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for dispatch. |
 | `platform` / `surface` | primary binding | Legacy scalars for older readers; prefer `platforms`. Primary prefers an installable binding when the list mixes wired and future hosts. |
 | `integration` | `hook` | Integration style written by init (`hook`). |
 

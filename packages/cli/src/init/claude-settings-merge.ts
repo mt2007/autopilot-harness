@@ -2,7 +2,12 @@
  * Merge Autopilot hooks + BLOCK_CAP into Claude Code `.claude/settings.json`.
  * Preserves foreign hooks/env; replaces Autopilot-marked command entries only.
  */
-import { isAutopilotCommand } from "./hooks-merge.js";
+import {
+  HOOK_PLATFORM_CLAUDE_CODE,
+  autopilotHookCommandLine,
+  commandHasPlatformStamp,
+  isAutopilotCommand,
+} from "./hooks-merge.js";
 
 export const CLAUDE_BLOCK_CAP_ENV = "CLAUDE_CODE_STOP_HOOK_BLOCK_CAP";
 
@@ -54,7 +59,7 @@ export function autopilotClaudeHookHandler(
 ): ClaudeHookHandler {
   return {
     type: "command",
-    command: `node .autopilot/bin/autopilot-harness-hook.mjs --event ${event}`,
+    command: autopilotHookCommandLine(HOOK_PLATFORM_CLAUDE_CODE, event),
   };
 }
 
@@ -364,4 +369,36 @@ export function hasCompleteClaudeAutopilotHooks(
 ): boolean {
   const { missingEvents, duplicates } = summarizeClaudeAutopilotHooks(settings);
   return missingEvents.length === 0 && duplicates === 0;
+}
+
+/**
+ * True when every Autopilot Claude command stamps `--platform claude-code`.
+ * Incomplete installs (no Autopilot handlers) return false.
+ */
+export function claudeHooksHavePlatformStamp(
+  settings: ClaudeSettingsFile,
+): boolean {
+  const bag =
+    settings.hooks &&
+    typeof settings.hooks === "object" &&
+    !Array.isArray(settings.hooks)
+      ? settings.hooks
+      : {};
+  let seen = 0;
+  for (const event of CLAUDE_AUTOPILOT_EVENTS) {
+    const groups = Array.isArray(bag[event])
+      ? (bag[event] as ClaudeMatcherGroup[])
+      : [];
+    for (const g of groups) {
+      const hooks = Array.isArray(g.hooks) ? g.hooks : [];
+      for (const h of hooks) {
+        if (!isAutopilotCommand(h?.command)) continue;
+        seen += 1;
+        if (!commandHasPlatformStamp(h.command, HOOK_PLATFORM_CLAUDE_CODE)) {
+          return false;
+        }
+      }
+    }
+  }
+  return seen > 0;
 }

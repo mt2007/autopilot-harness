@@ -36,14 +36,24 @@ const CLAUDE_EVENTS = new Set([
   "Stop",
   "StopFailure",
 ]);
+const KNOWN_PLATFORMS = new Set(["cursor", "claude-code"]);
 
 function parseArgs(argv) {
   const allowed = new Set([...CURSOR_EVENTS, ...CLAUDE_EVENTS]);
-  const out = { event: "beforeSubmitPrompt" };
+  const out = { event: "beforeSubmitPrompt", platform: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--event" && argv[i + 1]) {
-      const ev = argv[++i];
+      const ev = String(argv[i + 1]);
+      // Do not consume the next flag as a value (`--event --platform …`).
+      if (ev.startsWith("--")) continue;
+      i += 1;
       out.event = allowed.has(ev) ? ev : "beforeSubmitPrompt";
+    } else if (argv[i] === "--platform" && argv[i + 1]) {
+      const raw = String(argv[i + 1]);
+      if (raw.startsWith("--")) continue;
+      i += 1;
+      const p = raw.trim().toLowerCase();
+      out.platform = KNOWN_PLATFORMS.has(p) ? p : null;
     }
   }
   return out;
@@ -51,6 +61,24 @@ function parseArgs(argv) {
 
 function isClaudeEvent(event) {
   return CLAUDE_EVENTS.has(event);
+}
+
+/** Strong Claude Stop markers (override a lying `--platform cursor`). */
+function isClaudeShapedStopPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const hookName = String(
+    payload.hook_event_name ?? payload.hookEventName ?? "",
+  ).trim();
+  if (hookName === "Stop" || /^stopfailure$/i.test(hookName)) return true;
+  if (
+    typeof payload.stop_hook_active === "boolean" ||
+    typeof payload.stopHookActive === "boolean"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 async function readStdin() {
@@ -264,11 +292,20 @@ function isCursorShapedStopPayload(payload) {
 let bootEvent = "beforeSubmitPrompt";
 
 async function main() {
-  const { event } = parseArgs(process.argv.slice(2));
+  const { event, platform: declaredPlatform } = parseArgs(
+    process.argv.slice(2),
+  );
   bootEvent = event;
   try {
     const payload = await readStdin();
-    const claude = isClaudeEvent(event);
+    // Layer A: --platform; fall back to event-name heuristics for legacy installs.
+    const preferClaudePort =
+      declaredPlatform === "claude-code"
+        ? true
+        : declaredPlatform === "cursor"
+          ? false
+          : isClaudeEvent(event);
+    const claude = preferClaudePort;
 
     const vendor = await loadVendorRuntime();
     const port = vendor
@@ -327,9 +364,26 @@ async function main() {
         return;
       }
       if (event === "Stop") {
-        // Cursor cross-fires claude-project Stop hooks with IDE stop payloads.
+        // Layer C: payload shape vs declared --platform (cross-fire / lying argv).
+        let useCursorStop = false;
         if (isCursorShapedStopPayload(payload)) {
-          const stopFn = cursorStopHandler(port);
+          useCursorStop = true;
+        } else if (isClaudeShapedStopPayload(payload)) {
+          useCursorStop = false;
+        } else if (declaredPlatform === "cursor") {
+          useCursorStop = true;
+        } else {
+          useCursorStop = false;
+        }
+        if (useCursorStop) {
+          let stopFn = cursorStopHandler(port);
+          // Non-vendor Claude-only load + Cursor-shaped cross-fire needs Cursor port.
+          if (typeof stopFn !== "function") {
+            const cursorPort = await loadPortPackage(
+              "@autopilot-harness/port-cursor",
+            );
+            if (cursorPort) stopFn = cursorStopHandler(cursorPort);
+          }
           if (typeof stopFn !== "function") {
             failOpen(event);
             return;
@@ -338,7 +392,14 @@ async function main() {
           writeReply(JSON.stringify(result ?? {}));
           return;
         }
-        const stopFn = claudeStopHandler(port);
+        let stopFn = claudeStopHandler(port);
+        // Non-vendor Cursor-only load + Claude-shaped Stop needs Claude port.
+        if (typeof stopFn !== "function") {
+          const claudePort = await loadPortPackage(
+            "@autopilot-harness/port-claude-code",
+          );
+          if (claudePort) stopFn = claudeStopHandler(claudePort);
+        }
         if (typeof stopFn !== "function") {
           failOpen(event);
           return;

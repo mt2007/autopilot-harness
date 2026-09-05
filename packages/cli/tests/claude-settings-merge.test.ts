@@ -21,6 +21,7 @@ describe("claude settings merge", () => {
       const groups = merged.hooks?.[event];
       expect(Array.isArray(groups)).toBe(true);
       expect(JSON.stringify(groups)).toMatch(/autopilot-harness-hook\.mjs/);
+      expect(JSON.stringify(groups)).toMatch(/--platform claude-code/);
       expect(JSON.stringify(groups)).toMatch(new RegExp(`--event ${event}`));
     }
     const post = merged.hooks?.PostToolUse?.[0];
