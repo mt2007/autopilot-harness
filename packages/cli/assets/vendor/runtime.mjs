@@ -43,6 +43,7 @@ var en_default = {
     review_complete: "Review complete. All {total} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.",
     stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
+    need_evidence: `Need evidence: no-code item {currentId}{currentTitleSuffix} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "{currentId}" and ok: true (only after this item's work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.`,
     track_pick: "Select a plan by number or slug."
   },
   error: {
@@ -118,6 +119,7 @@ var zh_CN_default = {
     review_complete: "\u81EA\u5BA1\u5B8C\u6210\u3002\u8FDE\u7EED {total} \u8F6E\u786E\u8BA4\u5DF2\u901A\u8FC7\uFF0C\u81EA\u5BA1\u94FE\u5DF2\u7ED3\u675F\u3002\u82E5\u5DE5\u4F5C\u533A\u4ECD\u6709\u672C\u4F1A\u8BDD\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002",
     stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
+    need_evidence: '\u9700\u8981\u5B8C\u6210\u8BC1\u636E\uFF1A\u65E0\u4EE3\u7801\u6539\u52A8\u9879 {currentId}{currentTitleSuffix} \u7F3A\u5C11\u5339\u914D\u7684 soft \u5B8C\u6210\u8BC1\u636E\uFF0C\u65E0\u6CD5\u63A8\u8FDB\u3002\u8BF7\u5199\u5165 .autopilot/verify-last.json\uFF08itemId \u4E3A "{currentId}"\uFF0Cok: true\uFF1B\u987B\u5728\u8BE5\u9879\u5DE5\u4F5C\u5B8C\u6210\u540E\uFF09\u3002\u7136\u540E\u7ED3\u675F\u672C\u56DE\u5408\uFF0C\u7531 stop hook \u63A8\u8FDB/\u5B8C\u6210\u3002\u4E0D\u8981\u8BA9\u7528\u6237\u8BF4\u300C\u7EE7\u7EED\u300D\uFF1B\u4E0D\u8981\u81EA\u884C\u53D1\u660E\u63A8\u8FDB/\u5B8C\u6210\u6307\u4EE4\u3002',
     track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
   },
   error: {
@@ -1236,6 +1238,8 @@ var StateStore = class _StateStore {
     OR trim(pending_followup) GLOB '\u81EA\u5BA1\u5B8C\u6210*'
     OR trim(pending_followup) GLOB 'Advance*'
     OR trim(pending_followup) GLOB '\u63A8\u8FDB*'
+    OR trim(pending_followup) GLOB 'Need evidence*'
+    OR trim(pending_followup) GLOB '\u9700\u8981\u5B8C\u6210\u8BC1\u636E*'
   )`;
   /**
    * SQL predicate: pending is absent or not a recover automation prompt.
@@ -1877,12 +1881,15 @@ var HARNESS_FOLLOWUP_PREFIXES = [
   "Recover:",
   "Review complete",
   "Verify failed",
+  "Need evidence:",
   "\u81EA\u5BA1\u4FEE\u590D",
   "\u81EA\u5BA1\u786E\u8BA4",
   "\u81EA\u5BA1\u5B8C\u6210",
   "\u63A8\u8FDB\u4E0B\u4E00\u9879",
   "\u5168\u90E8\u5B8C\u6210",
   "\u6821\u9A8C\u5931\u8D25",
+  "\u9700\u8981\u5B8C\u6210\u8BC1\u636E\uFF1A",
+  "\u9700\u8981\u5B8C\u6210\u8BC1\u636E:",
   // Match zh recover/stuck templates (fullwidth colon) — bare「恢复」is too broad.
   "\u6062\u590D\uFF1A",
   "\u5361\u4F4F\uFF1A",
@@ -2284,6 +2291,8 @@ function defaultRender(kind, vars) {
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":
       return `Verify failed (${vars.reason ?? "unknown"}). Fix verify commands and rewrite verify-last.json; do not advance.`;
+    case "need_evidence":
+      return `Need evidence: no-code item ${vars.currentId ?? ""}${vars.currentTitle ? ` \u2014 ${vars.currentTitle}` : ""} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "${vars.currentId ?? ""}" and ok: true (only after this item's work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.`;
     default:
       return "";
   }
@@ -2575,6 +2584,9 @@ var ReviewEngine = class {
     if (m.startsWith("Recover") || m.startsWith("\u6062\u590D")) return "recover";
     if (m.startsWith("Stuck") || m.startsWith("\u5361\u4F4F")) return "stuck";
     if (m.startsWith("Verify failed") || m.startsWith("\u6821\u9A8C\u5931\u8D25")) return "verify_fix";
+    if (m.startsWith("Need evidence") || m.startsWith("\u9700\u8981\u5B8C\u6210\u8BC1\u636E")) {
+      return "need_evidence";
+    }
     return "review.confirm";
   }
   emit(conversationId, action) {
@@ -2952,6 +2964,9 @@ var ReviewEngine = class {
     if (line.startsWith("Verify failed") || line.startsWith("\u6821\u9A8C\u5931\u8D25")) {
       return "verify";
     }
+    if (line.startsWith("Need evidence") || line.startsWith("\u9700\u8981\u5B8C\u6210\u8BC1\u636E")) {
+      return "need_evidence";
+    }
     if (line.startsWith("All checklist") || line.startsWith("\u5168\u90E8\u5B8C\u6210") || line.startsWith("Review complete") || line.startsWith("\u81EA\u5BA1\u5B8C\u6210")) {
       return "terminal";
     }
@@ -3292,9 +3307,26 @@ var ReviewEngine = class {
       projectRoot: trustRoot ?? void 0
     });
     if (evalResult.outcome === "skip") {
-      return this.e0DirectAdvance(session, reportPath, currentItem.id, {
-        kind: "soft"
-      });
+      const trySoftAdvance = (itemId) => this.e0DirectAdvance(session, reportPath, itemId, { kind: "soft" });
+      const advanced = trySoftAdvance(currentItem.id);
+      if (advanced) return advanced;
+      const nudged = this.e0EmitNeedEvidence(session, currentItem);
+      if (nudged) return nudged;
+      const liveChain = this.store.getReviewChain(session.conversation_id);
+      const liveParsed = this.parseSessionChecklist(session);
+      const liveId = liveParsed?.checklist && this.resolveReviewingItemId(
+        liveChain,
+        liveParsed.checklist,
+        currentItem.id
+      ) || currentItem.id;
+      if (!hasNoCodeCompletionEvidence({
+        reportPath,
+        currentItemId: liveId,
+        projectRoot: trustRoot ?? void 0
+      })) {
+        return null;
+      }
+      return trySoftAdvance(liveId);
     }
     if (evalResult.outcome === "pass") {
       return this.e0DirectAdvance(session, reportPath, currentItem.id, {
@@ -3434,6 +3466,96 @@ var ReviewEngine = class {
       this.afterFollowupCommitted(session, {});
     }
     return action;
+  }
+  /**
+   * E0 soft path without completion evidence: inject an actionable nudge instead
+   * of returning null (silent stall). Keeps chain_pending=0 so the next stop
+   * can soft-advance once verify-last.json matches — arming would force phantom E3.
+   * Shared by all platforms (Cursor / Claude Code) via ReviewEngine.
+   *
+   * Do **not** call afterFollowupCommitted here: that resets idle_stop_count and
+   * would undo the stuck progression (same pattern as E5c verify_fix).
+   */
+  e0EmitNeedEvidence(session, expectedItem) {
+    const cid2 = session.conversation_id;
+    const trustRoot = this.trustedProjectRoot();
+    const reportPath = this.config.verifyReportPath ?? defaultVerifyReportPath(trustRoot ?? "");
+    return this.store.exclusiveWrite(() => {
+      if (!this.sessionRunnable(cid2)) {
+        return { commit: false, value: null };
+      }
+      const sess = this.store.getSession(cid2);
+      if (!sess || !isChecklistExecuting(sess)) {
+        return { commit: false, value: null };
+      }
+      const fresh = this.store.getReviewChain(cid2);
+      if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1) {
+        return { commit: false, value: null };
+      }
+      const refreshed = this.parseSessionChecklist(sess);
+      if (!refreshed?.checklist) {
+        return { commit: false, value: null };
+      }
+      const reviewingId = this.resolveReviewingItemId(
+        fresh,
+        refreshed.checklist,
+        expectedItem.id
+      );
+      const lockedItem = reviewingId && refreshed.checklist.items.find((i) => i.id === reviewingId) || refreshed.currentItem;
+      if (!lockedItem) {
+        return { commit: false, value: null };
+      }
+      if (hasNoCodeCompletionEvidence({
+        reportPath,
+        currentItemId: lockedItem.id,
+        projectRoot: trustRoot ?? void 0
+      })) {
+        return { commit: false, value: null };
+      }
+      const nextIdle = sess.idle_stop_count + 1;
+      const nowStuck = nextIdle >= this.config.maxIdleStops;
+      if (nowStuck) {
+        this.store.upsertSession({
+          conversation_id: cid2,
+          project_root: sess.project_root,
+          code_root: sess.code_root,
+          idle_stop_count: nextIdle,
+          paused: 1,
+          paused_reason: "stuck",
+          armed: 0
+        });
+      } else {
+        this.store.upsertSession({
+          conversation_id: cid2,
+          project_root: sess.project_root,
+          code_root: sess.code_root,
+          idle_stop_count: nextIdle
+        });
+      }
+      const kind = nowStuck ? "stuck" : "need_evidence";
+      const title = (lockedItem.title ?? "").trim();
+      const message = this.render(
+        kind,
+        nowStuck ? {} : {
+          currentId: lockedItem.id,
+          currentTitle: title,
+          currentTitleSuffix: title ? ` \u2014 ${title}` : ""
+        }
+      );
+      this.store.updateReviewChain(cid2, {
+        chain_pending: 0,
+        pending_followup: message,
+        pending_followup_at: (/* @__PURE__ */ new Date()).toISOString(),
+        pending_redeliver_at: null
+      });
+      const out = {
+        kind,
+        message,
+        loop: true,
+        meta: nowStuck ? void 0 : { currentId: lockedItem.id }
+      };
+      return { commit: true, value: out };
+    });
   }
   /** Arm confirm_left=0 + ICC=1 only when still idle on the no-code path. */
   armAtE5ForNoCode(conversationId) {
@@ -4411,6 +4533,11 @@ function createRenderFollowup(bundle) {
       case "verify_fix":
         return renderTemplate(
           f.verify_fix ?? "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
+          vars
+        );
+      case "need_evidence":
+        return renderTemplate(
+          f.need_evidence ?? `Need evidence: no-code item {currentId}{currentTitleSuffix} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "{currentId}" and ok: true (only after this item's work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.`,
           vars
         );
       default:

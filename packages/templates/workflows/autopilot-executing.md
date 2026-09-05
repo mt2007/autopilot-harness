@@ -7,14 +7,16 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 1. Read `plans/<slug>/checklist.md` — work only on `firstUnchecked()` (`- [ ] <id> — <title>`).
 2. Implement within that item's scope (align with `plan.md`).
 3. Machine verify / completion evidence: write `.autopilot/verify-last.json` with matching `itemId` (and `ok: true` when using a hand-written report). Run configured verify commands when present.
-4. Stop hook injects **fix** / **confirm** / **advance** / **done** — follow the injected message; do **not** invent your own review lens.
+   - **Required for every item before you stop** — especially no-code / ops / verify-only items. A stale `itemId` from a prior item blocks advance.
+   - After writing the report, **end the turn** so the stop hook can inject advance/done. Do not ask the user to continue; do not invent your own Advance/Done.
+4. Stop hook injects **fix** / **confirm** / **need_evidence** / **advance** / **done** — follow the injected message; do **not** invent your own review lens.
 
 ### Product code vs no-code items
 
 | Situation | Stop behavior |
 |-----------|----------------|
 | You edited product code this item | **fix → confirm →** then verify / advance |
-| No product-code diff (env, ops, paths listed in `.autopilotignore`, or untracked + `.gitignore`) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done** |
+| No product-code diff (env, ops, paths listed in `.autopilotignore`, or untracked + `.gitignore`) | Skip fix/confirm when `verify-last.json` `itemId` matches the current item (or required verify **pass**); then **advance** / **done**. If the report is missing, stale, or `ok: false`, stop hook injects **need_evidence** — write the matching report and end the turn; do not wait for the user. |
 | Required verify **fail** | `verify_fix` — fix env/report or code; if you edit product code next, fix chain runs first |
 
 **What counts as product code (trigger):** any edited path that is **not** matched by `.autopilotignore`, and is **not** an untracked path ignored by `.gitignore`. There is no hardcoded extension allowlist — configure exclusions in `.autopilotignore` (comments in that file explain defaults). Markdown is reviewable by default; `docs/**` is not blocked by default.

@@ -1018,6 +1018,69 @@ describe("pending followup + session round", () => {
     expect(after?.meta?.redeliver).not.toBe(true);
   });
 
+  it("need_evidence host-drop redeliver keeps chain_pending=0 (no phantom E3)", () => {
+    const eng = engine();
+    const cp = path.join(root, "plans", "t", "checklist.md");
+    fs.mkdirSync(path.dirname(cp), { recursive: true });
+    fs.writeFileSync(cp, `- [ ] item-a — First\n- [ ] item-b — Second\n`);
+    const pending =
+      'Need evidence: no-code item item-a — First cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "item-a" and ok: true (only after this item\'s work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.';
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      checklist_path: cp,
+      track_id: "t",
+    });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      fix_round: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      chain_pending: 0,
+      reviewing_item_id: "item-a",
+      pending_followup: pending,
+      pending_followup_at: new Date().toISOString(),
+      pending_redeliver_at: null,
+    });
+    writeTranscript(transcript, [
+      { role: "assistant", text: "ran verify but forgot soft evidence" },
+    ]);
+
+    const redelivered = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+      transcriptPath: transcript,
+    });
+    expect(redelivered?.meta?.redeliver).toBe(true);
+    expect(redelivered?.kind).toBe("need_evidence");
+    expect(redelivered?.message).toBe(pending);
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+
+    writeTranscript(transcript, [
+      { role: "assistant", text: "ran verify but forgot soft evidence" },
+      { role: "user", text: `<user_query>\n${pending}\n</user_query>` },
+      { role: "assistant", text: "still no verify-last.json" },
+    ]);
+    const after = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+      transcriptPath: transcript,
+    });
+    // Pending cleared after delivery; still no soft evidence → fresh need_evidence,
+    // never phantom confirm.
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+    expect(after?.kind).toBe("need_evidence");
+    expect(after?.kind).not.toBe("review.confirm");
+    expect(after?.meta?.redeliver).not.toBe(true);
+  });
+
   it("E5 does not mark done when checklist is unreadable", () => {
     const eng = engine();
     const cp = path.join(root, "plans", "t", "checklist.md");

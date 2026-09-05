@@ -69,11 +69,13 @@ describe("i18n helpers", () => {
         f.review_complete,
         f.stuck,
         f.verify_fix,
+        f.need_evidence,
         f.track_pick,
       ];
       for (const text of blobs) {
         expect(text, `${code}: ${text.slice(0, 40)}…`).not.toMatch(banned);
       }
+      expect(f.need_evidence).toMatch(/^Need evidence:|^需要完成证据：/);
       expect(f.review_complete).toMatch(/^Review complete|^自审完成/);
       expect(f.review_complete).not.toMatch(
         /do not auto-commit|不要自动 commit|勿再 commit/i,

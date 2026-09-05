@@ -42,6 +42,7 @@
     "review_complete": "自审完成。连续 {total} 轮确认已通过，自审链已结束。若工作区仍有本会话未提交改动，按安全清单本地 commit（勿 stage .env/密钥/.autopilot 运行时；勿 push，除非用户明确要求）；已干净则只简短确认即可。",
     "stuck": "卡住：连续多轮无进展。请换策略，或修好后发送 Autopilot RESUME。",
     "verify_fix": "校验失败（{reason}）。请修复 verify 命令并重写 verify-last.json；不要推进。",
+    "need_evidence": "需要完成证据：无代码改动项 {currentId}{currentTitleSuffix} 缺少匹配的 soft 完成证据，无法推进。请写入 .autopilot/verify-last.json（itemId 为 \"{currentId}\"，ok: true；须在该项工作完成后）。然后结束本回合，由 stop hook 推进/完成。不要让用户说「继续」；不要自行发明推进/完成指令。",
     "track_pick": "请用数字或 slug 选择要执行的 plan。"
   },
   "error": {

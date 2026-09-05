@@ -42,6 +42,7 @@
     "review_complete": "Review complete. All {total} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.",
     "stuck": "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
     "verify_fix": "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
+    "need_evidence": "Need evidence: no-code item {currentId}{currentTitleSuffix} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId \"{currentId}\" and ok: true (only after this item's work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.",
     "track_pick": "Select a plan by number or slug."
   },
   "error": {

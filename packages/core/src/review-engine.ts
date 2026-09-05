@@ -66,7 +66,8 @@ export type FollowupKind =
   | "recover_planning"
   | "recover_ambient"
   | "stuck"
-  | "verify_fix";
+  | "verify_fix"
+  | "need_evidence";
 
 export interface FollowupAction {
   kind: FollowupKind;
@@ -184,6 +185,15 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
     case "verify_fix":
       return `Verify failed (${vars.reason ?? "unknown"}). Fix verify commands and rewrite verify-last.json; do not advance.`;
+    case "need_evidence":
+      return (
+        `Need evidence: no-code item ${vars.currentId ?? ""}` +
+        `${vars.currentTitle ? ` — ${vars.currentTitle}` : ""} ` +
+        `cannot advance without matching soft completion evidence. ` +
+        `Write .autopilot/verify-last.json with itemId "${vars.currentId ?? ""}" and ok: true ` +
+        `(only after this item's work is done). Then end the turn so the stop hook can advance/done. ` +
+        `Do not ask the user to continue; do not invent Advance/Done.`
+      );
     default:
       return "";
   }
@@ -628,6 +638,9 @@ export class ReviewEngine {
     if (m.startsWith("Recover") || m.startsWith("恢复")) return "recover";
     if (m.startsWith("Stuck") || m.startsWith("卡住")) return "stuck";
     if (m.startsWith("Verify failed") || m.startsWith("校验失败")) return "verify_fix";
+    if (m.startsWith("Need evidence") || m.startsWith("需要完成证据")) {
+      return "need_evidence";
+    }
     return "review.confirm";
   }
 
@@ -1162,6 +1175,9 @@ export class ReviewEngine {
     if (line.startsWith("Verify failed") || line.startsWith("校验失败")) {
       return "verify";
     }
+    if (line.startsWith("Need evidence") || line.startsWith("需要完成证据")) {
+      return "need_evidence";
+    }
     if (
       line.startsWith("All checklist") ||
       line.startsWith("全部完成") ||
@@ -1645,9 +1661,39 @@ export class ReviewEngine {
 
     if (evalResult.outcome === "skip") {
       // Soft evidence + advance/done in one write — never arm E5 first.
-      return this.e0DirectAdvance(session, reportPath, currentItem.id, {
-        kind: "soft",
-      });
+      const trySoftAdvance = (itemId: string) =>
+        this.e0DirectAdvance(session, reportPath, itemId, { kind: "soft" });
+
+      const advanced = trySoftAdvance(currentItem.id);
+      if (advanced) return advanced;
+      // Missing/mismatched/ok:false soft evidence: nudge instead of silent null
+      // (Cursor + Claude Code share this engine — same stall class on both).
+      const nudged = this.e0EmitNeedEvidence(session, currentItem);
+      if (nudged) return nudged;
+      // Emit returned null: either soft evidence landed under the lock, or the
+      // chain/session blocked the nudge. Only retry advance when evidence now
+      // matches the live reviewing id — blind retry re-locks for no benefit and
+      // can mask a still-missing report as a quiet null.
+      const liveChain = this.store.getReviewChain(session.conversation_id);
+      const liveParsed = this.parseSessionChecklist(session);
+      const liveId =
+        (liveParsed?.checklist &&
+          this.resolveReviewingItemId(
+            liveChain,
+            liveParsed.checklist,
+            currentItem.id,
+          )) ||
+        currentItem.id;
+      if (
+        !hasNoCodeCompletionEvidence({
+          reportPath,
+          currentItemId: liveId,
+          projectRoot: trustRoot ?? undefined,
+        })
+      ) {
+        return null;
+      }
+      return trySoftAdvance(liveId);
     }
 
     if (evalResult.outcome === "pass") {
@@ -1827,6 +1873,125 @@ export class ReviewEngine {
       this.afterFollowupCommitted(session, {});
     }
     return action;
+  }
+
+  /**
+   * E0 soft path without completion evidence: inject an actionable nudge instead
+   * of returning null (silent stall). Keeps chain_pending=0 so the next stop
+   * can soft-advance once verify-last.json matches — arming would force phantom E3.
+   * Shared by all platforms (Cursor / Claude Code) via ReviewEngine.
+   *
+   * Do **not** call afterFollowupCommitted here: that resets idle_stop_count and
+   * would undo the stuck progression (same pattern as E5c verify_fix).
+   */
+  private e0EmitNeedEvidence(
+    session: SessionRow,
+    expectedItem: ChecklistItem,
+  ): FollowupAction | null {
+    const cid = session.conversation_id;
+    const trustRoot = this.trustedProjectRoot();
+    const reportPath =
+      this.config.verifyReportPath ??
+      defaultVerifyReportPath(trustRoot ?? "");
+
+    return this.store.exclusiveWrite(() => {
+      if (!this.sessionRunnable(cid)) {
+        return { commit: false, value: null };
+      }
+      const sess = this.store.getSession(cid);
+      if (!sess || !isChecklistExecuting(sess)) {
+        return { commit: false, value: null };
+      }
+      const fresh = this.store.getReviewChain(cid);
+      if (
+        !fresh ||
+        fresh.code_edited === 1 ||
+        fresh.confirm_left !== null ||
+        fresh.item_confirm_complete === 1 ||
+        fresh.chain_pending === 1
+      ) {
+        return { commit: false, value: null };
+      }
+
+      const refreshed = this.parseSessionChecklist(sess);
+      if (!refreshed?.checklist) {
+        return { commit: false, value: null };
+      }
+      const reviewingId = this.resolveReviewingItemId(
+        fresh,
+        refreshed.checklist,
+        expectedItem.id,
+      );
+      const lockedItem =
+        (reviewingId &&
+          refreshed.checklist.items.find((i) => i.id === reviewingId)) ||
+        refreshed.currentItem;
+      // Prefer live reviewing target under the lock (sticky may have moved since
+      // the pre-lock snapshot). Do not hard-fail on id mismatch — that recreated
+      // the silent-null stall this path exists to prevent.
+      if (!lockedItem) {
+        return { commit: false, value: null };
+      }
+
+      // Evidence may have landed under the lock — caller retries e0DirectAdvance
+      // with a freshly resolved reviewing id.
+      if (
+        hasNoCodeCompletionEvidence({
+          reportPath,
+          currentItemId: lockedItem.id,
+          projectRoot: trustRoot ?? undefined,
+        })
+      ) {
+        return { commit: false, value: null };
+      }
+
+      const nextIdle = sess.idle_stop_count + 1;
+      const nowStuck = nextIdle >= this.config.maxIdleStops;
+      if (nowStuck) {
+        this.store.upsertSession({
+          conversation_id: cid,
+          project_root: sess.project_root,
+          code_root: sess.code_root,
+          idle_stop_count: nextIdle,
+          paused: 1,
+          paused_reason: "stuck",
+          armed: 0,
+        });
+      } else {
+        this.store.upsertSession({
+          conversation_id: cid,
+          project_root: sess.project_root,
+          code_root: sess.code_root,
+          idle_stop_count: nextIdle,
+        });
+      }
+
+      const kind: FollowupKind = nowStuck ? "stuck" : "need_evidence";
+      const title = (lockedItem.title ?? "").trim();
+      const message = this.render(
+        kind,
+        nowStuck
+          ? {}
+          : {
+              currentId: lockedItem.id,
+              currentTitle: title,
+              currentTitleSuffix: title ? ` — ${title}` : "",
+            },
+      );
+      this.store.updateReviewChain(cid, {
+        chain_pending: 0,
+        pending_followup: message,
+        pending_followup_at: new Date().toISOString(),
+        pending_redeliver_at: null,
+      });
+      const out: FollowupAction = {
+        kind,
+        message,
+        loop: true,
+        meta: nowStuck ? undefined : { currentId: lockedItem.id },
+      };
+      return { commit: true, value: out };
+    });
   }
 
   /** Arm confirm_left=0 + ICC=1 only when still idle on the no-code path. */

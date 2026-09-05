@@ -797,6 +797,8 @@ export class StateStore {
     OR trim(pending_followup) GLOB '自审完成*'
     OR trim(pending_followup) GLOB 'Advance*'
     OR trim(pending_followup) GLOB '推进*'
+    OR trim(pending_followup) GLOB 'Need evidence*'
+    OR trim(pending_followup) GLOB '需要完成证据*'
   )`;
 
   /**

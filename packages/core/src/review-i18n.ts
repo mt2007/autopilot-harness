@@ -21,6 +21,7 @@ export interface FollowupLocaleBundle {
     review_complete?: string;
     stuck: string;
     verify_fix?: string;
+    need_evidence?: string;
   };
   lens: Record<string, { title: string; focus: string }>;
 }
@@ -67,6 +68,12 @@ export function createRenderFollowup(
         return renderTemplate(
           f.verify_fix ??
             "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
+          vars,
+        );
+      case "need_evidence":
+        return renderTemplate(
+          f.need_evidence ??
+            'Need evidence: no-code item {currentId}{currentTitleSuffix} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "{currentId}" and ok: true (only after this item\'s work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.',
           vars,
         );
       default:

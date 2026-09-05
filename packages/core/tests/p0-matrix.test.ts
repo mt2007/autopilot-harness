@@ -356,7 +356,7 @@ describe("review-engine P0 matrix", () => {
     expect(b?.kind).toBe("advance");
   });
 
-  it("F-NULL: confirm_left NULL does not enter E5", () => {
+  it("F-NULL: confirm_left NULL does not enter E5; missing soft evidence → need_evidence", () => {
     const eng = engine(store, root);
     store.updateReviewChain("c1", {
       confirm_left: null,
@@ -365,8 +365,118 @@ describe("review-engine P0 matrix", () => {
       fix_round: 0,
       item_confirm_complete: 0,
     });
-    // loopCount 0 and no pending → E0 (no soft evidence) stays null
-    expect(eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })).toBeNull();
+    // E0 soft path: no matching verify-last.json → nudge (never silent null / never E5)
+    const a = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(a?.kind).toBe("need_evidence");
+    expect(a?.message ?? "").toMatch(/item-a|Need evidence|需要完成证据/);
+    const chain = store.getReviewChain("c1")!;
+    expect(chain.confirm_left).toBeNull();
+    expect(chain.item_confirm_complete).toBe(0);
+    expect(chain.chain_pending).toBe(0);
+    expect(chain.pending_followup?.trim()).toBeTruthy();
+  });
+
+  it("F-E0-NUDGE: stale itemId soft report nudges; matching itemId then advances", () => {
+    const eng = engine(store, root);
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+      reviewing_item_id: "item-a",
+    });
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    // Stale prior item — general mismatch class (not only "file missing")
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "cli-files-dedupe", ok: true }),
+    );
+    const nudge = stop(eng, "c1", 0);
+    expect(nudge?.kind).toBe("need_evidence");
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(0);
+
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true }),
+    );
+    const advanced = stop(eng, "c1", 0);
+    expect(advanced?.kind).toBe("advance");
+    expect(advanced?.message ?? "").toMatch(/item-b/);
+  });
+
+  it("F-E0-NUDGE: repeated missing evidence eventually stuck (platform-agnostic core)", () => {
+    const eng = engine(store, root, { maxIdleStops: 2 });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+    });
+    expect(stop(eng, "c1", 0)?.kind).toBe("need_evidence");
+    expect(store.getSession("c1")!.idle_stop_count).toBe(1);
+    expect(stop(eng, "c1", 0)?.kind).toBe("stuck");
+    expect(store.getSession("c1")!.paused).toBe(1);
+    expect(store.getSession("c1")!.paused_reason).toBe("stuck");
+  });
+
+  it("F-E0-NUDGE: sticky reviewing_item_id binds need_evidence after premature [x]", () => {
+    const stickyCp = writeChecklist(
+      root,
+      "e0-nudge-sticky",
+      `- [ ] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    sessionExecuting(store, root, "e0ns1", stickyCp);
+    store.ensureReviewChain("e0ns1");
+    store.updateReviewChain("e0ns1", {
+      reviewing_item_id: "item-a",
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      chain_pending: 0,
+    });
+    fs.writeFileSync(
+      stickyCp,
+      `- [x] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    const eng = engine(store, root);
+    const nudge = eng.handleStop({
+      conversationId: "e0ns1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(nudge?.kind).toBe("need_evidence");
+    expect(nudge?.message ?? "").toMatch(/item-a/);
+    expect(nudge?.meta?.currentId).toBe("item-a");
+    expect(store.getReviewChain("e0ns1")!.chain_pending).toBe(0);
+  });
+
+  it("F-E0-NUDGE: evidence appearing before retry advances (no silent null)", () => {
+    const eng = engine(store, root);
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      reviewing_item_id: "item-a",
+    });
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    // First stop: no evidence → need_evidence
+    expect(stop(eng, "c1", 0)?.kind).toBe("need_evidence");
+    // Agent writes matching soft evidence, then stop again → advance
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true }),
+    );
+    const advanced = stop(eng, "c1", 0);
+    expect(advanced?.kind).toBe("advance");
+    expect(advanced?.message ?? "").toMatch(/item-b/);
   });
 
   it("F-E0-STICKY: soft advance still uses sticky after premature [x]", () => {
@@ -515,7 +625,7 @@ describe("review-engine P0 matrix", () => {
     expect(chain.chain_pending).toBe(0);
   });
 
-  it("F-E0: ok false / stale itemId stay null", () => {
+  it("F-E0: ok false / stale itemId → need_evidence (not silent null)", () => {
     const eng = engine(store, root);
     store.updateReviewChain("c1", {
       confirm_left: null,
@@ -531,16 +641,18 @@ describe("review-engine P0 matrix", () => {
       JSON.stringify({ itemId: "item-a", ok: false }),
     );
     expect(
-      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 }),
-    ).toBeNull();
+      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })
+        ?.kind,
+    ).toBe("need_evidence");
 
     fs.writeFileSync(
       reportPath,
       JSON.stringify({ itemId: "item-b", ok: true }),
     );
     expect(
-      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 }),
-    ).toBeNull();
+      eng.handleStop({ conversationId: "c1", status: "completed", loopCount: 0 })
+        ?.kind,
+    ).toBe("need_evidence");
   });
 
   it("F-E0: required verify fail then code edit still E2 first", () => {
@@ -1247,7 +1359,9 @@ describe("review-engine P0 matrix", () => {
       loopCount: 0,
       transcriptPath: transcript,
     });
-    expect(again).toBeNull();
+    // Must not redeliver recover; executing no-code without soft evidence now nudges.
+    expect(again?.kind).not.toMatch(/recover/i);
+    expect(again?.kind).toBe("need_evidence");
   });
 
   it("F-ABORT-PORT: cancelled / error+abort-markers must not recover via Cursor port", () => {
