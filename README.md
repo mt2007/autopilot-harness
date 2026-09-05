@@ -6,6 +6,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-brightgreen.svg)](https://nodejs.org/)
 
+<p align="center">
+  <img src="./docs/assets/autopilot-harness-cover.jpg" alt="Autopilot Harness — State the goal. Autopilot the rest." width="720" />
+</p>
+
 ## Why
 
 Vibe coding is fast until scope drifts, acceptance stays implicit, and “looks done” skips hard review angles. Autopilot keeps the agent on a durable track:

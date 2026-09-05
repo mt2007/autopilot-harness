@@ -8,6 +8,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-brightgreen.svg)](https://nodejs.org/)
 
+<p align="center">
+  <img src="./docs/assets/autopilot-harness-cover.jpg" alt="Autopilot Harness — State the goal. Autopilot the rest." width="720" />
+</p>
+
 ## 为什么
 
 Vibe coding 很快，但范围漂移、验收含糊、「看起来做完了」却跳过难审的角度。Autopilot 把工作钉在可持久的轨上：
