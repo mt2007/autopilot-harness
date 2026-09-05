@@ -7,7 +7,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-brightgreen.svg)](https://nodejs.org/)
 
 <p align="center">
-  <img src="./docs/assets/autopilot-harness-cover.jpg" alt="Autopilot Harness — State the goal. Autopilot the rest." width="720" />
+  <img src="./docs/assets/autopilot-harness-cover.jpg" alt="Autopilot Harness — State the goal. Autopilot the rest." width="900" />
 </p>
 
 ## Why
