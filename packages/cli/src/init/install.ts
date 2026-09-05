@@ -54,6 +54,7 @@ import {
   writeFileReplaceSync,
   renameReplaceSync,
 } from "../read-untrusted-file.js";
+import { resolveTemplatesRoot } from "../template-paths.js";
 
 export {
   mergeHooksJson,
@@ -107,14 +108,7 @@ const WORKFLOW_FILES = AUTOPILOT_WORKFLOW_FILES;
 function resolvePackageRoots(): { cliRoot: string; templatesRoot: string } {
   // src/init → ../../ = packages/cli; dist/init → ../../ = packages/cli
   const cliRoot = path.resolve(__dirname, "../..");
-  const candidates = [
-    path.resolve(cliRoot, "../templates"),
-    path.resolve(cliRoot, "node_modules/@autopilot-harness/templates"),
-  ];
-  const templatesRoot =
-    candidates.find((p) => isRealDirectory(path.join(p, "skills"))) ??
-    candidates[0]!;
-  return { cliRoot, templatesRoot };
+  return { cliRoot, templatesRoot: resolveTemplatesRoot(cliRoot) };
 }
 
 function resolveHookAsset(cliRoot: string): string | null {

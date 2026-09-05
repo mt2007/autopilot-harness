@@ -9,6 +9,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-09-05
+
+### Fixed
+
+- Ship skill/workflow templates inside `@autopilot-harness/cli` (`assets/templates`) so `npx @autopilot-harness/cli init|upgrade` works without a separate `@autopilot-harness/templates` package.
+
 ## [0.2.2] — 2026-09-05
 
 ### Fixed

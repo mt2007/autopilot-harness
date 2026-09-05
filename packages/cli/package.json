@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/cli",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Autopilot harness CLI (bin: autopilot-harness)",
   "license": "MIT",
   "repository": {
@@ -30,7 +30,8 @@
   ],
   "scripts": {
     "bundle-vendor": "node ./scripts/bundle-vendor.mjs",
-    "build": "pnpm --filter @autopilot-harness/core run build && node ./scripts/bundle-vendor.mjs && tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
+    "bundle-templates": "node ./scripts/bundle-templates.mjs",
+    "build": "pnpm --filter @autopilot-harness/core run build && node ./scripts/bundle-vendor.mjs && node ./scripts/bundle-templates.mjs && tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

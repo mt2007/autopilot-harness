@@ -1,6 +1,6 @@
 {
   "name": "autopilot-harness",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Project-level agent harness: Planning → Executing with review chains",
   "license": "MIT",
@@ -10,7 +10,8 @@
   "scripts": {
     "build": "pnpm -r run build",
     "bundle-vendor": "pnpm --filter @autopilot-harness/cli run bundle-vendor",
-    "test": "pnpm run bundle-vendor && vitest run",
+    "bundle-templates": "pnpm --filter @autopilot-harness/cli run bundle-templates",
+    "test": "pnpm run bundle-vendor && pnpm run bundle-templates && vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r run typecheck"
   },

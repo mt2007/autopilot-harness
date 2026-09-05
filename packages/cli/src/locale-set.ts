@@ -17,6 +17,7 @@ import {
   readUntrustedUtf8File,
   writeFileReplaceSync,
 } from "./read-untrusted-file.js";
+import { resolveTemplatesRoot as resolveTemplatesRootFromCli } from "./template-paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -85,15 +86,9 @@ export interface LocaleSetFail {
 export type LocaleSetResult = LocaleSetOk | LocaleSetFail;
 
 function resolveTemplatesRoot(): string {
+  // dist/locale-set.js → .. = packages/cli
   const cliRoot = path.resolve(__dirname, "..");
-  const candidates = [
-    path.resolve(cliRoot, "../templates"),
-    path.resolve(cliRoot, "node_modules/@autopilot-harness/templates"),
-  ];
-  return (
-    candidates.find((p) => isRealDirectory(path.join(p, "skills"))) ??
-    candidates[0]!
-  );
+  return resolveTemplatesRootFromCli(cliRoot);
 }
 
 /** Fail closed before mutating the project when templates are unavailable. */

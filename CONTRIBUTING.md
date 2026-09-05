@@ -15,6 +15,8 @@ pnpm build
 
 After changing hook / review-engine / port / i18n locale strings that ship in the stop-hook bundle, run `pnpm bundle-vendor` and keep `packages/cli/assets/vendor/` in sync before opening a PR.
 
+After changing `packages/templates/` (skills / workflows / `.autopilotignore`), run `pnpm bundle-templates` (or `pnpm build`) so `packages/cli/assets/templates/` stays in sync for the published npm tarball.
+
 Useful filters:
 
 ```bash
