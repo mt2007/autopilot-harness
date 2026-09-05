@@ -9,6 +9,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-09-05
+
 ### Fixed
 
 - Default `.autopilotignore` / built-in defaults also exclude `.claude/**` (parity with `.cursor/**`); vendored hook runtime rebuilt.
