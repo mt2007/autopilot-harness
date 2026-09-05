@@ -9,6 +9,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09-05
+
 ### Added
 
 - Installed Autopilot hook commands stamp `--platform <id>` (`cursor` / `claude-code`); hook entry parses it as primary dispatch with payload conflict resolver retained.

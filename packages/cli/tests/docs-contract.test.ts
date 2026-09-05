@@ -295,14 +295,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
+    expect(log).toMatch(/## \[0\.2\.1\]/);
     expect(log).toMatch(/Claude Code/);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
-    expect(log).not.toMatch(/\[0\.2\.0\]:\s*https:\/\/github\.com/);
+    expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
 
     const contrib = fs.readFileSync(
       path.join(repoRoot, "CONTRIBUTING.md"),

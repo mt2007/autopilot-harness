@@ -19,6 +19,7 @@ import {
 import { MAX_UNTRUSTED_TEXT_BYTES } from "../src/read-untrusted-file.js";
 import * as readUntrusted from "../src/read-untrusted-file.js";
 import { runDoctor } from "../src/status-doctor.js";
+import { PACKAGE_VERSION } from "../src/init/types.js";
 
 function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-init-"));
@@ -251,7 +252,7 @@ describe("init --yes install", () => {
     const pin = JSON.parse(
       fs.readFileSync(path.join(root, ".autopilot", "pin.json"), "utf8"),
     );
-    expect(pin["autopilot-harness"]).toBe("0.2.0");
+    expect(pin["autopilot-harness"]).toBe(PACKAGE_VERSION);
 
     const hook = path.join(
       root,

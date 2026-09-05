@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-claude-code",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Autopilot harness Claude Code host port",
   "license": "MIT",
   "repository": {
