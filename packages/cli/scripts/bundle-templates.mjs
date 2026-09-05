@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Copy packages/templates (skills, workflows, .autopilotignore) into
- * packages/cli/assets/templates so the published npm tarball can init/upgrade
- * without a separate @autopilot-harness/templates package.
+ * packages/cli/assets/templates. Publish ships via dist/assets (see
+ * sync-dist-assets.mjs) so init/upgrade works without @autopilot-harness/templates.
  */
 import fs from "node:fs";
 import path from "node:path";

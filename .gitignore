@@ -31,6 +31,11 @@ docs/autopilot/*
 coverage/
 *.log
 
+# CLI sync-dist-assets crash leftovers (must stay outside published dist/)
+packages/cli/.assets-staging-*
+packages/cli/.assets-old-*
+packages/cli/.assets-blocking-*
+
 # Autopilot runtime
 .autopilot/state.db
 .autopilot/state.db-*

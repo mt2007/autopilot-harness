@@ -49,8 +49,8 @@ export function templatesRootCandidates(cliRoot: string): string[] {
  *
  * Order:
  * 1. Monorepo `packages/templates` (dev / tests — always freshest)
- * 2. Bundled `assets/templates` (what ships inside `@autopilot-harness/cli`)
- * 3. `dist/assets/templates` (odd layouts)
+ * 2. Package-root `assets/templates` (dev working tree before/without dist copy)
+ * 3. `dist/assets/templates` (published npm layout — `files: ["dist"]`)
  * 4. Optional separate npm package (legacy / unused today)
  *
  * A candidate must contain skills + workflows + `.autopilotignore` and a
@@ -59,5 +59,11 @@ export function templatesRootCandidates(cliRoot: string): string[] {
  */
 export function resolveTemplatesRoot(cliRoot: string): string {
   const candidates = templatesRootCandidates(cliRoot);
-  return candidates.find((p) => isUsableTemplatesRoot(p)) ?? candidates[1]!;
+  const found = candidates.find((p) => isUsableTemplatesRoot(p));
+  if (found) return found;
+  // Error-path hint: published layout has no package-root assets/.
+  if (!isRealDirectory(path.join(cliRoot, "assets"))) {
+    return candidates[2]!;
+  }
+  return candidates[1]!;
 }

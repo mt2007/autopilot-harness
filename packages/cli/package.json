@@ -25,13 +25,13 @@
     }
   },
   "files": [
-    "dist",
-    "assets"
+    "dist"
   ],
   "scripts": {
     "bundle-vendor": "node ./scripts/bundle-vendor.mjs",
     "bundle-templates": "node ./scripts/bundle-templates.mjs",
-    "build": "pnpm --filter @autopilot-harness/core run build && node ./scripts/bundle-vendor.mjs && node ./scripts/bundle-templates.mjs && tsc -p tsconfig.json && rm -rf dist/assets && cp -R assets dist/assets",
+    "sync-dist-assets": "node ./scripts/sync-dist-assets.mjs",
+    "build": "pnpm --filter @autopilot-harness/core run build && node ./scripts/bundle-vendor.mjs && node ./scripts/bundle-templates.mjs && tsc -p tsconfig.json && node ./scripts/sync-dist-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

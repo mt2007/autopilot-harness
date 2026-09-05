@@ -153,7 +153,7 @@ function copyVendorDir(
   const vendorRoot = resolveVendorRoot(cliRoot);
   if (!vendorRoot) {
     throw new Error(
-      "Missing assets/vendor/runtime.mjs or migrations — run pnpm bundle-vendor (or pnpm build)",
+      "Missing assets/vendor (or dist/assets/vendor) runtime.mjs/migrations — run pnpm bundle-vendor (or pnpm build)",
     );
   }
   const runtimeSrc = path.join(vendorRoot, "runtime.mjs");
@@ -743,7 +743,7 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
     return {
       ok: false,
       error:
-        "Missing assets/vendor/runtime.mjs or migrations — run pnpm bundle-vendor (or pnpm build)",
+        "Missing assets/vendor (or dist/assets/vendor) runtime.mjs/migrations — run pnpm bundle-vendor (or pnpm build)",
     };
   }
   // Host settings (`.cursor/hooks.json` / `.claude/settings.json`) are validated

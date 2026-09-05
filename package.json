@@ -11,7 +11,7 @@
     "build": "pnpm -r run build",
     "bundle-vendor": "pnpm --filter @autopilot-harness/cli run bundle-vendor",
     "bundle-templates": "pnpm --filter @autopilot-harness/cli run bundle-templates",
-    "test": "pnpm run bundle-vendor && pnpm run bundle-templates && vitest run",
+    "test": "pnpm run bundle-vendor && pnpm run bundle-templates && pnpm --filter @autopilot-harness/cli run sync-dist-assets && vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r run typecheck"
   },
