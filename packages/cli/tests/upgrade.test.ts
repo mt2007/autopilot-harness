@@ -220,6 +220,12 @@ review:
     expect(config).toMatch(/locale:\s*zh-CN/);
     expect(config).toMatch(/confirm_rounds:\s*3/);
     expect(config).toMatch(/enabled:\s*false/);
+    expect(config).toMatch(/platforms:/);
+    expect(config).not.toMatch(/^platform:\s*/m);
+    expect(config).not.toMatch(/^surface:\s*/m);
+    expect(
+      r.actions.some((a) => /remove legacy platform\/surface/.test(a)),
+    ).toBe(true);
     expect(
       fs.existsSync(
         path.join(root, ".autopilot", "bin", "autopilot-harness-hook.mjs"),
@@ -233,6 +239,51 @@ review:
     expect(r.doctorLines.some((l) => l.startsWith("OK"))).toBe(true);
     expect(r.doctorOk).toBe(true);
     expect(r.platform).toBe("cursor");
+  });
+
+  it("strips leftover platform/surface when config already has all known keys", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const modern = fs.readFileSync(configPath, "utf8");
+    expect(modern).toMatch(/platforms:/);
+    expect(modern).toMatch(/claude-code/);
+    expect(modern).not.toMatch(/^platform:\s*/m);
+    fs.writeFileSync(
+      configPath,
+      `platform: cursor\nsurface: ide\n${modern}`,
+      "utf8",
+    );
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.1.1" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      r.actions.some((a) => /config\.yml already has all known keys/.test(a)),
+    ).toBe(true);
+    expect(
+      r.actions.some((a) => /remove legacy platform\/surface/.test(a)),
+    ).toBe(true);
+    const config = fs.readFileSync(configPath, "utf8");
+    expect(config).toMatch(/platforms:/);
+    expect(config).toMatch(/id:\s*cursor/);
+    expect(config).toMatch(/claude-code/);
+    expect(config).toMatch(/locale:\s*en/);
+    expect(config).not.toMatch(/^platform:\s*/m);
+    expect(config).not.toMatch(/^surface:\s*/m);
   });
 
   it("backs up and migrates existing state.db", () => {

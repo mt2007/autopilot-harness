@@ -95,8 +95,9 @@ export function configWantsInstallableHost(
 }
 
 /**
- * Legacy `platform`/`surface` primary: prefer an installable binding so older
- * readers are not pointed at a declared-but-unwired future host.
+ * Effective primary host: first installable binding in list order, else first
+ * entry, else Cursor IDE. Used for status/upgrade hints — not written back as
+ * top-level `platform`/`surface` scalars.
  */
 export function primaryBinding(
   platforms: readonly PlatformBinding[],
@@ -105,6 +106,19 @@ export function primaryBinding(
   if (installable) return installable;
   if (platforms[0]) return platforms[0];
   return { id: "cursor", surface: "ide" };
+}
+
+/** True when config.yml still has deprecated top-level `platform` / `surface`. */
+export function configYamlHasLegacyHostScalars(yaml: string): boolean {
+  try {
+    const doc = parseDocument(yaml);
+    if (doc.errors.length > 0) return false;
+    if (doc.contents != null && isAlias(doc.contents)) return false;
+    if (doc.contents != null && !isMap(doc.contents)) return false;
+    return doc.has("platform") || doc.has("surface");
+  } catch {
+    return false;
+  }
 }
 
 /** Human label for init multiselect (English; init UX language). */
@@ -293,8 +307,9 @@ export function mergedIncludesAllRequested(
 }
 
 /**
- * Rewrite `platforms` (+ legacy `platform`/`surface` primary) in config.yml
- * via the YAML AST so unrelated keys/comments are preserved when possible.
+ * Rewrite `platforms` in config.yml via the YAML AST so unrelated keys/comments
+ * are preserved when possible. Also removes deprecated top-level `platform` /
+ * `surface` scalars (primary is list order / first installable).
  */
 export function applyPlatformsToConfigYaml(
   existingYaml: string,
@@ -322,13 +337,10 @@ export function applyPlatformsToConfigYaml(
     throw new Error("config.yml root must be a mapping");
   }
 
-  // Legacy scalars should point at an installable host when one exists, so
-  // older readers do not treat a declared-but-unwired future host as primary.
-  const primary = primaryBinding(list);
   const platformsNode = list.map((b) => ({ id: b.id, surface: b.surface }));
   doc.set("platforms", platformsNode);
-  doc.set("platform", primary.id);
-  doc.set("surface", primary.surface);
+  doc.delete("platform");
+  doc.delete("surface");
 
   return String(doc);
 }

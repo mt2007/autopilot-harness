@@ -13,7 +13,7 @@ Canonical defaults: `packages/cli/src/init/default-config.ts`.
 | **Stop hook** (via `loadProjectReviewConfig` / `createConfiguredReviewEngine`) | `locale`, `review.*` |
 | **Edit hook** | `review.scope` only (same loader; other `review.*` / `locale` unused on edit) |
 | **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` + line-start `DEFAULT_TRIGGERS` (incl. resume_review phrases) — does **not** load review config or YAML `triggers.*`. (Cursor skill files only surface slash in the UI; Claude skills under `.claude/skills/`; the hook parses typed slash commands either way.) |
-| **`status`** | `locale`, `platforms` (+ legacy `platform`/`surface`), `artifacts.plans_dir`, `cli.preferred_name` |
+| **`status`** | `locale`, `platforms` (legacy top-level `platform`/`surface` still read as fallback), `artifacts.plans_dir`, `cli.preferred_name` |
 | **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` when that host is installed |
 | **`session list`** | `session.stale_after_hours` only (via `readStaleAfterHours`; invalid → treat as `0` / disabled) |
 | **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor and/or Claude Code wiring for installable bindings |
@@ -27,8 +27,8 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `locale` | `en` | Template / followup **template** language (`en` \| `zh-CN`). User-visible chat replies still follow the **user’s** language. Change later with `locale set <code>`. |
-| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **This build installs Cursor and/or Claude Code** when those bindings are present. Claude uses `surface: cli` (hooks shared across terminal + IDE — not CLI-only). Dual-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for dispatch. |
-| `platform` / `surface` | primary binding | Legacy scalars for older readers; prefer `platforms`. Primary prefers an installable binding when the list mixes wired and future hosts. |
+| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **Primary** = first installable binding in list order (no separate primary key). **This build installs Cursor and/or Claude Code** when those bindings are present. Claude uses `surface: cli` (hooks shared across terminal + IDE — not CLI-only). Dual-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for dispatch. |
+| `platform` / `surface` | — | **Deprecated.** Older configs may still have these scalars; readers fall back to them only when `platforms` is absent. Fresh `init` does not write them; `upgrade` / `init --force` remove them after materializing `platforms`. |
 | `integration` | `hook` | Integration style written by init (`hook`). |
 
 ## Artifacts & CLI label

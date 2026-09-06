@@ -7,9 +7,10 @@ Also: [CONTRIBUTING.md](../CONTRIBUTING.md) · [CHANGELOG.md](../CHANGELOG.md) �
 Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, …).
 
 Project config (`.autopilot/config.yml`) lists enabled hosts under `platforms:`
-(`id` + `surface`: `ide` | `cli` | `runner`). Legacy `platform` / `surface`
-scalars remain as the primary host for older readers (prefer an installable
-binding when the list mixes wired and future hosts). Config may list multiple
+(`id` + `surface`: `ide` | `cli` | `runner`). Primary host is the first
+installable binding in that list. Deprecated top-level `platform` / `surface`
+scalars are still read as a fallback when `platforms` is missing; `init` /
+`upgrade` stop writing them and strip them on refresh. Config may list multiple
 `platforms`; **this build installs Cursor and/or Claude Code** when those
 bindings are present (`cursor`/`ide`, `claude-code`/`cli`). Other ids are
 reserved for future ports. For Claude, `surface: cli` means official hooks are

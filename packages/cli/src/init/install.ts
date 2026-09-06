@@ -37,6 +37,7 @@ import { readConfigInstallHints, readConfigPlatformsOrThrow } from "./config-mer
 import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
+  configYamlHasLegacyHostScalars,
   isInstallableBinding,
   MAX_PLATFORM_BINDINGS,
   mergePlatformBindings,
@@ -1277,6 +1278,42 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return {
           ok: false,
           error: `Hooks refreshed, but platforms merge failed: ${msg}`,
+        };
+      }
+    } else if (
+      configExists &&
+      force &&
+      opts.stripLegacyHostScalars !== false
+    ) {
+      // Plain --force: drop deprecated top-level platform/surface without
+      // changing the declared platforms list (incl. future hosts).
+      // Upgrade passes stripLegacyHostScalars: false and rewrites config.yml
+      // once after hooks (missing keys + strip) so hooks fail-closed cannot
+      // leave a half-normalized config.
+      try {
+        const freshYaml = readUntrustedUtf8File(
+          configPath,
+          MAX_UNTRUSTED_TEXT_BYTES,
+          ".autopilot/config.yml",
+        );
+        if (configYamlHasLegacyHostScalars(freshYaml)) {
+          const list = readConfigPlatformsOrThrow(freshYaml);
+          const nextYaml = applyPlatformsToConfigYaml(freshYaml, list);
+          assertParentDirInProject(projectRoot, configPath, ".autopilot/");
+          assertNotSymlink(configPath, ".autopilot/config.yml");
+          writeFileReplaceSync(configPath, nextYaml);
+          assertWrittenInsideProject(
+            projectRoot,
+            configPath,
+            ".autopilot/config.yml",
+          );
+          written.push(path.relative(projectRoot, configPath));
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          error: `Hooks refreshed, but config.yml normalize failed: ${msg}`,
         };
       }
     }

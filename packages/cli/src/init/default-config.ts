@@ -4,7 +4,6 @@ import {
   mergePlatformBindings,
   mergedIncludesAllRequested,
   normalizeBinding,
-  primaryBinding,
   MAX_PLATFORM_BINDINGS,
   type PlatformBinding,
 } from "./platforms.js";
@@ -61,7 +60,6 @@ export function defaultConfigYaml(opts: {
       ? opts.maxErrorsBeforePause
       : 0;
   const platforms = resolveConfigPlatforms(opts);
-  const primary = primaryBinding(platforms);
   const triggers = stockTriggers(opts.locale);
   const on = JSON.stringify(triggers.on);
   const run = JSON.stringify(triggers.run);
@@ -72,10 +70,8 @@ export function defaultConfigYaml(opts: {
 
   return `# Autopilot Harness — project config (init defaults)
 # Enabled hosts (id + surface). surface: ide | cli | runner
+# Primary = first installable binding in this list (no separate platform/surface keys).
 ${formatPlatformsYamlBlock(platforms)}
-# Primary host (installable preferred) — kept for older readers
-platform: ${primary.id}
-surface: ${primary.surface}
 integration: hook
 locale: ${opts.locale}
 

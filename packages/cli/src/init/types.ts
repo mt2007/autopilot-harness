@@ -25,6 +25,12 @@ export interface InitYesOptions {
    * for the refresh path.
    */
   mergePlatforms?: boolean;
+  /**
+   * When false, skip rewriting config.yml solely to drop deprecated top-level
+   * `platform`/`surface` on `--force`. Default true. Upgrade sets false because
+   * it owns the single post-hooks config.yml write (append missing keys + strip).
+   */
+  stripLegacyHostScalars?: boolean;
   locale: string;
   force: boolean;
   packageVersion?: string;

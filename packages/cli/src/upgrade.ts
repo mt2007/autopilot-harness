@@ -6,9 +6,14 @@ import { defaultConfigYaml } from "./init/default-config.js";
 import {
   mergeConfigYamlMissingKeys,
   readConfigInstallHints,
+  readConfigPlatformsOrThrow,
 } from "./init/config-merge.js";
 import { installInitYes, preflightForceRefresh } from "./init/install.js";
-import { configWantsInstallableHost } from "./init/platforms.js";
+import {
+  applyPlatformsToConfigYaml,
+  configWantsInstallableHost,
+  configYamlHasLegacyHostScalars,
+} from "./init/platforms.js";
 import {
   validateHooksShape,
 } from "./init/hooks-merge.js";
@@ -334,6 +339,8 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         : [{ id: "cursor", surface: "ide" }];
     // hints.platform/surface already prefer installable via primaryBinding.
     const platform = hints.platform || platforms[0]?.id || "cursor";
+    const hadLegacyHostScalars =
+      configYamlHasLegacyHostScalars(existingConfig);
     // Defaults include platforms[] so upgrade can append the key to legacy configs.
     const defaultsYaml = defaultConfigYaml({
       platforms,
@@ -348,6 +355,9 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       actions.push(`append missing config keys: ${configAdded.join(", ")}`);
     } else {
       actions.push("config.yml already has all known keys");
+    }
+    if (hadLegacyHostScalars) {
+      actions.push("remove legacy platform/surface scalars from config.yml");
     }
 
     const dbPath = path.join(projectRoot, ".autopilot", "state.db");
@@ -446,6 +456,8 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       surface: "ide",
       locale,
       force: true,
+      // Config rewrite (missing keys + legacy strip) happens below once.
+      stripLegacyHostScalars: false,
       packageVersion: version,
     });
     if (!refresh.ok) {
@@ -457,9 +469,35 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
     written.push(...refresh.written);
 
-    if (configAdded.length > 0) {
-      writeFileAtomic(configPath, merged.yaml, projectRoot);
-      written.push(path.relative(projectRoot, configPath));
+    if (configAdded.length > 0 || hadLegacyHostScalars) {
+      if (configAdded.length > 0) {
+        const list = readConfigPlatformsOrThrow(merged.yaml);
+        const toWrite = applyPlatformsToConfigYaml(merged.yaml, list);
+        assertNotSymlink(configPath, ".autopilot/config.yml");
+        writeFileAtomic(configPath, toWrite, projectRoot);
+        written.push(path.relative(projectRoot, configPath));
+      } else {
+        // Strip-only: re-read after hooks and take platforms from that snapshot
+        // so a concurrent host-list edit is not overwritten by the upgrade-start list.
+        let baseYaml = existingConfig;
+        try {
+          baseYaml = readUntrustedUtf8File(
+            configPath,
+            MAX_UNTRUSTED_TEXT_BYTES,
+            ".autopilot/config.yml",
+          );
+        } catch {
+          // fall back to start-of-upgrade snapshot; write still fail-closes
+          // on symlink via assertNotSymlink below.
+        }
+        if (configYamlHasLegacyHostScalars(baseYaml)) {
+          const list = readConfigPlatformsOrThrow(baseYaml);
+          const toWrite = applyPlatformsToConfigYaml(baseYaml, list);
+          assertNotSymlink(configPath, ".autopilot/config.yml");
+          writeFileAtomic(configPath, toWrite, projectRoot);
+          written.push(path.relative(projectRoot, configPath));
+        }
+      }
     }
 
     const doctor = runDoctor(projectRoot);

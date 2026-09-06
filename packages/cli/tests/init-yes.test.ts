@@ -323,7 +323,7 @@ describe("init --yes install", () => {
       path.join(root, ".autopilot", "config.yml"),
       "utf8",
     );
-    expect(config).toMatch(/platform:\s*cursor/);
+    expect(config).not.toMatch(/^platform:\s*/m);
     expect(config).toMatch(/platforms:/);
     expect(config).toMatch(/id:\s*cursor/);
     expect(config).toMatch(/surface:\s*ide/);
@@ -1172,7 +1172,7 @@ locale: en
     expect(lines.join("\n")).not.toMatch(/FAIL.*missing Autopilot/i);
   });
 
-  it("--force refreshes hook but keeps existing config.yml", () => {
+  it("--force refreshes hook; strips legacy platform/surface but keeps other keys", () => {
     root = tmpProject();
     const first = installInitYes({
       projectRoot: root,
@@ -1185,7 +1185,7 @@ locale: en
     const configPath = path.join(root, ".autopilot", "config.yml");
     fs.writeFileSync(
       configPath,
-      "platform: cursor\nlocale: zh-CN\n# user-edit\n",
+      "platform: cursor\nsurface: ide\nlocale: zh-CN\n# user-edit\n",
     );
 
     const second = installInitYes({
@@ -1199,6 +1199,10 @@ locale: en
     const kept = fs.readFileSync(configPath, "utf8");
     expect(kept).toMatch(/user-edit/);
     expect(kept).toMatch(/locale: zh-CN/);
+    expect(kept).toMatch(/platforms:/);
+    expect(kept).toMatch(/id:\s*cursor/);
+    expect(kept).not.toMatch(/^platform:\s*/m);
+    expect(kept).not.toMatch(/^surface:\s*/m);
     expect(
       fs.existsSync(
         path.join(root, ".autopilot", "bin", "autopilot-harness-hook.mjs"),
@@ -1210,6 +1214,37 @@ locale: en
       "utf8",
     );
     expect(skill).toContain(skillDescription("zh-CN", "autopilot-on"));
+  });
+
+  it("--force leaves modern config.yml untouched when no legacy scalars", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const before = `platforms:
+  - id: cursor
+    surface: ide
+locale: zh-CN
+# user-edit
+`;
+    fs.writeFileSync(configPath, before, "utf8");
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: true,
+      }).ok,
+    ).toBe(true);
+    expect(fs.readFileSync(configPath, "utf8")).toBe(before);
   });
 });
 

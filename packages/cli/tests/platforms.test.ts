@@ -3,6 +3,7 @@ import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
   configWantsInstallableHost,
+  configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
   formatBindingOptionLabel,
   formatPlatformsDisplay,
@@ -171,7 +172,7 @@ locale: en
     expect(() => readConfigPlatformsOrThrow(yaml)).toThrow(/exceeds cap/i);
   });
 
-  it("applyPlatformsToConfigYaml keeps keys and prefers first installable primary", () => {
+  it("applyPlatformsToConfigYaml keeps keys and strips legacy platform/surface", () => {
     const next = applyPlatformsToConfigYaml(
       "platform: cursor\nsurface: ide\nlocale: zh-CN\n# keep\n",
       [
@@ -183,9 +184,21 @@ locale: en
     expect(next).toMatch(/claude-code/);
     expect(next).toMatch(/id:\s*cursor/);
     expect(next).toMatch(/locale:\s*zh-CN/);
-    // First installable binding becomes legacy primary scalars.
-    expect(next).toMatch(/platform:\s*claude-code/);
-    expect(next).toMatch(/surface:\s*cli/);
+    expect(next).not.toMatch(/^platform:\s*/m);
+    expect(next).not.toMatch(/^surface:\s*/m);
+  });
+
+  it("configYamlHasLegacyHostScalars detects deprecated scalars", () => {
+    expect(
+      configYamlHasLegacyHostScalars(
+        "platforms:\n  - id: cursor\n    surface: ide\nplatform: cursor\n",
+      ),
+    ).toBe(true);
+    expect(
+      configYamlHasLegacyHostScalars(
+        "platforms:\n  - id: cursor\n    surface: ide\n",
+      ),
+    ).toBe(false);
   });
 
   it("applyPlatformsToConfigYaml refuses over-cap input without truncating", () => {
