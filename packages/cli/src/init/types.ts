@@ -85,7 +85,7 @@ export interface HooksFile {
   };
 }
 
-export const PACKAGE_VERSION = "0.2.4";
+export const PACKAGE_VERSION = "0.2.5";
 export const HOOK_MARKER = "autopilot-harness";
 export const AUTOPILOT_EVENTS = [
   "beforeSubmitPrompt",

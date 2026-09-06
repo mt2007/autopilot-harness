@@ -9,6 +9,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-09-06
+
 ### Changed
 
 - `.autopilot/config.yml` no longer writes top-level `platform` / `surface`; host list is only under `platforms` (primary = first installable). `upgrade` and `init --force` strip the deprecated scalars while still reading them as a fallback.

@@ -319,7 +319,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -327,6 +327,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.2\]/);
     expect(log).toMatch(/## \[0\.2\.3\]/);
     expect(log).toMatch(/## \[0\.2\.4\]/);
+    expect(log).toMatch(/## \[0\.2\.5\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -336,6 +337,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section024).toMatch(/keywords/i);
     expect(section024).toMatch(/author/i);
     expect(section024).toMatch(/files:\s*\["dist"\]|dist\/assets/i);
+    const section025 = changelogSection(log, "0.2.5");
+    expect(section025).toMatch(/platforms/i);
+    expect(section025).toMatch(/platform|surface/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
