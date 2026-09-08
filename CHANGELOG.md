@@ -9,6 +9,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-09-08
+
+### Fixed
+
+- Ambient/project-scope review no longer stalls after user Stop (abort) or error recover: mid-fix handoff keeps `chain_pending` with sticky edit, abort freezes into confirm instead of bare `fix_round`, and delivered fix tips clear atomically with re-arm so recover/E2 races cannot clobber undelivered tips or orphan the chain.
+
 ## [0.2.6] — 2026-09-08
 
 ### Fixed

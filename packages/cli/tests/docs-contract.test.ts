@@ -319,7 +319,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -329,6 +329,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.4\]/);
     expect(log).toMatch(/## \[0\.2\.5\]/);
     expect(log).toMatch(/## \[0\.2\.6\]/);
+    expect(log).toMatch(/## \[0\.2\.7\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -344,6 +345,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const section026 = changelogSection(log, "0.2.6");
     expect(section026).toMatch(/verify-last|soft evidence|mid-fix/i);
     expect(section026).toMatch(/recover|updated_at|stale/i);
+    const section027 = changelogSection(log, "0.2.7");
+    expect(section027).toMatch(/ambient|abort|Stop/i);
+    expect(section027).toMatch(/chain_pending|recover|fix_round/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
