@@ -9,6 +9,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.6] — 2026-09-08
+
+### Fixed
+
+- Mid-fix error recover no longer soft-advances/`done` on a stale `.autopilot/verify-last.json`: executing residue re-arms fix (or ready-for-E3 confirm), and soft evidence with `at` older than the review chain `updated_at` is rejected.
+
 ## [0.2.5] — 2026-09-06
 
 ### Changed
