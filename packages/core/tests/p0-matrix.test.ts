@@ -711,6 +711,334 @@ describe("review-engine P0 matrix", () => {
     expect(a?.kind).not.toBe("advance");
   });
 
+  // Commerce M2 class: mid-fix error recover clears chain_pending; if
+  // code_edited was lost, a later completed stop must not soft-done on stale
+  // verify-last (last checklist item). Prefer re-arm fix; never emit done.
+  it("F-ERR-EXEC-RECOVER-NO-E0-DONE: post-recover mid-fix must not soft-done", () => {
+    const lastCp = writeChecklist(
+      root,
+      "recover-no-e0",
+      `- [x] done-a — A\n- [ ] last-item — Last\n`,
+    );
+    sessionExecuting(store, root, "c-rec-e0", lastCp);
+    store.ensureReviewChain("c-rec-e0");
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({
+        itemId: "last-item",
+        ok: true,
+        at: "2026-09-08T02:18:00.000Z",
+      }),
+    );
+    // Post-recover residue: fix in flight, markers cleared (armChain=false).
+    store.updateReviewChain("c-rec-e0", {
+      fix_round: 14,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      reviewing_item_id: "last-item",
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+    const eng = engine(store, root, {
+      verifyEnabled: true,
+      verifyCommands: [{ id: "build", run: "true", required: false }],
+    });
+    const out = eng.handleStop({
+      conversationId: "c-rec-e0",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out?.kind).not.toBe("done");
+    expect(out?.kind).not.toBe("advance");
+    // Residue re-arms code_edited → E2 (not E3 confirm / not E0 soft-done).
+    expect(out?.kind).toBe("review.fix");
+    expect(out?.meta?.fixRound).toBe(15);
+    expect(store.getSession("c-rec-e0")!.phase).toBe("executing");
+  });
+
+  it("F-ERR-EXEC-RECOVER-FIX-ROUND: executing error with fix_round>0 re-arms code_edited", () => {
+    const cp = writeChecklist(
+      root,
+      "exec-fix-round",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-exec-fr", cp);
+    store.ensureReviewChain("c-exec-fr");
+    store.updateReviewChain("c-exec-fr", {
+      fix_round: 14,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+    });
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    const recover = eng.handleStop({
+      conversationId: "c-exec-fr",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(recover?.kind).toBe("recover");
+    expect(store.getReviewChain("c-exec-fr")!.code_edited).toBe(1);
+    expect(store.getReviewChain("c-exec-fr")!.chain_pending).toBe(0);
+
+    const after = eng.handleStop({
+      conversationId: "c-exec-fr",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(after?.kind).toBe("review.fix");
+    expect(after?.meta?.fixRound).toBe(15);
+  });
+
+  it("F-ERR-EXEC-ABORT-AFTER-RECOVER: abort clearing code_edited must not soft-done", () => {
+    const lastCp = writeChecklist(
+      root,
+      "abort-after-recover",
+      `- [x] done-a — A\n- [ ] last-item — Last\n`,
+    );
+    sessionExecuting(store, root, "c-abort-rec", lastCp);
+    store.ensureReviewChain("c-abort-rec");
+    store.updateReviewChain("c-abort-rec", {
+      fix_round: 14,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      reviewing_item_id: "last-item",
+      pending_followup: null,
+    });
+    const eng = engine(store, root, {
+      maxErrorsBeforePause: 0,
+      verifyEnabled: true,
+      verifyCommands: [{ id: "build", run: "true", required: false }],
+    });
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-rec",
+        status: "error",
+        loopCount: 0,
+      })?.kind,
+    ).toBe("recover");
+    expect(store.getReviewChain("c-abort-rec")!.code_edited).toBe(1);
+
+    // Host Stop races: drops recover pending + sticky edit marker.
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-rec",
+        status: "aborted",
+        loopCount: 0,
+      }),
+    ).toBeNull();
+    expect(store.getReviewChain("c-abort-rec")!.code_edited).toBe(0);
+    expect(store.getReviewChain("c-abort-rec")!.fix_round).toBe(14);
+
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({
+        itemId: "last-item",
+        ok: true,
+        at: "2026-09-08T02:18:00.000Z",
+      }),
+    );
+    const out = eng.handleStop({
+      conversationId: "c-abort-rec",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out?.kind).not.toBe("done");
+    expect(out?.kind).not.toBe("advance");
+    // Abort cleared code_edited; residue must re-arm E2, not soft-done / confirm.
+    expect(out?.kind).toBe("review.fix");
+    expect(out?.meta?.fixRound).toBe(15);
+    expect(store.getSession("c-abort-rec")!.phase).toBe("executing");
+  });
+
+  it("F-ERR-EXEC-READY-E3-RECOVER: about-to-confirm must resume E4 not another fix", () => {
+    const cp = writeChecklist(
+      root,
+      "exec-ready-e3",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-exec-e3", cp);
+    store.ensureReviewChain("c-exec-e3");
+    // Fix tip already delivered: chain_pending armed, pending cleared, awaiting E3.
+    store.updateReviewChain("c-exec-e3", {
+      fix_round: 3,
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    const recover = eng.handleStop({
+      conversationId: "c-exec-e3",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(recover?.kind).toBe("recover");
+    const mid = store.getReviewChain("c-exec-e3")!;
+    expect(mid.code_edited).toBe(0);
+    expect(mid.chain_pending).toBe(0);
+    // Ambient-parity: arm confirm_left=rounds so E4 emits 1/N after recover.
+    expect(mid.confirm_left).toBe(5);
+
+    const after = eng.handleStop({
+      conversationId: "c-exec-e3",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(after?.kind).toBe("review.confirm");
+    expect(after?.meta?.n).toBe(1);
+    expect(store.getReviewChain("c-exec-e3")!.confirm_left).toBe(4);
+  });
+
+  it("F-ERR-EXEC-READY-E3-COMPENSATE: claim failure still arms confirm_left", () => {
+    const cp = writeChecklist(
+      root,
+      "exec-ready-e3-comp",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-exec-e3c", cp);
+    store.ensureReviewChain("c-exec-e3c");
+    store.updateReviewChain("c-exec-e3c", {
+      fix_round: 3,
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+    const eng = engine(store, root, { maxErrorsBeforePause: 0, sleepSync: () => {} });
+    let writes = 0;
+    const orig = store.exclusiveWrite.bind(store);
+    store.exclusiveWrite = ((fn: Parameters<typeof orig>[0]) => {
+      writes += 1;
+      // First exclusiveWrite is the recover claim — fail it so compensate runs.
+      if (writes === 1) throw new Error("claim boom");
+      return orig(fn);
+    }) as typeof store.exclusiveWrite;
+    try {
+      const recover = eng.handleStop({
+        conversationId: "c-exec-e3c",
+        status: "error",
+        loopCount: 0,
+      });
+      expect(recover?.kind).toBe("recover");
+      const mid = store.getReviewChain("c-exec-e3c")!;
+      expect(mid.code_edited).toBe(0);
+      expect(mid.chain_pending).toBe(0);
+      expect(mid.confirm_left).toBe(5);
+
+      const after = eng.handleStop({
+        conversationId: "c-exec-e3c",
+        status: "completed",
+        loopCount: 0,
+      });
+      expect(after?.kind).toBe("review.confirm");
+      expect(after?.meta?.n).toBe(1);
+    } finally {
+      store.exclusiveWrite = orig;
+    }
+  });
+
+  it("F-ERR-EXEC-READY-E3-LEGACY-EMIT: compensate write fail still arms via locked adjust", () => {
+    const cp = writeChecklist(
+      root,
+      "exec-ready-e3-legacy",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-exec-e3l", cp);
+    store.ensureReviewChain("c-exec-e3l");
+    store.updateReviewChain("c-exec-e3l", {
+      fix_round: 3,
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+    const eng = engine(store, root, { maxErrorsBeforePause: 0, sleepSync: () => {} });
+    let writes = 0;
+    const orig = store.exclusiveWrite.bind(store);
+    store.exclusiveWrite = ((fn: Parameters<typeof orig>[0]) => {
+      writes += 1;
+      // 1: claim fails → compensate. 2: first compensate txn fails → full locked
+      // retry (write 3) must arm confirm_left + stamp recover together.
+      if (writes <= 2) throw new Error("write boom");
+      return orig(fn);
+    }) as typeof store.exclusiveWrite;
+    try {
+      const recover = eng.handleStop({
+        conversationId: "c-exec-e3l",
+        status: "error",
+        loopCount: 0,
+      });
+      expect(recover?.kind).toBe("recover");
+      expect(store.getReviewChain("c-exec-e3l")!.confirm_left).toBe(5);
+      expect(store.getReviewChain("c-exec-e3l")!.code_edited).toBe(0);
+      expect(store.getReviewChain("c-exec-e3l")!.chain_pending).toBe(0);
+      expect(store.getReviewChain("c-exec-e3l")!.pending_followup).toMatch(
+        /恢复|Recover/,
+      );
+    } finally {
+      store.exclusiveWrite = orig;
+    }
+  });
+
+  it("F-ERR-EXEC-READY-E3-UNLOCKED-EMIT: true legacy emit must not orphan confirm_left", () => {
+    const cp = writeChecklist(
+      root,
+      "exec-ready-e3-unlock",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-exec-e3u", cp);
+    store.ensureReviewChain("c-exec-e3u");
+    store.updateReviewChain("c-exec-e3u", {
+      fix_round: 3,
+      chain_pending: 1,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+    const eng = engine(store, root, { maxErrorsBeforePause: 0, sleepSync: () => {} });
+    let writes = 0;
+    const orig = store.exclusiveWrite.bind(store);
+    store.exclusiveWrite = ((fn: Parameters<typeof orig>[0]) => {
+      writes += 1;
+      // Claim + both writeRecover attempts fail → degraded stamp+clear (no adjust).
+      // Must NOT leave confirm_left armed (readyForE3 only runs inside writeRecover).
+      if (writes <= 3) throw new Error("write boom");
+      return orig(fn);
+    }) as typeof store.exclusiveWrite;
+    try {
+      const recover = eng.handleStop({
+        conversationId: "c-exec-e3u",
+        status: "error",
+        loopCount: 0,
+      });
+      expect(recover?.kind).toBe("recover");
+      const chain = store.getReviewChain("c-exec-e3u")!;
+      expect(chain.pending_followup).toMatch(/恢复|Recover/);
+      expect(chain.confirm_left).toBeNull();
+      expect(chain.chain_pending).toBe(0);
+    } finally {
+      store.exclusiveWrite = orig;
+    }
+  });
+
   it("RESUME / checklist parse ignore poisoned session.project_root", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-poison-root-"));
     try {

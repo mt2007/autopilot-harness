@@ -324,6 +324,210 @@ describe("hasNoCodeCompletionEvidence", () => {
       }),
     ).toBe(true);
 
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "2026-09-08T02:18:00.000Z",
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T02:00:00.000Z",
+      }),
+    ).toBe(true);
+    // Numeric epoch-ms at must also honor notBefore
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: Date.parse("2026-09-08T02:18:00.000Z"),
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    // Digit-only string epoch must not bypass notBefore (Date.parse → NaN)
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: String(Date.parse("2026-09-08T02:18:00.000Z")),
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    // Unix-seconds number still compares after ms scaling
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: Math.floor(Date.parse("2026-09-08T02:18:00.000Z") / 1000),
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    // 11-digit early-ms must not be scaled into the future (stale stays stale)
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: 50_000_000_000, // ~1971-07 in ms; 11 digits → do not *1000
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    // Short digit strings must not use Date.parse calendar quirks (e.g. "9")
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "9",
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        // Date.parse("9") ≈ 2001-09 — would wrongly pass this floor
+        notBefore: "2000-01-01T00:00:00.000Z",
+      }),
+    ).toBe(false);
+    // ISO dates still parse via Date.parse (non-numeric form)
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "2026-09-08T07:00:00.000Z",
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(true);
+    // Present but unparseable at must not bypass notBefore
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "not-a-date",
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    // Unparseable notBefore floor must fail closed (do not skip freshness)
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "2026-09-08T07:00:00.000Z",
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "not-a-floor",
+      }),
+    ).toBe(false);
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "1e309", // Number → Infinity → must reject
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    fs.writeFileSync(
+      rp,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "   ",
+      }),
+    );
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(false);
+    // Missing at + notBefore → legacy accept (need_evidence does not require at)
+    fs.writeFileSync(rp, JSON.stringify({ itemId: "item-a", ok: true }));
+    expect(
+      hasNoCodeCompletionEvidence({
+        reportPath: rp,
+        currentItemId: "item-a",
+        projectRoot: root,
+        notBefore: "2026-09-08T06:35:00.000Z",
+      }),
+    ).toBe(true);
+
     fs.writeFileSync(rp, JSON.stringify({ itemId: "item-a", ok: false }));
     expect(
       hasNoCodeCompletionEvidence({

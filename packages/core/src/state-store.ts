@@ -918,7 +918,7 @@ export class StateStore {
    * Column-only: neutralize fix/confirm/pending re-entry without ensure/session.
    * Used when pause-threshold upsert failed but the session is still armed — a
    * later completed stop must not resume the review loop via code_edited/pending
-   * or loopCount>0→E3 (fix_round cleared so bare loopCount cannot re-arm).
+   * or checklist executing fix_round>0→E3 (fix_round cleared here).
    */
   neutralizeReviewChain(conversationId: string): void {
     if (this.isInvalidConversationId(conversationId)) {
@@ -1018,7 +1018,8 @@ export class StateStore {
 
   /**
    * Column-only pause/disarm when the full upsertSession pause write failed.
-   * Without this, loopCount>0 completed stops can still hit E3 while armed.
+   * Without this, checklist executing completed stops can still hit E3 via
+   * fix_round>0 / chain_pending while the session looks armed.
    */
   pauseSessionForRepeatedErrors(
     conversationId: string,

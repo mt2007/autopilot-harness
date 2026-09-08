@@ -437,7 +437,7 @@ export class ReviewEngine {
         return null;
       }
 
-      // Order: E4 → E5 → E3 → E0 (E2 handled above)
+      // Order: E4 → E5 → residue-E2 → E3 → E0 (E2 via code_edited handled above)
       if (chain.confirm_left !== null && chain.confirm_left > 0) {
         return this.e4Confirm(session, chain);
       }
@@ -447,26 +447,77 @@ export class ReviewEngine {
       ) {
         return this.e5Gate(session, chain);
       }
-      // loopCount alone must not re-arm after a hard halt neutralize (fix_round
-      // cleared). Keep E8 recovery for checklist executing only: after
-      // clearChainPending mid-fix, fix_round>0 + loopCount still reaches E3.
-      // Do NOT use that path for ambient/planning — leftover fix_round after an
-      // error recover (armChain=false) would otherwise open a phantom confirm
-      // chain with no new code_edited (seen with project-scope ambient).
-      const inChain =
-        chain.chain_pending === 1 ||
-        (input.loopCount > 0 &&
-          chain.fix_round > 0 &&
-          isChecklistExecuting(session));
+
+      // Recover/abort residue on checklist executing: chain_pending cleared and
+      // code_edited may be lost, but fix_round>0 means mid-item review was
+      // active. Prefer another fix round over E3 confirm so prior edits are not
+      // "confirmed" without a fix pass (Commerce M2 / abort-after-recover).
       if (
-        chain.confirm_left === null &&
+        chain.chain_pending === 0 &&
+        chain.fix_round > 0 &&
+        chain.code_edited === 0 &&
         chain.item_confirm_complete === 0 &&
+        isChecklistExecuting(session)
+      ) {
+        const cid = session.conversation_id;
+        const rearmed = this.store.exclusiveWrite(() => {
+          if (!this.sessionRunnable(cid)) {
+            return { commit: false, value: false };
+          }
+          const fresh = this.store.getReviewChain(cid);
+          if (
+            !fresh ||
+            fresh.code_edited === 1 ||
+            fresh.confirm_left !== null ||
+            fresh.item_confirm_complete === 1 ||
+            fresh.chain_pending === 1 ||
+            fresh.fix_round <= 0
+          ) {
+            return { commit: false, value: false };
+          }
+          this.store.updateReviewChain(cid, { code_edited: 1 });
+          return { commit: true, value: true };
+        });
+        if (rearmed) {
+          const live = this.store.getReviewChain(cid);
+          if (live?.code_edited === 1) {
+            const fix = this.e2Fix(session, live);
+            if (fix) return fix;
+            // e2Fix lost a race — fall through with a refreshed chain snapshot
+            // (do not keep using the pre-rearm `chain`, or E0 could soft-advance
+            // while live code_edited is still 1 / or miss a live clear).
+          }
+        }
+      }
+
+      // Refresh after possible residue rearm so E3/E0 see live markers.
+      const chainNow =
+        this.store.getReviewChain(input.conversationId) ?? chain;
+
+      // Concurrent residue/recover may have armed code_edited after the outer
+      // snapshot — prefer E2 over E3/E0 on the live marker.
+      if (chainNow.code_edited === 1) {
+        return this.e2Fix(session, chainNow);
+      }
+
+      // After hard halt neutralize, fix_round is cleared so bare residue cannot
+      // re-arm. Checklist executing: fix_round>0 still reaches E3 even when
+      // chain_pending was cleared (recover armChain=false) and loopCount=0
+      // (Cursor often reports 0). Do NOT use fix_round alone for ambient/
+      // planning — leftover fix_round after recover would open a phantom
+      // confirm chain with no new code_edited (project-scope ambient).
+      const inChain =
+        chainNow.chain_pending === 1 ||
+        (chainNow.fix_round > 0 && isChecklistExecuting(session));
+      if (
+        chainNow.confirm_left === null &&
+        chainNow.item_confirm_complete === 0 &&
         inChain
       ) {
-        return this.e3ArmConfirm(session, chain);
+        return this.e3ArmConfirm(session, chainNow);
       }
       // E0': no product-code edit — checklist continue via verify / soft evidence.
-      return this.e0NoCodeContinue(session, chain);
+      return this.e0NoCodeContinue(session, chainNow);
     } catch (err) {
       // Purge races / late id throws from upsert|updateReviewChain must not crash the hook.
       const msg = err instanceof Error ? err.message : String(err);
@@ -965,16 +1016,10 @@ export class ReviewEngine {
             this.store.updateReviewChain(conversationId, { code_edited: 1 });
           }
         } else {
-          // Executing skips ambient soft-reset; re-arm fix for dead fix tip /
-          // pending, but not while confirm_left says mid-confirm or E5-ready.
-          const resumeFix =
-            !this.isMidConfirmOrE5(chain) &&
-            (this.isFixFollowupMessage(pending) ||
-              chain?.code_edited === 1 ||
-              fixTipAtClaim);
-          if (resumeFix) {
-            this.store.updateReviewChain(conversationId, { code_edited: 1 });
-          }
+          // Executing skips ambient soft-reset — same readyForE3 / resumeFix rules.
+          this.applyExecutingErrorRecoverChainAdjustments(conversationId, {
+            fixTipAtClaim,
+          });
         }
         this.store.savePendingFollowup(conversationId, message, {
           armChain: false,
@@ -1381,8 +1426,8 @@ export class ReviewEngine {
     opts?: { ambientSoftReset?: boolean },
   ): FollowupAction | null {
     const ambientSoftReset = opts?.ambientSoftReset === true;
-    try {
-      return this.store.exclusiveWrite(() => {
+    const writeRecover = (): FollowupAction | null =>
+      this.store.exclusiveWrite(() => {
         const session = this.store.getSession(conversationId);
         if (!session || !this.sessionErrorRecoverable(session)) {
           return { commit: false, value: null };
@@ -1395,6 +1440,9 @@ export class ReviewEngine {
         }
         if (ambientSoftReset) {
           this.applySoftResetAmbientChainForErrorRecover(conversationId);
+        } else {
+          // Executing compensate: same readyForE3 / resumeFix as successful claim.
+          this.applyExecutingErrorRecoverChainAdjustments(conversationId);
         }
         this.store.savePendingFollowup(conversationId, action.message, {
           armChain: false,
@@ -1411,6 +1459,9 @@ export class ReviewEngine {
         this.store.clearChainPending(conversationId);
         return { commit: true, value: action };
       });
+
+    try {
+      return writeRecover();
     } catch {
       if (!this.sessionStillErrorRecoverable(conversationId)) {
         return null;
@@ -1423,7 +1474,43 @@ export class ReviewEngine {
           return null;
         }
       } catch {
-        /* fall through to legacy emit */
+        /* fall through */
+      }
+      // One full locked retry (adjust + stamp + clear). Do NOT adjust in a
+      // separate txn then unlocked-emit: that can leave confirm_left/code_edited
+      // armed without a recover stamp if emit/savePending no-ops.
+      try {
+        return writeRecover();
+      } catch {
+        /* fall through */
+      }
+      // Locked stamp+clear without chain adjust (degraded). Closes the gap where
+      // unlocked emit leaves chain_pending=1 alongside recover pending for E3.
+      try {
+        return this.store.exclusiveWrite(() => {
+          if (!this.sessionStillErrorRecoverable(conversationId)) {
+            return { commit: false, value: null };
+          }
+          const pending =
+            this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+            "";
+          if (isRecoverFollowupMessage(pending)) {
+            return { commit: false, value: null };
+          }
+          this.store.savePendingFollowup(conversationId, action.message, {
+            armChain: false,
+          });
+          const live =
+            this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+            "";
+          if (!isRecoverFollowupMessage(live)) {
+            return { commit: false, value: null };
+          }
+          this.store.clearChainPending(conversationId);
+          return { commit: true, value: action };
+        });
+      } catch {
+        /* fall through to legacy unlocked emit */
       }
       // Legacy path: never unlocked soft-reset (confirm/fix pending desync).
       this.emit(conversationId, action);
@@ -1487,6 +1574,51 @@ export class ReviewEngine {
       });
     } catch {
       return "failed";
+    }
+  }
+
+  /**
+   * Executing error-recover chain adjust (call under exclusiveWrite, before
+   * savePendingFollowup + clearChainPending). Mirrors ambient readyForE3 /
+   * resumeFix without soft-resetting mid-confirm/E5.
+   *
+   * Ready-for-E3 (delivered fix, chain_pending only, empty pending) arms
+   * confirm_left=confirmRounds so post-recover continues E4 — not another E2
+   * solely from fix_round>0. Mid-fix residue still forces code_edited.
+   */
+  private applyExecutingErrorRecoverChainAdjustments(
+    conversationId: string,
+    opts?: { fixTipAtClaim?: boolean },
+  ): void {
+    this.store.ensureReviewChain(conversationId);
+    const chain = this.store.getReviewChain(conversationId);
+    if (!chain) return;
+    // Never reshape under an already-stamped recover row (peer / re-entry).
+    if (isRecoverFollowupMessage(chain.pending_followup?.trim() ?? "")) {
+      return;
+    }
+    const pending = chain.pending_followup?.trim() ?? "";
+    const readyForE3 =
+      !this.isMidConfirmOrE5(chain) &&
+      chain.chain_pending === 1 &&
+      chain.code_edited === 0 &&
+      pending.length === 0;
+    const rounds = this.config.confirmRounds;
+    if (readyForE3 && rounds > 0) {
+      this.store.updateReviewChain(conversationId, {
+        confirm_left: rounds,
+        code_edited: 0,
+      });
+      return;
+    }
+    const resumeFix =
+      !this.isMidConfirmOrE5(chain) &&
+      (this.isFixFollowupMessage(pending) ||
+        chain.code_edited === 1 ||
+        opts?.fixTipAtClaim === true ||
+        chain.fix_round > 0);
+    if (resumeFix) {
+      this.store.updateReviewChain(conversationId, { code_edited: 1 });
     }
   }
 
@@ -1631,7 +1763,10 @@ export class ReviewEngine {
       chain.code_edited === 1 ||
       chain.confirm_left !== null ||
       chain.item_confirm_complete === 1 ||
-      chain.chain_pending === 1
+      chain.chain_pending === 1 ||
+      // Mid-item review residue (e.g. recover cleared chain_pending): never
+      // soft-advance/done — caller should have taken residue-E2 or E3.
+      chain.fix_round > 0
     ) {
       return null;
     }
@@ -1689,6 +1824,7 @@ export class ReviewEngine {
           reportPath,
           currentItemId: liveId,
           projectRoot: trustRoot ?? undefined,
+          notBefore: liveChain?.updated_at,
         })
       ) {
         return null;
@@ -1773,7 +1909,8 @@ export class ReviewEngine {
         fresh.code_edited === 1 ||
         fresh.confirm_left !== null ||
         fresh.item_confirm_complete === 1 ||
-        fresh.chain_pending === 1
+        fresh.chain_pending === 1 ||
+        fresh.fix_round > 0
       ) {
         return { commit: false, value: null };
       }
@@ -1798,6 +1935,7 @@ export class ReviewEngine {
             reportPath,
             currentItemId: targets.current.id,
             projectRoot: trustRoot ?? undefined,
+            notBefore: fresh.updated_at,
           })
         ) {
           return { commit: false, value: null };
@@ -1908,7 +2046,8 @@ export class ReviewEngine {
         fresh.code_edited === 1 ||
         fresh.confirm_left !== null ||
         fresh.item_confirm_complete === 1 ||
-        fresh.chain_pending === 1
+        fresh.chain_pending === 1 ||
+        fresh.fix_round > 0
       ) {
         return { commit: false, value: null };
       }
@@ -1940,6 +2079,7 @@ export class ReviewEngine {
           reportPath,
           currentItemId: lockedItem.id,
           projectRoot: trustRoot ?? undefined,
+          notBefore: fresh.updated_at,
         })
       ) {
         return { commit: false, value: null };
@@ -2011,7 +2151,8 @@ export class ReviewEngine {
           fresh.code_edited === 1 ||
           fresh.confirm_left !== null ||
           fresh.item_confirm_complete === 1 ||
-          fresh.chain_pending === 1
+          fresh.chain_pending === 1 ||
+          fresh.fix_round > 0
         ) {
           return { commit: false, value: false };
         }
@@ -2111,11 +2252,17 @@ export class ReviewEngine {
       }
       const fresh = this.store.getReviewChain(cid);
       // Lost the race to another stop (already confirming, at E5, or code edit).
+      // Refuse undelivered fix/recover/stuck pending: unlocked emit can leave
+      // chain_pending=1 with recover stamped until clearChainPending runs —
+      // E3 must not clobber that recover with confirm.
+      const pendingLive = fresh?.pending_followup?.trim() ?? "";
       if (
         !fresh ||
         fresh.code_edited === 1 ||
         fresh.confirm_left !== null ||
-        fresh.item_confirm_complete === 1
+        fresh.item_confirm_complete === 1 ||
+        this.isFixFollowupMessage(pendingLive) ||
+        isRecoverOrStuckFollowupMessage(pendingLive)
       ) {
         return { commit: false, value: null };
       }

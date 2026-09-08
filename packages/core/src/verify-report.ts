@@ -207,13 +207,23 @@ export function evaluateVerifyReport(options: {
  * skipped (disabled / no required commands). Requires a readable in-project
  * report whose itemId matches the current checklist item. Optional `ok: false`
  * blocks; missing `ok` is allowed.
+ *
+ * When `notBefore` is set and the report includes a parseable `at` (ISO string,
+ * finite epoch-ms/seconds number, or digit-only numeric string), reject reports
+ * whose `at` is strictly older (stale evidence from an earlier review phase).
+ * Missing `at` keeps legacy accept (need_evidence copy only requires itemId/ok);
+ * a present but unparseable `at`, or an unparseable floor, is rejected when
+ * `notBefore` is set (fail closed). Mid-item soft-done is also blocked by
+ * fix_round>0 gates — notBefore is defense-in-depth for timestamped reports.
  */
 export function hasNoCodeCompletionEvidence(options: {
   reportPath: string;
   currentItemId: string;
   projectRoot?: string;
+  /** ISO timestamp — reject report.at when present and older than this. */
+  notBefore?: string | null;
 }): boolean {
-  const { reportPath, currentItemId, projectRoot } = options;
+  const { reportPath, currentItemId, projectRoot, notBefore } = options;
   if (!currentItemId || typeof currentItemId !== "string") return false;
 
   let root: string | undefined;
@@ -255,7 +265,62 @@ export function hasNoCodeCompletionEvidence(options: {
   const ok = (report as { ok?: unknown }).ok;
   // Only a boolean false rejects; other types / missing ok are allowed.
   if (ok === false) return false;
+
+  const notBeforeRaw =
+    typeof notBefore === "string" && notBefore.trim() && !notBefore.includes("\0")
+      ? notBefore.trim()
+      : null;
+  if (notBeforeRaw) {
+    const floor = Date.parse(notBeforeRaw);
+    // Floor requested but unusable — fail closed (same class as unparseable `at`).
+    if (Number.isNaN(floor)) return false;
+    const rawAt = (report as { at?: unknown }).at;
+    // Missing `at` → legacy accept (followups do not require at). Present but
+    // unparseable must not skip the floor.
+    if (rawAt !== undefined && rawAt !== null) {
+      const atMs = parseEvidenceAtMs(rawAt);
+      if (Number.isNaN(atMs) || atMs < floor) {
+        return false;
+      }
+    }
+  }
   return true;
+}
+
+/**
+ * Parse verify-last `at` to epoch ms. Accepts finite numbers, ISO strings, and
+ * digit-only numeric strings. Digit-only forms use Number() first — never
+ * Date.parse — because Date.parse("9") / "2026" invents legacy calendar dates.
+ *
+ * Integer (or near-integer) values with ≤10 digits are treated as unix seconds
+ * and scaled to ms. 11+ digit values are left as ms.
+ */
+function parseEvidenceAtMs(rawAt: unknown): number {
+  let atMs = NaN;
+  if (typeof rawAt === "number" && Number.isFinite(rawAt)) {
+    atMs = rawAt;
+  } else if (typeof rawAt === "string" && rawAt.trim() && !rawAt.includes("\0")) {
+    const trimmed = rawAt.trim();
+    // Prefer numeric parse for digit-only forms. Date.parse("9") / "100" /
+    // "2026" invents legacy calendar dates and can bypass notBefore.
+    if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(trimmed)) {
+      const n = Number(trimmed);
+      if (Number.isFinite(n)) atMs = n;
+    } else {
+      atMs = Date.parse(trimmed);
+    }
+  }
+  if (!Number.isNaN(atMs) && atMs >= 0) {
+    const whole = Math.trunc(atMs);
+    // Near-integer only — do not rescale fractional ms.
+    if (Math.abs(atMs - whole) < 1e-9) {
+      const digits = String(Math.abs(whole)).length;
+      if (digits >= 1 && digits <= 10) {
+        atMs = whole * 1000;
+      }
+    }
+  }
+  return atMs;
 }
 
 export function defaultVerifyReportPath(projectRoot: string): string {

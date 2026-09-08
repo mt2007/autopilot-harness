@@ -365,7 +365,7 @@ describe("pending followup + session round", () => {
     }
   });
 
-  it("E8 clearChainPending + loopCount + fix_round>0 still reaches E3", () => {
+  it("E8 clearChainPending + fix_round>0 re-arms fix (not E0/done)", () => {
     const eng = engine();
     store.updateReviewChain("c1", {
       chain_pending: 0,
@@ -380,9 +380,100 @@ describe("pending followup + session round", () => {
       status: "completed",
       loopCount: 1,
     });
-    expect(out?.kind).toBe("review.confirm");
-    expect(out?.meta?.n).toBe(1);
-    expect(store.getReviewChain("c1")!.confirm_left).toBe(4);
+    // Mid-item residue prefers another fix pass over confirm/soft-done.
+    expect(out?.kind).toBe("review.fix");
+    expect(out?.meta?.fixRound).toBe(3);
+    expect(store.getReviewChain("c1")!.code_edited).toBe(0); // cleared by e2Fix
+    expect(store.getReviewChain("c1")!.chain_pending).toBe(1);
+  });
+
+  it("E3 must not clobber undelivered fix pending (concurrent e2Fix race)", () => {
+    const eng = engine();
+    for (const fixPending of [
+      "自审修复第 5 轮（无硬顶；确认阶段需连续 5 轮无改动）。本轮改过代码。",
+      "Review fix round 5 (no hard cap; confirm needs 5 consecutive no-edit rounds). Code changed this turn.",
+    ]) {
+      store.updateReviewChain("c1", {
+        chain_pending: 1,
+        confirm_left: null,
+        code_edited: 0,
+        item_confirm_complete: 0,
+        fix_round: 5,
+        pending_followup: fixPending,
+        pending_followup_at: new Date().toISOString(),
+      });
+      // No transcript_path → pendingBlocksAdvance fail-open; E3 must still refuse.
+      const out = eng.handleStop({
+        conversationId: "c1",
+        status: "completed",
+        loopCount: 1,
+      });
+      expect(out).toBeNull();
+      expect(store.getReviewChain("c1")!.pending_followup).toBe(fixPending);
+      expect(store.getReviewChain("c1")!.confirm_left).toBeNull();
+    }
+  });
+
+  it("E3 must not clobber undelivered recover pending (emit/clear gap)", () => {
+    const eng = engine();
+    const recoverPending =
+      "Recover: the previous turn ended with an error. Continue the current task.";
+    store.updateReviewChain("c1", {
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      fix_round: 3,
+      pending_followup: recoverPending,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const out = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverPending);
+    expect(store.getReviewChain("c1")!.confirm_left).toBeNull();
+  });
+
+  it("stale outer snapshot still E2 when live code_edited armed", () => {
+    const eng = engine();
+    store.updateReviewChain("c1", {
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      fix_round: 2,
+      pending_followup: null,
+    });
+    const origEnsure = store.ensureReviewChain.bind(store);
+    let peerArmed = false;
+    store.ensureReviewChain = ((id: string) => {
+      const snap = origEnsure(id);
+      if (!peerArmed) {
+        peerArmed = true;
+        // Peer arms live row without going through mocked ensure (avoid recurse).
+        store.db
+          .prepare(
+            `UPDATE review_chains SET code_edited = 1 WHERE conversation_id = ?`,
+          )
+          .run(id);
+      }
+      // Outer handleStop still sees residue-eligible snapshot.
+      return { ...snap, code_edited: 0 };
+    }) as typeof store.ensureReviewChain;
+    try {
+      const out = eng.handleStop({
+        conversationId: "c1",
+        status: "completed",
+        loopCount: 0,
+      });
+      expect(out?.kind).toBe("review.fix");
+      expect(out?.meta?.fixRound).toBe(3);
+    } finally {
+      store.ensureReviewChain = origEnsure;
+    }
   });
 
   it("E3 aborts under write lock if concurrent halt paused the session", () => {
