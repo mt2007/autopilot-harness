@@ -7,6 +7,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function migrationDirs(): string[] {
   // Package layout: packages/core/{src,dist}/../migrations
+  //   npm pack MUST ship `migrations/` (see package.json `files`) — otherwise
+  //   published CLI upgrade/doctor fail with "No migration SQL found".
   // Vendor layout: .autopilot/bin/vendor/migrations (beside runtime.mjs)
   return [
     join(__dirname, "..", "migrations"),

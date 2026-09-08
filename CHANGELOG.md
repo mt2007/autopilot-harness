@@ -9,6 +9,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `@autopilot-harness/core` npm pack now ships `migrations/*.sql` (package `files` previously only included `dist`), so published CLI `upgrade` / `doctor` can migrate `state.db` instead of failing with `No migration SQL found`.
+
 ## [0.2.7] — 2026-09-08
 
 ### Fixed
