@@ -1838,7 +1838,7 @@ describe("error recover debounce (3s window, once)", () => {
     }
   });
 
-  it("F-ERR-EMIT-RECOVER-DISARMS: compensate emit clears leftover chain_pending", () => {
+  it("F-ERR-EMIT-RECOVER-RESUME-FIX: compensate emit keeps chain_pending with sticky edit", () => {
     store.upsertSession({
       conversation_id: "c1",
       project_root: root,
@@ -1873,7 +1873,7 @@ describe("error recover debounce (3s window, once)", () => {
       expect(out?.kind).toBe("recover");
       const chain = store.getReviewChain("c1")!;
       expect(chain.pending_followup).toMatch(/恢复|Recover/);
-      expect(chain.chain_pending).toBe(0);
+      expect(chain.chain_pending).toBe(1); // resumeFix handoff for abort
       // Ambient emit soft-resets under lock → mid-fix resumes via code_edited.
       expect(chain.code_edited).toBe(1);
       expect(chain.fix_round).toBe(1);
@@ -2203,7 +2203,7 @@ describe("error recover debounce (3s window, once)", () => {
       expect(chain.pending_followup).toBeNull();
       // Soft-reset markers from emit may remain; pending must not redeliver.
       expect(chain.code_edited).toBe(1);
-      expect(chain.chain_pending).toBe(0);
+      expect(chain.chain_pending).toBe(1); // resumeFix keeps armed with sticky edit
     } finally {
       store.exclusiveWrite = orig;
     }

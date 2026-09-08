@@ -473,7 +473,9 @@ describe("StateStore session ops", () => {
     store.setPendingRedeliverHold(id, "2026-01-01T00:00:09.000Z");
     const chain = store.getReviewChain(id)!;
     expect(chain.pending_redeliver_at).toBe("2026-01-01T00:00:09.000Z");
-    expect(chain.chain_pending).toBe(0);
+    // Column-only: must not clobber confirm/pending, and must not wipe
+    // chain_pending (ambient resumeFix abort handoff relies on that).
+    expect(chain.chain_pending).toBe(1);
     expect(chain.confirm_left).toBe(2);
     expect(chain.pending_followup).toBe("自审确认 2/5（空值）");
     expect(chain.fix_round).toBe(4);

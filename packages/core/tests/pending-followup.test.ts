@@ -437,6 +437,109 @@ describe("pending followup + session round", () => {
     expect(store.getReviewChain("c1")!.confirm_left).toBeNull();
   });
 
+  it("E2 must not clobber undelivered recover pending (resumeFix sticky edit)", () => {
+    const eng = engine();
+    const recoverPending =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    // Mid-fix ambient resumeFix leaves code_edited sticky while recover is stamped.
+    store.updateReviewChain("c1", {
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 1,
+      item_confirm_complete: 0,
+      fix_round: 3,
+      pending_followup: recoverPending,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const out = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverPending);
+    expect(store.getReviewChain("c1")!.code_edited).toBe(1);
+    expect(store.getReviewChain("c1")!.fix_round).toBe(3);
+  });
+
+  it("E2 recover TOCTOU must fall through to redeliver (not swallow null)", () => {
+    const eng = engine();
+    const recoverPending =
+      "Recover: the previous turn ended with an error. Continue the current task.";
+    store.updateReviewChain("c1", {
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 1,
+      item_confirm_complete: 0,
+      fix_round: 2,
+      pending_followup: null,
+      pending_followup_at: null,
+      pending_redeliver_at: null,
+    });
+    const origEnsure = store.ensureReviewChain.bind(store);
+    let peerStamped = false;
+    store.ensureReviewChain = ((id: string) => {
+      const snap = origEnsure(id);
+      if (!peerStamped) {
+        peerStamped = true;
+        const ts = new Date().toISOString();
+        // Peer recover claim wins after outer snapshot (empty tip + sticky edit).
+        store.db
+          .prepare(
+            `UPDATE review_chains SET
+              pending_followup = ?, pending_followup_at = ?,
+              pending_redeliver_at = NULL, code_edited = 1
+             WHERE conversation_id = ?`,
+          )
+          .run(recoverPending, ts, id);
+      }
+      return {
+        ...snap,
+        code_edited: 1,
+        pending_followup: null,
+        pending_followup_at: null,
+      };
+    }) as typeof store.ensureReviewChain;
+    fs.writeFileSync(transcript, "");
+    try {
+      const out = eng.handleStop({
+        conversationId: "c1",
+        status: "completed",
+        loopCount: 1,
+        transcriptPath: transcript,
+      });
+      expect(out?.kind).toBe("recover");
+      expect(out?.message).toBe(recoverPending);
+      expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverPending);
+    } finally {
+      store.ensureReviewChain = origEnsure;
+    }
+  });
+
+  it("E0 must not clobber undelivered recover pending (fix_round=0)", () => {
+    // Covered with a real checklist + soft evidence in p0-matrix
+    // F-ERR-EXEC-RECOVER-NO-E0-CLOBBER (empty checklist_path here cannot E0).
+    const eng = engine();
+    const recoverPending =
+      "Recover: the previous turn ended with an error. Continue the current task.";
+    store.updateReviewChain("c1", {
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      fix_round: 0,
+      pending_followup: recoverPending,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const out = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 1,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(recoverPending);
+  });
+
   it("stale outer snapshot still E2 when live code_edited armed", () => {
     const eng = engine();
     store.updateReviewChain("c1", {

@@ -409,15 +409,26 @@ export class ReviewEngine {
       const transcriptPath = input.transcriptPath?.trim() || undefined;
       const events = transcriptPath ? readTranscriptTail(transcriptPath) : [];
 
-      // Code-edit fix wins over pending redelivery (marker-before-pending).
+      // Code-edit fix wins over pending redelivery (marker-before-pending),
+      // except undelivered recover/stuck — E2 must not clobber that tip
+      // (resumeFix sticky edit during recover claim/emit window).
       if (chain.code_edited === 1) {
-        return this.e2Fix(session, chain);
+        const tip = chain.pending_followup?.trim() ?? "";
+        if (!isRecoverOrStuckFollowupMessage(tip)) {
+          const fix = this.e2Fix(session, chain);
+          // null: paused, or recover/stuck landed under the write lock — fall
+          // through so tryRedeliverPending can still inject the live tip.
+          if (fix) return fix;
+        }
       }
 
       // Pending redelivery / in-flight: never advance confirm_left while prior undelivered.
+      // Refresh after possible E2 miss (recover may have landed under e2Fix lock).
+      const chainLive =
+        this.store.getReviewChain(session.conversation_id) ?? chain;
       const redelivered = this.tryRedeliverPending(
         session.conversation_id,
-        chain,
+        chainLive,
         events,
         transcriptPath,
       );
@@ -429,7 +440,7 @@ export class ReviewEngine {
       if (
         this.pendingBlocksAdvance(
           session.conversation_id,
-          chain,
+          chainLive,
           events,
           transcriptPath,
         )
@@ -437,15 +448,60 @@ export class ReviewEngine {
         return null;
       }
 
+      // Refresh after redeliver/clear — chainLive may still hold a tip that
+      // tryRedeliverPending / pendingBlocksAdvance just cleared as delivered.
+      const chainAfterPending =
+        this.store.getReviewChain(session.conversation_id) ?? chainLive;
+
+      // Undelivered recover/stuck owns the tip — do not E4/E5/residue/E3/E0 over it
+      // (pendingBlocksAdvance fail-opens without transcript_path in unit tests).
+      {
+        const liveTip = chainAfterPending.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(liveTip)) {
+          return null;
+        }
+      }
+
+      // Early E2 may have skipped while recover/stuck owned the tip. After that
+      // tip is cleared, sticky code_edited must still win over E4/E5 (otherwise
+      // e4Confirm refuses code_edited and returns null — mid-confirm stall).
+      if (chainAfterPending.code_edited === 1) {
+        const tip = chainAfterPending.pending_followup?.trim() ?? "";
+        if (!isRecoverOrStuckFollowupMessage(tip)) {
+          const fix = this.e2Fix(session, chainAfterPending);
+          if (fix) return fix;
+          // e2Fix lost a race (recover/stuck landed under the write lock) —
+          // redeliver that tip instead of falling into E4 refuse-null.
+          const afterE2 =
+            this.store.getReviewChain(session.conversation_id) ??
+            chainAfterPending;
+          const afterTip = afterE2.pending_followup?.trim() ?? "";
+          if (isRecoverOrStuckFollowupMessage(afterTip)) {
+            const again = this.tryRedeliverPending(
+              session.conversation_id,
+              afterE2,
+              events,
+              transcriptPath,
+            );
+            if (again) return again;
+            return null;
+          }
+        }
+      }
+
       // Order: E4 → E5 → residue-E2 → E3 → E0 (E2 via code_edited handled above)
-      if (chain.confirm_left !== null && chain.confirm_left > 0) {
-        return this.e4Confirm(session, chain);
+      if (
+        chainAfterPending.confirm_left !== null &&
+        chainAfterPending.confirm_left > 0
+      ) {
+        return this.e4Confirm(session, chainAfterPending);
       }
       if (
-        chain.confirm_left === 0 ||
-        (chain.item_confirm_complete === 1 && chain.confirm_left === null)
+        chainAfterPending.confirm_left === 0 ||
+        (chainAfterPending.item_confirm_complete === 1 &&
+          chainAfterPending.confirm_left === null)
       ) {
-        return this.e5Gate(session, chain);
+        return this.e5Gate(session, chainAfterPending);
       }
 
       // Recover/abort residue on checklist executing: chain_pending cleared and
@@ -453,10 +509,10 @@ export class ReviewEngine {
       // active. Prefer another fix round over E3 confirm so prior edits are not
       // "confirmed" without a fix pass (Commerce M2 / abort-after-recover).
       if (
-        chain.chain_pending === 0 &&
-        chain.fix_round > 0 &&
-        chain.code_edited === 0 &&
-        chain.item_confirm_complete === 0 &&
+        chainAfterPending.chain_pending === 0 &&
+        chainAfterPending.fix_round > 0 &&
+        chainAfterPending.code_edited === 0 &&
+        chainAfterPending.item_confirm_complete === 0 &&
         isChecklistExecuting(session)
       ) {
         const cid = session.conversation_id;
@@ -471,7 +527,10 @@ export class ReviewEngine {
             fresh.confirm_left !== null ||
             fresh.item_confirm_complete === 1 ||
             fresh.chain_pending === 1 ||
-            fresh.fix_round <= 0
+            fresh.fix_round <= 0 ||
+            isRecoverOrStuckFollowupMessage(
+              fresh.pending_followup?.trim() ?? "",
+            )
           ) {
             return { commit: false, value: false };
           }
@@ -483,9 +542,20 @@ export class ReviewEngine {
           if (live?.code_edited === 1) {
             const fix = this.e2Fix(session, live);
             if (fix) return fix;
-            // e2Fix lost a race — fall through with a refreshed chain snapshot
-            // (do not keep using the pre-rearm `chain`, or E0 could soft-advance
-            // while live code_edited is still 1 / or miss a live clear).
+            // Same as post-gate E2: recover/stuck may have won the lock — redeliver
+            // instead of falling through to E3/E0 with a sticky edit marker.
+            const afterE2 = this.store.getReviewChain(cid) ?? live;
+            const afterTip = afterE2.pending_followup?.trim() ?? "";
+            if (isRecoverOrStuckFollowupMessage(afterTip)) {
+              const again = this.tryRedeliverPending(
+                cid,
+                afterE2,
+                events,
+                transcriptPath,
+              );
+              if (again) return again;
+              return null;
+            }
           }
         }
       }
@@ -495,9 +565,35 @@ export class ReviewEngine {
         this.store.getReviewChain(input.conversationId) ?? chain;
 
       // Concurrent residue/recover may have armed code_edited after the outer
-      // snapshot — prefer E2 over E3/E0 on the live marker.
+      // snapshot — prefer E2 over E3/E0 on the live marker, but still refuse to
+      // clobber undelivered recover/stuck (same as the early gate).
       if (chainNow.code_edited === 1) {
-        return this.e2Fix(session, chainNow);
+        const tip = chainNow.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(tip)) {
+          const again = this.tryRedeliverPending(
+            session.conversation_id,
+            chainNow,
+            events,
+            transcriptPath,
+          );
+          if (again) return again;
+          return null;
+        }
+        const fix = this.e2Fix(session, chainNow);
+        if (fix) return fix;
+        const afterE2 =
+          this.store.getReviewChain(session.conversation_id) ?? chainNow;
+        const afterTip = afterE2.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(afterTip)) {
+          const again = this.tryRedeliverPending(
+            session.conversation_id,
+            afterE2,
+            events,
+            transcriptPath,
+          );
+          if (again) return again;
+          return null;
+        }
       }
 
       // After hard halt neutralize, fix_round is cleared so bare residue cannot
@@ -540,27 +636,23 @@ export class ReviewEngine {
     const pending = chain.pending_followup?.trim();
     if (!pending) return false;
     if (events.length > 0 && automationFollowupPresent(events, pending)) {
-      try {
-        // Only clear the snapshot needle — a concurrent replace must survive.
-        const cleared = this.store.clearPendingFollowupIf(
-          conversationId,
-          (m) => m.trim() === pending,
-        );
-        if (!cleared) {
-          // Live pending was replaced (e.g. error-recover claim). Keep blocking
-          // so stale confirm_left cannot advance and overwrite the new pending.
+      // Clear + ambient E3 arm in one writer txn (crash must not leave tip
+      // gone with chain_pending still 0 → silent ambient stall).
+      const cleared = this.clearMatchingPendingAndArmAmbient(
+        conversationId,
+        pending,
+      );
+      if (!cleared) {
+        // Needle miss, lock/arm failure (rolled back), or concurrent replace —
+        // any remaining live tip must block so E4 cannot clobber it.
+        try {
           const live =
             this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
             "";
-          if (
-            live &&
-            !(events.length > 0 && automationFollowupPresent(events, live))
-          ) {
-            return true;
-          }
+          if (live) return true;
+        } catch {
+          /* fail-open only when chain unreadable */
         }
-      } catch {
-        /* already delivered — clearing stamp is best-effort */
       }
       return false;
     }
@@ -576,7 +668,18 @@ export class ReviewEngine {
     events: ReturnType<typeof readTranscriptTail>,
     transcriptPath: string | undefined,
   ): FollowupAction | null {
-    const pending = chain.pending_followup?.trim();
+    // Prefer live pending — outer snapshot may predate a concurrent recover claim
+    // (E2 TOCTOU fall-through must still redeliver the tip that won the lock).
+    let pending = chain.pending_followup?.trim() ?? "";
+    if (!pending) {
+      try {
+        pending =
+          this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
+          "";
+      } catch {
+        pending = "";
+      }
+    }
     if (!pending) return null;
     // Without transcript_path, skip redelivery (avoid duplicate spam in unit tests).
     if (!transcriptPath) return null;
@@ -584,16 +687,14 @@ export class ReviewEngine {
     // cannot inject during claim sleep (would race CAS for a second recover).
     // CAS emit clears that hold → host-drop redelivery is immediate again.
     if (events.length > 0 && automationFollowupPresent(events, pending)) {
-      try {
-        const cleared = this.store.clearPendingFollowupIf(
-          conversationId,
-          (m) => m.trim() === pending,
-        );
-        // Snapshot looked delivered but live was replaced — fall through to the
-        // locked live-row path instead of dropping the new pending.
-        if (cleared) return null;
-      } catch {
-        /* already delivered — clearing stamp is best-effort */
+      const cleared = this.clearMatchingPendingAndArmAmbient(
+        conversationId,
+        pending,
+      );
+      // Snapshot looked delivered but live was replaced / arm rolled back —
+      // fall through to the locked live-row path instead of dropping the tip.
+      if (cleared) {
+        return null;
       }
     }
     // Apply even after a delivered-snapshot miss (replaced live pending): do not
@@ -622,10 +723,16 @@ export class ReviewEngine {
           events.length > 0 &&
           automationFollowupPresent(events, livePending)
         ) {
-          this.store.clearPendingFollowupIf(
+          const cleared = this.store.clearPendingFollowupIf(
             conversationId,
             (m) => m.trim() === livePending,
           );
+          if (cleared) {
+            this.armAmbientChainAfterDeliveredFixTip(
+              conversationId,
+              livePending,
+            );
+          }
           return { commit: true, value: null };
         }
         try {
@@ -646,10 +753,13 @@ export class ReviewEngine {
           return { commit: true, value: null };
         }
         if (events.length > 0 && automationFollowupPresent(events, after)) {
-          this.store.clearPendingFollowupIf(
+          const cleared = this.store.clearPendingFollowupIf(
             conversationId,
             (m) => m.trim() === after,
           );
+          if (cleared) {
+            this.armAmbientChainAfterDeliveredFixTip(conversationId, after);
+          }
           return { commit: true, value: null };
         }
         return {
@@ -718,15 +828,55 @@ export class ReviewEngine {
    * Clear sticky code_edited so Stop→revert→resend cannot open a phantom fix
    * chain on the next completed stop (disk may already be clean).
    * Leave fix/confirm pending alone (delivery retry still valid if inject raced).
-   * Both clears share one exclusiveWrite so a mid-abort failure cannot leave
+   *
+   * Project-scope ambient/planning: after recover soft-reset cleared
+   * chain_pending, sticky code_edited may be the only handoff marker. Clearing
+   * it without a freeze leaves fix_round residue that cannot E3 (bare fix_round
+   * must not phantom-confirm). Freeze into confirm_left, or re-arm chain_pending
+   * when an undelivered fix tip remains. Checklist executing keeps residue-E2.
+   *
+   * Clears + freeze share one exclusiveWrite so a mid-abort failure cannot leave
    * recover gone while code_edited sticky (or the reverse).
    */
   private handleAbortedStop(session: SessionRow): FollowupAction | null {
     try {
       const cid = session.conversation_id;
+      const ambientFreeze =
+        this.config.reviewScope === "project" &&
+        !isChecklistExecuting(session);
       this.store.exclusiveWrite(() => {
         this.store.clearPendingFollowupIf(cid, isRecoverOrStuckFollowupMessage);
+        const chain = this.store.getReviewChain(cid);
+        const pending = chain?.pending_followup?.trim() ?? "";
+        const fixPending = this.isFixFollowupMessage(pending);
+        const mid = this.isMidConfirmOrE5(chain);
+        const fixRound = chain?.fix_round ?? 0;
+        const wasArmed = chain?.chain_pending === 1;
         this.store.clearCodeEdited(cid);
+        if (ambientFreeze && !mid && fixRound > 0) {
+          if (fixPending) {
+            // Tip still undelivered: keep it; ensure chain_pending so a later
+            // clean completion can E3 (soft-reset may have cleared it).
+            this.store.updateReviewChain(cid, { chain_pending: 1 });
+          } else if (!pending && wasArmed) {
+            // Armed chain was the handoff — freeze into confirm (Stop = pause
+            // progress, not open another auto fix). Do NOT key off hadEdit alone:
+            // stale fix_round + a fresh afterFileEdit would phantom-confirm.
+            // Mid-fix recover soft-reset keeps chain_pending when resumeFix.
+            // Require empty pending so a custom tip is not left desynced under a
+            // new confirm_left (recover/stuck already cleared above).
+            const rounds = this.config.confirmRounds;
+            if (rounds > 0) {
+              this.store.updateReviewChain(cid, {
+                confirm_left: rounds,
+                chain_pending: 0,
+                code_edited: 0,
+              });
+            } else {
+              this.store.updateReviewChain(cid, { chain_pending: 1 });
+            }
+          }
+        }
         return { commit: true, value: undefined };
       });
     } catch {
@@ -993,8 +1143,12 @@ export class ReviewEngine {
           if (!stamp) {
             return { commit: false, value: { role: "failed" as const } };
           }
-          // Recover must not keep a leftover fix chain_pending (phantom E3).
-          this.store.clearChainPending(conversationId);
+          // Recover must not keep bare leftover chain_pending (phantom E3).
+          // Preserve mid-fix ambient resumeFix (code_edited sticky + armed).
+          const liveRedeliver = this.store.getReviewChain(conversationId);
+          if (liveRedeliver?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
           // Hold completed-stop redeliver through claim sleep; CAS clears it.
           this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
           return {
@@ -1013,7 +1167,11 @@ export class ReviewEngine {
             live &&
             !this.isMidConfirmOrE5(live)
           ) {
-            this.store.updateReviewChain(conversationId, { code_edited: 1 });
+            // Keep chain_pending with sticky edit so abort wasArmed can freeze.
+            this.store.updateReviewChain(conversationId, {
+              code_edited: 1,
+              chain_pending: 1,
+            });
           }
         } else {
           // Executing skips ambient soft-reset — same readyForE3 / resumeFix rules.
@@ -1029,9 +1187,17 @@ export class ReviewEngine {
         if (!stamp) {
           return { commit: false, value: { role: "failed" as const } };
         }
-        // Executing claim skips ambient soft-reset — still disarm chain_pending.
-        // Ambient soft-reset already cleared chain_pending; clear again is idempotent.
-        this.store.clearChainPending(conversationId);
+        // Executing: always disarm leftover fix chain_pending (phantom E3).
+        // Ambient: soft-reset / fixTipAtClaim may keep chain_pending with
+        // code_edited for abort handoff — do not wipe that.
+        if (!ambient) {
+          this.store.clearChainPending(conversationId);
+        } else {
+          const liveAfter = this.store.getReviewChain(conversationId);
+          if (liveAfter?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
+        }
         this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
         return {
           commit: true,
@@ -1266,8 +1432,13 @@ export class ReviewEngine {
         if (!this.store.casBumpPendingFollowupAt(conversationId, expectedStamp)) {
           return { commit: false, value: null };
         }
-        // Defense: recover emit must not leave chain_pending armed.
-        this.store.clearChainPending(conversationId);
+        // Defense: recover emit must not leave bare chain_pending armed (phantom
+        // E3). Mid-fix ambient resume keeps code_edited + chain_pending for
+        // abort wasArmed handoff — preserve that pair.
+        const afterBump = this.store.getReviewChain(conversationId);
+        if (afterBump?.code_edited !== 1) {
+          this.store.clearChainPending(conversationId);
+        }
         return {
           commit: true,
           value: {
@@ -1455,8 +1626,16 @@ export class ReviewEngine {
         if (!isRecoverFollowupMessage(live)) {
           return { commit: false, value: null };
         }
-        // armChain=false does not clear a leftover fix chain_pending=1 → phantom E3.
-        this.store.clearChainPending(conversationId);
+        // Executing: disarm leftover fix chain_pending. Ambient soft-reset may
+        // keep chain_pending with resumeFix sticky edit for abort handoff.
+        if (!ambientSoftReset) {
+          this.store.clearChainPending(conversationId);
+        } else {
+          const liveChain = this.store.getReviewChain(conversationId);
+          if (liveChain?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
+        }
         return { commit: true, value: action };
       });
 
@@ -1506,7 +1685,11 @@ export class ReviewEngine {
           if (!isRecoverFollowupMessage(live)) {
             return { commit: false, value: null };
           }
-          this.store.clearChainPending(conversationId);
+          // Degraded: no soft-reset — only disarm bare leftover chain_pending.
+          const liveChain = this.store.getReviewChain(conversationId);
+          if (liveChain?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
           return { commit: true, value: action };
         });
       } catch {
@@ -1515,7 +1698,10 @@ export class ReviewEngine {
       // Legacy path: never unlocked soft-reset (confirm/fix pending desync).
       this.emit(conversationId, action);
       try {
-        this.store.clearChainPending(conversationId);
+        const liveChain = this.store.getReviewChain(conversationId);
+        if (liveChain?.code_edited !== 1) {
+          this.store.clearChainPending(conversationId);
+        }
       } catch {
         /* best-effort */
       }
@@ -1636,7 +1822,8 @@ export class ReviewEngine {
    * do not regress to another fix. Ready-for-E3 requires empty pending (not
    * merely !fixPending). Force code_edited only for an active fix
    * (code_edited / undelivered fix pending / chain_pending with pending still
-   * set). Bare leftover fix_round is ignored (ambient phantom residue).
+   * set). Mid-fix resumeFix keeps chain_pending=1 so abort can freeze via
+   * wasArmed; bare leftover fix_round stays disarmed (ambient phantom residue).
    */
   private applySoftResetAmbientChainForErrorRecover(
     conversationId: string,
@@ -1679,7 +1866,10 @@ export class ReviewEngine {
           ? rounds
           : null,
       item_confirm_complete: atE5 ? chain.item_confirm_complete : 0,
-      chain_pending: 0,
+      // Mid-fix resume keeps chain_pending so abort clearing code_edited still
+      // has wasArmed handoff (freeze into confirm). Ready-for-E3 / idle residue
+      // stay 0 — bare fix_round must not phantom-E3 after recover tip clears.
+      chain_pending: resumeFix ? 1 : 0,
       // Preserve an in-flight edit marker (E2 wins over E4); else force only for mid-fix.
       code_edited: resumeFix || chain.code_edited === 1 ? 1 : 0,
     });
@@ -1689,6 +1879,65 @@ export class ReviewEngine {
   private isFixFollowupMessage(message: string): boolean {
     const line = firstSubstantiveLine(message) || message.trim();
     return line.startsWith("Review fix") || line.startsWith("自审修复");
+  }
+
+  /**
+   * Unlocked callers: clear snapshot needle + ambient E3 arm in one
+   * exclusiveWrite. A crash mid-pair must not leave tip cleared with
+   * chain_pending still 0 (silent ambient stall). Safe under an open writer
+   * only via {@link armAmbientChainAfterDeliveredFixTip} after an inline clear
+   * (clearPendingFollowupIf runs in-txn when writeDepth > 0).
+   */
+  private clearMatchingPendingAndArmAmbient(
+    conversationId: string,
+    pending: string,
+  ): boolean {
+    try {
+      return this.store.exclusiveWrite(() => {
+        const cleared = this.store.clearPendingFollowupIf(
+          conversationId,
+          (m) => m.trim() === pending,
+        );
+        if (cleared) {
+          // Do not swallow: arm failure must ROLLBACK the clear in this txn.
+          this.armAmbientChainAfterDeliveredFixTip(conversationId, pending);
+        }
+        return { commit: true, value: cleared };
+      });
+    } catch {
+      // Nested lock / SQLITE_BUSY / arm throw after rollback — caller treats
+      // false like a needle miss (re-check live tip / fall through).
+      return false;
+    }
+  }
+
+  /**
+   * After a delivered ambient fix tip is cleared, recover/abort may have left
+   * chain_pending=0. Re-arm so this completed stop can E3 → confirm instead of
+   * silent stall. Never arms bare stale fix_round without a delivered fix tip
+   * (keeps F-ERR-AMBIENT-STALE-FIX-ROUND / F-ABORT-NO-PHANTOM-FIX).
+   * Call under the same writer txn as the clear when possible — throws must
+   * propagate so the clear can roll back. Still arms when code_edited=1 so a
+   * concurrent abort clearing sticky edit keeps wasArmed handoff.
+   */
+  private armAmbientChainAfterDeliveredFixTip(
+    conversationId: string,
+    deliveredPending: string,
+  ): void {
+    if (!this.isFixFollowupMessage(deliveredPending)) return;
+    if (this.config.reviewScope !== "project") return;
+    const session = this.store.getSession(conversationId);
+    if (!session || isChecklistExecuting(session)) return;
+    const chain = this.store.getReviewChain(conversationId);
+    if (!chain || chain.fix_round <= 0) return;
+    if (this.isMidConfirmOrE5(chain)) return;
+    // Already armed — idempotent. Do NOT skip when code_edited=1: sticky edit
+    // alone is not enough if abort clears it before same-stop E2 (wasArmed
+    // freeze needs chain_pending).
+    if (chain.chain_pending === 1) return;
+    const live = chain.pending_followup?.trim() ?? "";
+    if (live) return;
+    this.store.updateReviewChain(conversationId, { chain_pending: 1 });
   }
 
   /** Mid-confirm or E5-ready — must not phantom-arm code_edited over E4/E5. */
@@ -1910,7 +2159,8 @@ export class ReviewEngine {
         fresh.confirm_left !== null ||
         fresh.item_confirm_complete === 1 ||
         fresh.chain_pending === 1 ||
-        fresh.fix_round > 0
+        fresh.fix_round > 0 ||
+        isRecoverOrStuckFollowupMessage(fresh.pending_followup?.trim() ?? "")
       ) {
         return { commit: false, value: null };
       }
@@ -2047,7 +2297,8 @@ export class ReviewEngine {
         fresh.confirm_left !== null ||
         fresh.item_confirm_complete === 1 ||
         fresh.chain_pending === 1 ||
-        fresh.fix_round > 0
+        fresh.fix_round > 0 ||
+        isRecoverOrStuckFollowupMessage(fresh.pending_followup?.trim() ?? "")
       ) {
         return { commit: false, value: null };
       }
@@ -2214,6 +2465,11 @@ export class ReviewEngine {
       if (!fresh || fresh.code_edited !== 1) {
         return { commit: false, value: null };
       }
+      // TOCTOU: recover/stuck may land after the outer completed-stop gate.
+      const pendingLive = fresh.pending_followup?.trim() ?? "";
+      if (isRecoverOrStuckFollowupMessage(pendingLive)) {
+        return { commit: false, value: null };
+      }
       const fixRound = this.nextSessionRound(fresh);
       const message = this.render("review.fix", { round: fixRound, total: rounds });
       const out: FollowupAction = {
@@ -2315,6 +2571,11 @@ export class ReviewEngine {
       }
       const fresh = this.store.getReviewChain(cid);
       if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== expectedLeft) {
+        return { commit: false, value: null };
+      }
+      // Do not clobber undelivered recover/stuck (same as E2/E3 gates).
+      const pendingLive = fresh.pending_followup?.trim() ?? "";
+      if (isRecoverOrStuckFollowupMessage(pendingLive)) {
         return { commit: false, value: null };
       }
       const sessionRound = this.nextSessionRound(fresh);
@@ -2423,6 +2684,11 @@ export class ReviewEngine {
           (fresh.confirm_left === 0 ||
             (fresh.item_confirm_complete === 1 && fresh.confirm_left === null));
         if (!atE5) {
+          return { commit: false, value: null };
+        }
+        // Do not clobber undelivered recover/stuck (same as E2/E3/E4/E5b).
+        const pendingLive = fresh.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(pendingLive)) {
           return { commit: false, value: null };
         }
         const sess = this.store.getSession(cid);
@@ -2542,6 +2808,12 @@ export class ReviewEngine {
         (fresh.confirm_left === 0 ||
           (fresh.item_confirm_complete === 1 && fresh.confirm_left === null));
       if (!atE5) {
+        return { commit: false, value: null };
+      }
+
+      // Do not clobber undelivered recover/stuck (same as E2/E3/E4).
+      const pendingLive = fresh.pending_followup?.trim() ?? "";
+      if (isRecoverOrStuckFollowupMessage(pendingLive)) {
         return { commit: false, value: null };
       }
 

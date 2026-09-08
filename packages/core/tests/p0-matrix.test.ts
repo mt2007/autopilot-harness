@@ -23,6 +23,8 @@ import {
   parseChecklist,
   parseSchemaVersionValue,
   parseTrigger,
+  readTranscriptTail,
+  automationFollowupPresent,
   ReviewEngine,
   StateStore,
   type FollowupAction,
@@ -760,6 +762,109 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c-rec-e0")!.phase).toBe("executing");
   });
 
+  it("F-ERR-RESIDUE-E2-MISS-RECOVER: residue E2 TOCTOU must redeliver recover", () => {
+    const cp = writeChecklist(
+      root,
+      "residue-e2-miss",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-res-e2-miss", cp);
+    store.ensureReviewChain("c-res-e2-miss");
+    const recoverPending =
+      "Recover: the previous turn ended with an error. Continue the current task.";
+    // Residue-eligible: fix_round>0, markers cleared — will rearm then e2Fix.
+    store.updateReviewChain("c-res-e2-miss", {
+      fix_round: 14,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+      pending_followup_at: null,
+      pending_redeliver_at: null,
+    });
+    const transcript = path.join(root, "t-res-e2-miss.jsonl");
+    fs.writeFileSync(transcript, "");
+    const eng = engine(store, root, { maxErrorsBeforePause: 0 });
+    const origEx = store.exclusiveWrite.bind(store);
+    let writes = 0;
+    store.exclusiveWrite = ((fn: Parameters<typeof origEx>[0]) => {
+      writes += 1;
+      // write 1: residue rearm. write 2: e2Fix — stamp recover before e2 body.
+      if (writes === 2) {
+        const ts = new Date().toISOString();
+        store.db
+          .prepare(
+            `UPDATE review_chains SET
+              pending_followup = ?, pending_followup_at = ?,
+              pending_redeliver_at = NULL, code_edited = 1
+             WHERE conversation_id = ?`,
+          )
+          .run(recoverPending, ts, "c-res-e2-miss");
+      }
+      return origEx(fn);
+    }) as typeof store.exclusiveWrite;
+    try {
+      const out = eng.handleStop({
+        conversationId: "c-res-e2-miss",
+        status: "completed",
+        loopCount: 0,
+        transcriptPath: transcript,
+      });
+      expect(out?.kind).toBe("recover");
+      expect(out?.message).toBe(recoverPending);
+      expect(writes).toBeGreaterThanOrEqual(2);
+    } finally {
+      store.exclusiveWrite = origEx;
+    }
+  });
+
+  it("F-ERR-EXEC-RECOVER-NO-E0-CLOBBER: undelivered recover must not be overwritten by E0", () => {
+    const cp = writeChecklist(
+      root,
+      "recover-no-e0-clobber",
+      `- [ ] item-a — A\n- [ ] item-b — B\n`,
+    );
+    sessionExecuting(store, root, "c-rec-e0c", cp);
+    store.ensureReviewChain("c-rec-e0c");
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: "2026-09-08T02:18:00.000Z",
+      }),
+    );
+    const recoverPending =
+      "Recover: the previous turn ended with an error. Continue the current task.";
+    store.updateReviewChain("c-rec-e0c", {
+      fix_round: 0,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      reviewing_item_id: "item-a",
+      pending_followup: recoverPending,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const eng = engine(store, root, {
+      verifyEnabled: true,
+      verifyCommands: [{ id: "build", run: "true", required: false }],
+    });
+    const out = eng.handleStop({
+      conversationId: "c-rec-e0c",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c-rec-e0c")!.pending_followup).toBe(
+      recoverPending,
+    );
+    expect(store.getSession("c-rec-e0c")!.phase).toBe("executing");
+  });
+
   it("F-ERR-EXEC-RECOVER-FIX-ROUND: executing error with fix_round>0 re-arms code_edited", () => {
     const cp = writeChecklist(
       root,
@@ -785,6 +890,12 @@ describe("review-engine P0 matrix", () => {
     expect(recover?.kind).toBe("recover");
     expect(store.getReviewChain("c-exec-fr")!.code_edited).toBe(1);
     expect(store.getReviewChain("c-exec-fr")!.chain_pending).toBe(0);
+
+    // Recover tip answered — sticky residue-E2 may open the next fix round.
+    store.updateReviewChain("c-exec-fr", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
 
     const after = eng.handleStop({
       conversationId: "c-exec-fr",
@@ -891,6 +1002,11 @@ describe("review-engine P0 matrix", () => {
     // Ambient-parity: arm confirm_left=rounds so E4 emits 1/N after recover.
     expect(mid.confirm_left).toBe(5);
 
+    store.updateReviewChain("c-exec-e3", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+
     const after = eng.handleStop({
       conversationId: "c-exec-e3",
       status: "completed",
@@ -938,6 +1054,11 @@ describe("review-engine P0 matrix", () => {
       expect(mid.code_edited).toBe(0);
       expect(mid.chain_pending).toBe(0);
       expect(mid.confirm_left).toBe(5);
+
+      store.updateReviewChain("c-exec-e3c", {
+        pending_followup: null,
+        pending_followup_at: null,
+      });
 
       const after = eng.handleStop({
         conversationId: "c-exec-e3c",
@@ -1478,7 +1599,11 @@ describe("review-engine P0 matrix", () => {
     expect(store.getReviewChain("c1")?.pending_followup ?? null).toBeNull();
 
     eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
-    store.updateReviewChain("c1", { code_edited: 1 });
+    store.updateReviewChain("c1", {
+      code_edited: 1,
+      pending_followup: null,
+      pending_followup_at: null,
+    });
     stop(eng, "c1"); // completed fix → noteCompletedOk
     expect(store.getSession("c1")!.error_count).toBe(0);
   });
@@ -1645,6 +1770,443 @@ describe("review-engine P0 matrix", () => {
     });
     expect(again).toBeNull();
     expect(store.getReviewChain("c-abort-phantom")!.pending_followup).toBeNull();
+  });
+
+  it("F-ABORT-AMBIENT-FREEZE-CONFIRM: abort clearing sticky edit freezes into confirm, not stall", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-abort-freeze",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-abort-freeze");
+    // Mid ambient fix after recover soft-reset resumeFix: chain stays armed + sticky edit.
+    store.updateReviewChain("c-abort-freeze", {
+      fix_round: 7,
+      chain_pending: 1,
+      code_edited: 1,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+    });
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-freeze",
+        status: "aborted",
+        loopCount: 0,
+      }),
+    ).toBeNull();
+    const mid = store.getReviewChain("c-abort-freeze")!;
+    expect(mid.code_edited).toBe(0);
+    expect(mid.fix_round).toBe(7);
+    expect(mid.confirm_left).toBe(5);
+
+    const transcript = path.join(root, "t-abort-freeze.jsonl");
+    fs.writeFileSync(transcript, "");
+    const after = eng.handleStop({
+      conversationId: "c-abort-freeze",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(after?.kind).toBe("review.confirm");
+    expect(after?.meta?.n).toBe(1);
+  });
+
+  it("F-ABORT-AMBIENT-FIX-PENDING: abort keeps fix tip and re-arms chain_pending for E3", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-abort-fix-tip",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-abort-fix-tip");
+    const tip =
+      "自审修复第 7 轮（无硬顶；确认阶段需连续 5 轮无改动）。本轮改过代码。";
+    store.updateReviewChain("c-abort-fix-tip", {
+      fix_round: 7,
+      chain_pending: 0, // recover soft-reset cleared this
+      code_edited: 1,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+    });
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-fix-tip",
+        status: "aborted",
+        loopCount: 0,
+      }),
+    ).toBeNull();
+    const mid = store.getReviewChain("c-abort-fix-tip")!;
+    expect(mid.code_edited).toBe(0);
+    expect(mid.pending_followup).toBe(tip);
+    expect(mid.chain_pending).toBe(1);
+    expect(mid.confirm_left).toBeNull();
+
+    // Tip delivered + agent finished clean → E3 confirm (not silent {}).
+    const transcript = path.join(root, "t-abort-fix-tip.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: `<user_query>\n${tip}\n</user_query>` }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "自审无问题" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    const after = eng.handleStop({
+      conversationId: "c-abort-fix-tip",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(after?.kind).toBe("review.confirm");
+    expect(after?.meta?.n).toBe(1);
+    expect(store.getReviewChain("c-abort-fix-tip")!.pending_followup).toMatch(
+      /自审确认|Review confirm/,
+    );
+  });
+
+  it("F-AMBIENT-DELIVERED-FIX-NO-STALL: delivered fix tip with chain_pending=0 still enters confirm", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-ambient-delivered",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-ambient-delivered");
+    const tip = "自审修复第 7 轮（无硬顶）。本轮改过代码。";
+    store.updateReviewChain("c-ambient-delivered", {
+      fix_round: 7,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const transcript = path.join(root, "t-ambient-delivered.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: `<user_query>\n${tip}\n</user_query>` }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "自审无问题" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    const after = eng.handleStop({
+      conversationId: "c-ambient-delivered",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(after?.kind).toBe("review.confirm");
+    expect(after?.meta?.n).toBe(1);
+    expect(store.getReviewChain("c-ambient-delivered")!.pending_followup).toMatch(
+      /自审确认|Review confirm/,
+    );
+  });
+
+  it("F-AMBIENT-CLEAR-ARM-ATOMIC: arm failure rolls back delivered tip clear", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-ambient-clear-arm",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-ambient-clear-arm");
+    const tip = "自审修复第 8 轮（无硬顶）。本轮改过代码。";
+    store.updateReviewChain("c-ambient-clear-arm", {
+      fix_round: 8,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const transcript = path.join(root, "t-ambient-clear-arm.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: `<user_query>\n${tip}\n</user_query>` }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "自审无问题" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    const orig = store.updateReviewChain.bind(store);
+    store.updateReviewChain = ((id, patch) => {
+      // Ambient re-arm after delivered fix only patches chain_pending.
+      if (
+        id === "c-ambient-clear-arm" &&
+        patch.chain_pending === 1 &&
+        patch.pending_followup === undefined
+      ) {
+        throw new Error("arm boom");
+      }
+      return orig(id, patch);
+    }) as typeof store.updateReviewChain;
+    try {
+      expect(
+        eng.handleStop({
+          conversationId: "c-ambient-clear-arm",
+          status: "completed",
+          loopCount: 0,
+          transcriptPath: transcript,
+        }),
+      ).toBeNull();
+      const mid = store.getReviewChain("c-ambient-clear-arm")!;
+      // Clear+arm share one txn — arm failure must not leave tip gone / unarmed.
+      expect(mid.pending_followup).toBe(tip);
+      expect(mid.chain_pending).toBe(0);
+    } finally {
+      store.updateReviewChain = orig;
+    }
+  });
+
+  it("F-AMBIENT-CLEAR-ARM-STICKY: arm even with code_edited so abort cannot orphan handoff", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-ambient-arm-sticky",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-ambient-arm-sticky");
+    const tip = "自审修复第 9 轮（无硬顶）。本轮改过代码。";
+    const recoverPending =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    store.updateReviewChain("c-ambient-arm-sticky", {
+      fix_round: 9,
+      chain_pending: 0,
+      code_edited: 1,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+    });
+    const transcript = path.join(root, "t-ambient-arm-sticky.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: `<user_query>\n${tip}\n</user_query>` }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "自审无问题" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    // Outer early E2 sees recover → skip; live row stays delivered fix tip so
+    // clear+arm runs with sticky edit still set. Only the first ensure (completed
+    // stop snapshot) is mocked — later updateReviewChain ensure must see live.
+    const origEnsure = store.ensureReviewChain.bind(store);
+    let ensureCalls = 0;
+    store.ensureReviewChain = ((id: string) => {
+      const snap = origEnsure(id);
+      if (id !== "c-ambient-arm-sticky") return snap;
+      ensureCalls += 1;
+      if (ensureCalls === 1) {
+        return {
+          ...snap,
+          code_edited: 1,
+          pending_followup: recoverPending,
+          pending_followup_at: new Date().toISOString(),
+        };
+      }
+      return snap;
+    }) as typeof store.ensureReviewChain;
+    const orig = store.updateReviewChain.bind(store);
+    store.updateReviewChain = ((id, patch) => {
+      const out = orig(id, patch);
+      // Simulate abort clearing sticky edit immediately after ambient arm —
+      // chain_pending must remain so this stop can still E3 (not silent stall).
+      if (
+        id === "c-ambient-arm-sticky" &&
+        patch.chain_pending === 1 &&
+        patch.pending_followup === undefined
+      ) {
+        store.clearCodeEdited(id);
+      }
+      return out;
+    }) as typeof store.updateReviewChain;
+    try {
+      const after = eng.handleStop({
+        conversationId: "c-ambient-arm-sticky",
+        status: "completed",
+        loopCount: 0,
+        transcriptPath: transcript,
+      });
+      expect(after?.kind).toBe("review.confirm");
+      expect(after?.meta?.n).toBe(1);
+      expect(store.getReviewChain("c-ambient-arm-sticky")!.code_edited).toBe(0);
+    } finally {
+      store.updateReviewChain = orig;
+      store.ensureReviewChain = origEnsure;
+    }
+  });
+
+  it("F-ABORT-AMBIENT-STALE-EDIT: stale fix_round + sticky edit must not phantom-confirm on abort", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-abort-stale-edit",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-abort-stale-edit");
+    // Leftover fix_round (ambient stale) + fresh afterFileEdit sticky — abort must
+    // only clear code_edited, not open a confirm chain.
+    store.updateReviewChain("c-abort-stale-edit", {
+      fix_round: 3,
+      chain_pending: 0,
+      code_edited: 1,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: null,
+    });
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-stale-edit",
+        status: "aborted",
+        loopCount: 0,
+      }),
+    ).toBeNull();
+    const mid = store.getReviewChain("c-abort-stale-edit")!;
+    expect(mid.code_edited).toBe(0);
+    expect(mid.confirm_left).toBeNull();
+    expect(mid.chain_pending).toBe(0);
+
+    const transcript = path.join(root, "t-abort-stale-edit.jsonl");
+    fs.writeFileSync(transcript, "");
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-stale-edit",
+        status: "completed",
+        loopCount: 0,
+        transcriptPath: transcript,
+      }),
+    ).toBeNull();
+  });
+
+  it("F-ABORT-AMBIENT-CUSTOM-PENDING: abort must not arm confirm_left over non-fix pending", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-abort-custom",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-abort-custom");
+    store.updateReviewChain("c-abort-custom", {
+      fix_round: 3,
+      chain_pending: 1,
+      code_edited: 1,
+      confirm_left: null,
+      item_confirm_complete: 0,
+      pending_followup: "Custom review pass still running",
+      pending_followup_at: new Date().toISOString(),
+    });
+    expect(
+      eng.handleStop({
+        conversationId: "c-abort-custom",
+        status: "aborted",
+        loopCount: 0,
+      }),
+    ).toBeNull();
+    const mid = store.getReviewChain("c-abort-custom")!;
+    expect(mid.code_edited).toBe(0);
+    expect(mid.confirm_left).toBeNull();
+    expect(mid.pending_followup).toBe("Custom review pass still running");
+    // Do not force chain_pending=1 over a non-fix tip either — leave as-is.
+    expect(mid.chain_pending).toBe(1);
   });
 
   it("F-ABORT-NO-AMBIENT: aborted without session does not bootstrap ambient recover", () => {
@@ -1896,10 +2458,16 @@ describe("review-engine P0 matrix", () => {
     expect(recover?.kind).toBe("recover");
     const mid = store.getReviewChain("c-ambient-resume")!;
     expect(mid.fix_round).toBe(1);
-    expect(mid.chain_pending).toBe(0); // recover armChain=false
+    expect(mid.chain_pending).toBe(1); // resumeFix keeps armed handoff for abort
     expect(mid.code_edited).toBe(1); // force post-recover E2
     expect(mid.confirm_left).toBeNull();
     expect(mid.pending_followup).toMatch(/恢复|Recover|checklist|任务/);
+
+    // Recover tip answered — sticky edit can now open the next fix round.
+    store.updateReviewChain("c-ambient-resume", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
 
     const after = eng.handleStop({
       conversationId: "c-ambient-resume",
@@ -1909,6 +2477,223 @@ describe("review-engine P0 matrix", () => {
     expect(after?.kind).toBe("review.fix");
     expect(after?.meta?.fixRound).toBe(2);
     expect(store.getReviewChain("c-ambient-resume")!.confirm_left).toBeNull();
+  });
+
+  it("F-ERR-AMBIENT-RESUME-FIX-DELIVERED: transcript-cleared recover must not stale-block E2", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-resume-del",
+      status: "error",
+      loopCount: 0,
+    });
+    store.updateReviewChain("c-ambient-resume-del", {
+      fix_round: 1,
+      chain_pending: 1,
+      confirm_left: null,
+      code_edited: 0,
+      item_confirm_complete: 0,
+      pending_followup: "自审修复第 1 轮",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-resume-del",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    const tip = store.getReviewChain("c-ambient-resume-del")!.pending_followup!;
+    expect(tip).toMatch(/恢复|Recover|checklist|任务/);
+    expect(store.getReviewChain("c-ambient-resume-del")!.code_edited).toBe(1);
+
+    // Host delivered the recover tip on the transcript — same completed stop
+    // must clear pending and continue to E2 (not stale-block on pre-clear tip).
+    const transcript = path.join(root, "t-ambient-resume-del.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: `<user_query>\n${tip}\n</user_query>` }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "continuing after recover" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    expect(
+      automationFollowupPresent(readTranscriptTail(transcript), tip),
+    ).toBe(true);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-resume-del",
+      status: "completed",
+      loopCount: 3,
+      transcriptPath: transcript,
+    });
+    expect(after?.kind).toBe("review.fix");
+    expect(after?.meta?.fixRound).toBe(2);
+    expect(store.getReviewChain("c-ambient-resume-del")!.pending_followup).toMatch(
+      /自审修复|Review fix/,
+    );
+  });
+
+  it("F-ERR-AMBIENT-RESUME-CONFIRM-EDIT: sticky edit after delivered recover must E2 before E4", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    eng.handleStop({
+      conversationId: "c-ambient-confirm-edit",
+      status: "error",
+      loopCount: 0,
+    });
+    // Mid-confirm + product edit sticky when usage-limit hits.
+    store.updateReviewChain("c-ambient-confirm-edit", {
+      fix_round: 3,
+      chain_pending: 1,
+      confirm_left: 3,
+      code_edited: 1,
+      item_confirm_complete: 0,
+      pending_followup: "自审确认 2/5（空值）",
+    });
+    const recover = eng.handleStop({
+      conversationId: "c-ambient-confirm-edit",
+      status: "error",
+      loopCount: 2,
+    });
+    expect(recover?.kind).toBe("recover");
+    const tip = store.getReviewChain("c-ambient-confirm-edit")!.pending_followup!;
+    expect(tip).toMatch(/恢复|Recover|checklist|任务/);
+    // Soft-reset preserves mid-confirm + sticky edit.
+    expect(store.getReviewChain("c-ambient-confirm-edit")!.confirm_left).toBe(3);
+    expect(store.getReviewChain("c-ambient-confirm-edit")!.code_edited).toBe(1);
+
+    const transcript = path.join(root, "t-ambient-confirm-edit.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [{ type: "text", text: `<user_query>\n${tip}\n</user_query>` }],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: {
+            content: [{ type: "text", text: "continuing after recover" }],
+          },
+        }),
+      ].join("\n") + "\n",
+    );
+    expect(
+      automationFollowupPresent(readTranscriptTail(transcript), tip),
+    ).toBe(true);
+
+    const after = eng.handleStop({
+      conversationId: "c-ambient-confirm-edit",
+      status: "completed",
+      loopCount: 3,
+      transcriptPath: transcript,
+    });
+    // Marker-before-pending: sticky edit must open fix, not stall on E4 refuse.
+    expect(after?.kind).toBe("review.fix");
+    expect(after?.meta?.fixRound).toBe(4);
+  });
+
+  it("F-ERR-E2-MISS-RECOVER-REDELIVER: post-gate E2 TOCTOU must redeliver recover", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c-e2-miss-rec",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    store.ensureReviewChain("c-e2-miss-rec");
+    const recoverPending =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    // Simulate post-clear state: sticky edit, mid-confirm, empty pending.
+    store.updateReviewChain("c-e2-miss-rec", {
+      fix_round: 3,
+      chain_pending: 0,
+      confirm_left: 3,
+      code_edited: 1,
+      item_confirm_complete: 0,
+      pending_followup: null,
+      pending_followup_at: null,
+      pending_redeliver_at: null,
+    });
+    const transcript = path.join(root, "t-e2-miss-rec.jsonl");
+    fs.writeFileSync(transcript, "");
+    // Skip early E2 tip check by making the outer snapshot look like recover was
+    // already cleared, then stamp recover only when post-gate e2Fix locks.
+    // Force early path to skip E2: leave code_edited=1 but make first e2Fix see
+    // recover via a one-shot pending swap after tryRedeliver/gate would have run.
+    // Simpler: call completed with code_edited=0 so early/post-gate E2 skip, then
+    // we only need the redeliver-after-e2-miss path — exercise via residue? No.
+    //
+    // Use getReviewChain sequencing: first reads return empty pending; once
+    // exclusiveWrite starts (post-gate e2 — early e2 skipped by pending=recover
+    // on ensure snapshot), we need a different setup.
+    //
+    // Setup: outer chain has recover tip so early E2 skips; tryRedeliver with
+    // empty transcript redelivers recover immediately (not the miss path).
+    //
+    // Instead stamp recover inside e2Fix's fresh read by patching getReviewChain
+    // after gate: start with empty pending + code_edited; wrap e2Fix via
+    // exclusiveWrite count after tryRedeliver (write 1 = post-gate e2 only when
+    // early e2 is skipped). Skip early e2 by setting tip to recover on ensure
+    // snapshot while live row is empty — ensure mock:
+    const origEnsure = store.ensureReviewChain.bind(store);
+    store.ensureReviewChain = ((id: string) => {
+      const snap = origEnsure(id);
+      // Outer early E2 tip check sees recover → skip; live row stays empty until
+      // peer stamps under post-gate e2 (after tryRedeliver no-ops on empty live).
+      return {
+        ...snap,
+        code_edited: 1,
+        confirm_left: 3,
+        pending_followup: recoverPending,
+        pending_followup_at: new Date().toISOString(),
+      };
+    }) as typeof store.ensureReviewChain;
+    const origEx = store.exclusiveWrite.bind(store);
+    let writes = 0;
+    store.exclusiveWrite = ((fn: Parameters<typeof origEx>[0]) => {
+      writes += 1;
+      // tryRedeliver may exclusiveWrite; post-gate e2Fix also. Stamp recover
+      // before every write so e2Fix fresh read refuses — then redeliver path.
+      const ts = new Date().toISOString();
+      store.db
+        .prepare(
+          `UPDATE review_chains SET
+            pending_followup = ?, pending_followup_at = ?,
+            pending_redeliver_at = NULL, code_edited = 1, confirm_left = 3
+           WHERE conversation_id = ?`,
+        )
+        .run(recoverPending, ts, "c-e2-miss-rec");
+      return origEx(fn);
+    }) as typeof store.exclusiveWrite;
+    try {
+      const out = eng.handleStop({
+        conversationId: "c-e2-miss-rec",
+        status: "completed",
+        loopCount: 1,
+        transcriptPath: transcript,
+      });
+      // Live recover must be redelivered (not swallowed by E2/E4 null).
+      expect(out?.kind).toBe("recover");
+      expect(out?.message).toBe(recoverPending);
+      expect(writes).toBeGreaterThan(0);
+    } finally {
+      store.exclusiveWrite = origEx;
+      store.ensureReviewChain = origEnsure;
+    }
   });
 
   it("F-ERR-AMBIENT-RESUME-E5: confirm_left=0 must stay E5-ready (not force another fix)", () => {
@@ -1936,6 +2721,11 @@ describe("review-engine P0 matrix", () => {
     expect(mid.confirm_left).toBe(0);
     expect(mid.code_edited).toBe(0);
     expect(mid.chain_pending).toBe(0);
+
+    store.updateReviewChain("c-ambient-e5", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
 
     const after = eng.handleStop({
       conversationId: "c-ambient-e5",
@@ -1971,6 +2761,11 @@ describe("review-engine P0 matrix", () => {
     expect(mid.confirm_left).toBe(3);
     expect(mid.code_edited).toBe(0);
     expect(mid.chain_pending).toBe(0);
+
+    store.updateReviewChain("c-ambient-confirm", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
 
     const after = eng.handleStop({
       conversationId: "c-ambient-confirm",
@@ -2038,6 +2833,11 @@ describe("review-engine P0 matrix", () => {
     expect(recover?.kind).toBe("recover");
     expect(store.getReviewChain("c-ambient-fix-pending")!.code_edited).toBe(1);
 
+    store.updateReviewChain("c-ambient-fix-pending", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
+
     const after = eng.handleStop({
       conversationId: "c-ambient-fix-pending",
       status: "completed",
@@ -2047,7 +2847,7 @@ describe("review-engine P0 matrix", () => {
     expect(after?.meta?.fixRound).toBe(2);
   });
 
-  it("F-ERR-AMBIENT-ATOMIC-RECOVER: soft-reset and recover pending commit with chain_pending=0", () => {
+  it("F-ERR-AMBIENT-ATOMIC-RECOVER: soft-reset and recover pending commit; resumeFix keeps chain_pending", () => {
     const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
     eng.handleStop({
       conversationId: "c-ambient-atomic",
@@ -2069,7 +2869,7 @@ describe("review-engine P0 matrix", () => {
     });
     expect(recover?.kind).toBe("recover");
     const mid = store.getReviewChain("c-ambient-atomic")!;
-    expect(mid.chain_pending).toBe(0);
+    expect(mid.chain_pending).toBe(1);
     expect(mid.code_edited).toBe(1);
     expect(mid.pending_followup).toMatch(/恢复|Recover|checklist|任务/);
     // Executing path must still leave chain alone — spot-check ambient only here.
@@ -2101,6 +2901,11 @@ describe("review-engine P0 matrix", () => {
     expect(mid.code_edited).toBe(0);
     expect(mid.chain_pending).toBe(0);
     expect(mid.confirm_left).toBe(5); // confirmRounds — E4 emits 1/5
+
+    store.updateReviewChain("c-ambient-ready-e3", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
 
     const after = eng.handleStop({
       conversationId: "c-ambient-ready-e3",
@@ -2137,6 +2942,11 @@ describe("review-engine P0 matrix", () => {
     const mid = store.getReviewChain("c-ambient-ready-strict")!;
     expect(mid.code_edited).toBe(1);
     expect(mid.confirm_left).toBeNull();
+
+    store.updateReviewChain("c-ambient-ready-strict", {
+      pending_followup: null,
+      pending_followup_at: null,
+    });
 
     const after = eng.handleStop({
       conversationId: "c-ambient-ready-strict",

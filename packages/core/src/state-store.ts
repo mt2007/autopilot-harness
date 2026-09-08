@@ -657,9 +657,10 @@ export class StateStore {
   }
 
   /**
-   * Column-only redeliver hold (recover claim sleep). Also clears chain_pending so
-   * armChain=false recover cannot leave a phantom E3 arm. Avoids updateReviewChain
-   * read-merge-write clobbering confirm_left / pending under concurrency.
+   * Column-only redeliver hold (recover claim sleep). Does not touch
+   * chain_pending — callers that need disarm (executing / ambient non-resumeFix)
+   * clearChainPending before this. Mid-fix ambient resumeFix keeps
+   * chain_pending for abort wasArmed handoff.
    */
   setPendingRedeliverHold(conversationId: string, at: string): void {
     if (this.isInvalidConversationId(conversationId)) {
@@ -672,7 +673,7 @@ export class StateStore {
     this.db
       .prepare(
         `UPDATE review_chains SET
-          pending_redeliver_at = ?, chain_pending = 0, updated_at = ?
+          pending_redeliver_at = ?, updated_at = ?
          WHERE conversation_id = ?`,
       )
       .run(stamp, nowIso(), conversationId);

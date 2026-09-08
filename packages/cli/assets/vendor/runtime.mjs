@@ -1159,9 +1159,10 @@ var StateStore = class _StateStore {
     ).run(nowIso(), conversationId);
   }
   /**
-   * Column-only redeliver hold (recover claim sleep). Also clears chain_pending so
-   * armChain=false recover cannot leave a phantom E3 arm. Avoids updateReviewChain
-   * read-merge-write clobbering confirm_left / pending under concurrency.
+   * Column-only redeliver hold (recover claim sleep). Does not touch
+   * chain_pending — callers that need disarm (executing / ambient non-resumeFix)
+   * clearChainPending before this. Mid-fix ambient resumeFix keeps
+   * chain_pending for abort wasArmed handoff.
    */
   setPendingRedeliverHold(conversationId, at) {
     if (this.isInvalidConversationId(conversationId)) {
@@ -1173,7 +1174,7 @@ var StateStore = class _StateStore {
     }
     this.db.prepare(
       `UPDATE review_chains SET
-          pending_redeliver_at = ?, chain_pending = 0, updated_at = ?
+          pending_redeliver_at = ?, updated_at = ?
          WHERE conversation_id = ?`
     ).run(stamp, nowIso(), conversationId);
   }
@@ -2473,11 +2474,16 @@ var ReviewEngine = class {
       const transcriptPath = input.transcriptPath?.trim() || void 0;
       const events = transcriptPath ? readTranscriptTail(transcriptPath) : [];
       if (chain.code_edited === 1) {
-        return this.e2Fix(session, chain);
+        const tip = chain.pending_followup?.trim() ?? "";
+        if (!isRecoverOrStuckFollowupMessage(tip)) {
+          const fix = this.e2Fix(session, chain);
+          if (fix) return fix;
+        }
       }
+      const chainLive = this.store.getReviewChain(session.conversation_id) ?? chain;
       const redelivered = this.tryRedeliverPending(
         session.conversation_id,
-        chain,
+        chainLive,
         events,
         transcriptPath
       );
@@ -2487,26 +2493,54 @@ var ReviewEngine = class {
       }
       if (this.pendingBlocksAdvance(
         session.conversation_id,
-        chain,
+        chainLive,
         events,
         transcriptPath
       )) {
         return null;
       }
-      if (chain.confirm_left !== null && chain.confirm_left > 0) {
-        return this.e4Confirm(session, chain);
+      const chainAfterPending = this.store.getReviewChain(session.conversation_id) ?? chainLive;
+      {
+        const liveTip = chainAfterPending.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(liveTip)) {
+          return null;
+        }
       }
-      if (chain.confirm_left === 0 || chain.item_confirm_complete === 1 && chain.confirm_left === null) {
-        return this.e5Gate(session, chain);
+      if (chainAfterPending.code_edited === 1) {
+        const tip = chainAfterPending.pending_followup?.trim() ?? "";
+        if (!isRecoverOrStuckFollowupMessage(tip)) {
+          const fix = this.e2Fix(session, chainAfterPending);
+          if (fix) return fix;
+          const afterE2 = this.store.getReviewChain(session.conversation_id) ?? chainAfterPending;
+          const afterTip = afterE2.pending_followup?.trim() ?? "";
+          if (isRecoverOrStuckFollowupMessage(afterTip)) {
+            const again = this.tryRedeliverPending(
+              session.conversation_id,
+              afterE2,
+              events,
+              transcriptPath
+            );
+            if (again) return again;
+            return null;
+          }
+        }
       }
-      if (chain.chain_pending === 0 && chain.fix_round > 0 && chain.code_edited === 0 && chain.item_confirm_complete === 0 && isChecklistExecuting(session)) {
+      if (chainAfterPending.confirm_left !== null && chainAfterPending.confirm_left > 0) {
+        return this.e4Confirm(session, chainAfterPending);
+      }
+      if (chainAfterPending.confirm_left === 0 || chainAfterPending.item_confirm_complete === 1 && chainAfterPending.confirm_left === null) {
+        return this.e5Gate(session, chainAfterPending);
+      }
+      if (chainAfterPending.chain_pending === 0 && chainAfterPending.fix_round > 0 && chainAfterPending.code_edited === 0 && chainAfterPending.item_confirm_complete === 0 && isChecklistExecuting(session)) {
         const cid2 = session.conversation_id;
         const rearmed = this.store.exclusiveWrite(() => {
           if (!this.sessionRunnable(cid2)) {
             return { commit: false, value: false };
           }
           const fresh = this.store.getReviewChain(cid2);
-          if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1 || fresh.fix_round <= 0) {
+          if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1 || fresh.fix_round <= 0 || isRecoverOrStuckFollowupMessage(
+            fresh.pending_followup?.trim() ?? ""
+          )) {
             return { commit: false, value: false };
           }
           this.store.updateReviewChain(cid2, { code_edited: 1 });
@@ -2517,12 +2551,48 @@ var ReviewEngine = class {
           if (live?.code_edited === 1) {
             const fix = this.e2Fix(session, live);
             if (fix) return fix;
+            const afterE2 = this.store.getReviewChain(cid2) ?? live;
+            const afterTip = afterE2.pending_followup?.trim() ?? "";
+            if (isRecoverOrStuckFollowupMessage(afterTip)) {
+              const again = this.tryRedeliverPending(
+                cid2,
+                afterE2,
+                events,
+                transcriptPath
+              );
+              if (again) return again;
+              return null;
+            }
           }
         }
       }
       const chainNow = this.store.getReviewChain(input.conversationId) ?? chain;
       if (chainNow.code_edited === 1) {
-        return this.e2Fix(session, chainNow);
+        const tip = chainNow.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(tip)) {
+          const again = this.tryRedeliverPending(
+            session.conversation_id,
+            chainNow,
+            events,
+            transcriptPath
+          );
+          if (again) return again;
+          return null;
+        }
+        const fix = this.e2Fix(session, chainNow);
+        if (fix) return fix;
+        const afterE2 = this.store.getReviewChain(session.conversation_id) ?? chainNow;
+        const afterTip = afterE2.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(afterTip)) {
+          const again = this.tryRedeliverPending(
+            session.conversation_id,
+            afterE2,
+            events,
+            transcriptPath
+          );
+          if (again) return again;
+          return null;
+        }
       }
       const inChain = chainNow.chain_pending === 1 || chainNow.fix_round > 0 && isChecklistExecuting(session);
       if (chainNow.confirm_left === null && chainNow.item_confirm_complete === 0 && inChain) {
@@ -2541,18 +2611,16 @@ var ReviewEngine = class {
     const pending = chain.pending_followup?.trim();
     if (!pending) return false;
     if (events.length > 0 && automationFollowupPresent(events, pending)) {
-      try {
-        const cleared = this.store.clearPendingFollowupIf(
-          conversationId,
-          (m) => m.trim() === pending
-        );
-        if (!cleared) {
+      const cleared = this.clearMatchingPendingAndArmAmbient(
+        conversationId,
+        pending
+      );
+      if (!cleared) {
+        try {
           const live = this.store.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
-          if (live && !(events.length > 0 && automationFollowupPresent(events, live))) {
-            return true;
-          }
+          if (live) return true;
+        } catch {
         }
-      } catch {
       }
       return false;
     }
@@ -2560,17 +2628,23 @@ var ReviewEngine = class {
     return true;
   }
   tryRedeliverPending(conversationId, chain, events, transcriptPath) {
-    const pending = chain.pending_followup?.trim();
+    let pending = chain.pending_followup?.trim() ?? "";
+    if (!pending) {
+      try {
+        pending = this.store.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
+      } catch {
+        pending = "";
+      }
+    }
     if (!pending) return null;
     if (!transcriptPath) return null;
     if (events.length > 0 && automationFollowupPresent(events, pending)) {
-      try {
-        const cleared = this.store.clearPendingFollowupIf(
-          conversationId,
-          (m) => m.trim() === pending
-        );
-        if (cleared) return null;
-      } catch {
+      const cleared = this.clearMatchingPendingAndArmAmbient(
+        conversationId,
+        pending
+      );
+      if (cleared) {
+        return null;
       }
     }
     if (events.length > 0 && followupInFlight(events)) {
@@ -2590,10 +2664,16 @@ var ReviewEngine = class {
           return { commit: false, value: null };
         }
         if (events.length > 0 && automationFollowupPresent(events, livePending)) {
-          this.store.clearPendingFollowupIf(
+          const cleared = this.store.clearPendingFollowupIf(
             conversationId,
             (m) => m.trim() === livePending
           );
+          if (cleared) {
+            this.armAmbientChainAfterDeliveredFixTip(
+              conversationId,
+              livePending
+            );
+          }
           return { commit: true, value: null };
         }
         try {
@@ -2608,10 +2688,13 @@ var ReviewEngine = class {
           return { commit: true, value: null };
         }
         if (events.length > 0 && automationFollowupPresent(events, after)) {
-          this.store.clearPendingFollowupIf(
+          const cleared = this.store.clearPendingFollowupIf(
             conversationId,
             (m) => m.trim() === after
           );
+          if (cleared) {
+            this.armAmbientChainAfterDeliveredFixTip(conversationId, after);
+          }
           return { commit: true, value: null };
         }
         return {
@@ -2666,15 +2749,45 @@ var ReviewEngine = class {
    * Clear sticky code_edited so Stop→revert→resend cannot open a phantom fix
    * chain on the next completed stop (disk may already be clean).
    * Leave fix/confirm pending alone (delivery retry still valid if inject raced).
-   * Both clears share one exclusiveWrite so a mid-abort failure cannot leave
+   *
+   * Project-scope ambient/planning: after recover soft-reset cleared
+   * chain_pending, sticky code_edited may be the only handoff marker. Clearing
+   * it without a freeze leaves fix_round residue that cannot E3 (bare fix_round
+   * must not phantom-confirm). Freeze into confirm_left, or re-arm chain_pending
+   * when an undelivered fix tip remains. Checklist executing keeps residue-E2.
+   *
+   * Clears + freeze share one exclusiveWrite so a mid-abort failure cannot leave
    * recover gone while code_edited sticky (or the reverse).
    */
   handleAbortedStop(session) {
     try {
       const cid2 = session.conversation_id;
+      const ambientFreeze = this.config.reviewScope === "project" && !isChecklistExecuting(session);
       this.store.exclusiveWrite(() => {
         this.store.clearPendingFollowupIf(cid2, isRecoverOrStuckFollowupMessage);
+        const chain = this.store.getReviewChain(cid2);
+        const pending = chain?.pending_followup?.trim() ?? "";
+        const fixPending = this.isFixFollowupMessage(pending);
+        const mid = this.isMidConfirmOrE5(chain);
+        const fixRound = chain?.fix_round ?? 0;
+        const wasArmed = chain?.chain_pending === 1;
         this.store.clearCodeEdited(cid2);
+        if (ambientFreeze && !mid && fixRound > 0) {
+          if (fixPending) {
+            this.store.updateReviewChain(cid2, { chain_pending: 1 });
+          } else if (!pending && wasArmed) {
+            const rounds = this.config.confirmRounds;
+            if (rounds > 0) {
+              this.store.updateReviewChain(cid2, {
+                confirm_left: rounds,
+                chain_pending: 0,
+                code_edited: 0
+              });
+            } else {
+              this.store.updateReviewChain(cid2, { chain_pending: 1 });
+            }
+          }
+        }
         return { commit: true, value: void 0 };
       });
     } catch {
@@ -2860,7 +2973,10 @@ var ReviewEngine = class {
           if (!stamp2) {
             return { commit: false, value: { role: "failed" } };
           }
-          this.store.clearChainPending(conversationId);
+          const liveRedeliver = this.store.getReviewChain(conversationId);
+          if (liveRedeliver?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
           this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
           return {
             commit: true,
@@ -2871,7 +2987,10 @@ var ReviewEngine = class {
           this.applySoftResetAmbientChainForErrorRecover(conversationId);
           const live = this.store.getReviewChain(conversationId);
           if (fixTipAtClaim && live && !this.isMidConfirmOrE5(live)) {
-            this.store.updateReviewChain(conversationId, { code_edited: 1 });
+            this.store.updateReviewChain(conversationId, {
+              code_edited: 1,
+              chain_pending: 1
+            });
           }
         } else {
           this.applyExecutingErrorRecoverChainAdjustments(conversationId, {
@@ -2885,7 +3004,14 @@ var ReviewEngine = class {
         if (!stamp) {
           return { commit: false, value: { role: "failed" } };
         }
-        this.store.clearChainPending(conversationId);
+        if (!ambient) {
+          this.store.clearChainPending(conversationId);
+        } else {
+          const liveAfter = this.store.getReviewChain(conversationId);
+          if (liveAfter?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
+        }
         this.armRecoverClaimRedeliverHold(conversationId, debounceMs);
         return {
           commit: true,
@@ -3060,7 +3186,10 @@ var ReviewEngine = class {
         if (!this.store.casBumpPendingFollowupAt(conversationId, expectedStamp)) {
           return { commit: false, value: null };
         }
-        this.store.clearChainPending(conversationId);
+        const afterBump = this.store.getReviewChain(conversationId);
+        if (afterBump?.code_edited !== 1) {
+          this.store.clearChainPending(conversationId);
+        }
         return {
           commit: true,
           value: {
@@ -3200,7 +3329,14 @@ var ReviewEngine = class {
       if (!isRecoverFollowupMessage(live)) {
         return { commit: false, value: null };
       }
-      this.store.clearChainPending(conversationId);
+      if (!ambientSoftReset) {
+        this.store.clearChainPending(conversationId);
+      } else {
+        const liveChain = this.store.getReviewChain(conversationId);
+        if (liveChain?.code_edited !== 1) {
+          this.store.clearChainPending(conversationId);
+        }
+      }
       return { commit: true, value: action };
     });
     try {
@@ -3236,14 +3372,20 @@ var ReviewEngine = class {
           if (!isRecoverFollowupMessage(live)) {
             return { commit: false, value: null };
           }
-          this.store.clearChainPending(conversationId);
+          const liveChain = this.store.getReviewChain(conversationId);
+          if (liveChain?.code_edited !== 1) {
+            this.store.clearChainPending(conversationId);
+          }
           return { commit: true, value: action };
         });
       } catch {
       }
       this.emit(conversationId, action);
       try {
-        this.store.clearChainPending(conversationId);
+        const liveChain = this.store.getReviewChain(conversationId);
+        if (liveChain?.code_edited !== 1) {
+          this.store.clearChainPending(conversationId);
+        }
       } catch {
       }
       try {
@@ -3331,7 +3473,8 @@ var ReviewEngine = class {
    * do not regress to another fix. Ready-for-E3 requires empty pending (not
    * merely !fixPending). Force code_edited only for an active fix
    * (code_edited / undelivered fix pending / chain_pending with pending still
-   * set). Bare leftover fix_round is ignored (ambient phantom residue).
+   * set). Mid-fix resumeFix keeps chain_pending=1 so abort can freeze via
+   * wasArmed; bare leftover fix_round stays disarmed (ambient phantom residue).
    */
   applySoftResetAmbientChainForErrorRecover(conversationId) {
     this.store.ensureReviewChain(conversationId);
@@ -3350,7 +3493,10 @@ var ReviewEngine = class {
     this.store.softResetAmbientChainUnlessRecover(conversationId, {
       confirm_left: atE5 || midConfirm ? chain.confirm_left : readyForE3 && rounds > 0 ? rounds : null,
       item_confirm_complete: atE5 ? chain.item_confirm_complete : 0,
-      chain_pending: 0,
+      // Mid-fix resume keeps chain_pending so abort clearing code_edited still
+      // has wasArmed handoff (freeze into confirm). Ready-for-E3 / idle residue
+      // stay 0 — bare fix_round must not phantom-E3 after recover tip clears.
+      chain_pending: resumeFix ? 1 : 0,
       // Preserve an in-flight edit marker (E2 wins over E4); else force only for mid-fix.
       code_edited: resumeFix || chain.code_edited === 1 ? 1 : 0
     });
@@ -3359,6 +3505,51 @@ var ReviewEngine = class {
   isFixFollowupMessage(message) {
     const line = firstSubstantiveLine(message) || message.trim();
     return line.startsWith("Review fix") || line.startsWith("\u81EA\u5BA1\u4FEE\u590D");
+  }
+  /**
+   * Unlocked callers: clear snapshot needle + ambient E3 arm in one
+   * exclusiveWrite. A crash mid-pair must not leave tip cleared with
+   * chain_pending still 0 (silent ambient stall). Safe under an open writer
+   * only via {@link armAmbientChainAfterDeliveredFixTip} after an inline clear
+   * (clearPendingFollowupIf runs in-txn when writeDepth > 0).
+   */
+  clearMatchingPendingAndArmAmbient(conversationId, pending) {
+    try {
+      return this.store.exclusiveWrite(() => {
+        const cleared = this.store.clearPendingFollowupIf(
+          conversationId,
+          (m) => m.trim() === pending
+        );
+        if (cleared) {
+          this.armAmbientChainAfterDeliveredFixTip(conversationId, pending);
+        }
+        return { commit: true, value: cleared };
+      });
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * After a delivered ambient fix tip is cleared, recover/abort may have left
+   * chain_pending=0. Re-arm so this completed stop can E3 → confirm instead of
+   * silent stall. Never arms bare stale fix_round without a delivered fix tip
+   * (keeps F-ERR-AMBIENT-STALE-FIX-ROUND / F-ABORT-NO-PHANTOM-FIX).
+   * Call under the same writer txn as the clear when possible — throws must
+   * propagate so the clear can roll back. Still arms when code_edited=1 so a
+   * concurrent abort clearing sticky edit keeps wasArmed handoff.
+   */
+  armAmbientChainAfterDeliveredFixTip(conversationId, deliveredPending) {
+    if (!this.isFixFollowupMessage(deliveredPending)) return;
+    if (this.config.reviewScope !== "project") return;
+    const session = this.store.getSession(conversationId);
+    if (!session || isChecklistExecuting(session)) return;
+    const chain = this.store.getReviewChain(conversationId);
+    if (!chain || chain.fix_round <= 0) return;
+    if (this.isMidConfirmOrE5(chain)) return;
+    if (chain.chain_pending === 1) return;
+    const live = chain.pending_followup?.trim() ?? "";
+    if (live) return;
+    this.store.updateReviewChain(conversationId, { chain_pending: 1 });
   }
   /** Mid-confirm or E5-ready — must not phantom-arm code_edited over E4/E5. */
   isMidConfirmOrE5(chain) {
@@ -3501,7 +3692,7 @@ var ReviewEngine = class {
         return { commit: false, value: null };
       }
       const fresh = this.store.getReviewChain(cid2);
-      if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1 || fresh.fix_round > 0) {
+      if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1 || fresh.fix_round > 0 || isRecoverOrStuckFollowupMessage(fresh.pending_followup?.trim() ?? "")) {
         return { commit: false, value: null };
       }
       const refreshed = this.parseSessionChecklist(lockedSession);
@@ -3613,7 +3804,7 @@ var ReviewEngine = class {
         return { commit: false, value: null };
       }
       const fresh = this.store.getReviewChain(cid2);
-      if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1 || fresh.fix_round > 0) {
+      if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== null || fresh.item_confirm_complete === 1 || fresh.chain_pending === 1 || fresh.fix_round > 0 || isRecoverOrStuckFollowupMessage(fresh.pending_followup?.trim() ?? "")) {
         return { commit: false, value: null };
       }
       const refreshed = this.parseSessionChecklist(sess);
@@ -3740,6 +3931,10 @@ var ReviewEngine = class {
       if (!fresh || fresh.code_edited !== 1) {
         return { commit: false, value: null };
       }
+      const pendingLive = fresh.pending_followup?.trim() ?? "";
+      if (isRecoverOrStuckFollowupMessage(pendingLive)) {
+        return { commit: false, value: null };
+      }
       const fixRound = this.nextSessionRound(fresh);
       const message = this.render("review.fix", { round: fixRound, total: rounds });
       const out = {
@@ -3827,6 +4022,10 @@ var ReviewEngine = class {
       if (!fresh || fresh.code_edited === 1 || fresh.confirm_left !== expectedLeft) {
         return { commit: false, value: null };
       }
+      const pendingLive = fresh.pending_followup?.trim() ?? "";
+      if (isRecoverOrStuckFollowupMessage(pendingLive)) {
+        return { commit: false, value: null };
+      }
       const sessionRound = this.nextSessionRound(fresh);
       const message = this.render(kind, {
         n,
@@ -3904,6 +4103,10 @@ var ReviewEngine = class {
         const fresh = this.store.getReviewChain(cid2);
         const atE5 = !!fresh && (fresh.confirm_left === 0 || fresh.item_confirm_complete === 1 && fresh.confirm_left === null);
         if (!atE5) {
+          return { commit: false, value: null };
+        }
+        const pendingLive = fresh.pending_followup?.trim() ?? "";
+        if (isRecoverOrStuckFollowupMessage(pendingLive)) {
           return { commit: false, value: null };
         }
         const sess = this.store.getSession(cid2);
@@ -3994,6 +4197,10 @@ var ReviewEngine = class {
       const fresh = this.store.getReviewChain(cid2);
       const atE5 = !!fresh && (fresh.confirm_left === 0 || fresh.item_confirm_complete === 1 && fresh.confirm_left === null);
       if (!atE5) {
+        return { commit: false, value: null };
+      }
+      const pendingLive = fresh.pending_followup?.trim() ?? "";
+      if (isRecoverOrStuckFollowupMessage(pendingLive)) {
         return { commit: false, value: null };
       }
       const lockedSession = this.store.getSession(cid2);
