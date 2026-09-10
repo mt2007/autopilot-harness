@@ -977,7 +977,7 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
     store.close();
   });
 
-  it("needPick allows submit (channel A) without entering executing", () => {
+  it("cursor needPick: continue true, no toast fields, not executing", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
     writeChecklist(root, "alpha", `- [ ] a — A\n`);
@@ -997,14 +997,13 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
       { conversation_id: "c1", prompt: "/autopilot-run" },
       root,
     );
-    // Channel A: full agent turn — never blocked toast / user_message pick UI.
-    expect(out.continue).toBe(true);
-    expect(out.user_message).toBeUndefined();
-    expect(out.userMessage).toBeUndefined();
+    // Visibility = agent reply this turn — hook must not surface a blocked toast.
+    expect(out).toEqual({ continue: true });
     const s = store.getSession("c1")!;
     expect(s.phase).toBe("planning");
     expect(s.armed).toBe(0);
     expect(s.pending_action).toBe("run");
+    expect(s.track_candidates_json).toBeTruthy();
     store.close();
   });
 

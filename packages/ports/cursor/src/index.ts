@@ -215,7 +215,9 @@ export function handleBeforeSubmitPrompt(
         config: actionConfig,
       });
       if (!result.ok) {
-        // Channel A: needPick → allow full agent turn (list plans; do not block).
+        // Channel A / cursor-needpick-continue: needPick → continue:true so the
+        // agent turn can list plans. Do NOT blockSubmit / emit user_message —
+        // Cursor only shows user_message on blocked submits (toast/error UI).
         if (result.needPick) {
           return allowSubmit();
         }
