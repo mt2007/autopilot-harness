@@ -6281,6 +6281,25 @@ function blockReason(message, fallback) {
   const m = typeof message === "string" ? message.trim() : "";
   return m || fallback;
 }
+function allowNeedPickContext(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ];
+  const ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: ctx
+    }
+  };
+}
 function filePathFromClaudeEdit(payload) {
   const input = payload.tool_input ?? payload.toolInput ?? {};
   if (!input || typeof input !== "object" || Array.isArray(input)) return "";
@@ -6379,12 +6398,7 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
         if (result.needPick) {
-          return {
-            hookSpecificOutput: {
-              hookEventName: "UserPromptSubmit",
-              additionalContext: result.userMessage
-            }
-          };
+          return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
           decision: "block",
@@ -6419,12 +6433,7 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
         if (result.needPick) {
-          return {
-            hookSpecificOutput: {
-              hookEventName: "UserPromptSubmit",
-              additionalContext: result.userMessage
-            }
-          };
+          return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
           decision: "block",

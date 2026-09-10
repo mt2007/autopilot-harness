@@ -12,6 +12,7 @@ import {
   isHarnessFollowupMessage,
   isProductCodeEdit,
   isRecoverOrStuckFollowupMessage,
+  isSafeTrackSlug,
   isUserAbortText,
   loadProjectReviewConfig,
   notePlansDirEdit,
@@ -233,6 +234,42 @@ function blockReason(message: string | undefined, fallback: string): string {
   return m || fallback;
 }
 
+/**
+ * Channel A for Claude needPick: allow the turn and inject the candidate list.
+ * Never emit decision:block — Claude only shows lists via additionalContext.
+ * @internal Exported for empty-context fallback tests.
+ */
+export function allowNeedPickContext(
+  userMessage: unknown,
+  candidates?: ReadonlyArray<{ slug?: string }>,
+): ClaudeSubmitResult {
+  const fromMessage =
+    typeof userMessage === "string" && userMessage.trim().length > 0
+      ? userMessage
+      : "";
+  // Only safe slugs — never echo hostile candidate tokens into Claude context.
+  const slugs = [
+    ...new Set(
+      (candidates ?? [])
+        .map((c) => (c && typeof c.slug === "string" ? c.slug.trim() : ""))
+        .filter((s) => s.length > 0 && isSafeTrackSlug(s)),
+    ),
+  ];
+  const ctx =
+    fromMessage ||
+    (slugs.length > 0
+      ? `Select a plan to execute:\n\n${slugs
+          .map((s, i) => `  ${i + 1}. ${s}`)
+          .join("\n")}\n\nReply with a number or /autopilot-run <slug>.`
+      : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: ctx,
+    },
+  };
+}
+
 /** Extract edited file path from PostToolUse tool_input. */
 export function filePathFromClaudeEdit(
   payload: ClaudeEditPayload,
@@ -364,12 +401,7 @@ export function handleUserPromptSubmit(
         stampClaudePlatform(store, conversationId, projectRoot);
         // Channel A: needPick → allow + inject candidate list via additionalContext.
         if (result.needPick) {
-          return {
-            hookSpecificOutput: {
-              hookEventName: "UserPromptSubmit",
-              additionalContext: result.userMessage,
-            },
-          };
+          return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
           decision: "block",
@@ -405,12 +437,7 @@ export function handleUserPromptSubmit(
         stampClaudePlatform(store, conversationId, projectRoot);
         // Defensive: align with Cursor — needPick stays channel A.
         if (result.needPick) {
-          return {
-            hookSpecificOutput: {
-              hookEventName: "UserPromptSubmit",
-              additionalContext: result.userMessage,
-            },
-          };
+          return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
           decision: "block",

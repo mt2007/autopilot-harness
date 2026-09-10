@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ReviewEngine, StateStore } from "@autopilot-harness/core";
 import {
+  allowNeedPickContext,
   filePathFromClaudeEdit,
   handlePostToolUse,
   handleStop,
@@ -223,6 +224,65 @@ describe("port-claude-code adapters", () => {
     store.close();
   });
 
+  it("allowNeedPickContext falls back when message empty / blank", () => {
+    const empty = allowNeedPickContext("");
+    expect(empty.decision).toBeUndefined();
+    expect(empty.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
+    expect(empty.hookSpecificOutput?.additionalContext).toMatch(
+      /Select a plan to execute/i,
+    );
+    expect(
+      allowNeedPickContext("   \n\t  ").hookSpecificOutput?.additionalContext,
+    ).toMatch(/Select a plan to execute/i);
+    expect(
+      allowNeedPickContext(undefined).hookSpecificOutput?.additionalContext,
+    ).toMatch(/Select a plan to execute/i);
+    const fromCandidates = allowNeedPickContext("", [
+      { slug: "alpha" },
+      { slug: "beta" },
+    ]);
+    expect(fromCandidates.hookSpecificOutput?.additionalContext).toMatch(
+      /alpha/,
+    );
+    expect(fromCandidates.hookSpecificOutput?.additionalContext).toMatch(
+      /beta/,
+    );
+    const hostileFiltered = allowNeedPickContext("", [
+      { slug: "../evil" },
+      { slug: "alpha" },
+      { slug: "bad/slug" },
+    ]);
+    const hostileCtx = hostileFiltered.hookSpecificOutput?.additionalContext ?? "";
+    expect(hostileCtx).toMatch(/alpha/);
+    expect(hostileCtx).not.toMatch(/\.\./);
+    expect(hostileCtx).not.toMatch(/evil/);
+    expect(hostileCtx).not.toMatch(/bad\/slug/);
+    const allHostile = allowNeedPickContext("", [
+      { slug: "../evil" },
+      { slug: "bad/slug" },
+    ]);
+    expect(allHostile.hookSpecificOutput?.additionalContext).toMatch(
+      /Select a plan to execute/i,
+    );
+    expect(allHostile.hookSpecificOutput?.additionalContext).not.toMatch(
+      /\.\.|evil|bad/,
+    );
+    const deduped = allowNeedPickContext("", [
+      { slug: "alpha" },
+      { slug: "alpha" },
+      { slug: "beta" },
+    ]);
+    expect(deduped.hookSpecificOutput?.additionalContext).toMatch(
+      /1\.\s*alpha/,
+    );
+    expect(deduped.hookSpecificOutput?.additionalContext).toMatch(/2\.\s*beta/);
+    expect(deduped.hookSpecificOutput?.additionalContext).not.toMatch(
+      /3\.\s*/,
+    );
+    const real = allowNeedPickContext("Select a plan to execute:\n\n  1. alpha");
+    expect(real.hookSpecificOutput?.additionalContext).toContain("alpha");
+  });
+
   it("needPick RUN allows submit with additionalContext (no block)", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
@@ -243,12 +303,109 @@ describe("port-claude-code adapters", () => {
       { session_id: "s-pick", prompt: "/autopilot-run" },
       root,
     );
+    // Channel A: allow — never decision:block / Cursor continue shape
     expect(out.decision).toBeUndefined();
-    expect(out.hookSpecificOutput?.additionalContext).toMatch(/Select a plan/i);
-    expect(out.hookSpecificOutput?.additionalContext).toMatch(/alpha|beta/);
+    expect(out.reason).toBeUndefined();
+    expect(out.continue).toBeUndefined();
+    expect(Object.keys(out)).toEqual(["hookSpecificOutput"]);
+    expect(out.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
+    const ctx = out.hookSpecificOutput?.additionalContext ?? "";
+    expect(ctx.trim().length).toBeGreaterThan(0);
+    expect(ctx).toMatch(/Select a plan/i);
+    expect(ctx).toMatch(/alpha/);
+    expect(ctx).toMatch(/beta/);
+    const wire = JSON.parse(JSON.stringify(out)) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty("decision");
+    expect(wire).toHaveProperty("hookSpecificOutput");
     const s = store.getSession("s-pick")!;
     expect(s.phase).toBe("planning");
+    expect(s.armed).toBe(0);
     expect(s.pending_action).toBe("run");
+    expect(s.track_candidates_json).toBeTruthy();
+    expect(s.platform).toBe("claude-code");
+    store.close();
+  });
+
+  it("hard-fail RUN (illegal slug) blocks without additionalContext", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "s-bad",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const bad = handleUserPromptSubmit(
+      store,
+      { session_id: "s-bad", prompt: "/autopilot-run ../evil" },
+      root,
+    );
+    expect(bad.decision).toBe("block");
+    expect(bad.reason).toMatch(/invalid track slug/i);
+    expect(bad.hookSpecificOutput).toBeUndefined();
+    expect(store.getSession("s-bad")!.phase).toBe("planning");
+
+    // No runnable plans → channel C (not needPick context)
+    const emptyRoot = tmpRoot();
+    const emptyStore = StateStore.openMemory(emptyRoot);
+    emptyStore.upsertSession({
+      conversation_id: "s-empty",
+      project_root: emptyRoot,
+      code_root: emptyRoot,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const none = handleUserPromptSubmit(
+      emptyStore,
+      { session_id: "s-empty", prompt: "/autopilot-run" },
+      emptyRoot,
+    );
+    expect(none.decision).toBe("block");
+    expect(none.reason).toMatch(/no runnable/i);
+    expect(none.hookSpecificOutput).toBeUndefined();
+    emptyStore.close();
+    store.close();
+  });
+
+  it("busy RUN still blocks (channel C), never needPick additionalContext", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "owner",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    expect(
+      handleUserPromptSubmit(
+        store,
+        { session_id: "owner", prompt: "/autopilot-run demo" },
+        root,
+      ),
+    ).toEqual({});
+    expect(store.getSession("owner")!.phase).toBe("executing");
+
+    const busy = handleUserPromptSubmit(
+      store,
+      { session_id: "peer", prompt: "/autopilot-run demo" },
+      root,
+    );
+    expect(busy.decision).toBe("block");
+    expect(busy.reason).toMatch(/already executing/i);
+    expect(busy.hookSpecificOutput).toBeUndefined();
     store.close();
   });
 

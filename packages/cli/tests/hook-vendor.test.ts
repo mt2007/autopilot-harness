@@ -153,6 +153,75 @@ describe("hook vendor runtime", () => {
     );
   });
 
+  it("vendor UserPromptSubmit needPick injects additionalContext (no block)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    for (const slug of ["alpha", "beta"] as const) {
+      const planDir = path.join(root, "plans", slug);
+      fs.mkdirSync(planDir, { recursive: true });
+      fs.writeFileSync(path.join(planDir, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const cid = "hook-pick-aaaa-bbbb-cccc-ddddeeee0001";
+    const proc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "claude-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          prompt: "/autopilot-run",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(proc.status).toBe(0);
+    const out = JSON.parse(proc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      continue?: boolean;
+      hookSpecificOutput?: {
+        hookEventName?: string;
+        additionalContext?: string;
+      };
+    };
+    expect(out.decision).toBeUndefined();
+    expect(out.reason).toBeUndefined();
+    expect(out.continue).toBeUndefined();
+    expect(Object.keys(out)).toEqual(["hookSpecificOutput"]);
+    expect(out.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
+    const ctx = out.hookSpecificOutput?.additionalContext ?? "";
+    expect(ctx).toMatch(/Select a plan/i);
+    expect(ctx).toMatch(/alpha/);
+    expect(ctx).toMatch(/beta/);
+
+    const store = new StateStore(root);
+    const s = store.getSession(cid)!;
+    // Fresh session stays idle/planning — never executing on needPick
+    expect(s.phase).not.toBe("executing");
+    expect(s.armed).toBe(0);
+    expect(s.pending_action).toBe("run");
+    expect(s.track_candidates_json).toBeTruthy();
+    store.close();
+  });
+
   it("Claude UserPromptSubmit / Stop dispatch via same vendor (no Cursor regression)", () => {
     root = tmpProject();
     expect(
@@ -481,6 +550,12 @@ describe("hook vendor runtime", () => {
       /function blockSubmit\([\s\S]*?user_message:\s*\w+[\s\S]*?userMessage:\s*\w+/,
     );
     expect(src).toMatch(/Request blocked\./);
+    // Claude channel A: needPick → additionalContext (never decision:block)
+    expect(src).toMatch(/function allowNeedPickContext\(/);
+    expect(src).toMatch(/isSafeTrackSlug\(s\)/);
+    expect(src).toMatch(
+      /hookEventName:\s*"UserPromptSubmit"[\s\S]*?additionalContext:/,
+    );
     expect(src).toMatch(/msg\.includes\("\\0"\)/);
     expect(src).toMatch(/pending_followup\.includes\("\\0"\)/);
     // ensureReviewChain must re-read chain after session check (not stale pre-check row).
