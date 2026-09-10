@@ -35,7 +35,7 @@ Also: `Autopilot RUN`
 | Another session is `executing+armed` | **Block submit** (channel C); message includes occupier track + session id; if the host only shows opaque blocked, use `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
 | Illegal slug / no runnable | **Block submit** (channel C) — hard failure, not a pick list |
 
-**Channel rule:** needPick is **not** an error → channel A only (never use blocked/`user_message` toast as the pick UI). Busy and true errors → channel C (`continue: false` + `user_message`). Do **not** use `continue: true` on busy to “make it visible.” (REPLAN multi-plan pick may still use channel C for now — out of scope vs RUN.)
+**Channel rule:** needPick is **not** an error → channel A only (never use blocked/`user_message` toast as the pick UI). Busy and true errors → channel C (`continue: false` + snake_case `user_message` on Cursor hook stdout; dual-key `userMessage` may also be present). Do **not** use `continue: true` on busy to “make it visible.” (REPLAN multi-plan pick may still use channel C for now — out of scope vs RUN.)
 
 **Example script (bare RUN, N≥2 runnable, no unique bind):**
 

@@ -16,6 +16,7 @@ import {
 } from "../src/index.js";
 import {
   handleBeforeSubmitPrompt,
+  normalizeBlockSubmitMessage,
 } from "../../ports/cursor/src/index.js";
 
 function tmpRoot(): string {
@@ -938,8 +939,8 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
       root,
     );
     expect(empty.continue).toBe(false);
-    expect(empty.user_message ?? empty.userMessage).toMatch(/no runnable/i);
-    expect(empty.user_message).toBeTruthy();
+    expect(empty.user_message).toMatch(/no runnable/i);
+    expect(empty.userMessage).toBe(empty.user_message);
 
     const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
 
@@ -970,10 +971,9 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
       root,
     );
     expect(blocked.continue).toBe(false);
-    expect(blocked.user_message ?? blocked.userMessage).toMatch(
-      /already executing/i,
-    );
+    expect(blocked.user_message).toMatch(/already executing/i);
     expect(blocked.user_message).toMatch(/track:\s*demo/i);
+    expect(blocked.userMessage).toBe(blocked.user_message);
     store.close();
   });
 
@@ -1048,6 +1048,176 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
     expect(busy.user_message).toBeTruthy();
     expect(busy.user_message).toMatch(/already executing/i);
     expect(busy.userMessage).toBe(busy.user_message);
+    store.close();
+  });
+
+  it("normalizeBlockSubmitMessage rejects empty / blank / non-string", () => {
+    expect(normalizeBlockSubmitMessage("Blocked.")).toBe("Blocked.");
+    expect(normalizeBlockSubmitMessage("  keep spaces  ")).toBe(
+      "  keep spaces  ",
+    );
+    expect(normalizeBlockSubmitMessage("")).toBe("Request blocked.");
+    expect(normalizeBlockSubmitMessage("   \n\t  ")).toBe("Request blocked.");
+    expect(normalizeBlockSubmitMessage(undefined)).toBe("Request blocked.");
+    expect(normalizeBlockSubmitMessage(null)).toBe("Request blocked.");
+    expect(normalizeBlockSubmitMessage(1)).toBe("Request blocked.");
+  });
+
+  it("cursor block paths always emit snake_case user_message on the wire", () => {
+    const assertSnakeBlock = (
+      out: {
+        continue: boolean;
+        user_message?: string;
+        userMessage?: string;
+      },
+      re: RegExp,
+    ) => {
+      expect(out.continue).toBe(false);
+      expect(Object.hasOwn(out, "user_message")).toBe(true);
+      expect(out.user_message).toMatch(re);
+      expect(out.user_message!.trim().length).toBeGreaterThan(0);
+      expect(out.userMessage).toBe(out.user_message);
+      const wire = JSON.parse(JSON.stringify(out)) as Record<string, unknown>;
+      expect(wire).toEqual(
+        expect.objectContaining({
+          continue: false,
+          user_message: out.user_message,
+          userMessage: out.user_message,
+        }),
+      );
+      expect(Object.keys(wire).sort()).toEqual(
+        ["continue", "userMessage", "user_message"].sort(),
+      );
+    };
+
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+
+    // No runnable plans → channel C
+    store.upsertSession({
+      conversation_id: "empty",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "empty", prompt: "/autopilot-run" },
+        root,
+      ),
+      /no runnable/i,
+    );
+
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "empty", prompt: "/autopilot-run ../evil" },
+        root,
+      ),
+      /invalid track slug/i,
+    );
+
+    // needPick allow must not emit toast fields (before any session is armed)
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "picker",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const needPick = handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "picker", prompt: "/autopilot-run" },
+      root,
+    );
+    // Channel A: allow only — no toast fields on the wire
+    expect(needPick).toEqual({ continue: true });
+    expect(Object.keys(needPick)).toEqual(["continue"]);
+
+    // REPLAN hard fail still uses channel C snake_case (needPick OOS stays block)
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "picker", prompt: "/autopilot-replan ../evil" },
+        root,
+      ),
+      /invalid track slug/i,
+    );
+
+    // Busy peer
+    expect(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "empty", prompt: "/autopilot-run demo" },
+        root,
+      ).continue,
+    ).toBe(true);
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "peer", prompt: "/autopilot-run demo" },
+        root,
+      ),
+      /already executing/i,
+    );
+
+    // ON while executing
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "empty", prompt: "/autopilot-on next" },
+        root,
+      ),
+      /Autopilot is executing|before ON/i,
+    );
+
+    // RESUME reject gate
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "peer", prompt: "/autopilot-resume ../bad" },
+        root,
+      ),
+      /invalid track slug/i,
+    );
+
+    // track_pick reject keeps pending — still snake_case block
+    store.upsertSession({
+      conversation_id: "pick",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([
+        { slug: "demo" },
+        { slug: "other" },
+      ]),
+    });
+    writeChecklist(root, "other", `- [ ] b — B\n`);
+    assertSnakeBlock(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "pick", prompt: "99" },
+        root,
+      ),
+      /invalid selection|choose/i,
+    );
+
     store.close();
   });
 });

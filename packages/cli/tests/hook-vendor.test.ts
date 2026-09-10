@@ -11,6 +11,35 @@ function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-hook-vendor-"));
 }
 
+function runBeforeSubmit(
+  root: string,
+  payload: Record<string, unknown>,
+): { status: number | null; out: Record<string, unknown> } {
+  const hook = path.join(
+    root,
+    ".autopilot",
+    "bin",
+    "autopilot-harness-hook.mjs",
+  );
+  const proc = spawnSync(
+    process.execPath,
+    [hook, "--event", "beforeSubmitPrompt"],
+    {
+      cwd: root,
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+      timeout: 15_000,
+    },
+  );
+  let out: Record<string, unknown> = {};
+  try {
+    out = JSON.parse(proc.stdout.trim() || "{}") as Record<string, unknown>;
+  } catch {
+    out = { __parse_error: proc.stdout };
+  }
+  return { status: proc.status, out };
+}
+
 describe("hook vendor runtime", () => {
   let root: string;
   afterEach(() => {
@@ -80,6 +109,48 @@ describe("hook vendor runtime", () => {
     expect(out.continue).toBe(true);
     // Vendor path opened state.db (fail-open would not create it).
     expect(fs.existsSync(path.join(root, ".autopilot", "state.db"))).toBe(true);
+  });
+
+  it("vendor beforeSubmitPrompt busy block emits snake_case user_message", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const planDir = path.join(root, "plans", "demo");
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, "plan.md"), "# demo\n");
+    fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+
+    const owner = "hook-busy-aaaa-bbbb-cccc-ddddeeee0001";
+    const peer = "hook-busy-aaaa-bbbb-cccc-ddddeeee0002";
+
+    const armed = runBeforeSubmit(root, {
+      conversation_id: owner,
+      prompt: "/autopilot-run demo",
+    });
+    expect(armed.status).toBe(0);
+    expect(armed.out).toEqual({ continue: true });
+
+    const busy = runBeforeSubmit(root, {
+      conversation_id: peer,
+      prompt: "/autopilot-run demo",
+    });
+    expect(busy.status).toBe(0);
+    expect(busy.out.continue).toBe(false);
+    expect(typeof busy.out.user_message).toBe("string");
+    expect(String(busy.out.user_message)).toMatch(/already executing/i);
+    expect(String(busy.out.user_message)).toMatch(/track:\s*demo/i);
+    expect(busy.out.userMessage).toBe(busy.out.user_message);
+    expect(Object.keys(busy.out).sort()).toEqual(
+      ["continue", "userMessage", "user_message"].sort(),
+    );
   });
 
   it("Claude UserPromptSubmit / Stop dispatch via same vendor (no Cursor regression)", () => {
@@ -405,6 +476,11 @@ describe("hook vendor runtime", () => {
       "packages/cli/assets/vendor/runtime.mjs",
     );
     const src = fs.readFileSync(runtime, "utf8");
+    // Cursor channel C: snake_case user_message + empty-message fallback
+    expect(src).toMatch(
+      /function blockSubmit\([\s\S]*?user_message:\s*\w+[\s\S]*?userMessage:\s*\w+/,
+    );
+    expect(src).toMatch(/Request blocked\./);
     expect(src).toMatch(/msg\.includes\("\\0"\)/);
     expect(src).toMatch(/pending_followup\.includes\("\\0"\)/);
     // ensureReviewChain must re-read chain after session check (not stale pre-check row).

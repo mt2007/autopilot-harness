@@ -69,11 +69,21 @@ export type CursorSubmitResult = {
   userMessage?: string;
 };
 
+/** @internal Empty/blank/non-string → stable toast; never omit a visible block reason. */
+export function normalizeBlockSubmitMessage(message: unknown): string {
+  return typeof message === "string" && message.trim().length > 0
+    ? message
+    : "Request blocked.";
+}
+
 function blockSubmit(message: string): CursorSubmitResult {
+  // Cursor host contract: snake_case `user_message` on blocked submits.
+  // Keep camelCase dual-key for older readers; never omit snake_case.
+  const text = normalizeBlockSubmitMessage(message);
   return {
     continue: false,
-    user_message: message,
-    userMessage: message,
+    user_message: text,
+    userMessage: text,
   };
 }
 

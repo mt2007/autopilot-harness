@@ -3646,7 +3646,8 @@ describe("F-HOOK port-cursor", () => {
       root,
     );
     expect(blocked.continue).toBe(false);
-    expect(blocked.userMessage).toBeTruthy();
+    expect(blocked.user_message).toBeTruthy();
+    expect(blocked.userMessage).toBe(blocked.user_message);
 
     handleAfterFileEdit(store, {
       conversation_id: "c1",

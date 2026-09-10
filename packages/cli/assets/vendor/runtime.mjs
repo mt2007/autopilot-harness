@@ -5980,11 +5980,15 @@ function isProductCodeEdit(filePath, opts) {
 }
 
 // ../ports/cursor/src/index.ts
+function normalizeBlockSubmitMessage(message) {
+  return typeof message === "string" && message.trim().length > 0 ? message : "Request blocked.";
+}
 function blockSubmit(message) {
+  const text = normalizeBlockSubmitMessage(message);
   return {
     continue: false,
-    user_message: message,
-    userMessage: message
+    user_message: text,
+    userMessage: text
   };
 }
 function allowSubmit() {

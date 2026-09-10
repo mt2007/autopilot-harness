@@ -35,7 +35,7 @@
 | 另一会话正在 `executing+armed` | **拦截提交**（通道 C）；文案含占用 track + 会话线索；若宿主只显示 opaque blocked，用 `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
 | 非法 slug / 无 runnable | **拦截提交**（通道 C）— 真错误，不是选型列表 |
 
-**通道规则：** needPick **不是**错误 → 只用通道 A（禁止把 blocked/`user_message` 弹窗当选型 UI）。busy 与真错误 → 通道 C（`continue: false` + `user_message`）。**禁止**为可见而对 busy 使用 `continue: true`。（REPLAN 多 plan 选型暂仍可能走通道 C — 相对 RUN 的 A 为 OOS。）
+**通道规则：** needPick **不是**错误 → 只用通道 A（禁止把 blocked/`user_message` 弹窗当选型 UI）。busy 与真错误 → 通道 C（`continue: false` + Cursor hook stdout 的 snake_case `user_message`；也可同时带 `userMessage`）。**禁止**为可见而对 busy 使用 `continue: true`。（REPLAN 多 plan 选型暂仍可能走通道 C — 相对 RUN 的 A 为 OOS。）
 
 **示例脚本（裸 RUN，N≥2 runnable，无唯一绑定）：**
 
