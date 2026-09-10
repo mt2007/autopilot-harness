@@ -4520,7 +4520,9 @@ function applyOn(store, conversationId, projectRoot, opts) {
       userMessage: `Invalid track slug "${sanitizeSessionDisplayText(raw).slice(0, 64)}".`
     };
   }
+  const prevTid = session?.track_id ?? "_pending";
   const trackId = opts?.slug ?? (session?.track_id && isBoundRunTrackId(session.track_id) ? session.track_id : "_pending");
+  const checklistPath = trackId === prevTid ? session?.checklist_path ?? "" : "";
   const platform = resolveSessionPlatform(
     opts?.platform,
     session?.platform ?? "cursor"
@@ -4534,7 +4536,8 @@ function applyOn(store, conversationId, projectRoot, opts) {
       armed: 0,
       paused: 0,
       paused_reason: null,
-      track_id: opts?.slug ?? (isBoundRunTrackId(session.track_id) ? session.track_id : "_pending"),
+      track_id: trackId,
+      checklist_path: checklistPath,
       pending_action: null,
       track_candidates_json: null,
       platform
@@ -4551,7 +4554,7 @@ function applyOn(store, conversationId, projectRoot, opts) {
     paused: 0,
     paused_reason: null,
     track_id: trackId,
-    checklist_path: session?.checklist_path ?? "",
+    checklist_path: checklistPath,
     // ON returns to planning — drop mid-flow run/replan pick state.
     pending_action: null,
     track_candidates_json: null

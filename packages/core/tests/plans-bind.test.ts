@@ -4,6 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   MULTI_PLAN_EDIT_TRACK,
+  applyOn,
+  applyReplan,
   applyRun,
   extractPlansSlugFromPath,
   isBoundRunTrackId,
@@ -226,5 +228,124 @@ describe("plans-bind", () => {
       expect(r.session.phase).toBe("executing");
       expect(r.session.armed).toBe(1);
     }
+  });
+
+  it("bind-invalidate-dirty: ON with new slug replaces bind and clears checklist", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    const alphaCp = path.join(root, "plans", "alpha", "checklist.md");
+    store.upsertSession({
+      conversation_id: "on-switch",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: alphaCp,
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyOn(store, "on-switch", root, { slug: "beta" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.session.track_id).toBe("beta");
+      expect(r.session.checklist_path).toBe("");
+      expect(r.session.phase).toBe("planning");
+    }
+  });
+
+  it("bind-invalidate-dirty: ON same slug keeps checklist_path", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    const alphaCp = path.join(root, "plans", "alpha", "checklist.md");
+    store.upsertSession({
+      conversation_id: "on-same",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: alphaCp,
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyOn(store, "on-same", root, { slug: "alpha" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.session.track_id).toBe("alpha");
+      expect(r.session.checklist_path).toBe(alphaCp);
+    }
+    const bare = applyOn(store, "on-same", root);
+    expect(bare.ok).toBe(true);
+    if (bare.ok) {
+      expect(bare.session.track_id).toBe("alpha");
+      expect(bare.session.checklist_path).toBe(alphaCp);
+    }
+  });
+
+  it("bind-invalidate-dirty: bare ON downgrades _multi to _pending", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "on-multi",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: MULTI_PLAN_EDIT_TRACK,
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      armed: 0,
+      paused: 0,
+    });
+    const on = applyOn(store, "on-multi", root);
+    expect(on.ok).toBe(true);
+    if (on.ok) {
+      expect(on.session.track_id).toBe("_pending");
+      expect(on.session.checklist_path).toBe("");
+    }
+    const run = applyRun(store, "on-multi", root);
+    expect(run.ok).toBe(false);
+    if (!run.ok) expect(run.needPick).toBe(true);
+  });
+
+  it("bind-invalidate-dirty: REPLAN to other slug updates track_id", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "rp-switch",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "alpha",
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+    });
+    const r = applyReplan(store, "rp-switch", root, { slug: "beta" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.session.track_id).toBe("beta");
+      expect(r.session.phase).toBe("planning");
+      expect(r.session.armed).toBe(0);
+      expect(r.session.checklist_path).toMatch(/plans[/\\]beta[/\\]checklist\.md/);
+    }
+  });
+
+  it("bind-invalidate-dirty: edit 1→≥2 then bare RUN stays needPick", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    notePlansDirEdit(
+      store,
+      "dirty-run",
+      root,
+      path.join(root, "plans", "alpha", "plan.md"),
+    );
+    notePlansDirEdit(
+      store,
+      "dirty-run",
+      root,
+      path.join(root, "plans", "beta", "plan.md"),
+    );
+    expect(store.getSession("dirty-run")!.track_id).toBe(MULTI_PLAN_EDIT_TRACK);
+    const r = applyRun(store, "dirty-run", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("dirty-run")!.track_id).toBe(MULTI_PLAN_EDIT_TRACK);
   });
 });

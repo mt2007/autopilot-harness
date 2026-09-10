@@ -3120,11 +3120,17 @@ export function applyOn(
     };
   }
 
+  const prevTid = session?.track_id ?? "_pending";
   const trackId =
     opts?.slug ??
     (session?.track_id && isBoundRunTrackId(session.track_id)
       ? session.track_id
       : "_pending");
+
+  // bind-invalidate-dirty: ON that changes/downgrades track must drop stale
+  // checklist_path (e.g. alpha bind → ON beta, or _multi → bare ON → _pending).
+  const checklistPath =
+    trackId === prevTid ? (session?.checklist_path ?? "") : "";
 
   const platform = resolveSessionPlatform(
     opts?.platform,
@@ -3140,9 +3146,8 @@ export function applyOn(
       armed: 0,
       paused: 0,
       paused_reason: null,
-      track_id:
-        opts?.slug ??
-        (isBoundRunTrackId(session.track_id) ? session.track_id : "_pending"),
+      track_id: trackId,
+      checklist_path: checklistPath,
       pending_action: null,
       track_candidates_json: null,
       platform,
@@ -3160,7 +3165,7 @@ export function applyOn(
     paused: 0,
     paused_reason: null,
     track_id: trackId,
-    checklist_path: session?.checklist_path ?? "",
+    checklist_path: checklistPath,
     // ON returns to planning — drop mid-flow run/replan pick state.
     pending_action: null,
     track_candidates_json: null,
