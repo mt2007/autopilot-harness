@@ -356,8 +356,295 @@ describe("F-RUN applyRun gates", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.userMessage).toMatch(/already executing/i);
+      expect(r.userMessage).toMatch(/track:\s*demo/i);
+      expect(r.userMessage).toMatch(/session:/i);
     }
     expect(store.getSession("c2")!.phase).toBe("planning");
+  });
+
+  it("planning sessions do not hold one_executor (peer RUN allowed)", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "plan-a",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      armed: 0,
+      paused: 0,
+    });
+    store.upsertSession({
+      conversation_id: "plan-b",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "beta",
+      checklist_path: path.join(root, "plans", "beta", "checklist.md"),
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyRun(store, "plan-b", root, { slug: "beta" });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.session.phase).toBe("executing");
+      expect(r.session.armed).toBe(1);
+    }
+    expect(store.getSession("plan-a")!.phase).toBe("planning");
+    expect(store.getSession("plan-a")!.armed).toBe(0);
+  });
+
+  it("_multi dirty bind + multi runnable → bare RUN needPick", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_multi",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.phase).toBe("planning");
+    expect(store.getSession("c1")!.track_id).toBe("_multi");
+  });
+
+  it("needPick clears stale non-runnable bind so it cannot auto-run later", () => {
+    writeChecklist(root, "alpha", `- [x] a — A\n`); // not runnable
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    writeChecklist(root, "gamma", `- [ ] c — C\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.track_id).toBe("_pending");
+    expect(store.getSession("c1")!.checklist_path).toBe("");
+    expect(store.getSession("c1")!.pending_action).toBe("run");
+
+    // Revive alpha as runnable — bare RUN must still pick (bind was cleared).
+    fs.writeFileSync(
+      path.join(root, "plans", "alpha", "checklist.md"),
+      `- [ ] a — A\n`,
+    );
+    const again = applyRun(store, "c1", root);
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.needPick).toBe(true);
+  });
+
+  it("mid-pick bind must not let bare RUN skip needPick", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha" },
+        { slug: "beta" },
+      ]),
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.phase).toBe("planning");
+    expect(store.getSession("c1")!.armed).toBe(0);
+    expect(store.getSession("c1")!.pending_action).toBe("run");
+    expect(store.getSession("c1")!.track_id).toBe("_pending");
+    expect(store.getSession("c1")!.checklist_path).toBe("");
+  });
+
+  it("mid-pick replan bind must not auto-select; clears stale bind", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      armed: 0,
+      paused: 0,
+      pending_action: "replan",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha" },
+        { slug: "beta" },
+      ]),
+    });
+    const r = applyReplan(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.pending_action).toBe("replan");
+    expect(store.getSession("c1")!.track_id).toBe("_pending");
+    expect(store.getSession("c1")!.checklist_path).toBe("");
+  });
+
+  it("pending replan + bind must not let bare RUN auto-execute", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "alpha",
+      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      armed: 0,
+      paused: 0,
+      pending_action: "replan",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha" },
+        { slug: "beta" },
+      ]),
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.phase).toBe("planning");
+    expect(store.getSession("c1")!.armed).toBe(0);
+    expect(store.getSession("c1")!.pending_action).toBe("run");
+    expect(store.getSession("c1")!.track_id).toBe("_pending");
+  });
+
+  it("cross-trigger replan→RUN with sole runnable still needPick", () => {
+    writeChecklist(root, "alpha", `- [x] a — A\n`); // not runnable
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+      pending_action: "replan",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha" },
+        { slug: "beta" },
+      ]),
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.armed).toBe(0);
+    expect(store.getSession("c1")!.phase).toBe("planning");
+    expect(store.getSession("c1")!.pending_action).toBe("run");
+  });
+
+  it("cross-trigger run→REPLAN with sole plan still needPick", () => {
+    writeChecklist(root, "only", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([{ slug: "only" }]),
+    });
+    const r = applyReplan(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+    expect(store.getSession("c1")!.pending_action).toBe("replan");
+    expect(store.getSession("c1")!.phase).toBe("planning");
+  });
+
+  it("applyReplan with _multi track does not reject as invalid slug", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_multi",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyReplan(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.needPick).toBe(true);
+  });
+
+  it("rejects hostile slug echo without control chars in userMessage", () => {
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const hostile = "bad\nslug\u0000../x";
+    const r = applyRun(store, "c1", root, { slug: hostile });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.userMessage).toMatch(/Invalid track slug/i);
+      expect(r.userMessage).not.toMatch(/\n/);
+      expect(r.userMessage).not.toMatch(/\u0000/);
+      expect(r.userMessage).not.toContain(hostile);
+    }
+  });
+
+  it("busy message uses displayUntrusted fallback for control-only track_id", () => {
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    writeChecklist(root, "other", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "exec-1",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      track_id: "\n\u0000\t",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+      armed: 1,
+      paused: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c2",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const r = applyRun(store, "c2", root, { slug: "other" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.userMessage).toMatch(/already executing/i);
+      expect(r.userMessage).toMatch(/track:\s*\?/);
+      expect(r.userMessage).not.toMatch(/\n/);
+      expect(r.userMessage).not.toMatch(/\u0000/);
+    }
   });
 
   it("exclusiveWrite rolls back when commit=false (no dirty session)", () => {
@@ -651,7 +938,8 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
       root,
     );
     expect(empty.continue).toBe(false);
-    expect(empty.userMessage).toMatch(/no runnable/i);
+    expect(empty.user_message ?? empty.userMessage).toMatch(/no runnable/i);
+    expect(empty.user_message).toBeTruthy();
 
     const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
 
@@ -682,7 +970,85 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
       root,
     );
     expect(blocked.continue).toBe(false);
-    expect(blocked.userMessage).toMatch(/already executing/i);
+    expect(blocked.user_message ?? blocked.userMessage).toMatch(
+      /already executing/i,
+    );
+    expect(blocked.user_message).toMatch(/track:\s*demo/i);
+    store.close();
+  });
+
+  it("needPick allows submit (channel A) without entering executing", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const out = handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "c1", prompt: "/autopilot-run" },
+      root,
+    );
+    // Channel A: full agent turn — never blocked toast / user_message pick UI.
+    expect(out.continue).toBe(true);
+    expect(out.user_message).toBeUndefined();
+    expect(out.userMessage).toBeUndefined();
+    const s = store.getSession("c1")!;
+    expect(s.phase).toBe("planning");
+    expect(s.armed).toBe(0);
+    expect(s.pending_action).toBe("run");
+    store.close();
+  });
+
+  it("channel matrix: hard failures use C (block + user_message), never A", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const bad = handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "c1", prompt: "/autopilot-run NOT_SAFE" },
+      root,
+    );
+    expect(bad.continue).toBe(false);
+    expect(bad.user_message).toBeTruthy();
+    expect(bad.user_message).toMatch(/invalid track slug/i);
+    expect(bad.user_message).not.toMatch(/\n/);
+
+    // Arm executor, then peer RUN must stay channel C (not continue:true).
+    expect(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "c1", prompt: "/autopilot-run demo" },
+        root,
+      ).continue,
+    ).toBe(true);
+    const busy = handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "c2", prompt: "/autopilot-run demo" },
+      root,
+    );
+    expect(busy.continue).toBe(false);
+    expect(busy.user_message).toBeTruthy();
+    expect(busy.user_message).toMatch(/already executing/i);
+    expect(busy.userMessage).toBe(busy.user_message);
     store.close();
   });
 });
@@ -703,6 +1069,35 @@ describe("session platform normalization", () => {
     expect(resolveSessionPlatform("claude-code", "cursor")).toBe("claude-code");
     expect(resolveSessionPlatform(undefined, "claude-code")).toBe("claude-code");
     expect(resolveSessionPlatform("cursor", "claude-code")).toBe("cursor");
+  });
+
+  it("applyOn clears pending run/replan pick state", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha" },
+        { slug: "beta" },
+      ]),
+    });
+    const out = applyOn(store, "c1", root);
+    expect(out.ok).toBe(true);
+    const s = store.getSession("c1")!;
+    expect(s.phase).toBe("planning");
+    expect(s.pending_action).toBeNull();
+    expect(s.track_candidates_json).toBeNull();
+    store.close();
   });
 
   it("applyOn hostile platform opts do not wipe existing claude-code", () => {

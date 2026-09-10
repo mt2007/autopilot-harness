@@ -14,6 +14,7 @@ import {
   isRecoverOrStuckFollowupMessage,
   isUserAbortText,
   loadProjectReviewConfig,
+  notePlansDirEdit,
   parseAdvanceNextItemId,
   parseChecklist,
   parseTrigger,
@@ -361,6 +362,15 @@ export function handleUserPromptSubmit(
       });
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
+        // Channel A: needPick → allow + inject candidate list via additionalContext.
+        if (result.needPick) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: result.userMessage,
+            },
+          };
+        }
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
@@ -393,6 +403,15 @@ export function handleUserPromptSubmit(
       );
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
+        // Defensive: align with Cursor — needPick stays channel A.
+        if (result.needPick) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: result.userMessage,
+            },
+          };
+        }
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback),
@@ -422,6 +441,12 @@ export function handlePostToolUse(
 
   const filePath = filePathFromClaudeEdit(payload);
   if (!filePath) return;
+
+  try {
+    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+  } catch {
+    /* best-effort */
+  }
 
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
 

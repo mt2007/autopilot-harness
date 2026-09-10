@@ -223,6 +223,35 @@ describe("port-claude-code adapters", () => {
     store.close();
   });
 
+  it("needPick RUN allows submit with additionalContext (no block)", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "s-pick",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const out = handleUserPromptSubmit(
+      store,
+      { session_id: "s-pick", prompt: "/autopilot-run" },
+      root,
+    );
+    expect(out.decision).toBeUndefined();
+    expect(out.hookSpecificOutput?.additionalContext).toMatch(/Select a plan/i);
+    expect(out.hookSpecificOutput?.additionalContext).toMatch(/alpha|beta/);
+    const s = store.getSession("s-pick")!;
+    expect(s.phase).toBe("planning");
+    expect(s.pending_action).toBe("run");
+    store.close();
+  });
+
   it("PostToolUse Edit arms code_edited; plans path does not", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);

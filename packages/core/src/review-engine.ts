@@ -26,6 +26,7 @@ import {
   type StateStore,
 } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
+import { isBoundRunTrackId } from "./plans-bind.js";
 import {
   automationFollowupPresent,
   BRIEFLY_PREFIX,
@@ -3119,7 +3120,11 @@ export function applyOn(
     };
   }
 
-  const trackId = opts?.slug ?? session?.track_id ?? "_pending";
+  const trackId =
+    opts?.slug ??
+    (session?.track_id && isBoundRunTrackId(session.track_id)
+      ? session.track_id
+      : "_pending");
 
   const platform = resolveSessionPlatform(
     opts?.platform,
@@ -3135,7 +3140,11 @@ export function applyOn(
       armed: 0,
       paused: 0,
       paused_reason: null,
-      track_id: opts?.slug ?? session.track_id,
+      track_id:
+        opts?.slug ??
+        (isBoundRunTrackId(session.track_id) ? session.track_id : "_pending"),
+      pending_action: null,
+      track_candidates_json: null,
       platform,
     });
     return { ok: true, session: s };
@@ -3152,6 +3161,9 @@ export function applyOn(
     paused_reason: null,
     track_id: trackId,
     checklist_path: session?.checklist_path ?? "",
+    // ON returns to planning — drop mid-flow run/replan pick state.
+    pending_action: null,
+    track_candidates_json: null,
   });
   return { ok: true, session: s };
 }

@@ -713,7 +713,7 @@ export function writeQuickstart(
 
 也可：\`Autopilot RUN\` / \`开始执行\`
 
-多 plan 裸 RUN：完整对话列出候选（通道 A），不是错误弹窗。另一会话正在执行则拦截（通道 C）；\`status\` 可见占用者。ON/planning **不占**执行锁。
+多 plan 裸 RUN：完整对话列出候选（通道 A），**不是**错误弹窗 / blocked。busy / 非法 slug / 无 runnable → 拦截（通道 C）+ \`user_message\`；\`status\` 可见占用者。ON/planning **不占**执行锁。
 
 ## 暂停 / 恢复 / 改方案
 
@@ -784,7 +784,7 @@ Also: line-start \`Autopilot ON\`
 
 Also: \`Autopilot RUN\`
 
-Bare RUN with multiple plans: full agent turn lists candidates (channel A), not an error popup. Another executing session blocks submit (channel C); \`status\` shows the occupier. ON/planning does **not** hold the executor lock.
+Bare RUN with multiple plans: full agent turn lists candidates (channel A), **not** an error popup / blocked. Busy / illegal slug / no runnable → block submit (channel C) + \`user_message\`; \`status\` shows the occupier. ON/planning does **not** hold the executor lock.
 
 ## Pause / resume / replan
 

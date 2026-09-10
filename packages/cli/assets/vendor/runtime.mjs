@@ -1890,6 +1890,95 @@ function sessionReviewRunnable(session, reviewScope) {
   return isChecklistExecuting(session);
 }
 
+// ../core/src/plans-bind.ts
+import path5 from "node:path";
+var MULTI_PLAN_EDIT_TRACK = "_multi";
+function isBoundRunTrackId(trackId) {
+  return typeof trackId === "string" && trackId !== "_pending" && trackId !== MULTI_PLAN_EDIT_TRACK && isSafeTrackSlug(trackId);
+}
+function extractPlansSlugFromPath(filePath, projectRoot, plansDir = "plans") {
+  if (!filePath || filePath.includes("\0")) return null;
+  const root = normalizeProjectRoot(projectRoot);
+  if (!root) return null;
+  const safePlans = normalizeInProjectPlansDir(root, plansDir);
+  if (!safePlans) return null;
+  let abs;
+  try {
+    abs = path5.isAbsolute(filePath) ? path5.resolve(filePath) : path5.resolve(root, filePath);
+  } catch {
+    return null;
+  }
+  if (!isLexicallyInsideProject(root, abs)) return null;
+  let rel;
+  try {
+    rel = path5.relative(root, abs);
+  } catch {
+    return null;
+  }
+  if (!rel || rel.startsWith("..") || path5.isAbsolute(rel)) return null;
+  const parts = rel.split(/[/\\]/).filter(Boolean);
+  const dirParts = safePlans.split(/[/\\]/).filter(Boolean);
+  if (parts.length < dirParts.length + 2) return null;
+  for (let i = 0; i < dirParts.length; i++) {
+    if (parts[i] !== dirParts[i]) return null;
+  }
+  const slug = parts[dirParts.length];
+  if (!isSafeTrackSlug(slug)) return null;
+  return slug;
+}
+function notePlansDirEdit(store, conversationId, projectRoot, filePath, plansDir = "plans") {
+  const id = conversationId.trim();
+  if (!id || !store.isConversationIdOk(id)) return;
+  const slug = extractPlansSlugFromPath(filePath, projectRoot, plansDir);
+  if (!slug) return;
+  const root = normalizeProjectRoot(projectRoot) ?? projectRoot;
+  store.exclusiveWrite(() => {
+    const existing = store.getSession(id);
+    if (!existing) {
+      store.upsertSession({
+        conversation_id: id,
+        project_root: root,
+        code_root: root,
+        track_id: slug,
+        phase: "idle",
+        armed: 0,
+        paused: 0,
+        checklist_path: ""
+      });
+      return { commit: true, value: void 0 };
+    }
+    if (existing.phase === "executing") {
+      return { commit: false, value: void 0 };
+    }
+    if (existing.pending_action === "run" || existing.pending_action === "replan") {
+      return { commit: false, value: void 0 };
+    }
+    const tid = existing.track_id;
+    if (tid === MULTI_PLAN_EDIT_TRACK) {
+      return { commit: false, value: void 0 };
+    }
+    if (!tid || tid === "_pending") {
+      store.upsertSession({
+        conversation_id: id,
+        project_root: existing.project_root,
+        code_root: existing.code_root,
+        track_id: slug
+      });
+      return { commit: true, value: void 0 };
+    }
+    if (tid === slug) {
+      return { commit: false, value: void 0 };
+    }
+    store.upsertSession({
+      conversation_id: id,
+      project_root: existing.project_root,
+      code_root: existing.code_root,
+      track_id: MULTI_PLAN_EDIT_TRACK
+    });
+    return { commit: true, value: void 0 };
+  });
+}
+
 // ../core/src/transcript-followup.ts
 import fs6 from "node:fs";
 
@@ -3113,10 +3202,10 @@ var ReviewEngine = class {
    * salvage again — the prior tip does not cover the new failure.
    */
   classifyCompletedOrphan(transcriptPath) {
-    const path9 = transcriptPath?.trim();
-    if (!path9) return "none";
+    const path10 = transcriptPath?.trim();
+    if (!path10) return "none";
     try {
-      const events = readTranscriptTail(path9);
+      const events = readTranscriptTail(path10);
       const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
       if (errIdx < 0) return "none";
       for (let i = events.length - 1; i > errIdx; i--) {
@@ -4210,8 +4299,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let targets = null;
-      const path9 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path9.length > 0;
+      const path10 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path10.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed?.checklist) {
@@ -4431,7 +4520,7 @@ function applyOn(store, conversationId, projectRoot, opts) {
       userMessage: `Invalid track slug "${sanitizeSessionDisplayText(raw).slice(0, 64)}".`
     };
   }
-  const trackId = opts?.slug ?? session?.track_id ?? "_pending";
+  const trackId = opts?.slug ?? (session?.track_id && isBoundRunTrackId(session.track_id) ? session.track_id : "_pending");
   const platform = resolveSessionPlatform(
     opts?.platform,
     session?.platform ?? "cursor"
@@ -4445,7 +4534,9 @@ function applyOn(store, conversationId, projectRoot, opts) {
       armed: 0,
       paused: 0,
       paused_reason: null,
-      track_id: opts?.slug ?? session.track_id,
+      track_id: opts?.slug ?? (isBoundRunTrackId(session.track_id) ? session.track_id : "_pending"),
+      pending_action: null,
+      track_candidates_json: null,
       platform
     });
     return { ok: true, session: s2 };
@@ -4460,7 +4551,10 @@ function applyOn(store, conversationId, projectRoot, opts) {
     paused: 0,
     paused_reason: null,
     track_id: trackId,
-    checklist_path: session?.checklist_path ?? ""
+    checklist_path: session?.checklist_path ?? "",
+    // ON returns to planning — drop mid-flow run/replan pick state.
+    pending_action: null,
+    track_candidates_json: null
   });
   return { ok: true, session: s };
 }
@@ -4568,7 +4662,7 @@ function applyResumeReview(store, conversationId) {
 
 // ../core/src/project-config.ts
 import fs7 from "node:fs";
-import path5 from "node:path";
+import path6 from "node:path";
 var MAX_CONFIG_BYTES = 1e6;
 var DEFAULT_PROJECT_REVIEW_CONFIG = {
   confirmRounds: 5,
@@ -4728,7 +4822,7 @@ function loadProjectReviewConfig(projectRoot) {
   if (!root) {
     return cloneDefaultProjectReviewConfig();
   }
-  const configPath = path5.join(root, ".autopilot", "config.yml");
+  const configPath = path6.join(root, ".autopilot", "config.yml");
   try {
     const nofollow = typeof fs7.constants.O_NOFOLLOW === "number" ? fs7.constants.O_NOFOLLOW : 0;
     if (nofollow === 0) {
@@ -4916,11 +5010,11 @@ function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloade
 
 // ../core/src/phase-actions.ts
 import fs9 from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // ../core/src/list-tracks.ts
 import fs8 from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 function isRunnableTrack(t) {
   if (t.paused) return false;
   const unchecked = t.checklistTotal - t.checklistDone;
@@ -4931,7 +5025,7 @@ function readPlansDir(root, plansDir = "plans") {
   if (typeof plansDir !== "string" || !root || root.includes("\0") || plansDir.includes("\0")) {
     return [];
   }
-  const dir = path6.join(root, plansDir);
+  const dir = path7.join(root, plansDir);
   try {
     const lst = fs8.lstatSync(dir);
     if (lst.isSymbolicLink() || !lst.isDirectory()) return [];
@@ -4993,7 +5087,7 @@ function listTracks(root, store, filter = "all", plansDir = "plans") {
   const slugs = readPlansDir(root, plansDir);
   const tracks = [];
   for (const slug of slugs) {
-    const trackDir = path6.join(root, plansDir, slug);
+    const trackDir = path7.join(root, plansDir, slug);
     try {
       const lst = fs8.lstatSync(trackDir);
       if (lst.isSymbolicLink() || !lst.isDirectory()) continue;
@@ -5001,8 +5095,8 @@ function listTracks(root, store, filter = "all", plansDir = "plans") {
     } catch {
       continue;
     }
-    const planPath = path6.join(trackDir, "plan.md");
-    const checklistPath = path6.join(trackDir, "checklist.md");
+    const planPath = path7.join(trackDir, "plan.md");
+    const checklistPath = path7.join(trackDir, "checklist.md");
     let checklistTotal = 0;
     let checklistDone = 0;
     const checklistInProject = isRealpathInsideProject(root, checklistPath);
@@ -5098,13 +5192,17 @@ function canEnterExecuting(options) {
 }
 
 // ../core/src/phase-actions.ts
+function displayUntrusted(raw, max = 64) {
+  const text = typeof raw === "string" ? raw : String(raw ?? "");
+  return sanitizeSessionDisplayText(text).slice(0, max) || "?";
+}
 function nowIso2() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
 function checklistPathFor(projectRoot, slug, plansDir) {
   const root = normalizeProjectRoot(projectRoot);
-  if (!root) return path7.join(plansDir, slug, "checklist.md");
-  return path7.join(root, plansDir, slug, "checklist.md");
+  if (!root) return path8.join(plansDir, slug, "checklist.md");
+  return path8.join(root, plansDir, slug, "checklist.md");
 }
 function sameChecklistBinding(stored, rebuilt, projectRoot) {
   if (stored === rebuilt) return true;
@@ -5114,8 +5212,8 @@ function sameChecklistBinding(stored, rebuilt, projectRoot) {
   const root = normalizeProjectRoot(projectRoot);
   if (!root) return false;
   try {
-    const absStored = path7.isAbsolute(stored) ? path7.resolve(stored) : path7.resolve(root, stored);
-    const absRebuilt = path7.isAbsolute(rebuilt) ? path7.resolve(rebuilt) : path7.resolve(root, rebuilt);
+    const absStored = path8.isAbsolute(stored) ? path8.resolve(stored) : path8.resolve(root, stored);
+    const absRebuilt = path8.isAbsolute(rebuilt) ? path8.resolve(rebuilt) : path8.resolve(root, rebuilt);
     return absStored === absRebuilt;
   } catch {
     return false;
@@ -5136,7 +5234,7 @@ function isChecklistPathAllowed(projectRoot, checklistPath) {
   if (!root) return false;
   try {
     fs9.lstatSync(
-      path7.isAbsolute(checklistPath) ? checklistPath : path7.resolve(root, checklistPath)
+      path8.isAbsolute(checklistPath) ? checklistPath : path8.resolve(root, checklistPath)
     );
     return isRealpathInsideProject(root, checklistPath);
   } catch {
@@ -5173,8 +5271,8 @@ function upsertTrack(store, slug, checklistPath, plansDir, projectRoot) {
   const ts = nowIso2();
   const root = normalizeProjectRoot(projectRoot);
   if (!root) return;
-  const planPath = path7.join(root, plansDir, slug, "plan.md");
-  const briefPath = path7.join(root, plansDir, slug, "brief.md");
+  const planPath = path8.join(root, plansDir, slug, "plan.md");
+  const briefPath = path8.join(root, plansDir, slug, "brief.md");
   store.db.prepare(
     `INSERT INTO tracks (track_id, slug, checklist_path, plan_path, brief_path, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -5197,7 +5295,7 @@ function candidatePayload(tracks) {
   return JSON.stringify(
     tracks.map((t) => ({
       slug: t.slug,
-      title: t.title,
+      title: sanitizeSessionDisplayText(t.title || t.slug) || t.slug,
       phase: t.phase,
       progress: `${t.checklistDone}/${t.checklistTotal}`
     }))
@@ -5211,7 +5309,7 @@ function resolveRunSlug(store, session, projectRoot, plansDir, requestedSlug) {
     if (!isSafeTrackSlug(requestedSlug)) {
       return {
         kind: "none",
-        userMessage: `Invalid track slug "${requestedSlug}".`
+        userMessage: `Invalid track slug "${displayUntrusted(requestedSlug)}".`
       };
     }
     const hit = runnable.find((t) => t.slug === requestedSlug);
@@ -5220,17 +5318,18 @@ function resolveRunSlug(store, session, projectRoot, plansDir, requestedSlug) {
       if (!all.some((t) => t.slug === requestedSlug)) {
         return {
           kind: "none",
-          userMessage: `Track "${requestedSlug}" not found or has no unchecked checklist items.`
+          userMessage: `Track "${displayUntrusted(requestedSlug)}" not found or has no unchecked checklist items.`
         };
       }
       return {
         kind: "none",
-        userMessage: `Track "${requestedSlug}" is not runnable (paused or no unchecked items).`
+        userMessage: `Track "${displayUntrusted(requestedSlug)}" is not runnable (paused or no unchecked items).`
       };
     }
     return { kind: "slug", slug: requestedSlug };
   }
-  if (session.track_id && session.track_id !== "_pending") {
+  const midPick = session.pending_action === "run" || session.pending_action === "replan";
+  if (!midPick && isBoundRunTrackId(session.track_id)) {
     const bound = runnable.find((t) => t.slug === session.track_id);
     if (bound) {
       return { kind: "slug", slug: bound.slug };
@@ -5243,6 +5342,9 @@ function resolveRunSlug(store, session, projectRoot, plansDir, requestedSlug) {
     };
   }
   if (runnable.length === 1) {
+    if (session.pending_action === "replan") {
+      return { kind: "pick", candidates: runnable };
+    }
     return { kind: "slug", slug: runnable[0].slug };
   }
   return { kind: "pick", candidates: runnable };
@@ -5281,18 +5383,25 @@ function applyRun(store, conversationId, projectRoot, opts) {
     return { ok: false, userMessage: resolved.userMessage };
   }
   if (resolved.kind === "pick") {
+    const clearingStaleBind = isBoundRunTrackId(session.track_id);
+    const trackForPick = clearingStaleBind ? "_pending" : session.track_id;
     store.upsertSession({
       conversation_id: conversationId,
       project_root: session.project_root,
       code_root: session.code_root,
+      track_id: trackForPick,
+      // Drop checklist binding with the stale track so planning state stays consistent.
+      ...clearingStaleBind ? { checklist_path: "" } : {},
       pending_action: "run",
       track_candidates_json: candidatePayload(resolved.candidates),
       armed: 0
       // phase unchanged — do not write executing
     });
-    const lines = resolved.candidates.map(
-      (t, i) => `  ${i + 1}. ${t.slug} \u2014 ${t.title} (${t.checklistTotal - t.checklistDone}/${t.checklistTotal} left)`
-    ).join("\n");
+    const lines = resolved.candidates.map((t, i) => {
+      const title = sanitizeSessionDisplayText(t.title || t.slug) || t.slug;
+      const left = t.checklistTotal - t.checklistDone;
+      return `  ${i + 1}. ${t.slug} \u2014 ${title} (${left}/${t.checklistTotal} left)`;
+    }).join("\n");
     return {
       ok: false,
       needPick: true,
@@ -5308,7 +5417,7 @@ Reply with a number or /autopilot-run <slug>.`
   if (!isSafeTrackSlug(slug)) {
     return {
       ok: false,
-      userMessage: `Invalid track slug "${slug}".`
+      userMessage: `Invalid track slug "${displayUntrusted(slug)}".`
     };
   }
   const checklistPath = checklistPathFor(projectRoot, slug, plansDir);
@@ -5329,11 +5438,13 @@ Reply with a number or /autopilot-run <slug>.`
       if (concurrencyMode === "one_executor") {
         const other = store.findExecutingSession(conversationId);
         if (other) {
+          const occTrack = displayUntrusted(other.track_id || "(unknown)");
+          const occSession = shortConversationId(other.conversation_id);
           return {
             commit: false,
             value: {
               ok: false,
-              userMessage: `Another session is already executing (${other.track_id}). Send Autopilot OFF there or wait, then retry.`
+              userMessage: `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. Or run: npx @autopilot-harness/cli status`
             }
           };
         }
@@ -5406,29 +5517,40 @@ function applyReplan(store, conversationId, projectRoot, opts) {
     projectRoot,
     opts?.platform
   );
-  let slug = opts?.slug ?? session.track_id;
-  if (slug && slug !== "_pending" && !isSafeTrackSlug(slug)) {
+  let slug = opts?.slug;
+  if (!slug) {
+    const tid = session.track_id;
+    const midPick = session.pending_action === "run" || session.pending_action === "replan";
+    slug = !midPick && isBoundRunTrackId(tid) ? tid : void 0;
+  }
+  if (slug && !isSafeTrackSlug(slug)) {
     return {
       ok: false,
-      userMessage: `Invalid track slug "${slug}".`
+      userMessage: `Invalid track slug "${displayUntrusted(slug)}".`
     };
   }
-  if (!slug || slug === "_pending") {
+  if (!slug) {
     const all = listTracks(projectRoot, store, "all", plansDir).filter(
       (t) => isSafeTrackSlug(t.slug)
     );
-    if (all.length === 1) {
+    if (all.length === 1 && session.pending_action !== "run") {
       slug = all[0].slug;
-    } else if (all.length > 1) {
+    } else if (all.length > 1 || all.length === 1 && session.pending_action === "run") {
+      const clearingStaleBind = isBoundRunTrackId(session.track_id);
       store.upsertSession({
         conversation_id: conversationId,
         project_root: session.project_root,
         code_root: session.code_root,
+        track_id: clearingStaleBind ? "_pending" : session.track_id,
+        ...clearingStaleBind ? { checklist_path: "" } : {},
         pending_action: "replan",
         track_candidates_json: candidatePayload(all),
         armed: 0
       });
-      const lines = all.map((t, i) => `  ${i + 1}. ${t.slug} \u2014 ${t.title}`).join("\n");
+      const lines = all.map((t, i) => {
+        const title = sanitizeSessionDisplayText(t.title || t.slug) || t.slug;
+        return `  ${i + 1}. ${t.slug} \u2014 ${title}`;
+      }).join("\n");
       return {
         ok: false,
         needPick: true,
@@ -5496,7 +5618,7 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
   if (pending !== "run" && pending !== "replan") {
     return {
       ok: false,
-      userMessage: `Unknown pending action "${pending}".`
+      userMessage: `Unknown pending action "${displayUntrusted(pending)}".`
     };
   }
   if (!session.track_candidates_json) {
@@ -5526,14 +5648,14 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
     if (!slug || !isSafeTrackSlug(slug)) {
       return {
         ok: false,
-        userMessage: `Invalid selection "${pick}". Choose 1\u2013${candidates.length}.`
+        userMessage: `Invalid selection "${displayUntrusted(pick)}". Choose 1\u2013${candidates.length}.`
       };
     }
   } else {
     if (!isSafeTrackSlug(pick)) {
       return {
         ok: false,
-        userMessage: `Invalid track slug "${pick}".`
+        userMessage: `Invalid track slug "${displayUntrusted(pick)}".`
       };
     }
     slug = pick;
@@ -5542,7 +5664,7 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
     )) {
       return {
         ok: false,
-        userMessage: `Unknown slug "${pick}".`
+        userMessage: `Unknown slug "${displayUntrusted(pick)}".`
       };
     }
   }
@@ -5565,7 +5687,7 @@ import { spawnSync } from "node:child_process";
 
 // ../core/src/autopilot-ignore.ts
 import fs10 from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigger self-review (gitignore syntax).
 #
 # What this file is:
@@ -5764,17 +5886,17 @@ function realpathForCompare(absPath) {
     return fs10.realpathSync(absPath);
   } catch {
   }
-  let dir = path8.dirname(absPath);
-  const base = path8.basename(absPath);
+  let dir = path9.dirname(absPath);
+  const base = path9.basename(absPath);
   const missing = [];
   for (; ; ) {
     try {
       const realDir = fs10.realpathSync(dir);
-      return path8.join(realDir, ...missing, base);
+      return path9.join(realDir, ...missing, base);
     } catch {
-      const parent = path8.dirname(dir);
+      const parent = path9.dirname(dir);
       if (parent === dir) return absPath;
-      missing.unshift(path8.basename(dir));
+      missing.unshift(path9.basename(dir));
       dir = parent;
     }
   }
@@ -5784,19 +5906,19 @@ function toProjectRelativePath(filePath, projectRoot) {
   if (!projectRoot?.trim()) {
     return normalizeRelativePath(posix);
   }
-  const root = realpathForCompare(path8.resolve(projectRoot));
+  const root = realpathForCompare(path9.resolve(projectRoot));
   const abs = realpathForCompare(
-    path8.isAbsolute(posix) ? path8.resolve(posix) : path8.resolve(root, posix)
+    path9.isAbsolute(posix) ? path9.resolve(posix) : path9.resolve(root, posix)
   );
-  const rel = path8.relative(root, abs);
-  if (rel.startsWith("..") || path8.isAbsolute(rel)) {
+  const rel = path9.relative(root, abs);
+  if (rel.startsWith("..") || path9.isAbsolute(rel)) {
     return "";
   }
   return normalizeRelativePath(rel.replace(/\\/g, "/"));
 }
 function loadAutopilotIgnorePatterns(projectRoot) {
-  const root = path8.resolve(projectRoot);
-  const filePath = path8.join(root, ".autopilotignore");
+  const root = path9.resolve(projectRoot);
+  const filePath = path9.join(root, ".autopilotignore");
   let st;
   try {
     st = fs10.lstatSync(filePath);
@@ -5858,6 +5980,16 @@ function isProductCodeEdit(filePath, opts) {
 }
 
 // ../ports/cursor/src/index.ts
+function blockSubmit(message) {
+  return {
+    continue: false,
+    user_message: message,
+    userMessage: message
+  };
+}
+function allowSubmit() {
+  return { continue: true };
+}
 function cid(p) {
   return (p.conversation_id ?? p.conversationId ?? "").trim();
 }
@@ -5912,7 +6044,7 @@ function normalizeCursorStopStatus(payload) {
 }
 function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
   const conversationId = cid(payload);
-  if (!conversationId) return { continue: true };
+  if (!conversationId) return allowSubmit();
   const prompt = payload.prompt ?? payload.content ?? "";
   try {
     store.clearPendingFollowupIf(
@@ -5932,7 +6064,7 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
   if (trigger) {
     if (trigger.kind === "off") {
       applyOff(store, conversationId);
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "on") {
       const result = applyOn(store, conversationId, projectRoot, {
@@ -5940,22 +6072,22 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
         slug: trigger.slug
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "resume") {
       const result = applyResume(store, conversationId, {
         slug: trigger.slug
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "resume_review") {
       applyResumeReview(store, conversationId);
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "run") {
       const result = applyRun(store, conversationId, projectRoot, {
@@ -5963,9 +6095,12 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
         config: actionConfig
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        if (result.needPick) {
+          return allowSubmit();
+        }
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "replan") {
       const result = applyReplan(store, conversationId, projectRoot, {
@@ -5973,9 +6108,9 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
         config: actionConfig
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "track_pick" && trigger.trackPick) {
       const result = applyTrackPick(
@@ -5986,21 +6121,28 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
         { config: actionConfig }
       );
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        if (result.needPick) {
+          return allowSubmit();
+        }
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
-    return { continue: true };
+    return allowSubmit();
   }
   if (!isHarnessFollowupMessage(prompt)) {
     store.clearChainPending(conversationId);
   }
-  return { continue: true };
+  return allowSubmit();
 }
 function handleAfterFileEdit(store, payload, projectRoot) {
   const conversationId = cid(payload);
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
+  try {
+    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+  } catch {
+  }
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
   const cfg = loadProjectReviewConfig(projectRoot);
   if (cfg.reviewScope === "project") {
@@ -6232,6 +6374,14 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
       });
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
+        if (result.needPick) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: result.userMessage
+            }
+          };
+        }
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
@@ -6264,6 +6414,14 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
       );
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
+        if (result.needPick) {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: result.userMessage
+            }
+          };
+        }
         return {
           decision: "block",
           reason: blockReason(result.userMessage, gateFallback)
@@ -6285,6 +6443,10 @@ function handlePostToolUse(store, payload, projectRoot) {
   if (!conversationId || !isClaudeEditTool(toolName)) return;
   const filePath = filePathFromClaudeEdit(payload);
   if (!filePath) return;
+  try {
+    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+  } catch {
+  }
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
   const cfg = loadProjectReviewConfig(projectRoot);
   if (cfg.reviewScope === "project") {

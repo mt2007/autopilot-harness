@@ -30,9 +30,24 @@ Also: `Autopilot RUN`
 
 | Case | Behavior |
 |------|----------|
-| Multiple runnable plans, no unique bind, bare RUN | **Full agent turn**: list candidates in chat; wait for a number or `/autopilot-run <slug>`. **Not** an error popup / blocked submit. No product code this turn. |
+| Multiple runnable plans, no unique bind, bare RUN | **Full agent turn** (channel A): list candidates in chat; wait for a number or `/autopilot-run <slug>`. **Not** an error popup / blocked submit. No product code this turn. |
 | Unique bind / only one runnable / slug already on the command | Skip pick; enter executing |
 | Another session is `executing+armed` | **Block submit** (channel C); message includes occupier track + session id; if the host only shows opaque blocked, use `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
+| Illegal slug / no runnable | **Block submit** (channel C) — hard failure, not a pick list |
+
+**Channel rule:** needPick is **not** an error → channel A only (never use blocked/`user_message` toast as the pick UI). Busy and true errors → channel C (`continue: false` + `user_message`). Do **not** use `continue: true` on busy to “make it visible.” (REPLAN multi-plan pick may still use channel C for now — out of scope vs RUN.)
+
+**Example script (bare RUN, N≥2 runnable, no unique bind):**
+
+```
+User:   /autopilot-run
+Hook:   needPick → pending_action=run + candidates; phase stays non-executing
+        Cursor: continue true (no block toast) | Claude: allow + additionalContext
+Agent:  list numbered plans; ask for a number or /autopilot-run <slug>; stop (no product code)
+User:   1   or   /autopilot-run foo
+Hook:   track_pick / RUN+slug → phase=executing
+Next:   implement checklist
+```
 
 **ON / planning does not hold the executor lock**: multiple chats may plan in parallel; `one_executor` only gates real executing sessions.
 

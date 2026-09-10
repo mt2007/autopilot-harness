@@ -30,9 +30,24 @@
 
 | 情况 | 行为 |
 |------|------|
-| 多个可执行 plan、未唯一绑定、裸 RUN | **完整 agent 回合**：对话里列出候选，等数字或 `/autopilot-run <slug>`。**不是**错误弹窗 / blocked。本回合不写产品代码。 |
+| 多个可执行 plan、未唯一绑定、裸 RUN | **完整 agent 回合**（通道 A）：对话里列出候选，等数字或 `/autopilot-run <slug>`。**不是**错误弹窗 / blocked。本回合不写产品代码。 |
 | 已绑唯一 plan / 全局仅 1 个 runnable / 命令已带 slug | 跳过选型，直接执行 |
 | 另一会话正在 `executing+armed` | **拦截提交**（通道 C）；文案含占用 track + 会话线索；若宿主只显示 opaque blocked，用 `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
+| 非法 slug / 无 runnable | **拦截提交**（通道 C）— 真错误，不是选型列表 |
+
+**通道规则：** needPick **不是**错误 → 只用通道 A（禁止把 blocked/`user_message` 弹窗当选型 UI）。busy 与真错误 → 通道 C（`continue: false` + `user_message`）。**禁止**为可见而对 busy 使用 `continue: true`。（REPLAN 多 plan 选型暂仍可能走通道 C — 相对 RUN 的 A 为 OOS。）
+
+**示例脚本（裸 RUN，N≥2 runnable，无唯一绑定）：**
+
+```
+用户:   /autopilot-run
+Hook:   needPick → pending_action=run + candidates；phase 非 executing
+        Cursor: continue true（无拦截弹窗）| Claude: 放行 + additionalContext
+Agent:  编号列出 plan；请回复数字或 /autopilot-run <slug>；停止（不写产品代码）
+用户:   1   或   /autopilot-run foo
+Hook:   track_pick / RUN+slug → phase=executing
+下一回合: 真正执行 checklist
+```
 
 **ON / planning 不占执行锁**：多聊可同时规划；`one_executor` 只约束真正执行中的会话。
 

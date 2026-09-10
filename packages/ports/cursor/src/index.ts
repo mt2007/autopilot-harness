@@ -14,6 +14,7 @@ import {
   isRecoverOrStuckFollowupMessage,
   isUserAbortText,
   loadProjectReviewConfig,
+  notePlansDirEdit,
   parseAdvanceNextItemId,
   parseChecklist,
   parseTrigger,
@@ -58,6 +59,26 @@ export interface CursorStopPayload {
 
 export interface CursorPortConfig {
   phaseActions?: PhaseActionConfig;
+}
+
+/** Cursor beforeSubmitPrompt stdout — snake_case user_message is the host contract. */
+export type CursorSubmitResult = {
+  continue: boolean;
+  user_message?: string;
+  /** Dual-key for older readers; prefer user_message. */
+  userMessage?: string;
+};
+
+function blockSubmit(message: string): CursorSubmitResult {
+  return {
+    continue: false,
+    user_message: message,
+    userMessage: message,
+  };
+}
+
+function allowSubmit(): CursorSubmitResult {
+  return { continue: true };
 }
 
 function cid(p: { conversation_id?: string; conversationId?: string }): string {
@@ -132,9 +153,9 @@ export function handleBeforeSubmitPrompt(
   payload: CursorSubmitPayload,
   projectRoot: string,
   portConfig?: CursorPortConfig,
-): { continue: boolean; userMessage?: string } {
+): CursorSubmitResult {
   const conversationId = cid(payload);
-  if (!conversationId) return { continue: true };
+  if (!conversationId) return allowSubmit();
 
   const prompt = payload.prompt ?? payload.content ?? "";
 
@@ -163,7 +184,7 @@ export function handleBeforeSubmitPrompt(
   if (trigger) {
     if (trigger.kind === "off") {
       applyOff(store, conversationId);
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "on") {
       const result = applyOn(store, conversationId, projectRoot, {
@@ -171,22 +192,22 @@ export function handleBeforeSubmitPrompt(
         slug: trigger.slug,
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "resume") {
       const result = applyResume(store, conversationId, {
         slug: trigger.slug,
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "resume_review") {
       applyResumeReview(store, conversationId);
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "run") {
       const result = applyRun(store, conversationId, projectRoot, {
@@ -194,9 +215,14 @@ export function handleBeforeSubmitPrompt(
         config: actionConfig,
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        // Channel A: needPick → allow full agent turn (list plans; do not block).
+        if (result.needPick) {
+          return allowSubmit();
+        }
+        // Channel C: busy / hard failures → reject submit.
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "replan") {
       const result = applyReplan(store, conversationId, projectRoot, {
@@ -204,9 +230,10 @@ export function handleBeforeSubmitPrompt(
         config: actionConfig,
       });
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        // Keep REPLAN needPick as block for now (OOS to align with RUN channel A).
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
     if (trigger.kind === "track_pick" && trigger.trackPick) {
       const result = applyTrackPick(
@@ -217,11 +244,14 @@ export function handleBeforeSubmitPrompt(
         { config: actionConfig },
       );
       if (!result.ok) {
-        return { continue: false, userMessage: result.userMessage };
+        if (result.needPick) {
+          return allowSubmit();
+        }
+        return blockSubmit(result.userMessage);
       }
-      return { continue: true };
+      return allowSubmit();
     }
-    return { continue: true };
+    return allowSubmit();
   }
 
   // E8: non-harness user message clears chain_pending; keep fix/confirm pending
@@ -229,7 +259,7 @@ export function handleBeforeSubmitPrompt(
   if (!isHarnessFollowupMessage(prompt)) {
     store.clearChainPending(conversationId);
   }
-  return { continue: true };
+  return allowSubmit();
 }
 
 export function handleAfterFileEdit(
@@ -240,6 +270,14 @@ export function handleAfterFileEdit(
   const conversationId = cid(payload);
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
+
+  // Plans bind path — independent of isProductCodeEdit (plans/** is ignored).
+  try {
+    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+  } catch {
+    /* best-effort */
+  }
+
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
   const cfg = loadProjectReviewConfig(projectRoot);
   if (cfg.reviewScope === "project") {

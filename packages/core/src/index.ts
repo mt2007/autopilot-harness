@@ -98,6 +98,13 @@ export {
   type PhaseActionFail,
 } from "./phase-actions.js";
 
+export {
+  MULTI_PLAN_EDIT_TRACK,
+  isBoundRunTrackId,
+  extractPlansSlugFromPath,
+  notePlansDirEdit,
+} from "./plans-bind.js";
+
 export { CONFIRM_LENSES, getLens, lensNumberForRound, type ConfirmLens } from "./review-lenses.js";
 
 export {

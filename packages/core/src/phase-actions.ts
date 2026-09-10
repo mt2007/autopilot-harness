@@ -13,8 +13,9 @@ import {
   normalizeProjectRoot,
 } from "./project-path.js";
 import { firstUnchecked, parseChecklist } from "./checklist-md.js";
-import type { SessionRow, StateStore } from "./state-store.js";
+import { shortConversationId, sanitizeSessionDisplayText, type SessionRow, type StateStore } from "./state-store.js";
 import { isSafeTrackSlug } from "./track-slug.js";
+import { isBoundRunTrackId } from "./plans-bind.js";
 import { normalizeSessionPlatform, resolveSessionPlatform } from "./review-scope.js";
 
 export type ConcurrencyMode = "one_executor" | "worktree_per_session";
@@ -22,6 +23,12 @@ export type ConcurrencyMode = "one_executor" | "worktree_per_session";
 export interface PhaseActionConfig {
   concurrencyMode?: ConcurrencyMode;
   plansDir?: string;
+}
+
+/** Hook-visible echo of untrusted tokens (rejected slugs, picks, pending). */
+function displayUntrusted(raw: unknown, max = 64): string {
+  const text = typeof raw === "string" ? raw : String(raw ?? "");
+  return sanitizeSessionDisplayText(text).slice(0, max) || "?";
 }
 
 export type PhaseActionOk = { ok: true; session: SessionRow };
@@ -187,7 +194,7 @@ function candidatePayload(tracks: TrackSummary[]): string {
   return JSON.stringify(
     tracks.map((t) => ({
       slug: t.slug,
-      title: t.title,
+      title: sanitizeSessionDisplayText(t.title || t.slug) || t.slug,
       phase: t.phase,
       progress: `${t.checklistDone}/${t.checklistTotal}`,
     })),
@@ -212,7 +219,7 @@ function resolveRunSlug(
     if (!isSafeTrackSlug(requestedSlug)) {
       return {
         kind: "none",
-        userMessage: `Invalid track slug "${requestedSlug}".`,
+        userMessage: `Invalid track slug "${displayUntrusted(requestedSlug)}".`,
       };
     }
     const hit = runnable.find((t) => t.slug === requestedSlug);
@@ -221,19 +228,23 @@ function resolveRunSlug(
       if (!all.some((t) => t.slug === requestedSlug)) {
         return {
           kind: "none",
-          userMessage: `Track "${requestedSlug}" not found or has no unchecked checklist items.`,
+          userMessage: `Track "${displayUntrusted(requestedSlug)}" not found or has no unchecked checklist items.`,
         };
       }
       return {
         kind: "none",
-        userMessage: `Track "${requestedSlug}" is not runnable (paused or no unchecked items).`,
+        userMessage: `Track "${displayUntrusted(requestedSlug)}" is not runnable (paused or no unchecked items).`,
       };
     }
     return { kind: "slug", slug: requestedSlug };
   }
 
-  // Prefer this conversation's bound track if runnable
-  if (session.track_id && session.track_id !== "_pending") {
+  // Prefer this conversation's bound track if runnable (not _pending / _multi).
+  // While mid-pick (run or replan), ignore bind — a plans/ edit or cross-trigger
+  // must not silently auto-select and skip the pick the user was shown.
+  const midPick =
+    session.pending_action === "run" || session.pending_action === "replan";
+  if (!midPick && isBoundRunTrackId(session.track_id)) {
     const bound = runnable.find((t) => t.slug === session.track_id);
     if (bound) {
       return { kind: "slug", slug: bound.slug };
@@ -248,6 +259,11 @@ function resolveRunSlug(
     };
   }
   if (runnable.length === 1) {
+    // Same-kind mid-pick (pending=run) may auto-start the sole remaining runnable.
+    // Cross-trigger from replan pick must not leap into executing.
+    if (session.pending_action === "replan") {
+      return { kind: "pick", candidates: runnable };
+    }
     return { kind: "slug", slug: runnable[0]!.slug };
   }
   return { kind: "pick", candidates: runnable };
@@ -316,20 +332,30 @@ export function applyRun(
   }
 
   if (resolved.kind === "pick") {
+    // Invariant: needPick means there is no unique auto-run bind for this decision.
+    // If track_id was a real slug that is not currently runnable, clear it — otherwise
+    // a later bare RUN could resurrect that bind and skip the pick the user was shown.
+    // Keep _multi (explicit multi-edit dirty) and _pending/empty as-is.
+    const clearingStaleBind = isBoundRunTrackId(session.track_id);
+    const trackForPick = clearingStaleBind ? "_pending" : session.track_id;
     store.upsertSession({
       conversation_id: conversationId,
       project_root: session.project_root,
       code_root: session.code_root,
+      track_id: trackForPick,
+      // Drop checklist binding with the stale track so planning state stays consistent.
+      ...(clearingStaleBind ? { checklist_path: "" } : {}),
       pending_action: "run",
       track_candidates_json: candidatePayload(resolved.candidates),
       armed: 0,
       // phase unchanged — do not write executing
     });
     const lines = resolved.candidates
-      .map(
-        (t, i) =>
-          `  ${i + 1}. ${t.slug} — ${t.title} (${t.checklistTotal - t.checklistDone}/${t.checklistTotal} left)`,
-      )
+      .map((t, i) => {
+        const title = sanitizeSessionDisplayText(t.title || t.slug) || t.slug;
+        const left = t.checklistTotal - t.checklistDone;
+        return `  ${i + 1}. ${t.slug} — ${title} (${left}/${t.checklistTotal} left)`;
+      })
       .join("\n");
     return {
       ok: false,
@@ -343,7 +369,7 @@ export function applyRun(
   if (!isSafeTrackSlug(slug)) {
     return {
       ok: false,
-      userMessage: `Invalid track slug "${slug}".`,
+      userMessage: `Invalid track slug "${displayUntrusted(slug)}".`,
     };
   }
   const checklistPath = checklistPathFor(projectRoot, slug, plansDir);
@@ -368,11 +394,13 @@ export function applyRun(
       if (concurrencyMode === "one_executor") {
         const other = store.findExecutingSession(conversationId);
         if (other) {
+          const occTrack = displayUntrusted(other.track_id || "(unknown)");
+          const occSession = shortConversationId(other.conversation_id);
           return {
             commit: false,
             value: {
               ok: false,
-              userMessage: `Another session is already executing (${other.track_id}). Send Autopilot OFF there or wait, then retry.`,
+              userMessage: `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. Or run: npx @autopilot-harness/cli status`,
             },
           };
         }
@@ -472,30 +500,47 @@ export function applyReplan(
     opts?.platform,
   );
 
-  let slug = opts?.slug ?? session.track_id;
-  if (slug && slug !== "_pending" && !isSafeTrackSlug(slug)) {
+  let slug = opts?.slug;
+  if (!slug) {
+    const tid = session.track_id;
+    // Same mid-pick guard as resolveRunSlug: ignore bind during run/replan pick.
+    const midPick =
+      session.pending_action === "run" || session.pending_action === "replan";
+    slug = !midPick && isBoundRunTrackId(tid) ? tid : undefined;
+  }
+  if (slug && !isSafeTrackSlug(slug)) {
     return {
       ok: false,
-      userMessage: `Invalid track slug "${slug}".`,
+      userMessage: `Invalid track slug "${displayUntrusted(slug)}".`,
     };
   }
-  if (!slug || slug === "_pending") {
+  if (!slug) {
     const all = listTracks(projectRoot, store, "all", plansDir).filter((t) =>
       isSafeTrackSlug(t.slug),
     );
-    if (all.length === 1) {
+    if (all.length === 1 && session.pending_action !== "run") {
+      // Sole plan: auto-replan unless cross-trigger from a RUN pick.
       slug = all[0]!.slug;
-    } else if (all.length > 1) {
+    } else if (all.length > 1 || (all.length === 1 && session.pending_action === "run")) {
+      // Parity with applyRun needPick: drop a real-slug bind so a later bare
+      // RUN/REPLAN cannot auto-select after this pick was shown.
+      // Also force pick on cross-trigger (pending=run → bare REPLAN) even for 1 plan.
+      const clearingStaleBind = isBoundRunTrackId(session.track_id);
       store.upsertSession({
         conversation_id: conversationId,
         project_root: session.project_root,
         code_root: session.code_root,
+        track_id: clearingStaleBind ? "_pending" : session.track_id,
+        ...(clearingStaleBind ? { checklist_path: "" } : {}),
         pending_action: "replan",
         track_candidates_json: candidatePayload(all),
         armed: 0,
       });
       const lines = all
-        .map((t, i) => `  ${i + 1}. ${t.slug} — ${t.title}`)
+        .map((t, i) => {
+          const title = sanitizeSessionDisplayText(t.title || t.slug) || t.slug;
+          return `  ${i + 1}. ${t.slug} — ${title}`;
+        })
         .join("\n");
       return {
         ok: false,
@@ -573,7 +618,7 @@ export function applyTrackPick(
   if (pending !== "run" && pending !== "replan") {
     return {
       ok: false,
-      userMessage: `Unknown pending action "${pending}".`,
+      userMessage: `Unknown pending action "${displayUntrusted(pending)}".`,
     };
   }
 
@@ -617,14 +662,14 @@ export function applyTrackPick(
     if (!slug || !isSafeTrackSlug(slug)) {
       return {
         ok: false,
-        userMessage: `Invalid selection "${pick}". Choose 1–${candidates.length}.`,
+        userMessage: `Invalid selection "${displayUntrusted(pick)}". Choose 1–${candidates.length}.`,
       };
     }
   } else {
     if (!isSafeTrackSlug(pick)) {
       return {
         ok: false,
-        userMessage: `Invalid track slug "${pick}".`,
+        userMessage: `Invalid track slug "${displayUntrusted(pick)}".`,
       };
     }
     slug = pick;
@@ -639,7 +684,7 @@ export function applyTrackPick(
     ) {
       return {
         ok: false,
-        userMessage: `Unknown slug "${pick}".`,
+        userMessage: `Unknown slug "${displayUntrusted(pick)}".`,
       };
     }
   }
