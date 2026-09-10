@@ -339,7 +339,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -351,6 +351,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.6\]/);
     expect(log).toMatch(/## \[0\.2\.7\]/);
     expect(log).toMatch(/## \[0\.2\.8\]/);
+    expect(log).toMatch(/## \[0\.2\.9\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -372,6 +373,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const section028 = changelogSection(log, "0.2.8");
     expect(section028).toMatch(/migrations/i);
     expect(section028).toMatch(/No migration SQL found|npm pack|upgrade|doctor/i);
+    const section029 = changelogSection(log, "0.2.9");
+    expect(section029).toMatch(/needPick/i);
+    expect(section029).toMatch(/channel A/i);
+    expect(section029).toMatch(/busy/i);
+    expect(section029).toMatch(/channel C/i);
+    expect(section029).toMatch(/user_message/i);
+    expect(section029).toMatch(/plans bind/i);
+    expect(section029).toMatch(/pick-vs-execute/i);
+    expect(section029).toMatch(/on-skill-gate/i);
+    expect(section029).toMatch(/sqlite|ExperimentalWarning/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);

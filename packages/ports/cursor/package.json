@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-cursor",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Autopilot harness host port for Cursor IDE hooks",
   "license": "MIT",
   "repository": {

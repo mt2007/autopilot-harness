@@ -1,6 +1,6 @@
 {
   "name": "autopilot-harness",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "description": "Autopilot harness monorepo — vibecoding structured planning → checklist execution → multi-lens self-review (Cursor & Claude Code)",
   "license": "MIT",

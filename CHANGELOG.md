@@ -9,6 +9,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.9] — 2026-09-10
+
+### Added
+
+- **run-pick-ux**: multi-runnable bare `/autopilot-run` uses channel A (needPick) — Cursor `continue:true` (no toast fields); Claude `additionalContext` with candidates (never `decision:block`).
+- `autopilot-run` skill pick-vs-execute branch: when `pending_action=run` / not executing, only list candidates; do not start checklist work.
+- CLI `status` surfaces pending pick candidates; `status` / `doctor` list executing+armed occupiers (OFF / purge guidance).
+- Plans bind: afterFileEdit dedicated `plans/<slug>/` path — single slug auto-binds track; dirty multi-slug (`_multi`) keeps bare RUN on needPick.
+
+### Fixed
+
+- Busy / hard-fail RUN stays channel C (Cursor `continue:false` + snake_case `user_message`; Claude `decision:block` + `reason`); busy messages include track/session and status/doctor hints.
+- REPLAN / ON track change or 1→≥2 plan edits clear or downgrade bind (`checklist_path` / `track_id`) so stale locks cannot skip needPick.
+- CLI suppresses Node `node:sqlite` ExperimentalWarning on bin entry.
+
+### Changed
+
+- Docs/quickstart: channel A vs C scripts; ON≠lock; pick skill branch; candidate sources; `user_message`; plans bind / dirty bind. (`on-skill-gate` is a separate track — not in this release.)
+
 ## [0.2.8] — 2026-09-08
 
 ### Fixed
