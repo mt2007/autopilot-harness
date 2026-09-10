@@ -20,6 +20,8 @@ Preferred: `/autopilot-on` or `/autopilot-on <what to build>` (Cursor or Claude 
 
 Also: line-start `Autopilot ON`
 
+**Discussion ≠ ON.** Casual chat does not turn Autopilot on — only slash `/autopilot-on` or a line-start ON phrase (e.g. `Autopilot ON`) runs `applyOn`.
+
 ## Executing
 
 `/autopilot-run` or `/autopilot-run <slug>`

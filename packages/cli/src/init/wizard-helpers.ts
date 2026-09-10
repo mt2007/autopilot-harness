@@ -707,6 +707,8 @@ export function writeQuickstart(
 
 也可：行首 \`Autopilot ON\` / \`开启自动驾驶\`
 
+**讨论 ≠ ON。** 普通闲聊不会开启 Autopilot；只有 slash \`/autopilot-on\` 或行首 ON 触发语（如 \`Autopilot ON\`、\`开启自动驾驶\`）才会 \`applyOn\`。
+
 ## Executing
 
 \`/autopilot-run\` 或 \`/autopilot-run <slug>\`
@@ -794,6 +796,8 @@ Command cheat sheet + per-step artifacts.
 Preferred: in ${host}, \`/autopilot-on\` or \`/autopilot-on <what to build>\`
 
 Also: line-start \`Autopilot ON\`
+
+**Discussion ≠ ON.** Casual chat does not turn Autopilot on — only slash \`/autopilot-on\` or a line-start ON phrase (e.g. \`Autopilot ON\`) runs \`applyOn\`.
 
 ## Executing
 
