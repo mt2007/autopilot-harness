@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./suppress-sqlite-warning.js";
 import { Command } from "commander";
 import {
   CLI_NAME,
