@@ -3,7 +3,18 @@ name: autopilot-on
 description: "{{description}}"
 ---
 
-The submit hook has already set phase=planning for this conversation.
+## Gate: ON trigger or already planning
+
+Do **not** assume the submit hook already set `phase=planning`. Casual chat or a misfired skill attach is **not** ON.
+
+Before writing any `plans/` artifact or starting grill, confirm **either**:
+
+1. **This turn is an ON trigger** — the **user message** is `/autopilot-on` (slash / explicit host skill command), **or** a line-start hit on a configured ON phrase (`triggers.on`, e.g. `Autopilot ON` / `开启自动驾驶`). Host **auto-attaching** this skill without that message does **not** count.
+2. **Already planning** — this conversation is already `phase=planning` (confirm via `npx @autopilot-harness/cli status` or a known hook result).
+
+If **neither** holds: do **not** follow **autopilot-planning**; do **not** write `plans/`; do **not** start grilling; do **not** claim Autopilot is on. Reply normally, or briefly how to ON (slash + configured `triggers.on` phrases). User-visible replies must match the user's language. Stop.
+
+If the gate passes:
 
 Follow **autopilot-planning** workflow (docs/autopilot/workflows/autopilot-planning.md).
 
