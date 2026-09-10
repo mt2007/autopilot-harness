@@ -55,6 +55,37 @@ export function isChannelANeedPick(fail: PhaseActionFail): boolean {
   return fail.needPick === true && fail.busy !== true;
 }
 
+/**
+ * Channel C copy for one_executor busy — always includes occupier track + session
+ * clue, plus status/doctor when the host only shows opaque blocked.
+ */
+export function formatOneExecutorBusyMessage(
+  trackId: unknown,
+  conversationId: unknown,
+): string {
+  const occTrack = displayUntrusted(trackId || "(unknown)");
+  const rawCid =
+    typeof conversationId === "string"
+      ? conversationId
+      : String(conversationId ?? "");
+  const occSession =
+    displayUntrusted(shortConversationId(rawCid) || "?") || "?";
+  return (
+    `Another session is already executing (track: ${occTrack}, session: ${occSession}). ` +
+    `Send Autopilot OFF there or wait, then retry. ` +
+    `If the host only shows opaque blocked, run: npx @autopilot-harness/cli status or npx @autopilot-harness/cli doctor`
+  );
+}
+
+/** Best-effort stderr trail when Cursor/host toast is opaque (busy-message-observable). */
+function logBusyOccupier(message: string): void {
+  try {
+    process.stderr.write(`[autopilot] ${message}\n`);
+  } catch {
+    /* ignore broken stderr */
+  }
+}
+
 export { isSafeTrackSlug } from "./track-slug.js";
 
 function nowIso(): string {
@@ -404,18 +435,20 @@ export function applyRun(
   // RUNs cannot both pass the gate, and a mid-write crash does not leave a
   // half-armed executing session without a matching track/chain update.
   try {
-    return store.exclusiveWrite<PhaseActionResult>(() => {
+    const result = store.exclusiveWrite<PhaseActionResult>(() => {
       if (concurrencyMode === "one_executor") {
         const other = store.findExecutingSession(conversationId);
         if (other) {
-          const occTrack = displayUntrusted(other.track_id || "(unknown)");
-          const occSession = shortConversationId(other.conversation_id);
+          const userMessage = formatOneExecutorBusyMessage(
+            other.track_id,
+            other.conversation_id,
+          );
           return {
             commit: false,
             value: {
               ok: false,
               busy: true,
-              userMessage: `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. Or run: npx @autopilot-harness/cli status`,
+              userMessage,
             },
           };
         }
@@ -479,14 +512,21 @@ export function applyRun(
 
       return { commit: true, value: { ok: true, session: updated } };
     });
+    // Log outside the write lock — stderr must not hold exclusiveWrite.
+    if (!result.ok && result.busy === true) {
+      logBusyOccupier(result.userMessage);
+    }
+    return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/busy|locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(msg)) {
+      const userMessage =
+        "State database is busy; retry Autopilot RUN in a moment.";
+      logBusyOccupier(userMessage);
       return {
         ok: false,
         busy: true,
-        userMessage:
-          "State database is busy; retry Autopilot RUN in a moment.",
+        userMessage,
       };
     }
     throw err;

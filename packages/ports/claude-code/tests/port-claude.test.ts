@@ -409,7 +409,9 @@ describe("port-claude-code adapters", () => {
     // busy-keep-block: channel C shape only — never empty allow / additionalContext.
     expect(busy).toEqual({
       decision: "block",
-      reason: expect.stringMatching(/already executing/i),
+      reason: expect.stringMatching(
+        /already executing[\s\S]*track:[\s\S]*session:[\s\S]*cli status[\s\S]*cli doctor/i,
+      ),
     });
     store.close();
   });

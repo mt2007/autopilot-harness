@@ -5199,6 +5199,19 @@ function displayUntrusted(raw, max = 64) {
 function isChannelANeedPick(fail) {
   return fail.needPick === true && fail.busy !== true;
 }
+function formatOneExecutorBusyMessage(trackId, conversationId) {
+  const occTrack = displayUntrusted(trackId || "(unknown)");
+  const rawCid = typeof conversationId === "string" ? conversationId : String(conversationId ?? "");
+  const occSession = displayUntrusted(shortConversationId(rawCid) || "?") || "?";
+  return `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. If the host only shows opaque blocked, run: npx @autopilot-harness/cli status or npx @autopilot-harness/cli doctor`;
+}
+function logBusyOccupier(message) {
+  try {
+    process.stderr.write(`[autopilot] ${message}
+`);
+  } catch {
+  }
+}
 function nowIso2() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -5437,18 +5450,20 @@ Reply with a number or /autopilot-run <slug>.`
     };
   }
   try {
-    return store.exclusiveWrite(() => {
+    const result = store.exclusiveWrite(() => {
       if (concurrencyMode === "one_executor") {
         const other = store.findExecutingSession(conversationId);
         if (other) {
-          const occTrack = displayUntrusted(other.track_id || "(unknown)");
-          const occSession = shortConversationId(other.conversation_id);
+          const userMessage = formatOneExecutorBusyMessage(
+            other.track_id,
+            other.conversation_id
+          );
           return {
             commit: false,
             value: {
               ok: false,
               busy: true,
-              userMessage: `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. Or run: npx @autopilot-harness/cli status`
+              userMessage
             }
           };
         }
@@ -5494,13 +5509,19 @@ Reply with a number or /autopilot-run <slug>.`
       }
       return { commit: true, value: { ok: true, session: updated } };
     });
+    if (!result.ok && result.busy === true) {
+      logBusyOccupier(result.userMessage);
+    }
+    return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/busy|locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(msg)) {
+      const userMessage = "State database is busy; retry Autopilot RUN in a moment.";
+      logBusyOccupier(userMessage);
       return {
         ok: false,
         busy: true,
-        userMessage: "State database is busy; retry Autopilot RUN in a moment."
+        userMessage
       };
     }
     throw err;

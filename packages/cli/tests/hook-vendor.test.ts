@@ -147,6 +147,9 @@ describe("hook vendor runtime", () => {
     expect(typeof busy.out.user_message).toBe("string");
     expect(String(busy.out.user_message)).toMatch(/already executing/i);
     expect(String(busy.out.user_message)).toMatch(/track:\s*demo/i);
+    expect(String(busy.out.user_message)).toMatch(/session:/i);
+    expect(String(busy.out.user_message)).toMatch(/cli status/i);
+    expect(String(busy.out.user_message)).toMatch(/cli doctor/i);
     expect(busy.out.userMessage).toBe(busy.out.user_message);
     expect(Object.keys(busy.out).sort()).toEqual(
       ["continue", "userMessage", "user_message"].sort(),

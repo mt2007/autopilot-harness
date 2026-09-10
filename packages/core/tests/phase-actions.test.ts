@@ -9,6 +9,7 @@ import {
   applyTrackPick,
   countUnchecked,
   ensureAmbientReviewSession,
+  formatOneExecutorBusyMessage,
   isChannelANeedPick,
   normalizeSessionPlatform,
   resolveSessionPlatform,
@@ -362,6 +363,9 @@ describe("F-RUN applyRun gates", () => {
       expect(r.needPick).toBeUndefined();
       expect(r.userMessage).toMatch(/track:\s*demo/i);
       expect(r.userMessage).toMatch(/session:/i);
+      expect(r.userMessage).toMatch(/opaque blocked/i);
+      expect(r.userMessage).toMatch(/cli status/i);
+      expect(r.userMessage).toMatch(/cli doctor/i);
     }
     expect(store.getSession("c2")!.phase).toBe("planning");
   });
@@ -1054,6 +1058,10 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
     expect(busy.continue).toBe(false);
     expect(busy.user_message).toBeTruthy();
     expect(busy.user_message).toMatch(/already executing/i);
+    expect(busy.user_message).toMatch(/track:/i);
+    expect(busy.user_message).toMatch(/session:/i);
+    expect(busy.user_message).toMatch(/cli status/i);
+    expect(busy.user_message).toMatch(/cli doctor/i);
     expect(busy.userMessage).toBe(busy.user_message);
     // busy-keep-block: never channel A ({ continue: true } only) for visibility.
     expect(busy).not.toEqual({ continue: true });
@@ -1092,6 +1100,7 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
     expect(wire.continue).toBe(false);
     expect(wire).not.toEqual({ continue: true });
     expect(wire.user_message).toMatch(/already executing/i);
+    expect(wire.user_message).toMatch(/cli doctor/i);
     store.close();
   });
 
@@ -1124,6 +1133,67 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
         userMessage: "hard fail",
       }),
     ).toBe(false);
+  });
+
+  it("busy-message-observable: format includes track, session, status, doctor", () => {
+    const msg = formatOneExecutorBusyMessage("demo", "abcd1234-efgh-ijkl");
+    expect(msg).toMatch(/track:\s*demo/);
+    expect(msg).toMatch(/session:\s*abcd1234/i);
+    expect(msg).toMatch(/opaque blocked/i);
+    expect(msg).toMatch(/cli status/);
+    expect(msg).toMatch(/cli doctor/);
+    expect(msg).not.toMatch(/\n/);
+    expect(msg).not.toMatch(/\u0000/);
+
+    const empty = formatOneExecutorBusyMessage("", "");
+    expect(empty).toMatch(/track:\s*\(unknown\)|\?/);
+    expect(empty).toMatch(/session:\s*\?/);
+
+    const hostile = formatOneExecutorBusyMessage("ok", "bad\nslug\u0000../x");
+    expect(hostile).not.toMatch(/\n/);
+    expect(hostile).not.toMatch(/\u0000/);
+    expect(hostile).toMatch(/session:/);
+  });
+
+  it("busy-message-observable: one_executor busy logs occupier to stderr", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "owner-aaaa-bbbb-cccc-ddddeeee0001",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    const chunks: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+      chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return (orig as (c: string | Uint8Array, ...a: unknown[]) => boolean)(
+        chunk,
+        ...args,
+      );
+    }) as typeof process.stderr.write;
+    try {
+      const r = applyRun(store, "peer", root, { slug: "demo" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.busy).toBe(true);
+        expect(r.userMessage).toMatch(/track:\s*demo/);
+        expect(r.userMessage).toMatch(/cli doctor/);
+      }
+      const log = chunks.join("");
+      expect(log).toMatch(/\[autopilot\]/);
+      expect(log).toMatch(/already executing/i);
+      expect(log).toMatch(/track:\s*demo/);
+    } finally {
+      process.stderr.write = orig;
+      store.close();
+    }
   });
 
   it("normalizeBlockSubmitMessage rejects empty / blank / non-string", () => {
