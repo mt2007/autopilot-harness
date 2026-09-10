@@ -9,6 +9,7 @@ import {
   applyTrackPick,
   countUnchecked,
   ensureAmbientReviewSession,
+  isChannelANeedPick,
   normalizeSessionPlatform,
   resolveSessionPlatform,
   parseChecklist,
@@ -357,6 +358,8 @@ describe("F-RUN applyRun gates", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.userMessage).toMatch(/already executing/i);
+      expect(r.busy).toBe(true);
+      expect(r.needPick).toBeUndefined();
       expect(r.userMessage).toMatch(/track:\s*demo/i);
       expect(r.userMessage).toMatch(/session:/i);
     }
@@ -645,6 +648,8 @@ describe("F-RUN applyRun gates", () => {
       expect(r.userMessage).toMatch(/track:\s*\?/);
       expect(r.userMessage).not.toMatch(/\n/);
       expect(r.userMessage).not.toMatch(/\u0000/);
+      expect(r.busy).toBe(true);
+      expect(r.needPick).toBeUndefined();
     }
   });
 
@@ -799,6 +804,8 @@ describe("F-RUN applyRun gates", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.userMessage).toMatch(/already executing/i);
+      expect(r.busy).toBe(true);
+      expect(r.needPick).toBeUndefined();
     }
     const s = store.getSession("c1")!;
     expect(s.pending_action).toBe("run");
@@ -1048,7 +1055,75 @@ describe("F-HOOK run / one_executor via port-cursor", () => {
     expect(busy.user_message).toBeTruthy();
     expect(busy.user_message).toMatch(/already executing/i);
     expect(busy.userMessage).toBe(busy.user_message);
+    // busy-keep-block: never channel A ({ continue: true } only) for visibility.
+    expect(busy).not.toEqual({ continue: true });
+    expect(Object.keys(busy).sort()).toEqual(
+      ["continue", "userMessage", "user_message"].sort(),
+    );
     store.close();
+  });
+
+  it("busy-keep-block: peer RUN stays channel C (never continue:true)", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    expect(
+      handleBeforeSubmitPrompt(
+        store,
+        { conversation_id: "owner", prompt: "/autopilot-run demo" },
+        root,
+      ).continue,
+    ).toBe(true);
+    expect(store.getSession("owner")!.phase).toBe("executing");
+
+    const coreBusy = applyRun(store, "peer", root, { slug: "demo" });
+    expect(coreBusy.ok).toBe(false);
+    if (!coreBusy.ok) {
+      expect(coreBusy.busy).toBe(true);
+      expect(coreBusy.needPick).toBeUndefined();
+      expect(isChannelANeedPick(coreBusy)).toBe(false);
+    }
+
+    const wire = handleBeforeSubmitPrompt(
+      store,
+      { conversation_id: "peer", prompt: "/autopilot-run demo" },
+      root,
+    );
+    expect(wire.continue).toBe(false);
+    expect(wire).not.toEqual({ continue: true });
+    expect(wire.user_message).toMatch(/already executing/i);
+    store.close();
+  });
+
+  it("isChannelANeedPick: busy wins over needPick (never channel A)", () => {
+    expect(
+      isChannelANeedPick({
+        ok: false,
+        userMessage: "pick",
+        needPick: true,
+      }),
+    ).toBe(true);
+    expect(
+      isChannelANeedPick({
+        ok: false,
+        userMessage: "busy",
+        busy: true,
+      }),
+    ).toBe(false);
+    expect(
+      isChannelANeedPick({
+        ok: false,
+        userMessage: "both",
+        needPick: true,
+        busy: true,
+      }),
+    ).toBe(false);
+    expect(
+      isChannelANeedPick({
+        ok: false,
+        userMessage: "hard fail",
+      }),
+    ).toBe(false);
   });
 
   it("normalizeBlockSubmitMessage rejects empty / blank / non-string", () => {

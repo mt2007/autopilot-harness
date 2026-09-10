@@ -5196,6 +5196,9 @@ function displayUntrusted(raw, max = 64) {
   const text = typeof raw === "string" ? raw : String(raw ?? "");
   return sanitizeSessionDisplayText(text).slice(0, max) || "?";
 }
+function isChannelANeedPick(fail) {
+  return fail.needPick === true && fail.busy !== true;
+}
 function nowIso2() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -5444,6 +5447,7 @@ Reply with a number or /autopilot-run <slug>.`
             commit: false,
             value: {
               ok: false,
+              busy: true,
               userMessage: `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. Or run: npx @autopilot-harness/cli status`
             }
           };
@@ -5495,6 +5499,7 @@ Reply with a number or /autopilot-run <slug>.`
     if (/busy|locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(msg)) {
       return {
         ok: false,
+        busy: true,
         userMessage: "State database is busy; retry Autopilot RUN in a moment."
       };
     }
@@ -6099,7 +6104,7 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
         config: actionConfig
       });
       if (!result.ok) {
-        if (result.needPick) {
+        if (isChannelANeedPick(result)) {
           return allowSubmit();
         }
         return blockSubmit(result.userMessage);
@@ -6125,7 +6130,7 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
         { config: actionConfig }
       );
       if (!result.ok) {
-        if (result.needPick) {
+        if (isChannelANeedPick(result)) {
           return allowSubmit();
         }
         return blockSubmit(result.userMessage);
@@ -6397,7 +6402,7 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
       });
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
-        if (result.needPick) {
+        if (isChannelANeedPick(result)) {
           return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
@@ -6432,7 +6437,7 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
       );
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
-        if (result.needPick) {
+        if (isChannelANeedPick(result)) {
           return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {

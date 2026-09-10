@@ -9,6 +9,7 @@ import {
   ensureAmbientReviewSession,
   effectiveReviewingItemId,
   firstUnchecked,
+  isChannelANeedPick,
   isHarnessFollowupMessage,
   isProductCodeEdit,
   isRecoverOrStuckFollowupMessage,
@@ -225,13 +226,11 @@ export function handleBeforeSubmitPrompt(
         config: actionConfig,
       });
       if (!result.ok) {
-        // Channel A / cursor-needpick-continue: needPick → continue:true so the
-        // agent turn can list plans. Do NOT blockSubmit / emit user_message —
-        // Cursor only shows user_message on blocked submits (toast/error UI).
-        if (result.needPick) {
+        // Channel A only when needPick and not busy (busy-keep-block).
+        // Busy / hard fail → channel C; never continue:true for visibility.
+        if (isChannelANeedPick(result)) {
           return allowSubmit();
         }
-        // Channel C: busy / hard failures → reject submit.
         return blockSubmit(result.userMessage);
       }
       return allowSubmit();
@@ -256,7 +255,7 @@ export function handleBeforeSubmitPrompt(
         { config: actionConfig },
       );
       if (!result.ok) {
-        if (result.needPick) {
+        if (isChannelANeedPick(result)) {
           return allowSubmit();
         }
         return blockSubmit(result.userMessage);

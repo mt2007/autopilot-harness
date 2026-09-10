@@ -91,6 +91,7 @@ export {
   applyRun,
   applyReplan,
   applyTrackPick,
+  isChannelANeedPick,
   type ConcurrencyMode,
   type PhaseActionConfig,
   type PhaseActionResult,

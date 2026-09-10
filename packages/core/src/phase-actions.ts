@@ -35,11 +35,25 @@ export type PhaseActionOk = { ok: true; session: SessionRow };
 export type PhaseActionFail = {
   ok: false;
   userMessage: string;
+  /** Channel A: multi-plan pick — ports may allow the turn. Mutually exclusive with `busy`. */
   needPick?: boolean;
+  /**
+   * Channel C: one_executor / DB lock — ports MUST reject submit.
+   * Never pair with `needPick`; never use continue:true for visibility.
+   */
+  busy?: boolean;
   candidates?: TrackSummary[];
 };
 
 export type PhaseActionResult = PhaseActionOk | PhaseActionFail;
+
+/**
+ * Channel A allow gate (busy-keep-block): needPick may proceed only when not busy.
+ * Busy / hard-fail stay channel C — never continue:true for visibility.
+ */
+export function isChannelANeedPick(fail: PhaseActionFail): boolean {
+  return fail.needPick === true && fail.busy !== true;
+}
 
 export { isSafeTrackSlug } from "./track-slug.js";
 
@@ -400,6 +414,7 @@ export function applyRun(
             commit: false,
             value: {
               ok: false,
+              busy: true,
               userMessage: `Another session is already executing (track: ${occTrack}, session: ${occSession}). Send Autopilot OFF there or wait, then retry. Or run: npx @autopilot-harness/cli status`,
             },
           };
@@ -469,6 +484,7 @@ export function applyRun(
     if (/busy|locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(msg)) {
       return {
         ok: false,
+        busy: true,
         userMessage:
           "State database is busy; retry Autopilot RUN in a moment.",
       };

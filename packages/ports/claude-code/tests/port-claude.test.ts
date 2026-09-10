@@ -406,6 +406,11 @@ describe("port-claude-code adapters", () => {
     expect(busy.decision).toBe("block");
     expect(busy.reason).toMatch(/already executing/i);
     expect(busy.hookSpecificOutput).toBeUndefined();
+    // busy-keep-block: channel C shape only — never empty allow / additionalContext.
+    expect(busy).toEqual({
+      decision: "block",
+      reason: expect.stringMatching(/already executing/i),
+    });
     store.close();
   });
 

@@ -9,6 +9,7 @@ import {
   ensureAmbientReviewSession,
   effectiveReviewingItemId,
   firstUnchecked,
+  isChannelANeedPick,
   isHarnessFollowupMessage,
   isProductCodeEdit,
   isRecoverOrStuckFollowupMessage,
@@ -399,8 +400,8 @@ export function handleUserPromptSubmit(
       });
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
-        // Channel A: needPick → allow + inject candidate list via additionalContext.
-        if (result.needPick) {
+        // Channel A only when needPick and not busy (busy-keep-block).
+        if (isChannelANeedPick(result)) {
           return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
@@ -435,8 +436,7 @@ export function handleUserPromptSubmit(
       );
       if (!result.ok) {
         stampClaudePlatform(store, conversationId, projectRoot);
-        // Defensive: align with Cursor — needPick stays channel A.
-        if (result.needPick) {
+        if (isChannelANeedPick(result)) {
           return allowNeedPickContext(result.userMessage, result.candidates);
         }
         return {
