@@ -13,7 +13,7 @@
   },
   "skill": {
     "autopilot_on": {
-      "description": "Start Planning — discuss what to build"
+      "description": "Start planning only after /autopilot-on or configured ON phrases (e.g. Autopilot ON; per project triggers.on); not for casual chat."
     },
     "autopilot_run": {
       "description": "Start Executing — run checklist"

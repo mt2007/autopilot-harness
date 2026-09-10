@@ -13,7 +13,7 @@
   },
   "skill": {
     "autopilot_on": {
-      "description": "开始规划 — 讨论要做什么"
+      "description": "仅在用户发出 /autopilot-on 或「开启自动驾驶」等配置触发语（以项目 triggers.on 为准）后开始规划；勿用于普通闲聊。"
     },
     "autopilot_run": {
       "description": "开始执行 — 跑 checklist"
