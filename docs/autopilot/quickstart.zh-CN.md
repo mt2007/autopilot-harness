@@ -32,7 +32,7 @@
 |------|------|
 | 多个可执行 plan、未唯一绑定、裸 RUN | **完整 agent 回合**（通道 A）：对话里列出候选，等数字或 `/autopilot-run <slug>`。**不是**错误弹窗 / blocked。本回合不写产品代码。 |
 | 已绑唯一 plan / 全局仅 1 个 runnable / 命令已带 slug | 跳过选型，直接执行 |
-| 另一会话正在 `executing+armed` | **拦截提交**（通道 C）；文案含占用 track + 会话线索；若宿主只显示 opaque blocked，用 `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
+| 另一会话正在 `executing+armed` | **拦截提交**（通道 C）；文案含占用 track + 会话线索；若宿主只显示 opaque blocked，跑 `npx @autopilot-harness/cli status` 或 `doctor`（会列出 `executors` / `executing+armed`）。释放：在占用聊里 **Autopilot OFF**，或 `npx @autopilot-harness/cli session purge <id>`（无自动 disarm）。 |
 | 非法 slug / 无 runnable | **拦截提交**（通道 C）— 真错误，不是选型列表 |
 
 **通道规则：** needPick **不是**错误 → 只用通道 A（禁止把 blocked/`user_message` 弹窗当选型 UI）。busy 与真错误 → 通道 C（`continue: false` + Cursor hook stdout 的 snake_case `user_message`；也可同时带 `userMessage`）。**禁止**为可见而对 busy 使用 `continue: true`。（REPLAN 多 plan 选型暂仍可能走通道 C — 相对 RUN 的 A 为 OOS。）
@@ -57,7 +57,7 @@ Hook:   track_pick / RUN+slug → phase=executing
 
 ## 暂停 / 恢复 / 改方案
 
-- **暂停**（`/autopilot-off` 或行首 `Autopilot OFF` / `关闭自动驾驶`）：暂停**本**会话；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；`done` → `idle`）。
+- **暂停**（`/autopilot-off` 或行首 `Autopilot OFF` / `关闭自动驾驶`）：暂停**本**会话；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；`done` → `idle`）。若僵死/卡住的 `executing+armed` 挡了其它聊：在占用聊 OFF，或先用 `status` / `doctor` 确认后 `npx @autopilot-harness/cli session purge <id>`。
 - **恢复**（`/autopilot-resume` 或 `/autopilot-resume <slug>`；也可行首 `Autopilot RESUME` / `继续执行`）：清 pause，**保留**自审链。新聊天可从另一会话**认领**正在执行的轨（同项目）：优先**未 pause** 的执行会话，也可回退到唯一一条**已 pause** 的执行轨（旧聊天已死时恢复）。多轨时用 `<slug>` 指定。认领后以**本聊天**为执行会话；勿在旧聊天继续跑同一轨。
 - **改方案**（`/autopilot-replan` 或行首 `Autopilot REPLAN` / `修改方案`）：回到 planning，并**重置**自审链。只改 `plan.md` 与未勾选项；勿静默删除已完成的 `[x]`。改完再 `/autopilot-run`。
 

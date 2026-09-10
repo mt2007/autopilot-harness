@@ -249,8 +249,49 @@ describe("formatStatus", () => {
     const text = formatStatus(root);
     expect(text).toMatch(/executors:/);
     expect(text).toMatch(/track=demo/);
+    expect(text).toMatch(/OFF|session purge/i);
     expect(text).toMatch(/pending:\s*run @/);
     expect(text).toMatch(/candidates:\s*alpha, beta/);
+  });
+
+  it("does not list paused or unarmed executing as one_executor occupiers", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "paused-exec-aaaa-bbbb-cccc-ddddeeee0001",
+      project_root: root,
+      code_root: root,
+      track_id: "paused-track",
+      phase: "executing",
+      armed: 1,
+      paused: 1,
+      checklist_path: "",
+    });
+    store.upsertSession({
+      conversation_id: "unarmed-exec-aaaa-bbbb-cccc-ddddeeee0002",
+      project_root: root,
+      code_root: root,
+      track_id: "unarmed-track",
+      phase: "executing",
+      armed: 0,
+      paused: 0,
+      checklist_path: "",
+    });
+    store.close();
+
+    const text = formatStatus(root);
+    expect(text).not.toMatch(/executors:/);
+    expect(text).not.toMatch(/track=paused-track|track=unarmed-track/);
   });
 });
 
@@ -290,6 +331,128 @@ describe("runDoctor", () => {
     expect(joined).toMatch(/OK\s+state\.db/);
     expect(joined).toMatch(/schema_version/);
     expect(joined).toMatch(/OK\s+plans/);
+  });
+
+  it("lists executing+armed occupiers with OFF / session purge guidance", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "occ-aaaa-bbbb-cccc-ddddeeee0001",
+      project_root: root,
+      code_root: root,
+      track_id: "held-track",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    store.upsertSession({
+      conversation_id: "plan-aaaa-bbbb-cccc-ddddeeee0002",
+      project_root: root,
+      code_root: root,
+      track_id: "other",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      checklist_path: "",
+    });
+    store.close();
+
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/WARN\s+\d+ executing\+armed session\(s\)/);
+    expect(joined).toMatch(/held-track/);
+    expect(joined).toMatch(/Autopilot OFF/i);
+    expect(joined).toMatch(/session purge/i);
+    expect(joined).not.toMatch(/track=other/);
+  });
+
+  it("truncates occupier lists with …and N more (status + doctor)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    for (let i = 0; i < 9; i++) {
+      const n = String(i).padStart(2, "0");
+      store.upsertSession({
+        conversation_id: `occ${n}-aaaa-bbbb-cccc-ddddeeee00${n}`,
+        project_root: root,
+        code_root: root,
+        track_id: `track-${n}`,
+        phase: "executing",
+        armed: 1,
+        paused: 0,
+        checklist_path: "",
+      });
+    }
+    store.close();
+
+    const status = formatStatus(root);
+    expect(status).toMatch(/executors:/);
+    expect(status).toMatch(/…and 1 more/);
+    // Order follows listSessions (newest-first; timestamp ties by conversation_id).
+    // Assert cap only — do not depend on which slug is truncated.
+    const statusExec = status.split("executors:")[1] ?? "";
+    expect(statusExec.match(/track=track-\d+/g)?.length ?? 0).toBe(8);
+
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const doctor = lines.join("\n");
+    expect(doctor).toMatch(/WARN\s+9 executing\+armed session\(s\)/);
+    expect(doctor).toMatch(/…and 1 more/);
+    const doctorOcc = doctor.split(/WARN\s+9 executing\+armed/)[1] ?? "";
+    expect(doctorOcc.match(/track=track-\d+/g)?.length ?? 0).toBe(8);
+  });
+
+  it("does not WARN for paused or unarmed executing sessions", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "paused-doc-aaaa-bbbb-cccc-ddddeeee0001",
+      project_root: root,
+      code_root: root,
+      track_id: "paused-only",
+      phase: "executing",
+      armed: 1,
+      paused: 1,
+      checklist_path: "",
+    });
+    store.close();
+
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).not.toMatch(/armed executor|executing\+armed/i);
+    expect(joined).not.toMatch(/paused-only/);
   });
 
   it("WARNs when Autopilot stop omits loop_limit null", () => {

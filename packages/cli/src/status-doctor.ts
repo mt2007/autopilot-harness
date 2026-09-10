@@ -73,6 +73,62 @@ function isProtectedFromPrune(row: SessionRow): boolean {
   return typeof pending === "string" && pending.length > 0;
 }
 
+/**
+ * one_executor / findExecutingSession gate: phase=executing && armed && not paused.
+ * Status + doctor must surface these so opaque busy hosts can find the holder.
+ */
+function isArmedExecutorOccupier(row: SessionRow): boolean {
+  return row.phase === "executing" && row.armed === 1 && row.paused === 0;
+}
+
+/** How to release a stuck/dead armed executor (no auto-disarm). */
+const OCCUPIER_RELEASE_HINT =
+  "Autopilot OFF in that chat, or: session purge <id>";
+
+/** Cap listed holders in status/doctor (avoid huge dumps). */
+const MAX_OCCUPIERS_SHOWN = 8;
+
+function listArmedExecutorOccupiers(rows: SessionRow[]): SessionRow[] {
+  return rows.filter(isArmedExecutorOccupier);
+}
+
+/** Append status/doctor lines for one_executor holders (shared gate + release hint). */
+function pushOccupierDisplayLines(
+  lines: string[],
+  rows: SessionRow[],
+  style: "status" | "doctor",
+): void {
+  const occupiers = listArmedExecutorOccupiers(rows);
+  if (occupiers.length === 0) return;
+
+  if (style === "status") {
+    lines.push("  executors:");
+    for (const ex of occupiers.slice(0, MAX_OCCUPIERS_SHOWN)) {
+      lines.push(
+        `    - ${shortSessionId(ex.conversation_id)}  track=${safeDisplayToken(ex.track_id || "?")}  (${OCCUPIER_RELEASE_HINT})`,
+      );
+    }
+  } else {
+    // Informational WARN — does not fail doctor. Same gate as findExecutingSession;
+    // under one_executor these block peer RUN (worktree mode may allow several).
+    lines.push(
+      `WARN  ${occupiers.length} executing+armed session(s) — ${OCCUPIER_RELEASE_HINT}`,
+    );
+    for (const ex of occupiers.slice(0, MAX_OCCUPIERS_SHOWN)) {
+      lines.push(
+        `      - ${shortSessionId(ex.conversation_id)}  track=${safeDisplayToken(ex.track_id || "?")}`,
+      );
+    }
+  }
+
+  if (occupiers.length > MAX_OCCUPIERS_SHOWN) {
+    const more = occupiers.length - MAX_OCCUPIERS_SHOWN;
+    lines.push(
+      style === "status" ? `    …and ${more} more` : `      …and ${more} more`,
+    );
+  }
+}
+
 function coercePositiveHours(raw: unknown): number | null {
   if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
     return Math.min(raw, MAX_STALE_HOURS);
@@ -454,18 +510,7 @@ export function formatStatus(projectRoot: string): string {
         }
       }
 
-      const executors = rows.filter(
-        (r) =>
-          r.phase === "executing" && r.armed === 1 && r.paused === 0,
-      );
-      if (executors.length > 0) {
-        lines.push("  executors:");
-        for (const ex of executors.slice(0, 8)) {
-          lines.push(
-            `    - ${shortSessionId(ex.conversation_id)}  track=${safeDisplayToken(ex.track_id || "?")}  (OFF / session purge to release)`,
-          );
-        }
-      }
+      pushOccupierDisplayLines(lines, rows, "status");
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -950,6 +995,9 @@ export function runDoctor(
           lines.push(`FAIL  …and ${orphans.length - 5} more orphan row(s)`);
         }
       }
+
+      // Occupier visibility (occupier-status-doctor): same gate as one_executor.
+      pushOccupierDisplayLines(lines, rows, "doctor");
 
       const stale = rows.filter((r) =>
         isStaleSession(r, cfg.staleAfterHours, nowMs),

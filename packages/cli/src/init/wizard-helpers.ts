@@ -713,11 +713,11 @@ export function writeQuickstart(
 
 也可：\`Autopilot RUN\` / \`开始执行\`
 
-多 plan 裸 RUN：完整对话列出候选（通道 A），**不是**错误弹窗 / blocked。busy / 非法 slug / 无 runnable → 拦截（通道 C）+ \`user_message\`；\`status\` 可见占用者。ON/planning **不占**执行锁。
+多 plan 裸 RUN：完整对话列出候选（通道 A），**不是**错误弹窗 / blocked。busy / 非法 slug / 无 runnable → 拦截（通道 C）+ \`user_message\`；\`status\` / \`doctor\` 列出 \`executing+armed\` 占用者。释放：占用聊 \`Autopilot OFF\`，或 \`session purge <id>\`。ON/planning **不占**执行锁。
 
 ## 暂停 / 恢复 / 改方案
 
-- 暂停：\`/autopilot-off\` 或行首 \`Autopilot OFF\` / \`关闭自动驾驶\` — 本会话 paused；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；\`done\` → \`idle\`）。
+- 暂停：\`/autopilot-off\` 或行首 \`Autopilot OFF\` / \`关闭自动驾驶\` — 本会话 paused；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；\`done\` → \`idle\`）。僵死 \`executing+armed\`：占用聊 OFF，或 \`status\`/\`doctor\` 确认后 \`session purge <id>\`。
 - 恢复：\`/autopilot-resume\` 或 \`/autopilot-resume <slug>\`（新聊天可认领旧轨）；也可行首 \`Autopilot RESUME\` / \`继续执行\` — 清 pause，**保留**自审链进度；多轨执行中时用 \`<slug>\` 指定。认领后以**本聊天**为执行会话；勿在旧聊天继续跑同一轨。认领优先未 pause 的执行会话，也可回退到唯一一条**已 pause** 的执行轨（旧聊天已死时恢复）。
 - 改方案：\`/autopilot-replan\` 或行首 \`Autopilot REPLAN\` / \`修改方案\` — 回到 planning，**重置**自审链；只改 \`plan.md\` 与未勾选项，勿静默删已完成 \`[x]\`；改完再 \`/autopilot-run\`。
 
@@ -784,11 +784,11 @@ Also: line-start \`Autopilot ON\`
 
 Also: \`Autopilot RUN\`
 
-Bare RUN with multiple plans: full agent turn lists candidates (channel A), **not** an error popup / blocked. Busy / illegal slug / no runnable → block submit (channel C) + \`user_message\`; \`status\` shows the occupier. ON/planning does **not** hold the executor lock.
+Bare RUN with multiple plans: full agent turn lists candidates (channel A), **not** an error popup / blocked. Busy / illegal slug / no runnable → block submit (channel C) + \`user_message\`; \`status\` / \`doctor\` list \`executing+armed\` occupiers. Release: Autopilot OFF in that chat, or \`session purge <id>\`. ON/planning does **not** hold the executor lock.
 
 ## Pause / resume / replan
 
-- Pause: \`/autopilot-off\` or line-start \`Autopilot OFF\` — pauses this conversation; no checklist advance and no self-review until resume (phase usually unchanged; \`done\` → \`idle\`).
+- Pause: \`/autopilot-off\` or line-start \`Autopilot OFF\` — pauses this conversation; no checklist advance and no self-review until resume (phase usually unchanged; \`done\` → \`idle\`). Stuck \`executing+armed\`: OFF in that chat, or \`session purge <id>\` after \`status\` / \`doctor\`.
 - Resume: \`/autopilot-resume\` or \`/autopilot-resume <slug>\` (new chat can claim a track); also line-start \`Autopilot RESUME\` — clears pause, **keeps** the review chain; use \`<slug>\` when several tracks are executing. After a claim, **this** chat owns the session; do not keep executing the same track in the old chat. Claim prefers an unpaused executing worker, and can fall back to a single **paused** executing session (dead-chat recovery).
 - Replan: \`/autopilot-replan\` or line-start \`Autopilot REPLAN\` — returns to planning and **resets** the review chain; revise \`plan.md\` and unchecked items only (do not silently delete completed \`[x]\`); then \`/autopilot-run\` when ready.
 

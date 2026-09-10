@@ -32,7 +32,7 @@ Also: `Autopilot RUN`
 |------|----------|
 | Multiple runnable plans, no unique bind, bare RUN | **Full agent turn** (channel A): list candidates in chat; wait for a number or `/autopilot-run <slug>`. **Not** an error popup / blocked submit. No product code this turn. |
 | Unique bind / only one runnable / slug already on the command | Skip pick; enter executing |
-| Another session is `executing+armed` | **Block submit** (channel C); message includes occupier track + session id; if the host only shows opaque blocked, use `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
+| Another session is `executing+armed` | **Block submit** (channel C); message includes occupier track + session id; if the host only shows opaque blocked, run `npx @autopilot-harness/cli status` or `doctor` (lists `executors` / `executing+armed`). Release with **Autopilot OFF** in that chat, or `npx @autopilot-harness/cli session purge <id>` (no auto-disarm). |
 | Illegal slug / no runnable | **Block submit** (channel C) — hard failure, not a pick list |
 
 **Channel rule:** needPick is **not** an error → channel A only (never use blocked/`user_message` toast as the pick UI). Busy and true errors → channel C (`continue: false` + snake_case `user_message` on Cursor hook stdout; dual-key `userMessage` may also be present). Do **not** use `continue: true` on busy to “make it visible.” (REPLAN multi-plan pick may still use channel C for now — out of scope vs RUN.)
@@ -57,7 +57,7 @@ After editing `plans/<slug>/`: one slug in this chat → bare RUN may auto-run; 
 
 ## Pause / resume / replan
 
-- **Pause** (`/autopilot-off` or line-start `Autopilot OFF`): pauses **this** conversation; no checklist advance and no self-review until resume (phase usually unchanged; `done` → `idle`).
+- **Pause** (`/autopilot-off` or line-start `Autopilot OFF`): pauses **this** conversation; no checklist advance and no self-review until resume (phase usually unchanged; `done` → `idle`). To free a dead/stuck `executing+armed` lock for other chats: OFF in the occupying chat, or `npx @autopilot-harness/cli session purge <id>` after confirming via `status` / `doctor`.
 - **Resume** (`/autopilot-resume` or `/autopilot-resume <slug>`; also `Autopilot RESUME`): clears pause and **keeps** the review chain. A new chat may **claim** an executing track from another conversation (same project): prefers an **unpaused** worker, and can fall back to a single **paused** executing session (dead-chat recovery). Use `<slug>` when several tracks are executing. After a claim, **this** chat owns the session; do not keep running the same track in the old chat.
 - **Replan** (`/autopilot-replan` or `Autopilot REPLAN`): returns to planning and **resets** the review chain. Revise `plan.md` and unchecked checklist items only; do not silently delete completed `[x]`. When ready, `/autopilot-run`.
 
