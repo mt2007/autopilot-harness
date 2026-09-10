@@ -713,7 +713,24 @@ export function writeQuickstart(
 
 也可：\`Autopilot RUN\` / \`开始执行\`
 
-多 plan 裸 RUN：完整对话列出候选（通道 A），**不是**错误弹窗 / blocked。busy / 非法 slug / 无 runnable → 拦截（通道 C）+ \`user_message\`；\`status\` / \`doctor\` 列出 \`executing+armed\` 占用者。释放：占用聊 \`Autopilot OFF\`，或 \`session purge <id>\`。ON/planning **不占**执行锁。
+### 多 plan 选型（通道 A）vs 硬错误（通道 C）
+
+| 情况 | 行为 |
+|------|------|
+| 多个可执行 plan、未唯一绑定、裸 RUN | **完整 agent 回合**（通道 A）：对话列候选，等数字或 \`/autopilot-run <slug>\`。**不是**错误弹窗 / blocked。本回合不写产品代码。 |
+| 已绑唯一 plan / 仅 1 个 runnable / 命令已带 slug | 跳过选型，直接执行 |
+| 另一会话 \`executing+armed\` | **拦截**（通道 C）+ snake_case \`user_message\`（含 track + 会话）；opaque 时用 \`status\` / \`doctor\`。释放：占用聊 OFF 或 \`session purge <id>\` |
+| 非法 slug / 无 runnable | 通道 C（真错误，不是选型列表） |
+
+**通道规则：** needPick → 只用通道 A；busy/真错误 → 通道 C。**禁止**对 busy 用 \`continue: true\` 凑可见性。
+
+**示例脚本（裸 RUN，N≥2）：** Hook needPick（phase 非 executing）→ Cursor continue / Claude additionalContext → agent 编号列出 → 用户回数字或 \`/autopilot-run <slug>\` → 再进 executing。
+
+**候选来源：** 扫 runnable \`${plansLabel}/*/checklist.md\`，和/或 \`status\`（\`pending\` + \`candidates\`）；status 失败时回退扫盘。
+
+**\`autopilot-run\` skill：** 非 executing（needPick）时首分支**只选型**；真正 executing 再跑 checklist。
+
+**ON ≠ 锁：** planning 不占 \`one_executor\`。**Plans 绑定 / 脏 bind：** 本聊只编过 1 个 \`${plansLabel}/<slug>/\` → 裸 RUN 可直跑；≥2 / 脏 \`_multi\` → 仍 needPick；REPLAN/ON 换轨会清/失效 bind。
 
 ## 暂停 / 恢复 / 改方案
 
@@ -784,7 +801,24 @@ Also: line-start \`Autopilot ON\`
 
 Also: \`Autopilot RUN\`
 
-Bare RUN with multiple plans: full agent turn lists candidates (channel A), **not** an error popup / blocked. Busy / illegal slug / no runnable → block submit (channel C) + \`user_message\`; \`status\` / \`doctor\` list \`executing+armed\` occupiers. Release: Autopilot OFF in that chat, or \`session purge <id>\`. ON/planning does **not** hold the executor lock.
+### Multi-plan pick (channel A) vs hard failures (channel C)
+
+| Case | Behavior |
+|------|----------|
+| Multiple runnable plans, no unique bind, bare RUN | **Full agent turn** (channel A): list candidates; wait for a number or \`/autopilot-run <slug>\`. **Not** an error popup / blocked. No product code this turn. |
+| Unique bind / only one runnable / slug on the command | Skip pick; enter executing |
+| Another session \`executing+armed\` | **Block** (channel C) + snake_case \`user_message\` (track + session); opaque → \`status\` / \`doctor\`. Release: OFF there or \`session purge <id>\` |
+| Illegal slug / no runnable | Channel C (hard failure, not a pick list) |
+
+**Channel rule:** needPick → channel A only; busy/true errors → channel C. Do **not** use \`continue: true\` on busy for visibility.
+
+**Example script (bare RUN, N≥2):** Hook needPick (phase non-executing) → Cursor continue / Claude additionalContext → agent lists numbered plans → user replies with a number or \`/autopilot-run <slug>\` → then executing.
+
+**Candidate sources:** scan runnable \`${plansLabel}/*/checklist.md\`, and/or \`status\` (\`pending\` + \`candidates\`); fall back to the plans scan if status fails.
+
+**\`autopilot-run\` skill:** when not executing (needPick), first branch is **pick only**; checklist execution only after executing is armed.
+
+**ON ≠ lock:** planning does not hold \`one_executor\`. **Plans bind / dirty bind:** one edited \`${plansLabel}/<slug>/\` in this chat → bare RUN may auto-run; ≥2 / dirty \`_multi\` → still needPick; REPLAN/ON track change clears/invalidates the bind.
 
 ## Pause / resume / replan
 

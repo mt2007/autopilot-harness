@@ -48,6 +48,16 @@ const EN_MARKERS = [
   /claim/,
   /unpaused/,
   /loop_limit/,
+  // run-pick-ux (docs-quickstart)
+  /channel A/,
+  /channel C/,
+  /needPick/,
+  /user_message/,
+  /additionalContext/,
+  /ON ≠ lock/,
+  /pick only|pick vs execute/i,
+  /_multi/,
+  /candidates/,
 ] as const;
 
 const ZH_MARKERS = [
@@ -61,6 +71,16 @@ const ZH_MARKERS = [
   /开启自动驾驶/,
   /开始执行/,
   /关闭自动驾驶/,
+  // run-pick-ux (docs-quickstart)
+  /通道 A/,
+  /通道 C/,
+  /needPick/,
+  /user_message/,
+  /additionalContext/,
+  /ON ≠ 锁/,
+  /只选型|选型 vs 执行/,
+  /_multi/,
+  /candidates/,
 ] as const;
 
 describe("docs contract (review.scope / claim / troubleshooting)", () => {

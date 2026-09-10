@@ -51,9 +51,11 @@ Next:   implement checklist
 
 **Cursor candidate sources** (channel A — do not rely on blocked toast): scan runnable `plans/*/checklist.md`, and/or `npx @autopilot-harness/cli status` (`pending` + `candidates`). If status is opaque or empty, fall back to the plans scan — never list nothing solely because status failed.
 
-**ON / planning does not hold the executor lock**: multiple chats may plan in parallel; `one_executor` only gates real executing sessions.
+**`autopilot-run` skill — pick vs execute:** when this chat is **not** yet `phase=executing` (needPick / `pending_action=run`), the skill’s **first branch** only lists candidates and waits — it must **not** start checklist implementation. Only after executing is armed does it follow the executing workflow.
 
-After editing `plans/<slug>/`: one slug in this chat → bare RUN may auto-run; ≥2 slugs edited → still pick.
+**ON / planning does not hold the executor lock**: multiple chats may plan in parallel; `one_executor` only gates real executing sessions. **ON ≠ lock.**
+
+**Plans bind / dirty bind:** editing `plans/<slug>/` in this chat binds that slug when it is the only one edited; bare RUN can auto-run. Editing ≥2 slugs (or a dirty `_multi` bind) → bare RUN still **needPick**. REPLAN/ON that changes or downgrades the bind clears/invalidates it so a later bare RUN cannot skip the pick.
 
 ## Pause / resume / replan
 

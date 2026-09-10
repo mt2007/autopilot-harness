@@ -51,9 +51,11 @@ Hook:   track_pick / RUN+slug → phase=executing
 
 **Cursor 候选来源**（通道 A — 不依赖拦截 toast）：扫描 runnable `plans/*/checklist.md`，和/或 `npx @autopilot-harness/cli status`（`pending` + `candidates`）。若 status 不透明或为空，回退扫盘 — 禁止只因 status 失败就列不出候选。
 
-**ON / planning 不占执行锁**：多聊可同时规划；`one_executor` 只约束真正执行中的会话。
+**`autopilot-run` skill — 选型 vs 执行：** 本会话**尚未** `phase=executing`（needPick / `pending_action=run`）时，skill **首分支**只列候选并等待——**禁止**开始跑 checklist。只有进入 executing 后才走执行工作流。
 
-编辑过 `plans/<slug>/` 时：只编过一个 slug → 本聊裸 RUN 可直跑；编过 ≥2 个 → 仍选型。
+**ON / planning 不占执行锁**：多聊可同时规划；`one_executor` 只约束真正执行中的会话。**ON ≠ 锁。**
+
+**Plans 绑定 / 脏 bind：** 本聊编辑 `plans/<slug>/` 时，仅编辑过 1 个 slug 则绑定该轨，裸 RUN 可直跑；编辑 ≥2 个（或脏 `_multi`）→ 裸 RUN 仍 **needPick**。REPLAN/ON 换轨或降级绑定时会清/失效 bind，避免之后裸 RUN 跳过选型。
 
 ## 暂停 / 恢复 / 改方案
 
