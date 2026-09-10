@@ -14,7 +14,7 @@ var en_default = {
   },
   skill: {
     autopilot_on: {
-      description: "Start Planning \u2014 discuss what to build"
+      description: "Start planning only after /autopilot-on or configured ON phrases (e.g. Autopilot ON; per project triggers.on); not for casual chat."
     },
     autopilot_run: {
       description: "Start Executing \u2014 run checklist"
@@ -90,7 +90,7 @@ var zh_CN_default = {
   },
   skill: {
     autopilot_on: {
-      description: "\u5F00\u59CB\u89C4\u5212 \u2014 \u8BA8\u8BBA\u8981\u505A\u4EC0\u4E48"
+      description: "\u4EC5\u5728\u7528\u6237\u53D1\u51FA /autopilot-on \u6216\u300C\u5F00\u542F\u81EA\u52A8\u9A7E\u9A76\u300D\u7B49\u914D\u7F6E\u89E6\u53D1\u8BED\uFF08\u4EE5\u9879\u76EE triggers.on \u4E3A\u51C6\uFF09\u540E\u5F00\u59CB\u89C4\u5212\uFF1B\u52FF\u7528\u4E8E\u666E\u901A\u95F2\u804A\u3002"
     },
     autopilot_run: {
       description: "\u5F00\u59CB\u6267\u884C \u2014 \u8DD1 checklist"
