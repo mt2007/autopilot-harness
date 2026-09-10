@@ -572,9 +572,31 @@ describe("dual-host Cursor non-regression matrix", () => {
     });
     expect(claude.status).toBe(0);
     expect(claude.out.decision).toBe("block");
+    expect(typeof claude.out.reason).toBe("string");
+    expect(String(claude.out.reason).length).toBeGreaterThan(0);
     expect(claude.out.followup_message).toBeUndefined();
 
-    // Both ids + stop_hook_active → still Claude (not Cursor via conversation_id)
+    // Same Claude-shaped Stop, no new product edit → {} (code_edited cleared after first
+    // emit; without transcript_path there is no pending redelivery). Not a routing result.
+    const exhausted = runHook(root, "Stop", {
+      session_id: claudeCid,
+      status: "completed",
+      stop_hook_active: false,
+    });
+    expect(exhausted.status).toBe(0);
+    expect(exhausted.out).toEqual({});
+
+    // Re-arm code_edited so the both-ids Stop below can assert host routing (not {}).
+    expect(
+      runHook(root, "PostToolUse", {
+        session_id: claudeCid,
+        tool_name: "Edit",
+        tool_input: { file_path: editPath },
+      }).status,
+    ).toBe(0);
+
+    // Invariant: stop_hook_active (boolean) beats conversation_id → Claude, not Cursor.
+    // (Bare both-ids + status completed without that field would be Cursor-shaped.)
     const both = runHook(root, "Stop", {
       session_id: claudeCid,
       conversation_id: claudeCid,
@@ -583,6 +605,8 @@ describe("dual-host Cursor non-regression matrix", () => {
     });
     expect(both.status).toBe(0);
     expect(both.out.decision).toBe("block");
+    expect(typeof both.out.reason).toBe("string");
+    expect(String(both.out.reason).length).toBeGreaterThan(0);
     expect(both.out.followup_message).toBeUndefined();
 
     // Cursor-shaped: status aborted + conversation_id, no hook name → halt
