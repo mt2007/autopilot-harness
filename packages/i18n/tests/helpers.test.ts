@@ -90,4 +90,20 @@ describe("i18n helpers", () => {
     expect(zh.length).toBeGreaterThan(0);
     expect(en).not.toBe(zh);
   });
+
+  it("autopilot-on description gates casual discuss; keeps ON routing cues", () => {
+    const en = skillDescription("en", "autopilot-on");
+    const zh = skillDescription("zh-CN", "autopilot-on");
+    expect(en).not.toMatch(/discuss what to build|\bdiscuss\b/i);
+    expect(zh).not.toMatch(/讨论要做什么|讨论/);
+    expect(en).toMatch(/\/autopilot-on/);
+    expect(zh).toMatch(/\/autopilot-on/);
+    expect(en).toMatch(/Autopilot ON/);
+    expect(zh).toMatch(/开启自动驾驶/);
+    expect(en).toMatch(/triggers\.on/);
+    expect(zh).toMatch(/triggers\.on/);
+    // Stock ON phrases for locale migration must remain available.
+    expect(stockTriggers("en").on).toContain("Autopilot ON");
+    expect(stockTriggers("zh-CN").on).toContain("开启自动驾驶");
+  });
 });

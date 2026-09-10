@@ -58,6 +58,9 @@ const EN_MARKERS = [
   /pick only|pick vs execute/i,
   /_multi/,
   /candidates/,
+  // on-skill-gate (docs-discuss-ne-on)
+  /Discussion ≠ ON/,
+  /applyOn/,
 ] as const;
 
 const ZH_MARKERS = [
@@ -81,6 +84,9 @@ const ZH_MARKERS = [
   /只选型|选型 vs 执行/,
   /_multi/,
   /candidates/,
+  // on-skill-gate (docs-discuss-ne-on)
+  /讨论 ≠ ON/,
+  /applyOn/,
 ] as const;
 
 describe("docs contract (review.scope / claim / troubleshooting)", () => {

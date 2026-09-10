@@ -12,6 +12,14 @@ const bundledSkill = path.resolve(
   here,
   "../../cli/assets/templates/skills/autopilot-run/SKILL.md.tpl",
 );
+const templatesOnSkill = path.resolve(
+  here,
+  "../skills/autopilot-on/SKILL.md.tpl",
+);
+const bundledOnSkill = path.resolve(
+  here,
+  "../../cli/assets/templates/skills/autopilot-on/SKILL.md.tpl",
+);
 
 function assertPickBranch(text: string, label: string): void {
   expect(text, label).toMatch(/pick vs execute/i);
@@ -64,6 +72,30 @@ function assertPickBranch(text: string, label: string): void {
   expect(text, label).not.toMatch(/Stop after listing \(or after reporting zero runnable\)/i);
 }
 
+function assertOnGate(text: string, label: string): void {
+  expect(text, label).toMatch(/Gate: ON trigger or already planning/i);
+  expect(text, label).toMatch(
+    /Do \*\*not\*\* assume the submit hook already set `phase=planning`/i,
+  );
+  expect(text, label).toMatch(/\*\*This turn is an ON trigger\*\*/i);
+  expect(text, label).toMatch(/\*\*Already planning\*\*/i);
+  expect(text, label).toMatch(/\/autopilot-on/);
+  expect(text, label).toMatch(/triggers\.on/);
+  expect(text, label).toMatch(/auto-attach/i);
+  expect(text, label).toMatch(/phase=planning/);
+  expect(text, label).toMatch(/do \*\*not\*\* follow \*\*autopilot-planning\*\*/i);
+  expect(text, label).toMatch(/do \*\*not\*\* write `plans\/`/i);
+  expect(text, label).toMatch(/do \*\*not\*\* start grilling/i);
+  expect(text, label).toMatch(/If the gate passes:/i);
+  expect(text, label).toMatch(/Follow \*\*autopilot-planning\*\*/i);
+  expect(text, label).toMatch(/initial_brief/);
+  expect(text, label).toMatch(/no product code until \/autopilot-run/);
+  // Legacy unconditional ON assumption must stay gone.
+  expect(text, label).not.toMatch(
+    /The submit hook has already set phase=planning for this conversation/i,
+  );
+}
+
 describe("autopilot-run skill template", () => {
   it("branches pick vs execute; does not hardcode hook-set executing", () => {
     const text = fs.readFileSync(templatesSkill, "utf8");
@@ -75,5 +107,19 @@ describe("autopilot-run skill template", () => {
     const bundled = fs.readFileSync(bundledSkill, "utf8");
     expect(bundled).toBe(src);
     assertPickBranch(bundled, "packages/cli/assets");
+  });
+});
+
+describe("autopilot-on skill template", () => {
+  it("gates planning on ON trigger or already planning", () => {
+    const text = fs.readFileSync(templatesOnSkill, "utf8");
+    assertOnGate(text, "packages/templates");
+  });
+
+  it("keeps cli bundled assets copy identical to packages/templates", () => {
+    const src = fs.readFileSync(templatesOnSkill, "utf8");
+    const bundled = fs.readFileSync(bundledOnSkill, "utf8");
+    expect(bundled).toBe(src);
+    assertOnGate(bundled, "packages/cli/assets");
   });
 });
