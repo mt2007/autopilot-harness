@@ -49,6 +49,8 @@ Hook:   track_pick / RUN+slug → phase=executing
 下一回合: 真正执行 checklist
 ```
 
+**Cursor 候选来源**（通道 A — 不依赖拦截 toast）：扫描 runnable `plans/*/checklist.md`，和/或 `npx @autopilot-harness/cli status`（`pending` + `candidates`）。若 status 不透明或为空，回退扫盘 — 禁止只因 status 失败就列不出候选。
+
 **ON / planning 不占执行锁**：多聊可同时规划；`one_executor` 只约束真正执行中的会话。
 
 编辑过 `plans/<slug>/` 时：只编过一个 slug → 本聊裸 RUN 可直跑；编过 ≥2 个 → 仍选型。

@@ -115,6 +115,40 @@ function safeDisplayToken(value: string, fallback = "?"): string {
   return cleaned || fallback;
 }
 
+/** Safe slug list from session.track_candidates_json (status pick UX). */
+function parseTrackCandidateSlugs(
+  raw: string | null | undefined,
+  max = 12,
+): string[] {
+  if (!raw || typeof raw !== "string") return [];
+  // Bound parse cost for corrupt / hostile rows in state.db.
+  const MAX_CANDIDATES_JSON_CHARS = 32_768;
+  if (raw.length > MAX_CANDIDATES_JSON_CHARS) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return [];
+    const slugs: string[] = [];
+    // Cap how many entries we walk so a huge junk array cannot stall status.
+    const scanCap = Math.min(parsed.length, Math.max(max * 16, 64));
+    for (let i = 0; i < scanCap && slugs.length < max; i++) {
+      const c = parsed[i];
+      if (
+        !c ||
+        typeof c !== "object" ||
+        Array.isArray(c) ||
+        typeof (c as { slug?: unknown }).slug !== "string"
+      ) {
+        continue;
+      }
+      const token = safeDisplayToken(String((c as { slug: string }).slug));
+      if (token && token !== "?") slugs.push(token);
+    }
+    return slugs;
+  } catch {
+    return [];
+  }
+}
+
 export type DoctorOptions = {
   pruneStale?: boolean;
   /** Injectable clock for stale checks (tests). */
@@ -395,6 +429,43 @@ export function formatStatus(projectRoot: string): string {
       lines.push(
         `  phase:    ${formatPhase(latest)}${latest.armed === 1 ? " · armed" : ""}`,
       );
+
+      // Cursor pick UX: surface pending_action + candidates so agents can list
+      // plans without relying on hook toast. Prefer latest when it is mid-pick;
+      // otherwise first pending=run, else pending=replan.
+      const isMidPick = (r: SessionRow) =>
+        r.pending_action === "run" || r.pending_action === "replan";
+      const pickRow = isMidPick(latest)
+        ? latest
+        : (rows.find((r) => r.pending_action === "run") ??
+          rows.find((r) => r.pending_action === "replan") ??
+          null);
+      if (pickRow) {
+        const pendingLabel =
+          pickRow.conversation_id === latest.conversation_id
+            ? safeDisplayToken(String(pickRow.pending_action))
+            : `${safeDisplayToken(String(pickRow.pending_action))} @ ${shortSessionId(pickRow.conversation_id)}`;
+        lines.push(`  pending:  ${pendingLabel}`);
+        const candidateSlugs = parseTrackCandidateSlugs(
+          pickRow.track_candidates_json,
+        );
+        if (candidateSlugs.length > 0) {
+          lines.push(`  candidates: ${candidateSlugs.join(", ")}`);
+        }
+      }
+
+      const executors = rows.filter(
+        (r) =>
+          r.phase === "executing" && r.armed === 1 && r.paused === 0,
+      );
+      if (executors.length > 0) {
+        lines.push("  executors:");
+        for (const ex of executors.slice(0, 8)) {
+          lines.push(
+            `    - ${shortSessionId(ex.conversation_id)}  track=${safeDisplayToken(ex.track_id || "?")}  (OFF / session purge to release)`,
+          );
+        }
+      }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

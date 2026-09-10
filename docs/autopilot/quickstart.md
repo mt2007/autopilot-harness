@@ -49,6 +49,8 @@ Hook:   track_pick / RUN+slug → phase=executing
 Next:   implement checklist
 ```
 
+**Cursor candidate sources** (channel A — do not rely on blocked toast): scan runnable `plans/*/checklist.md`, and/or `npx @autopilot-harness/cli status` (`pending` + `candidates`). If status is opaque or empty, fall back to the plans scan — never list nothing solely because status failed.
+
 **ON / planning does not hold the executor lock**: multiple chats may plan in parallel; `one_executor` only gates real executing sessions.
 
 After editing `plans/<slug>/`: one slug in this chat → bare RUN may auto-run; ≥2 slugs edited → still pick.

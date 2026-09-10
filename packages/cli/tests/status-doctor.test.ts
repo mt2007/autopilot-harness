@@ -75,6 +75,183 @@ describe("formatStatus", () => {
     expect(text).toMatch(/executing \(paused\)/);
     expect(text).toMatch(new RegExp(shortSessionId(id)));
   });
+
+  it("lists pending+candidates for latest mid-pick (Cursor pick source)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "pick-aaaa-bbbb-cccc-ddddeeee0001",
+      project_root: root,
+      code_root: root,
+      track_id: "_pending",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha", title: "A" },
+        { slug: "beta", title: "B" },
+      ]),
+      checklist_path: "",
+    });
+    store.close();
+
+    const text = formatStatus(root);
+    expect(text).toMatch(/pending:\s*run\b/);
+    expect(text).not.toMatch(/pending:\s*run @/);
+    expect(text).toMatch(/candidates:\s*alpha, beta/);
+  });
+
+  it("shows pending without candidates on bad/empty JSON; skips junk before valid slugs", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: "bad-aaaa-bbbb-cccc-ddddeeee0001",
+      project_root: root,
+      code_root: root,
+      track_id: "_pending",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: "{not-json",
+      checklist_path: "",
+    });
+    store.close();
+    let text = formatStatus(root);
+    expect(text).toMatch(/pending:\s*run\b/);
+    expect(text).not.toMatch(/candidates:/);
+
+    const storeEmpty = new StateStore(root);
+    storeEmpty.upsertSession({
+      conversation_id: "empty-aaaa-bbbb-cccc-ddddeeee0000",
+      project_root: root,
+      code_root: root,
+      track_id: "_pending",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: "[]",
+      checklist_path: "",
+    });
+    storeEmpty.close();
+    text = formatStatus(root);
+    expect(text).toMatch(/pending:\s*run\b/);
+    expect(text).not.toMatch(/candidates:/);
+
+    const store2 = new StateStore(root);
+    store2.upsertSession({
+      conversation_id: "junk-aaaa-bbbb-cccc-ddddeeee0002",
+      project_root: root,
+      code_root: root,
+      track_id: "_pending",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([
+        null,
+        { slug: 1 },
+        { notSlug: "x" },
+        { slug: "gamma" },
+      ]),
+      checklist_path: "",
+    });
+    store2.close();
+    text = formatStatus(root);
+    expect(text).toMatch(/pending:\s*run\b/);
+    expect(text).toMatch(/candidates:\s*gamma/);
+
+    const storeHuge = new StateStore(root);
+    storeHuge.upsertSession({
+      conversation_id: "huge-aaaa-bbbb-cccc-ddddeeee0003",
+      project_root: root,
+      code_root: root,
+      track_id: "_pending",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      // Oversize JSON: status must not stall / must omit candidates (scan fallback).
+      track_candidates_json: `[{"slug":"keep"},${"0,".repeat(20_000)}"x"]`,
+      checklist_path: "",
+    });
+    storeHuge.close();
+    text = formatStatus(root);
+    expect(text).toMatch(/pending:\s*run\b/);
+    expect(text).not.toMatch(/candidates:/);
+  });
+
+  it("lists armed executors and pending pick even when not latest", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const store = new StateStore(root);
+    const older = "old-aaaa-bbbb-cccc-ddddeeee0001";
+    const newer = "new-aaaa-bbbb-cccc-ddddeeee0002";
+    store.upsertSession({
+      conversation_id: older,
+      project_root: root,
+      code_root: root,
+      track_id: "_pending",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      pending_action: "run",
+      track_candidates_json: JSON.stringify([
+        { slug: "alpha" },
+        { slug: "beta" },
+      ]),
+      checklist_path: "",
+    });
+    // Touch newer last so it sorts as latest
+    store.upsertSession({
+      conversation_id: newer,
+      project_root: root,
+      code_root: root,
+      track_id: "demo",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+    });
+    store.close();
+
+    const text = formatStatus(root);
+    expect(text).toMatch(/executors:/);
+    expect(text).toMatch(/track=demo/);
+    expect(text).toMatch(/pending:\s*run @/);
+    expect(text).toMatch(/candidates:\s*alpha, beta/);
+  });
 });
 
 describe("runDoctor", () => {
