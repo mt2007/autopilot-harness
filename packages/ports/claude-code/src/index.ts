@@ -470,6 +470,7 @@ export function handlePostToolUse(
   if (!filePath) return;
 
   try {
+    // bind-plans-dedicated-path: independent of isProductCodeEdit (plans/** ignored).
     notePlansDirEdit(store, conversationId, projectRoot, filePath);
   } catch {
     /* best-effort */

@@ -282,7 +282,7 @@ export function handleAfterFileEdit(
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
 
-  // Plans bind path — independent of isProductCodeEdit (plans/** is ignored).
+  // bind-plans-dedicated-path: independent of isProductCodeEdit (plans/** ignored).
   try {
     notePlansDirEdit(store, conversationId, projectRoot, filePath);
   } catch {
