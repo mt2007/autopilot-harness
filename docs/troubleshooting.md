@@ -63,6 +63,16 @@ Planning writes `plans/<slug>/` (and may edit docs). Review starts only after a 
 - New chat `/autopilot-resume` (optional `<slug>`) may **claim** an executing track onto this conversation (prefers unpaused; can fall back to a single paused executing session for dead-chat recovery) — then **this** chat owns the session; stop driving the same track from the old chat.
 - See [quickstart](./autopilot/quickstart.md#pause--resume--replan).
 
+## RUN blocked: another session executing
+
+`one_executor` refuses a second **armed executing** session (`phase=executing`, `armed=1`, `paused=0`). Planning chats do **not** hold this lock.
+
+1. Run `npx @autopilot-harness/cli status` — look for `executors:` (track + short session id).
+2. In that chat: `/autopilot-off`, or from cwd: `npx @autopilot-harness/cli session purge <id>` (see `session list`).
+3. Retry `/autopilot-run`.
+
+Cursor may show only opaque “Submission blocked”; the `user_message` body (track + session) is the intended reason when the host surfaces it.
+
 ## Stale sessions
 
 `doctor` may WARN on sessions older than `session.stale_after_hours` (default 72). From the project cwd:

@@ -26,6 +26,18 @@
 
 也可：`Autopilot RUN` / `开始执行`
 
+### 多 plan 选型（通道 A）vs 硬错误（通道 C）
+
+| 情况 | 行为 |
+|------|------|
+| 多个可执行 plan、未唯一绑定、裸 RUN | **完整 agent 回合**：对话里列出候选，等数字或 `/autopilot-run <slug>`。**不是**错误弹窗 / blocked。本回合不写产品代码。 |
+| 已绑唯一 plan / 全局仅 1 个 runnable / 命令已带 slug | 跳过选型，直接执行 |
+| 另一会话正在 `executing+armed` | **拦截提交**（通道 C）；文案含占用 track + 会话线索；若宿主只显示 opaque blocked，用 `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
+
+**ON / planning 不占执行锁**：多聊可同时规划；`one_executor` 只约束真正执行中的会话。
+
+编辑过 `plans/<slug>/` 时：只编过一个 slug → 本聊裸 RUN 可直跑；编过 ≥2 个 → 仍选型。
+
 ## 暂停 / 恢复 / 改方案
 
 - **暂停**（`/autopilot-off` 或行首 `Autopilot OFF` / `关闭自动驾驶`）：暂停**本**会话；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；`done` → `idle`）。

@@ -26,6 +26,18 @@ Also: line-start `Autopilot ON`
 
 Also: `Autopilot RUN`
 
+### Multi-plan pick (channel A) vs hard failures (channel C)
+
+| Case | Behavior |
+|------|----------|
+| Multiple runnable plans, no unique bind, bare RUN | **Full agent turn**: list candidates in chat; wait for a number or `/autopilot-run <slug>`. **Not** an error popup / blocked submit. No product code this turn. |
+| Unique bind / only one runnable / slug already on the command | Skip pick; enter executing |
+| Another session is `executing+armed` | **Block submit** (channel C); message includes occupier track + session id; if the host only shows opaque blocked, use `npx @autopilot-harness/cli status` / `doctor` / OFF·purge |
+
+**ON / planning does not hold the executor lock**: multiple chats may plan in parallel; `one_executor` only gates real executing sessions.
+
+After editing `plans/<slug>/`: one slug in this chat → bare RUN may auto-run; ≥2 slugs edited → still pick.
+
 ## Pause / resume / replan
 
 - **Pause** (`/autopilot-off` or line-start `Autopilot OFF`): pauses **this** conversation; no checklist advance and no self-review until resume (phase usually unchanged; `done` → `idle`).

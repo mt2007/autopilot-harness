@@ -713,6 +713,8 @@ export function writeQuickstart(
 
 也可：\`Autopilot RUN\` / \`开始执行\`
 
+多 plan 裸 RUN：完整对话列出候选（通道 A），不是错误弹窗。另一会话正在执行则拦截（通道 C）；\`status\` 可见占用者。ON/planning **不占**执行锁。
+
 ## 暂停 / 恢复 / 改方案
 
 - 暂停：\`/autopilot-off\` 或行首 \`Autopilot OFF\` / \`关闭自动驾驶\` — 本会话 paused；不推进 checklist，也不跑自审，直到 resume（phase 通常不变；\`done\` → \`idle\`）。
@@ -781,6 +783,8 @@ Also: line-start \`Autopilot ON\`
 \`/autopilot-run\` or \`/autopilot-run <slug>\`
 
 Also: \`Autopilot RUN\`
+
+Bare RUN with multiple plans: full agent turn lists candidates (channel A), not an error popup. Another executing session blocks submit (channel C); \`status\` shows the occupier. ON/planning does **not** hold the executor lock.
 
 ## Pause / resume / replan
 

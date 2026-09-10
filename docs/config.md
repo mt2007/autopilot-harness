@@ -20,7 +20,7 @@ Canonical defaults: `packages/cli/src/init/default-config.ts`.
 | **`locale set`** | Updates `locale`, rewrites **stock** `triggers.*` lists in config.yml (custom lists preserved), rewrites skill descriptions |
 | **Written by init, not wired into the hook runtime yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token`, and **line-start phrase lists** under `triggers.*` |
 
-Effective RUN concurrency gate is still **`one_executor`** (code default when the hook does not pass `phaseActions`). Changing `concurrency.mode` in YAML alone does **not** switch modes today. The gate matches sessions with `phase=executing`, `armed=1`, and `paused=0`.
+Effective RUN concurrency gate is still **`one_executor`** (code default when the hook does not pass `phaseActions`). Changing `concurrency.mode` in YAML alone does **not** switch modes today. The gate matches sessions with `phase=executing`, `armed=1`, and `paused=0`. **Planning / ON sessions never satisfy this gate** and do not block another chat’s RUN. Multi-plan selection (`needPick`) happens only on RUN and uses an allowed agent turn (not a hard block); busy/hard failures still block submit.
 
 ## Locale & hosts
 
