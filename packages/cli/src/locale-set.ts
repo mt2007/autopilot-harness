@@ -42,14 +42,34 @@ const TRIGGER_KEYS: TriggerKey[] = [
 const MAX_CONFIG_BYTES = MAX_UNTRUSTED_TEXT_BYTES;
 
 /**
- * Pre-i18n init defaults (en / zh-CN). Treat as stock so locale set still
- * migrates triggers written before stockTriggers() grew extra phrases.
+ * Older init defaults. Treat as stock so locale set still migrates triggers
+ * written before stockTriggers() grew phrases / went bilingual (config-wire).
  */
 const LEGACY_STOCK: Record<LocaleCode, Record<TriggerKey, string[]>> = {
   en: {
     on: ["Autopilot ON"],
     run: ["Autopilot RUN"],
     off: ["Autopilot OFF"],
+    resume: ["Autopilot RESUME"],
+    replan: ["Autopilot REPLAN"],
+    resume_review: ["Resume review"],
+  },
+  "zh-CN": {
+    on: ["Autopilot ON", "开启自动驾驶"],
+    run: ["Autopilot RUN", "开始执行"],
+    off: ["Autopilot OFF", "关闭自动驾驶"],
+    resume: ["Autopilot RESUME", "继续执行"],
+    replan: ["Autopilot REPLAN", "修改方案"],
+    resume_review: ["继续自审", "Resume review"],
+  },
+};
+
+/** Locale-narrowed stocks immediately before bilingual DEFAULT alignment. */
+const PRE_BILINGUAL_STOCK: Record<LocaleCode, Record<TriggerKey, string[]>> = {
+  en: {
+    on: ["Autopilot ON", "Enable autopilot"],
+    run: ["Autopilot RUN", "Start execution"],
+    off: ["Autopilot OFF", "Disable autopilot"],
     resume: ["Autopilot RESUME"],
     replan: ["Autopilot REPLAN"],
     resume_review: ["Resume review"],
@@ -171,6 +191,7 @@ function isStockTriggerList(current: unknown, key: TriggerKey): boolean {
   for (const loc of ["en", "zh-CN"] as const) {
     if (sameStringList(current, stockTriggers(loc)[key])) return true;
     if (sameStringList(current, LEGACY_STOCK[loc][key])) return true;
+    if (sameStringList(current, PRE_BILINGUAL_STOCK[loc][key])) return true;
   }
   return false;
 }

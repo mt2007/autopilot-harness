@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { DEFAULT_TRIGGERS } from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
 import { setProjectLocale } from "../src/locale-set.js";
 import { skillDescription, stockTriggers } from "@autopilot-harness/i18n";
@@ -10,11 +11,29 @@ function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-locale-"));
 }
 
+const TRIGGER_KEYS = [
+  "on",
+  "run",
+  "off",
+  "resume",
+  "replan",
+  "resume_review",
+] as const;
+
 describe("locale set", () => {
   let root: string;
   afterEach(() => {
     if (root && fs.existsSync(root)) {
       fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("stockTriggers stay bilingual-aligned with DEFAULT_TRIGGERS", () => {
+    for (const loc of ["en", "zh-CN"] as const) {
+      const stock = stockTriggers(loc);
+      for (const key of TRIGGER_KEYS) {
+        expect(stock[key], `${loc}.${key}`).toEqual(DEFAULT_TRIGGERS[key]);
+      }
     }
   });
 
@@ -152,7 +171,8 @@ describe("locale set", () => {
     if (!r.ok) return;
     expect(r.previousLocale).toBe("en");
     expect(r.locale).toBe("zh-CN");
-    expect(r.triggersUpdated.length).toBeGreaterThan(0);
+    // Bilingual stock is identical across locales — no trigger rewrite needed.
+    expect(r.triggersUpdated).toEqual([]);
     expect(r.triggersPreserved).toEqual([]);
 
     const config = fs.readFileSync(
@@ -161,6 +181,7 @@ describe("locale set", () => {
     );
     expect(config).toMatch(/locale:\s*zh-CN/);
     expect(config).toMatch(/开启自动驾驶/);
+    expect(config).toMatch(/Enable autopilot/);
 
     const skill = fs.readFileSync(
       path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
@@ -265,6 +286,39 @@ describe("locale set", () => {
     expect(after).toMatch(/开始执行/);
   });
 
+  it("migrates pre-bilingual locale-narrowed stock to bilingual", () => {
+    root = tmpProject();
+    const installed = installInitYes({
+      projectRoot: root,
+      platform: "cursor",
+      surface: "ide",
+      locale: "en",
+      force: false,
+    });
+    expect(installed.ok).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    let config = fs.readFileSync(configPath, "utf8");
+    config = config.replace(
+      /on:\s*\[[^\]]*\]/,
+      'on: ["Autopilot ON", "Enable autopilot"]',
+    );
+    config = config.replace(
+      /resume_review:\s*\[[^\]]*\]/,
+      'resume_review: ["Resume review"]',
+    );
+    fs.writeFileSync(configPath, config, "utf8");
+
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.triggersUpdated).toEqual(
+      expect.arrayContaining(["on", "resume_review"]),
+    );
+    const after = fs.readFileSync(configPath, "utf8");
+    expect(after).toMatch(/开启自动驾驶/);
+    expect(after).toMatch(/继续自审/);
+  });
+
   it("preserves YAML comments when setting locale", () => {
     root = tmpProject();
     const installed = installInitYes({
@@ -350,13 +404,13 @@ describe("locale set", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.previousLocale).toBe("en");
-    expect(r.triggersUpdated).toEqual(
-      expect.arrayContaining(["on", "run", "off"]),
-    );
+    // Installed zh-CN stock already matches bilingual en stock → no rewrite.
+    expect(r.triggersUpdated).toEqual([]);
     const after = fs.readFileSync(configPath, "utf8");
     expect(after).toMatch(/locale:\s*en/);
     expect(after).toMatch(/Enable autopilot/);
-    expect(after).not.toMatch(/开启自动驾驶/);
+    // Bilingual stock keeps cross-locale phrases (config-wire).
+    expect(after).toMatch(/开启自动驾驶/);
   });
 
   it("preserves triggers.match and other non-stock keys", () => {
@@ -452,6 +506,7 @@ describe("locale set", () => {
       "utf8",
     );
     const stock = stockTriggers("zh-CN");
-    expect(config).toContain(stock.on[1]!);
+    expect(config).toContain("开启自动驾驶");
+    expect(config).toContain(stock.on[0]!);
   });
 });

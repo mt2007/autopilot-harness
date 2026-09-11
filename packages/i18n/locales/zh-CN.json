@@ -4,12 +4,12 @@
     "help": "Autopilot Harness — 两阶段 Agent 外骨骼：规划 → 执行"
   },
   "triggers": {
-    "on": ["Autopilot ON", "开启自动驾驶"],
-    "run": ["Autopilot RUN", "开始执行"],
-    "off": ["Autopilot OFF", "关闭自动驾驶"],
+    "on": ["Autopilot ON", "Enable autopilot", "开启自动驾驶"],
+    "run": ["Autopilot RUN", "Start execution", "开始执行"],
+    "off": ["Autopilot OFF", "Disable autopilot", "关闭自动驾驶"],
     "resume": ["Autopilot RESUME", "继续执行"],
     "replan": ["Autopilot REPLAN", "修改方案"],
-    "resume_review": ["继续自审", "Resume review"]
+    "resume_review": ["Resume review", "继续自审"]
   },
   "skill": {
     "autopilot_on": {

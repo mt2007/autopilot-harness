@@ -103,8 +103,13 @@ describe("i18n helpers", () => {
     expect(zh).toMatch(/开启自动驾驶/);
     expect(en).toMatch(/triggers\.on/);
     expect(zh).toMatch(/triggers\.on/);
-    // Stock ON phrases for locale migration must remain available.
+    // Stock ON phrases for locale migration must remain available (bilingual).
     expect(stockTriggers("en").on).toContain("Autopilot ON");
+    expect(stockTriggers("en").on).toContain("Enable autopilot");
+    expect(stockTriggers("en").on).toContain("开启自动驾驶");
+    expect(stockTriggers("zh-CN").on).toContain("Autopilot ON");
+    expect(stockTriggers("zh-CN").on).toContain("Enable autopilot");
     expect(stockTriggers("zh-CN").on).toContain("开启自动驾驶");
+    expect(stockTriggers("en").on).toEqual(stockTriggers("zh-CN").on);
   });
 });

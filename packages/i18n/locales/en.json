@@ -4,12 +4,12 @@
     "help": "Autopilot Harness — Planning → Executing agent harness"
   },
   "triggers": {
-    "on": ["Autopilot ON", "Enable autopilot"],
-    "run": ["Autopilot RUN", "Start execution"],
-    "off": ["Autopilot OFF", "Disable autopilot"],
-    "resume": ["Autopilot RESUME"],
-    "replan": ["Autopilot REPLAN"],
-    "resume_review": ["Resume review"]
+    "on": ["Autopilot ON", "Enable autopilot", "开启自动驾驶"],
+    "run": ["Autopilot RUN", "Start execution", "开始执行"],
+    "off": ["Autopilot OFF", "Disable autopilot", "关闭自动驾驶"],
+    "resume": ["Autopilot RESUME", "继续执行"],
+    "replan": ["Autopilot REPLAN", "修改方案"],
+    "resume_review": ["Resume review", "继续自审"]
   },
   "skill": {
     "autopilot_on": {
