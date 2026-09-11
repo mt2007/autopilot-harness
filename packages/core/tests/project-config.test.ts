@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   createConfiguredReviewEngine,
+  DEFAULT_TRIGGERS,
+  loadProjectHookConfig,
   loadProjectReviewConfig,
   normalizeProjectReviewConfig,
   StateStore,
@@ -374,6 +376,150 @@ review:
       expect(action?.message).toMatch(/1\/5/);
     } finally {
       store.close();
+    }
+  });
+});
+
+describe("loadProjectHookConfig", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  function hookedRoot(): string {
+    const root = tmpRoot();
+    roots.push(root);
+    return root;
+  }
+
+  it("returns DEFAULT triggers + plans/ when config missing", () => {
+    const root = hookedRoot();
+    const cfg = loadProjectHookConfig(root);
+    expect(cfg.plansDir).toBe("plans");
+    expect(cfg.triggers.on).toEqual(DEFAULT_TRIGGERS.on);
+    expect(cfg.triggers.run).toEqual(DEFAULT_TRIGGERS.run);
+    // Defensive copies — mutating the result must not touch DEFAULT_TRIGGERS.
+    expect(cfg.triggers.on).not.toBe(DEFAULT_TRIGGERS.on);
+    cfg.triggers.on.push("MUTATED");
+    expect(DEFAULT_TRIGGERS.on).not.toContain("MUTATED");
+  });
+
+  it("refuses empty or NUL projectRoot (fail-open defaults)", () => {
+    expect(loadProjectHookConfig("").plansDir).toBe("plans");
+    expect(loadProjectHookConfig("   ").triggers.on).toEqual(DEFAULT_TRIGGERS.on);
+    expect(loadProjectHookConfig("bad\0root").plansDir).toBe("plans");
+  });
+
+  it("loads block-style trigger phrases and custom plans_dir", () => {
+    const root = hookedRoot();
+    writeConfig(
+      root,
+      `
+artifacts:
+  plans_dir: work/plans
+triggers:
+  match: line_start
+  on:
+    - Custom ON
+    - 自定义开启
+  run:
+    - Custom RUN
+`,
+    );
+    const cfg = loadProjectHookConfig(root);
+    expect(cfg.plansDir).toBe("work/plans");
+    expect(cfg.triggers.on).toEqual(["Custom ON", "自定义开启"]);
+    expect(cfg.triggers.run).toEqual(["Custom RUN"]);
+    // Unspecified keys fall back to DEFAULT
+    expect(cfg.triggers.off).toEqual(DEFAULT_TRIGGERS.off);
+  });
+
+  it("loads init-style inline JSON trigger arrays", () => {
+    const root = hookedRoot();
+    writeConfig(
+      root,
+      `
+triggers:
+  match: line_start
+  on: ["Autopilot ON", "Enable autopilot", "开启自动驾驶"]
+  run: ["Only RUN"]
+`,
+    );
+    const cfg = loadProjectHookConfig(root);
+    expect(cfg.triggers.on).toEqual([
+      "Autopilot ON",
+      "Enable autopilot",
+      "开启自动驾驶",
+    ]);
+    expect(cfg.triggers.run).toEqual(["Only RUN"]);
+  });
+
+  it("empty on list falls back to DEFAULT_TRIGGERS.on", () => {
+    const root = hookedRoot();
+    writeConfig(
+      root,
+      `
+triggers:
+  on: []
+  run:
+    - Keep RUN
+`,
+    );
+    const cfg = loadProjectHookConfig(root);
+    expect(cfg.triggers.on).toEqual(DEFAULT_TRIGGERS.on);
+    expect(cfg.triggers.run).toEqual(["Keep RUN"]);
+  });
+
+  it("whitespace-only phrases fall back to DEFAULT for that key", () => {
+    const root = hookedRoot();
+    const tab = "\t";
+    writeConfig(
+      root,
+      `
+triggers:
+  on:
+    - "   "
+    - "${tab}"
+  run:
+    - Keep RUN
+`,
+    );
+    const cfg = loadProjectHookConfig(root);
+    expect(cfg.triggers.on).toEqual(DEFAULT_TRIGGERS.on);
+    expect(cfg.triggers.run).toEqual(["Keep RUN"]);
+  });
+
+  it("invalid plans_dir fails open to plans/", () => {
+    const root = hookedRoot();
+    writeConfig(
+      root,
+      `
+artifacts:
+  plans_dir: ../escape
+`,
+    );
+    const cfg = loadProjectHookConfig(root);
+    expect(cfg.plansDir).toBe("plans");
+  });
+
+  it("symlinked config.yml fails open to defaults", () => {
+    const root = hookedRoot();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-hook-out-"));
+    try {
+      const target = path.join(outside, "evil.yml");
+      fs.writeFileSync(
+        target,
+        "artifacts:\n  plans_dir: stolen\ntriggers:\n  on:\n    - Evil ON\n",
+      );
+      fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+      fs.symlinkSync(target, path.join(root, ".autopilot", "config.yml"));
+      const cfg = loadProjectHookConfig(root);
+      expect(cfg.plansDir).toBe("plans");
+      expect(cfg.triggers.on).toEqual(DEFAULT_TRIGGERS.on);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
     }
   });
 });

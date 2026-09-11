@@ -64,9 +64,12 @@ export {
 
 export {
   loadProjectReviewConfig,
+  loadProjectHookConfig,
   normalizeProjectReviewConfig,
   DEFAULT_PROJECT_REVIEW_CONFIG,
   type ProjectReviewConfig,
+  type ProjectHookConfig,
+  type ProjectHookTriggers,
   type ReviewScope,
 } from "./project-config.js";
 

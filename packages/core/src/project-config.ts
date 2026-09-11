@@ -1,6 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { isRealpathInsideProject, normalizeProjectRoot } from "./project-path.js";
+import {
+  isRealpathInsideProject,
+  normalizeInProjectPlansDir,
+  normalizeProjectRoot,
+} from "./project-path.js";
+import {
+  DEFAULT_TRIGGERS,
+  type TriggerConfig,
+} from "./trigger-parser.js";
 import type { VerifyCommandConfig } from "./verify-report.js";
 
 const MAX_CONFIG_BYTES = 1_000_000;
@@ -23,6 +31,17 @@ export interface ProjectReviewConfig {
   locale: string;
 }
 
+/** Submit/edit hook settings from config.yml (fail-open defaults). */
+export type ProjectHookTriggers = Required<Omit<TriggerConfig, "match">> & {
+  match: "line_start";
+};
+
+export interface ProjectHookConfig {
+  triggers: ProjectHookTriggers;
+  /** Relative in-project plans directory (normalized). */
+  plansDir: string;
+}
+
 export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
   confirmRounds: 5,
   reviewScope: "executing_only",
@@ -33,6 +52,34 @@ export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
   maxErrorsBeforePause: 0,
   locale: "en",
 };
+
+const TRIGGER_PHRASE_KEYS = [
+  "on",
+  "run",
+  "off",
+  "resume",
+  "replan",
+  "resume_review",
+] as const satisfies ReadonlyArray<keyof Omit<ProjectHookTriggers, "match">>;
+
+function cloneDefaultTriggers(): ProjectHookTriggers {
+  return {
+    match: "line_start",
+    on: [...DEFAULT_TRIGGERS.on],
+    run: [...DEFAULT_TRIGGERS.run],
+    off: [...DEFAULT_TRIGGERS.off],
+    resume: [...DEFAULT_TRIGGERS.resume],
+    replan: [...DEFAULT_TRIGGERS.replan],
+    resume_review: [...DEFAULT_TRIGGERS.resume_review],
+  };
+}
+
+function cloneDefaultHookConfig(): ProjectHookConfig {
+  return {
+    triggers: cloneDefaultTriggers(),
+    plansDir: "plans",
+  };
+}
 
 /** Bản sao độc lập — tránh chia sẻ mảng verifyCommands giữa các lần gọi. */
 function parseReviewScope(raw: unknown): ReviewScope {
@@ -93,10 +140,30 @@ function isUnsafeKey(key: string): boolean {
   return key === "__proto__" || key === "prototype" || key === "constructor";
 }
 
-function coerceScalar(value: string): string | boolean | null {
+/**
+ * Coerce a YAML scalar. Init writes trigger lists as JSON arrays on one line
+ * (`on: ["Autopilot ON", …]`); parse those into string[] when valid.
+ */
+function coerceScalar(
+  value: string,
+): string | boolean | null | string[] {
   if (value === "true") return true;
   if (value === "false") return false;
   if (value === "null" || value === "~") return null;
+  const trimmed = value.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((x) => typeof x === "string")
+      ) {
+        return parsed as string[];
+      }
+    } catch {
+      /* not JSON — fall through to plain string */
+    }
+  }
   return unquote(value);
 }
 
@@ -230,88 +297,125 @@ function parseVerifyCommands(raw: unknown): VerifyCommandConfig[] {
 }
 
 /**
- * Load review runtime settings from `.autopilot/config.yml`.
- * Missing / unreadable / corrupt → safe defaults (hook fail-open).
+ * Read + parse `.autopilot/config.yml` (fail-open → null).
+ * Shared by review + hook loaders.
  */
-export function loadProjectReviewConfig(
+function readProjectConfigYaml(
   projectRoot: string,
-): ProjectReviewConfig {
-  // Fail closed on unusable roots before any open (empty/blank/NUL → cwd-relative join).
+): { root: string; parsed: Record<string, unknown> } | null {
   const root = normalizeProjectRoot(projectRoot);
-  if (!root) {
-    return cloneDefaultProjectReviewConfig();
-  }
+  if (!root) return null;
   const configPath = path.join(root, ".autopilot", "config.yml");
   try {
     const nofollow =
       typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
 
-    // Without O_NOFOLLOW: lstat before open — refuse leaf symlink follow.
     if (nofollow === 0) {
-      if (!fs.existsSync(configPath)) return cloneDefaultProjectReviewConfig();
-      if (fs.lstatSync(configPath).isSymbolicLink()) {
-        return cloneDefaultProjectReviewConfig();
-      }
+      if (!fs.existsSync(configPath)) return null;
+      if (fs.lstatSync(configPath).isSymbolicLink()) return null;
     }
 
     let fd: number;
     try {
-      // O_NOFOLLOW + fstat: block leaf-symlink TOCTOU and oversized reads after stat.
       fd = fs.openSync(configPath, fs.constants.O_RDONLY | nofollow);
     } catch {
-      return cloneDefaultProjectReviewConfig();
+      return null;
     }
     let raw: string;
     try {
       const st = fs.fstatSync(fd);
-      if (!st.isFile() || st.size > MAX_CONFIG_BYTES) {
-        return cloneDefaultProjectReviewConfig();
-      }
-      // Bind fd to path identity always (intermediate-dir swap-back TOCTOU).
+      if (!st.isFile() || st.size > MAX_CONFIG_BYTES) return null;
       const lst = fs.lstatSync(configPath);
-      if (lst.isSymbolicLink() || !lst.isFile()) {
-        return cloneDefaultProjectReviewConfig();
-      }
-      if (lst.ino !== st.ino || lst.dev !== st.dev) {
-        return cloneDefaultProjectReviewConfig();
-      }
-      if (!isRealpathInsideProject(root, configPath)) {
-        return cloneDefaultProjectReviewConfig();
-      }
-      // Read exactly the fstat size — avoid OOM if the file grows after fstat.
+      if (lst.isSymbolicLink() || !lst.isFile()) return null;
+      if (lst.ino !== st.ino || lst.dev !== st.dev) return null;
+      if (!isRealpathInsideProject(root, configPath)) return null;
       const buf = Buffer.alloc(st.size);
       const n = fs.readSync(fd, buf, 0, st.size, 0);
       raw = buf.subarray(0, n).toString("utf8");
     } finally {
       fs.closeSync(fd);
     }
-    if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) {
-      return cloneDefaultProjectReviewConfig();
-    }
+    if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) return null;
 
-    // Strip UTF-8 BOM so the first key is not shadowed as "\uFEFFlocale".
     const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
     const parsed = parseSimpleYaml(text);
-    if (!isPlainObject(parsed)) return cloneDefaultProjectReviewConfig();
-
-    const review = isPlainObject(parsed.review) ? parsed.review : {};
-    const verify = isPlainObject(review.verify) ? review.verify : {};
-    const stuck = isPlainObject(review.stuck) ? review.stuck : {};
-    const errors = isPlainObject(review.errors) ? review.errors : {};
-
-    // Một đường normalize — tránh load vs normalize lệch kẹp biên / bool.
-    return normalizeProjectReviewConfig({
-      confirmRounds: review.confirm_rounds,
-      reviewScope: review.scope,
-      verifyEnabled: verify.enabled,
-      verifyCommands: verify.commands,
-      maxIdleStops: stuck.max_idle_stops,
-      maxErrorsBeforePause: errors.max_before_pause,
-      locale: parsed.locale,
-    });
+    if (!isPlainObject(parsed)) return null;
+    return { root, parsed };
   } catch {
-    return cloneDefaultProjectReviewConfig();
+    return null;
   }
+}
+
+/** Non-empty string phrases only; empty / invalid → null (caller uses DEFAULT). */
+function nonEmptyPhraseList(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const t = item.trim();
+    if (t) out.push(t);
+  }
+  return out.length > 0 ? out : null;
+}
+
+function triggersFromParsed(parsed: Record<string, unknown>): ProjectHookTriggers {
+  const base = cloneDefaultTriggers();
+  const triggers = isPlainObject(parsed.triggers) ? parsed.triggers : {};
+  for (const key of TRIGGER_PHRASE_KEYS) {
+    const phrases = nonEmptyPhraseList(triggers[key]);
+    if (phrases) base[key] = phrases;
+  }
+  return base;
+}
+
+function plansDirFromParsed(
+  root: string,
+  parsed: Record<string, unknown>,
+): string {
+  const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
+  const raw = artifacts.plans_dir;
+  const candidate = typeof raw === "string" ? raw : "plans";
+  return normalizeInProjectPlansDir(root, candidate) ?? "plans";
+}
+
+/**
+ * Load review runtime settings from `.autopilot/config.yml`.
+ * Missing / unreadable / corrupt → safe defaults (hook fail-open).
+ */
+export function loadProjectReviewConfig(
+  projectRoot: string,
+): ProjectReviewConfig {
+  const loaded = readProjectConfigYaml(projectRoot);
+  if (!loaded) return cloneDefaultProjectReviewConfig();
+
+  const { parsed } = loaded;
+  const review = isPlainObject(parsed.review) ? parsed.review : {};
+  const verify = isPlainObject(review.verify) ? review.verify : {};
+  const stuck = isPlainObject(review.stuck) ? review.stuck : {};
+  const errors = isPlainObject(review.errors) ? review.errors : {};
+
+  return normalizeProjectReviewConfig({
+    confirmRounds: review.confirm_rounds,
+    reviewScope: review.scope,
+    verifyEnabled: verify.enabled,
+    verifyCommands: verify.commands,
+    maxIdleStops: stuck.max_idle_stops,
+    maxErrorsBeforePause: errors.max_before_pause,
+    locale: parsed.locale,
+  });
+}
+
+/**
+ * Load submit/edit hook settings (`triggers.*`, `artifacts.plans_dir`).
+ * Missing / unreadable / corrupt / empty phrase lists → DEFAULT_TRIGGERS + `plans/`.
+ */
+export function loadProjectHookConfig(projectRoot: string): ProjectHookConfig {
+  const loaded = readProjectConfigYaml(projectRoot);
+  if (!loaded) return cloneDefaultHookConfig();
+  return {
+    triggers: triggersFromParsed(loaded.parsed),
+    plansDir: plansDirFromParsed(loaded.root, loaded.parsed),
+  };
 }
 
 /**
