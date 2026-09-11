@@ -20,6 +20,8 @@ export interface FollowupLocaleBundle {
     recover_ambient?: string;
     review_complete?: string;
     stuck: string;
+    /** Soft idle escalation (still "Stuck:"/"卡住：" prefix); RESUME not required. */
+    stuck_soft?: string;
     verify_fix?: string;
     need_evidence?: string;
   };
@@ -64,6 +66,13 @@ export function createRenderFollowup(
         );
       case "stuck":
         return renderTemplate(f.stuck ?? "", vars);
+      case "stuck_soft":
+        return renderTemplate(
+          // Never fall back to hard `stuck` (RESUME-required) — that defeats C2.
+          f.stuck_soft ??
+            "Stuck: no progress for several stops (missing completion evidence). Change strategy, write matching .autopilot/verify-last.json, then end the turn. Session stays armed — Autopilot RESUME is not required unless the session was paused.",
+          vars,
+        );
       case "verify_fix":
         return renderTemplate(
           f.verify_fix ??

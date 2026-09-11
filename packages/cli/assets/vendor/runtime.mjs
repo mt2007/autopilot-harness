@@ -42,6 +42,7 @@ var en_default = {
     recover_ambient: "Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.",
     review_complete: "Review complete. All {total} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.",
     stuck: "Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.",
+    stuck_soft: "Stuck: no progress for several stops (missing completion evidence). Change strategy, write matching .autopilot/verify-last.json, then end the turn. Session stays armed \u2014 Autopilot RESUME is not required unless the session was paused.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     need_evidence: `Need evidence: no-code item {currentId}{currentTitleSuffix} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "{currentId}" and ok: true (only after this item's work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.`,
     track_pick: "Select a plan by number or slug."
@@ -118,6 +119,7 @@ var zh_CN_default = {
     recover_ambient: "\u6062\u590D\uFF1A\u4E0A\u4E00\u56DE\u5408\u51FA\u9519\u3002\u7EE7\u7EED\u5F53\u524D\u4EFB\u52A1\uFF08\u672A\u5728\u6267\u884C checklist\uFF09\u3002",
     review_complete: "\u81EA\u5BA1\u5B8C\u6210\u3002\u8FDE\u7EED {total} \u8F6E\u786E\u8BA4\u5DF2\u901A\u8FC7\uFF0C\u81EA\u5BA1\u94FE\u5DF2\u7ED3\u675F\u3002\u82E5\u5DE5\u4F5C\u533A\u4ECD\u6709\u672C\u4F1A\u8BDD\u672A\u63D0\u4EA4\u6539\u52A8\uFF0C\u6309\u5B89\u5168\u6E05\u5355\u672C\u5730 commit\uFF08\u52FF stage .env/\u5BC6\u94A5/.autopilot \u8FD0\u884C\u65F6\uFF1B\u52FF push\uFF0C\u9664\u975E\u7528\u6237\u660E\u786E\u8981\u6C42\uFF09\uFF1B\u5DF2\u5E72\u51C0\u5219\u53EA\u7B80\u77ED\u786E\u8BA4\u5373\u53EF\u3002",
     stuck: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\u3002\u8BF7\u6362\u7B56\u7565\uFF0C\u6216\u4FEE\u597D\u540E\u53D1\u9001 Autopilot RESUME\u3002",
+    stuck_soft: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\uFF08\u7F3A\u5B8C\u6210\u8BC1\u636E\uFF09\u3002\u8BF7\u6362\u7B56\u7565\u5E76\u5199\u5165\u5339\u914D\u7684 .autopilot/verify-last.json \u540E\u7ED3\u675F\u56DE\u5408\u3002\u4F1A\u8BDD\u4ECD\u5728\u8FD0\u884C\uFF0C\u65E0\u9700 RESUME\uFF1B\u4EC5\u5728\u5DF2 pause \u65F6\u624D\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
     need_evidence: '\u9700\u8981\u5B8C\u6210\u8BC1\u636E\uFF1A\u65E0\u4EE3\u7801\u6539\u52A8\u9879 {currentId}{currentTitleSuffix} \u7F3A\u5C11\u5339\u914D\u7684 soft \u5B8C\u6210\u8BC1\u636E\uFF0C\u65E0\u6CD5\u63A8\u8FDB\u3002\u8BF7\u5199\u5165 .autopilot/verify-last.json\uFF08itemId \u4E3A "{currentId}"\uFF0Cok: true\uFF1B\u987B\u5728\u8BE5\u9879\u5DE5\u4F5C\u5B8C\u6210\u540E\uFF09\u3002\u7136\u540E\u7ED3\u675F\u672C\u56DE\u5408\uFF0C\u7531 stop hook \u63A8\u8FDB/\u5B8C\u6210\u3002\u4E0D\u8981\u8BA9\u7528\u6237\u8BF4\u300C\u7EE7\u7EED\u300D\uFF1B\u4E0D\u8981\u81EA\u884C\u53D1\u660E\u63A8\u8FDB/\u5B8C\u6210\u6307\u4EE4\u3002',
     track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
@@ -2398,6 +2400,380 @@ function pendingRedeliverAllowed(lastRedeliverAt) {
   return Date.now() - t >= PENDING_REDELIVER_COOLDOWN_MS;
 }
 
+// ../core/src/code-edit-detector.ts
+import { spawnSync } from "node:child_process";
+import path7 from "node:path";
+
+// ../core/src/autopilot-ignore.ts
+import fs7 from "node:fs";
+import path6 from "node:path";
+var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigger self-review (gitignore syntax).
+#
+# What this file is:
+#   - Controls whether an afterFileEdit counts as "product code" (opens fix/confirm).
+#   - Does NOT change \`git diff\` / \`git status\` output (that is \`.gitignore\`).
+#   - Review followups ask the agent to skip these paths when reading diffs (soft).
+#
+# Semantics:
+#   - Same glob rules as gitignore; last matching pattern wins.
+#   - Use \`!\` to force-include an exception (e.g. \`!docs/feed/**/*.yml\`).
+#   - Markdown (*.md / *.mdx) is NOT ignored by default \u2014 design docs can be reviewed.
+#   - \`docs/**\` is NOT ignored by default.
+#   - Also skip untracked paths ignored by \`.gitignore\` (tracked files still count).
+#
+# Later (not implemented): hard-filtered review-diff / path ledger \u2014 see
+# docs/autopilot/workflows/autopilot-executing.md (B2 strong).
+
+# Runtime / editor (prefer also listing these in .gitignore)
+.autopilot/**
+.cursor/**
+.claude/**
+
+# Planning artifacts
+plans/**
+
+# Common build / vendor trees
+node_modules/**
+dist/**
+build/**
+out/**
+target/**
+.target/**
+coverage/**
+.venv/**
+venv/**
+__pycache__/**
+
+# Lockfiles / package manager noise
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb
+Cargo.lock
+poetry.lock
+composer.lock
+
+# Media / binary (do not trigger self-review)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+*.mp3
+*.mp4
+*.wav
+*.webm
+*.mov
+*.woff
+*.woff2
+*.ttf
+*.otf
+*.eot
+*.pdf
+*.zip
+*.gz
+*.tgz
+*.7z
+*.rar
+*.jar
+*.class
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.wasm
+
+# Prose / data noise
+*.txt
+*.html
+*.htm
+*.csv
+*.tsv
+*.log
+*.map
+*.min.js
+*.min.css
+`;
+var MAX_AUTOPILOT_IGNORE_BYTES = 1e6;
+var MAX_AUTOPILOT_IGNORE_LINE_CHARS = 4096;
+var MAX_AUTOPILOT_IGNORE_PATTERNS = 1e4;
+var ignoreCache = /* @__PURE__ */ new Map();
+function escapeRegexChar(ch) {
+  return ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+function globBodyToRegex(glob) {
+  let out = "";
+  for (let i = 0; i < glob.length; ) {
+    const ch = glob[i];
+    if (ch === "*" && glob[i + 1] === "*") {
+      if (glob[i + 2] === "/") {
+        out += "(?:.*/)?";
+        i += 3;
+        continue;
+      }
+      out += ".*";
+      i += 2;
+      continue;
+    }
+    if (ch === "*") {
+      out += "[^/]*";
+      i += 1;
+      continue;
+    }
+    if (ch === "?") {
+      out += "[^/]";
+      i += 1;
+      continue;
+    }
+    out += escapeRegexChar(ch);
+    i += 1;
+  }
+  return out;
+}
+function compilePattern(raw) {
+  let line = raw.trim();
+  if (!line || line.startsWith("#")) return null;
+  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
+  let negated = false;
+  if (line.startsWith("!")) {
+    negated = true;
+    line = line.slice(1).trim();
+    if (!line || line.startsWith("#")) return null;
+  }
+  const dirOnly = line.endsWith("/");
+  if (dirOnly) line = line.slice(0, -1);
+  if (!line) return null;
+  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
+  let anchored = false;
+  if (line.startsWith("/")) {
+    anchored = true;
+    line = line.slice(1);
+  }
+  const body = globBodyToRegex(line);
+  let regexSource;
+  if (anchored) {
+    regexSource = `^${body}`;
+    if (dirOnly || line.endsWith("/**") || line.endsWith("/*")) {
+      regexSource += "(?:/.*)?";
+    }
+    regexSource += "$";
+  } else if (line.includes("/")) {
+    regexSource = `(?:^|.*/)${body}`;
+    if (dirOnly || line.endsWith("/**") || line.endsWith("/*")) {
+      regexSource += "(?:/.*)?";
+    }
+    regexSource += "$";
+  } else {
+    regexSource = `(?:^|.*/)?${body}$`;
+  }
+  return { negated, regex: new RegExp(regexSource) };
+}
+function parseAutopilotIgnore(text) {
+  const patterns = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const compiled = compilePattern(rawLine);
+    if (!compiled) continue;
+    patterns.push(compiled);
+    if (patterns.length >= MAX_AUTOPILOT_IGNORE_PATTERNS) break;
+  }
+  return patterns;
+}
+var DEFAULT_AUTOPILOT_IGNORE_PATTERNS = parseAutopilotIgnore(
+  DEFAULT_AUTOPILOT_IGNORE_TEXT
+);
+function normalizeRelativePath(filePath) {
+  return filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+function isAutopilotIgnoredPath(relativePath, patterns) {
+  const norm = normalizeRelativePath(relativePath);
+  let ignored = false;
+  for (const pat of patterns) {
+    if (pat.regex.test(norm)) {
+      ignored = !pat.negated;
+    }
+  }
+  return ignored;
+}
+function realpathForCompare(absPath) {
+  try {
+    return fs7.realpathSync(absPath);
+  } catch {
+  }
+  let dir = path6.dirname(absPath);
+  const base = path6.basename(absPath);
+  const missing = [];
+  for (; ; ) {
+    try {
+      const realDir = fs7.realpathSync(dir);
+      return path6.join(realDir, ...missing, base);
+    } catch {
+      const parent = path6.dirname(dir);
+      if (parent === dir) return absPath;
+      missing.unshift(path6.basename(dir));
+      dir = parent;
+    }
+  }
+}
+function toProjectRelativePath(filePath, projectRoot) {
+  const posix = filePath.replace(/\\/g, "/");
+  if (!projectRoot?.trim()) {
+    return normalizeRelativePath(posix);
+  }
+  const root = realpathForCompare(path6.resolve(projectRoot));
+  const abs = realpathForCompare(
+    path6.isAbsolute(posix) ? path6.resolve(posix) : path6.resolve(root, posix)
+  );
+  const rel = path6.relative(root, abs);
+  if (rel.startsWith("..") || path6.isAbsolute(rel)) {
+    return "";
+  }
+  return normalizeRelativePath(rel.replace(/\\/g, "/"));
+}
+function loadAutopilotIgnorePatterns(projectRoot) {
+  const root = path6.resolve(projectRoot);
+  const filePath = path6.join(root, ".autopilotignore");
+  let st;
+  try {
+    st = fs7.lstatSync(filePath);
+  } catch {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  if (st.isSymbolicLink() || !st.isFile()) {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  if (st.size > MAX_AUTOPILOT_IGNORE_BYTES) {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  const cached = ignoreCache.get(root);
+  if (cached && cached.mtimeMs === st.mtimeMs) {
+    return cached.patterns;
+  }
+  let text;
+  try {
+    text = fs7.readFileSync(filePath, "utf8");
+  } catch {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  if (text.length > MAX_AUTOPILOT_IGNORE_BYTES) {
+    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  }
+  const patterns = parseAutopilotIgnore(text);
+  ignoreCache.set(root, { mtimeMs: st.mtimeMs, patterns });
+  return patterns;
+}
+
+// ../core/src/code-edit-detector.ts
+function isUntrackedGitIgnored(projectRoot, relativePath) {
+  if (!relativePath || relativePath.includes("\0")) return false;
+  try {
+    const r = spawnSync(
+      "git",
+      ["check-ignore", "-q", "--", relativePath],
+      {
+        cwd: projectRoot,
+        encoding: "utf8",
+        timeout: 5e3,
+        windowsHide: true,
+        shell: false
+      }
+    );
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+function isProductCodeEdit(filePath, opts) {
+  const relative = toProjectRelativePath(filePath, opts?.projectRoot);
+  if (!relative) return false;
+  const patterns = opts?.projectRoot?.trim() ? loadAutopilotIgnorePatterns(opts.projectRoot) : DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
+  if (isAutopilotIgnoredPath(relative, patterns)) return false;
+  const root = opts?.projectRoot?.trim();
+  if (root && isUntrackedGitIgnored(root, relative)) return false;
+  return true;
+}
+var MAX_DIRTY_PATHS_COLLECT = 2e3;
+var MAX_DIRTY_PATHS_CLASSIFY = 200;
+function gitDirtyRelativePaths(projectRoot) {
+  if (!projectRoot || projectRoot.includes("\0")) return [];
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  const pushZ = (stdout) => {
+    for (const raw of stdout.split("\0")) {
+      const p = raw.replace(/\r$/, "");
+      if (!p) continue;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      out.push(p);
+      if (out.length >= MAX_DIRTY_PATHS_COLLECT) return;
+    }
+  };
+  try {
+    const tracked = spawnSync(
+      "git",
+      ["diff", "--name-only", "-z", "HEAD", "--"],
+      {
+        cwd: projectRoot,
+        encoding: "utf8",
+        timeout: 5e3,
+        windowsHide: true,
+        shell: false
+      }
+    );
+    if (tracked.error || tracked.status !== 0) {
+      return [];
+    }
+    if (tracked.stdout) pushZ(tracked.stdout);
+    if (out.length >= MAX_DIRTY_PATHS_COLLECT) return out;
+    const untracked = spawnSync(
+      "git",
+      ["ls-files", "-o", "--exclude-standard", "-z", "--"],
+      {
+        cwd: projectRoot,
+        encoding: "utf8",
+        timeout: 5e3,
+        windowsHide: true,
+        shell: false
+      }
+    );
+    if (!untracked.error && untracked.status === 0 && untracked.stdout) {
+      pushZ(untracked.stdout);
+    }
+  } catch {
+    return [];
+  }
+  return out;
+}
+function hasDirtyProductCode(projectRoot) {
+  const root = normalizeProjectRoot(projectRoot);
+  if (!root) return false;
+  const relatives = gitDirtyRelativePaths(root);
+  const patterns = loadAutopilotIgnorePatterns(root);
+  let classified = 0;
+  for (const rel of relatives) {
+    if (!rel || rel.includes("\0") || path7.isAbsolute(rel) || rel.split(/[/\\]/).includes("..")) {
+      continue;
+    }
+    const abs = path7.join(root, rel);
+    const relative = toProjectRelativePath(abs, root);
+    if (!relative) continue;
+    if (isAutopilotIgnoredPath(relative, patterns)) continue;
+    classified += 1;
+    if (classified > MAX_DIRTY_PATHS_CLASSIFY) {
+      return false;
+    }
+    if (isProductCodeEdit(abs, { projectRoot: root })) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // ../core/src/review-engine.ts
 function defaultRender(kind, vars) {
   switch (kind) {
@@ -2421,6 +2797,8 @@ function defaultRender(kind, vars) {
       return `Review complete. All ${vars.total ?? 5} confirm rounds passed; the review chain has ended. If the working tree still has uncommitted changes from this session, local commit only per the safe checklist (never stage .env/secrets/.autopilot runtime; no push unless the user asks); if clean, briefly confirm only.`;
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
+    case "stuck_soft":
+      return `Stuck: no progress for several stops (missing completion evidence). Change strategy, write matching .autopilot/verify-last.json, then end the turn. Session stays armed \u2014 Autopilot RESUME is not required unless the session was paused.`;
     case "verify_fix":
       return `Verify failed (${vars.reason ?? "unknown"}). Fix verify commands and rewrite verify-last.json; do not advance.`;
     case "need_evidence":
@@ -2526,6 +2904,31 @@ var ReviewEngine = class {
       }
       return fromPending;
     });
+  }
+  /**
+   * Stop-time arm when Shell (or other non-afterFileEdit) dirtied product paths.
+   * - `clean`: no product dirty → caller may soft E0
+   * - `armed`: code_edited set → caller must prefer E2 (never soft)
+   * - `dirty_unarmed`: dirty seen but arm failed → caller must not soft
+   *   (otherwise unreviewed product could soft-advance)
+   */
+  maybeArmCodeEditedFromDirtyTree(session) {
+    const root = this.trustedProjectRoot();
+    if (!root) return "clean";
+    let dirty = false;
+    try {
+      dirty = hasDirtyProductCode(root);
+    } catch {
+      return "dirty_unarmed";
+    }
+    if (!dirty) return "clean";
+    try {
+      this.onCodeEdited(session.conversation_id);
+    } catch {
+      return "dirty_unarmed";
+    }
+    const live = this.store.getReviewChain(session.conversation_id);
+    return live?.code_edited === 1 ? "armed" : "dirty_unarmed";
   }
   handleStop(input) {
     if (!this.store.isConversationIdOk(input.conversationId)) {
@@ -2691,6 +3094,44 @@ var ReviewEngine = class {
       const inChain = chainNow.chain_pending === 1 || chainNow.fix_round > 0 && isChecklistExecuting(session);
       if (chainNow.confirm_left === null && chainNow.item_confirm_complete === 0 && inChain) {
         return this.e3ArmConfirm(session, chainNow);
+      }
+      if (chainNow.code_edited === 0 && isChecklistExecuting(session)) {
+        const dirtyArm = this.maybeArmCodeEditedFromDirtyTree(session);
+        if (dirtyArm === "dirty_unarmed") {
+          return null;
+        }
+        if (dirtyArm === "armed") {
+          const armed = this.store.getReviewChain(session.conversation_id) ?? chainNow;
+          if (armed.code_edited === 1) {
+            const tip = armed.pending_followup?.trim() ?? "";
+            if (isRecoverOrStuckFollowupMessage(tip)) {
+              const again = this.tryRedeliverPending(
+                session.conversation_id,
+                armed,
+                events,
+                transcriptPath
+              );
+              if (again) return again;
+              return null;
+            }
+            const fix = this.e2Fix(session, armed);
+            if (fix) return fix;
+            const afterE2 = this.store.getReviewChain(session.conversation_id) ?? armed;
+            const afterTip = afterE2.pending_followup?.trim() ?? "";
+            if (isRecoverOrStuckFollowupMessage(afterTip)) {
+              const again = this.tryRedeliverPending(
+                session.conversation_id,
+                afterE2,
+                events,
+                transcriptPath
+              );
+              if (again) return again;
+              return null;
+            }
+            return null;
+          }
+          return null;
+        }
       }
       return this.e0NoCodeContinue(session, chainNow);
     } catch (err) {
@@ -3207,10 +3648,10 @@ var ReviewEngine = class {
    * salvage again — the prior tip does not cover the new failure.
    */
   classifyCompletedOrphan(transcriptPath) {
-    const path10 = transcriptPath?.trim();
-    if (!path10) return "none";
+    const path11 = transcriptPath?.trim();
+    if (!path11) return "none";
     try {
-      const events = readTranscriptTail(path10);
+      const events = readTranscriptTail(path11);
       const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
       if (errIdx < 0) return "none";
       for (let i = events.length - 1; i > errIdx; i--) {
@@ -3924,28 +4365,16 @@ var ReviewEngine = class {
       }
       const nextIdle = sess.idle_stop_count + 1;
       const nowStuck = nextIdle >= this.config.maxIdleStops;
-      if (nowStuck) {
-        this.store.upsertSession({
-          conversation_id: cid2,
-          project_root: sess.project_root,
-          code_root: sess.code_root,
-          idle_stop_count: nextIdle,
-          paused: 1,
-          paused_reason: "stuck",
-          armed: 0
-        });
-      } else {
-        this.store.upsertSession({
-          conversation_id: cid2,
-          project_root: sess.project_root,
-          code_root: sess.code_root,
-          idle_stop_count: nextIdle
-        });
-      }
+      this.store.upsertSession({
+        conversation_id: cid2,
+        project_root: sess.project_root,
+        code_root: sess.code_root,
+        idle_stop_count: nextIdle
+      });
       const kind = nowStuck ? "stuck" : "need_evidence";
       const title = (lockedItem.title ?? "").trim();
       const message = this.render(
-        kind,
+        nowStuck ? "stuck_soft" : "need_evidence",
         nowStuck ? {} : {
           currentId: lockedItem.id,
           currentTitle: title,
@@ -4304,8 +4733,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let targets = null;
-      const path10 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path10.length > 0;
+      const path11 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path11.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed?.checklist) {
@@ -4437,28 +4866,7 @@ var ReviewEngine = class {
     } catch {
     }
   }
-  incrementIdle(session) {
-    const next = session.idle_stop_count + 1;
-    if (next >= this.config.maxIdleStops) {
-      this.store.upsertSession({
-        conversation_id: session.conversation_id,
-        project_root: session.project_root,
-        code_root: session.code_root,
-        idle_stop_count: next,
-        paused: 1,
-        paused_reason: "stuck",
-        armed: 0
-      });
-    } else {
-      this.store.upsertSession({
-        conversation_id: session.conversation_id,
-        project_root: session.project_root,
-        code_root: session.code_root,
-        idle_stop_count: next
-      });
-    }
-  }
-  /** After a no-progress stop that didn't inject, check stuck threshold. */
+  /** After a hard-stuck pause that didn't inject, surface stuck tip. */
   checkStuck(session) {
     const fresh = this.store.getSession(session.conversation_id);
     if (!fresh) return null;
@@ -4663,8 +5071,8 @@ function applyResumeReview(store, conversationId) {
 }
 
 // ../core/src/project-config.ts
-import fs7 from "node:fs";
-import path6 from "node:path";
+import fs8 from "node:fs";
+import path8 from "node:path";
 var MAX_CONFIG_BYTES = 1e6;
 var DEFAULT_PROJECT_REVIEW_CONFIG = {
   confirmRounds: 5,
@@ -4824,28 +5232,28 @@ function loadProjectReviewConfig(projectRoot) {
   if (!root) {
     return cloneDefaultProjectReviewConfig();
   }
-  const configPath = path6.join(root, ".autopilot", "config.yml");
+  const configPath = path8.join(root, ".autopilot", "config.yml");
   try {
-    const nofollow = typeof fs7.constants.O_NOFOLLOW === "number" ? fs7.constants.O_NOFOLLOW : 0;
+    const nofollow = typeof fs8.constants.O_NOFOLLOW === "number" ? fs8.constants.O_NOFOLLOW : 0;
     if (nofollow === 0) {
-      if (!fs7.existsSync(configPath)) return cloneDefaultProjectReviewConfig();
-      if (fs7.lstatSync(configPath).isSymbolicLink()) {
+      if (!fs8.existsSync(configPath)) return cloneDefaultProjectReviewConfig();
+      if (fs8.lstatSync(configPath).isSymbolicLink()) {
         return cloneDefaultProjectReviewConfig();
       }
     }
     let fd;
     try {
-      fd = fs7.openSync(configPath, fs7.constants.O_RDONLY | nofollow);
+      fd = fs8.openSync(configPath, fs8.constants.O_RDONLY | nofollow);
     } catch {
       return cloneDefaultProjectReviewConfig();
     }
     let raw;
     try {
-      const st = fs7.fstatSync(fd);
+      const st = fs8.fstatSync(fd);
       if (!st.isFile() || st.size > MAX_CONFIG_BYTES) {
         return cloneDefaultProjectReviewConfig();
       }
-      const lst = fs7.lstatSync(configPath);
+      const lst = fs8.lstatSync(configPath);
       if (lst.isSymbolicLink() || !lst.isFile()) {
         return cloneDefaultProjectReviewConfig();
       }
@@ -4856,10 +5264,10 @@ function loadProjectReviewConfig(projectRoot) {
         return cloneDefaultProjectReviewConfig();
       }
       const buf = Buffer.alloc(st.size);
-      const n = fs7.readSync(fd, buf, 0, st.size, 0);
+      const n = fs8.readSync(fd, buf, 0, st.size, 0);
       raw = buf.subarray(0, n).toString("utf8");
     } finally {
-      fs7.closeSync(fd);
+      fs8.closeSync(fd);
     }
     if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) {
       return cloneDefaultProjectReviewConfig();
@@ -4959,6 +5367,12 @@ function createRenderFollowup(bundle) {
         );
       case "stuck":
         return renderTemplate(f.stuck ?? "", vars);
+      case "stuck_soft":
+        return renderTemplate(
+          // Never fall back to hard `stuck` (RESUME-required) — that defeats C2.
+          f.stuck_soft ?? "Stuck: no progress for several stops (missing completion evidence). Change strategy, write matching .autopilot/verify-last.json, then end the turn. Session stays armed \u2014 Autopilot RESUME is not required unless the session was paused.",
+          vars
+        );
       case "verify_fix":
         return renderTemplate(
           f.verify_fix ?? "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
@@ -5011,12 +5425,12 @@ function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloade
 }
 
 // ../core/src/phase-actions.ts
-import fs9 from "node:fs";
-import path8 from "node:path";
+import fs10 from "node:fs";
+import path10 from "node:path";
 
 // ../core/src/list-tracks.ts
-import fs8 from "node:fs";
-import path7 from "node:path";
+import fs9 from "node:fs";
+import path9 from "node:path";
 function isRunnableTrack(t) {
   if (t.paused) return false;
   const unchecked = t.checklistTotal - t.checklistDone;
@@ -5027,19 +5441,19 @@ function readPlansDir(root, plansDir = "plans") {
   if (typeof plansDir !== "string" || !root || root.includes("\0") || plansDir.includes("\0")) {
     return [];
   }
-  const dir = path7.join(root, plansDir);
+  const dir = path9.join(root, plansDir);
   try {
-    const lst = fs8.lstatSync(dir);
+    const lst = fs9.lstatSync(dir);
     if (lst.isSymbolicLink() || !lst.isDirectory()) return [];
     if (!isRealpathInsideProject(root, dir)) return [];
   } catch {
     return [];
   }
-  const names = fs8.readdirSync(dir, { withFileTypes: true }).filter(
+  const names = fs9.readdirSync(dir, { withFileTypes: true }).filter(
     (d) => d.isDirectory() && !d.isSymbolicLink() && isSafeTrackSlug(d.name)
   ).map((d) => d.name);
   try {
-    const lst = fs8.lstatSync(dir);
+    const lst = fs9.lstatSync(dir);
     if (lst.isSymbolicLink() || !lst.isDirectory()) return [];
     if (!isRealpathInsideProject(root, dir)) return [];
   } catch {
@@ -5053,27 +5467,27 @@ function titleFromPlan(planPath, slug, projectRoot) {
   if (!root) return slug;
   const maxBytes = 65536;
   try {
-    const nofollow = typeof fs8.constants.O_NOFOLLOW === "number" ? fs8.constants.O_NOFOLLOW : 0;
+    const nofollow = typeof fs9.constants.O_NOFOLLOW === "number" ? fs9.constants.O_NOFOLLOW : 0;
     if (nofollow === 0) {
-      const lst = fs8.lstatSync(planPath);
+      const lst = fs9.lstatSync(planPath);
       if (lst.isSymbolicLink() || !lst.isFile()) return slug;
     }
-    const fd = fs8.openSync(planPath, fs8.constants.O_RDONLY | nofollow);
+    const fd = fs9.openSync(planPath, fs9.constants.O_RDONLY | nofollow);
     try {
-      const st = fs8.fstatSync(fd);
+      const st = fs9.fstatSync(fd);
       if (!st.isFile() || st.size <= 0) return slug;
-      const lst = fs8.lstatSync(planPath);
+      const lst = fs9.lstatSync(planPath);
       if (lst.isSymbolicLink() || !lst.isFile()) return slug;
       if (lst.ino !== st.ino || lst.dev !== st.dev) return slug;
       if (!isRealpathInsideProject(root, planPath)) return slug;
       const len = Math.min(st.size, maxBytes);
       const buf = Buffer.alloc(len);
-      const n = fs8.readSync(fd, buf, 0, len, 0);
+      const n = fs9.readSync(fd, buf, 0, len, 0);
       const first = buf.subarray(0, n).toString("utf8").split(/\r?\n/)[0] ?? "";
       const m = first.match(/^#\s+(.+)/);
       return m?.[1]?.trim() ?? slug;
     } finally {
-      fs8.closeSync(fd);
+      fs9.closeSync(fd);
     }
   } catch {
     return slug;
@@ -5089,16 +5503,16 @@ function listTracks(root, store, filter = "all", plansDir = "plans") {
   const slugs = readPlansDir(root, plansDir);
   const tracks = [];
   for (const slug of slugs) {
-    const trackDir = path7.join(root, plansDir, slug);
+    const trackDir = path9.join(root, plansDir, slug);
     try {
-      const lst = fs8.lstatSync(trackDir);
+      const lst = fs9.lstatSync(trackDir);
       if (lst.isSymbolicLink() || !lst.isDirectory()) continue;
       if (!isRealpathInsideProject(root, trackDir)) continue;
     } catch {
       continue;
     }
-    const planPath = path7.join(trackDir, "plan.md");
-    const checklistPath = path7.join(trackDir, "checklist.md");
+    const planPath = path9.join(trackDir, "plan.md");
+    const checklistPath = path9.join(trackDir, "checklist.md");
     let checklistTotal = 0;
     let checklistDone = 0;
     const checklistInProject = isRealpathInsideProject(root, checklistPath);
@@ -5170,7 +5584,7 @@ function canEnterExecuting(options) {
   if (!root) {
     return { ok: false, reason: "invalid project root" };
   }
-  if (!checklistPath || !fs8.existsSync(checklistPath)) {
+  if (!checklistPath || !fs9.existsSync(checklistPath)) {
     return { ok: false, reason: "checklist missing" };
   }
   if (!isRealpathInsideProject(root, checklistPath)) {
@@ -5219,8 +5633,8 @@ function nowIso2() {
 }
 function checklistPathFor(projectRoot, slug, plansDir) {
   const root = normalizeProjectRoot(projectRoot);
-  if (!root) return path8.join(plansDir, slug, "checklist.md");
-  return path8.join(root, plansDir, slug, "checklist.md");
+  if (!root) return path10.join(plansDir, slug, "checklist.md");
+  return path10.join(root, plansDir, slug, "checklist.md");
 }
 function sameChecklistBinding(stored, rebuilt, projectRoot) {
   if (stored === rebuilt) return true;
@@ -5230,8 +5644,8 @@ function sameChecklistBinding(stored, rebuilt, projectRoot) {
   const root = normalizeProjectRoot(projectRoot);
   if (!root) return false;
   try {
-    const absStored = path8.isAbsolute(stored) ? path8.resolve(stored) : path8.resolve(root, stored);
-    const absRebuilt = path8.isAbsolute(rebuilt) ? path8.resolve(rebuilt) : path8.resolve(root, rebuilt);
+    const absStored = path10.isAbsolute(stored) ? path10.resolve(stored) : path10.resolve(root, stored);
+    const absRebuilt = path10.isAbsolute(rebuilt) ? path10.resolve(rebuilt) : path10.resolve(root, rebuilt);
     return absStored === absRebuilt;
   } catch {
     return false;
@@ -5251,8 +5665,8 @@ function isChecklistPathAllowed(projectRoot, checklistPath) {
   const root = normalizeProjectRoot(projectRoot);
   if (!root) return false;
   try {
-    fs9.lstatSync(
-      path8.isAbsolute(checklistPath) ? checklistPath : path8.resolve(root, checklistPath)
+    fs10.lstatSync(
+      path10.isAbsolute(checklistPath) ? checklistPath : path10.resolve(root, checklistPath)
     );
     return isRealpathInsideProject(root, checklistPath);
   } catch {
@@ -5289,8 +5703,8 @@ function upsertTrack(store, slug, checklistPath, plansDir, projectRoot) {
   const ts = nowIso2();
   const root = normalizeProjectRoot(projectRoot);
   if (!root) return;
-  const planPath = path8.join(root, plansDir, slug, "plan.md");
-  const briefPath = path8.join(root, plansDir, slug, "brief.md");
+  const planPath = path10.join(root, plansDir, slug, "plan.md");
+  const briefPath = path10.join(root, plansDir, slug, "brief.md");
   store.db.prepare(
     `INSERT INTO tracks (track_id, slug, checklist_path, plan_path, brief_path, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -5304,8 +5718,8 @@ function upsertTrack(store, slug, checklistPath, plansDir, projectRoot) {
     slug,
     slug,
     checklistPath,
-    fs9.existsSync(planPath) ? planPath : null,
-    fs9.existsSync(briefPath) ? briefPath : null,
+    fs10.existsSync(planPath) ? planPath : null,
+    fs10.existsSync(briefPath) ? briefPath : null,
     ts
   );
 }
@@ -5708,303 +6122,6 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
     config: opts?.config,
     platform: opts?.platform
   });
-}
-
-// ../core/src/code-edit-detector.ts
-import { spawnSync } from "node:child_process";
-
-// ../core/src/autopilot-ignore.ts
-import fs10 from "node:fs";
-import path9 from "node:path";
-var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigger self-review (gitignore syntax).
-#
-# What this file is:
-#   - Controls whether an afterFileEdit counts as "product code" (opens fix/confirm).
-#   - Does NOT change \`git diff\` / \`git status\` output (that is \`.gitignore\`).
-#   - Review followups ask the agent to skip these paths when reading diffs (soft).
-#
-# Semantics:
-#   - Same glob rules as gitignore; last matching pattern wins.
-#   - Use \`!\` to force-include an exception (e.g. \`!docs/feed/**/*.yml\`).
-#   - Markdown (*.md / *.mdx) is NOT ignored by default \u2014 design docs can be reviewed.
-#   - \`docs/**\` is NOT ignored by default.
-#   - Also skip untracked paths ignored by \`.gitignore\` (tracked files still count).
-#
-# Later (not implemented): hard-filtered review-diff / path ledger \u2014 see
-# docs/autopilot/workflows/autopilot-executing.md (B2 strong).
-
-# Runtime / editor (prefer also listing these in .gitignore)
-.autopilot/**
-.cursor/**
-.claude/**
-
-# Planning artifacts
-plans/**
-
-# Common build / vendor trees
-node_modules/**
-dist/**
-build/**
-out/**
-target/**
-.target/**
-coverage/**
-.venv/**
-venv/**
-__pycache__/**
-
-# Lockfiles / package manager noise
-package-lock.json
-pnpm-lock.yaml
-yarn.lock
-bun.lock
-bun.lockb
-Cargo.lock
-poetry.lock
-composer.lock
-
-# Media / binary (do not trigger self-review)
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.webp
-*.ico
-*.svg
-*.bmp
-*.mp3
-*.mp4
-*.wav
-*.webm
-*.mov
-*.woff
-*.woff2
-*.ttf
-*.otf
-*.eot
-*.pdf
-*.zip
-*.gz
-*.tgz
-*.7z
-*.rar
-*.jar
-*.class
-*.o
-*.a
-*.so
-*.dylib
-*.dll
-*.exe
-*.wasm
-
-# Prose / data noise
-*.txt
-*.html
-*.htm
-*.csv
-*.tsv
-*.log
-*.map
-*.min.js
-*.min.css
-`;
-var MAX_AUTOPILOT_IGNORE_BYTES = 1e6;
-var MAX_AUTOPILOT_IGNORE_LINE_CHARS = 4096;
-var MAX_AUTOPILOT_IGNORE_PATTERNS = 1e4;
-var ignoreCache = /* @__PURE__ */ new Map();
-function escapeRegexChar(ch) {
-  return ch.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-}
-function globBodyToRegex(glob) {
-  let out = "";
-  for (let i = 0; i < glob.length; ) {
-    const ch = glob[i];
-    if (ch === "*" && glob[i + 1] === "*") {
-      if (glob[i + 2] === "/") {
-        out += "(?:.*/)?";
-        i += 3;
-        continue;
-      }
-      out += ".*";
-      i += 2;
-      continue;
-    }
-    if (ch === "*") {
-      out += "[^/]*";
-      i += 1;
-      continue;
-    }
-    if (ch === "?") {
-      out += "[^/]";
-      i += 1;
-      continue;
-    }
-    out += escapeRegexChar(ch);
-    i += 1;
-  }
-  return out;
-}
-function compilePattern(raw) {
-  let line = raw.trim();
-  if (!line || line.startsWith("#")) return null;
-  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
-  let negated = false;
-  if (line.startsWith("!")) {
-    negated = true;
-    line = line.slice(1).trim();
-    if (!line || line.startsWith("#")) return null;
-  }
-  const dirOnly = line.endsWith("/");
-  if (dirOnly) line = line.slice(0, -1);
-  if (!line) return null;
-  if (line.length > MAX_AUTOPILOT_IGNORE_LINE_CHARS) return null;
-  let anchored = false;
-  if (line.startsWith("/")) {
-    anchored = true;
-    line = line.slice(1);
-  }
-  const body = globBodyToRegex(line);
-  let regexSource;
-  if (anchored) {
-    regexSource = `^${body}`;
-    if (dirOnly || line.endsWith("/**") || line.endsWith("/*")) {
-      regexSource += "(?:/.*)?";
-    }
-    regexSource += "$";
-  } else if (line.includes("/")) {
-    regexSource = `(?:^|.*/)${body}`;
-    if (dirOnly || line.endsWith("/**") || line.endsWith("/*")) {
-      regexSource += "(?:/.*)?";
-    }
-    regexSource += "$";
-  } else {
-    regexSource = `(?:^|.*/)?${body}$`;
-  }
-  return { negated, regex: new RegExp(regexSource) };
-}
-function parseAutopilotIgnore(text) {
-  const patterns = [];
-  for (const rawLine of text.split(/\r?\n/)) {
-    const compiled = compilePattern(rawLine);
-    if (!compiled) continue;
-    patterns.push(compiled);
-    if (patterns.length >= MAX_AUTOPILOT_IGNORE_PATTERNS) break;
-  }
-  return patterns;
-}
-var DEFAULT_AUTOPILOT_IGNORE_PATTERNS = parseAutopilotIgnore(
-  DEFAULT_AUTOPILOT_IGNORE_TEXT
-);
-function normalizeRelativePath(filePath) {
-  return filePath.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-function isAutopilotIgnoredPath(relativePath, patterns) {
-  const norm = normalizeRelativePath(relativePath);
-  let ignored = false;
-  for (const pat of patterns) {
-    if (pat.regex.test(norm)) {
-      ignored = !pat.negated;
-    }
-  }
-  return ignored;
-}
-function realpathForCompare(absPath) {
-  try {
-    return fs10.realpathSync(absPath);
-  } catch {
-  }
-  let dir = path9.dirname(absPath);
-  const base = path9.basename(absPath);
-  const missing = [];
-  for (; ; ) {
-    try {
-      const realDir = fs10.realpathSync(dir);
-      return path9.join(realDir, ...missing, base);
-    } catch {
-      const parent = path9.dirname(dir);
-      if (parent === dir) return absPath;
-      missing.unshift(path9.basename(dir));
-      dir = parent;
-    }
-  }
-}
-function toProjectRelativePath(filePath, projectRoot) {
-  const posix = filePath.replace(/\\/g, "/");
-  if (!projectRoot?.trim()) {
-    return normalizeRelativePath(posix);
-  }
-  const root = realpathForCompare(path9.resolve(projectRoot));
-  const abs = realpathForCompare(
-    path9.isAbsolute(posix) ? path9.resolve(posix) : path9.resolve(root, posix)
-  );
-  const rel = path9.relative(root, abs);
-  if (rel.startsWith("..") || path9.isAbsolute(rel)) {
-    return "";
-  }
-  return normalizeRelativePath(rel.replace(/\\/g, "/"));
-}
-function loadAutopilotIgnorePatterns(projectRoot) {
-  const root = path9.resolve(projectRoot);
-  const filePath = path9.join(root, ".autopilotignore");
-  let st;
-  try {
-    st = fs10.lstatSync(filePath);
-  } catch {
-    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
-  }
-  if (st.isSymbolicLink() || !st.isFile()) {
-    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
-  }
-  if (st.size > MAX_AUTOPILOT_IGNORE_BYTES) {
-    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
-  }
-  const cached = ignoreCache.get(root);
-  if (cached && cached.mtimeMs === st.mtimeMs) {
-    return cached.patterns;
-  }
-  let text;
-  try {
-    text = fs10.readFileSync(filePath, "utf8");
-  } catch {
-    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
-  }
-  if (text.length > MAX_AUTOPILOT_IGNORE_BYTES) {
-    return DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
-  }
-  const patterns = parseAutopilotIgnore(text);
-  ignoreCache.set(root, { mtimeMs: st.mtimeMs, patterns });
-  return patterns;
-}
-
-// ../core/src/code-edit-detector.ts
-function isUntrackedGitIgnored(projectRoot, relativePath) {
-  if (!relativePath || relativePath.includes("\0")) return false;
-  try {
-    const r = spawnSync(
-      "git",
-      ["check-ignore", "-q", "--", relativePath],
-      {
-        cwd: projectRoot,
-        encoding: "utf8",
-        timeout: 5e3,
-        windowsHide: true,
-        shell: false
-      }
-    );
-    return r.status === 0;
-  } catch {
-    return false;
-  }
-}
-function isProductCodeEdit(filePath, opts) {
-  const relative = toProjectRelativePath(filePath, opts?.projectRoot);
-  if (!relative) return false;
-  const patterns = opts?.projectRoot?.trim() ? loadAutopilotIgnorePatterns(opts.projectRoot) : DEFAULT_AUTOPILOT_IGNORE_PATTERNS;
-  if (isAutopilotIgnoredPath(relative, patterns)) return false;
-  const root = opts?.projectRoot?.trim();
-  if (root && isUntrackedGitIgnored(root, relative)) return false;
-  return true;
 }
 
 // ../ports/cursor/src/index.ts

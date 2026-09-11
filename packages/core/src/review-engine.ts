@@ -69,6 +69,8 @@ export type FollowupKind =
   | "recover_planning"
   | "recover_ambient"
   | "stuck"
+  /** Soft need_evidence idle escalation — stuck tip prefix; RESUME not required. */
+  | "stuck_soft"
   | "verify_fix"
   | "need_evidence";
 
@@ -186,6 +188,12 @@ function defaultRender(kind: FollowupKind, vars: Record<string, string | number>
       );
     case "stuck":
       return `Stuck: no progress for several stops. Change strategy or send Autopilot RESUME after fixing.`;
+    case "stuck_soft":
+      return (
+        `Stuck: no progress for several stops (missing completion evidence). ` +
+        `Change strategy, write matching .autopilot/verify-last.json, then end the turn. ` +
+        `Session stays armed — Autopilot RESUME is not required unless the session was paused.`
+      );
     case "verify_fix":
       return `Verify failed (${vars.reason ?? "unknown"}). Fix verify commands and rewrite verify-last.json; do not advance.`;
     case "need_evidence":
@@ -2421,29 +2429,22 @@ export class ReviewEngine {
 
       const nextIdle = sess.idle_stop_count + 1;
       const nowStuck = nextIdle >= this.config.maxIdleStops;
-      if (nowStuck) {
-        this.store.upsertSession({
-          conversation_id: cid,
-          project_root: sess.project_root,
-          code_root: sess.code_root,
-          idle_stop_count: nextIdle,
-          paused: 1,
-          paused_reason: "stuck",
-          armed: 0,
-        });
-      } else {
-        this.store.upsertSession({
-          conversation_id: cid,
-          project_root: sess.project_root,
-          code_root: sess.code_root,
-          idle_stop_count: nextIdle,
-        });
-      }
+      // C2: soft need_evidence idle may emit stuck tip (stuck_soft copy), but
+      // must not hard-pause or disarm — agent is still working (e.g. rewriting
+      // verify-last). Verify fail (E5c) keeps the hard stuck path + stuck copy.
+      this.store.upsertSession({
+        conversation_id: cid,
+        project_root: sess.project_root,
+        code_root: sess.code_root,
+        idle_stop_count: nextIdle,
+      });
 
+      // Action kind stays "stuck" so ports/tests classify escalation; message
+      // uses stuck_soft so RESUME is not required while armed.
       const kind: FollowupKind = nowStuck ? "stuck" : "need_evidence";
       const title = (lockedItem.title ?? "").trim();
       const message = this.render(
-        kind,
+        nowStuck ? "stuck_soft" : "need_evidence",
         nowStuck
           ? {}
           : {
@@ -3082,31 +3083,7 @@ export class ReviewEngine {
     }
   }
 
-  private incrementIdle(session: SessionRow): void {
-    const next = session.idle_stop_count + 1;
-    if (next >= this.config.maxIdleStops) {
-      this.store.upsertSession({
-        conversation_id: session.conversation_id,
-        project_root: session.project_root,
-        code_root: session.code_root,
-        idle_stop_count: next,
-        paused: 1,
-        paused_reason: "stuck",
-        armed: 0,
-      });
-      // Same stop inject stuck once — caller gets verify_fix first in E5c;
-      // for pure idle stuck, expose via checkStuckAfterStop
-    } else {
-      this.store.upsertSession({
-        conversation_id: session.conversation_id,
-        project_root: session.project_root,
-        code_root: session.code_root,
-        idle_stop_count: next,
-      });
-    }
-  }
-
-  /** After a no-progress stop that didn't inject, check stuck threshold. */
+  /** After a hard-stuck pause that didn't inject, surface stuck tip. */
   checkStuck(session: SessionRow): FollowupAction | null {
     const fresh = this.store.getSession(session.conversation_id);
     if (!fresh) return null;

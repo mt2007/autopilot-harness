@@ -68,6 +68,7 @@ describe("i18n helpers", () => {
         f.recover_ambient,
         f.review_complete,
         f.stuck,
+        f.stuck_soft,
         f.verify_fix,
         f.need_evidence,
         f.track_pick,

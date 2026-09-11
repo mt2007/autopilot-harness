@@ -413,7 +413,7 @@ describe("review-engine P0 matrix", () => {
     expect(advanced?.message ?? "").toMatch(/item-b/);
   });
 
-  it("F-E0-NUDGE: repeated missing evidence eventually stuck (platform-agnostic core)", () => {
+  it("F-E0-NUDGE: repeated missing evidence emits stuck without hard pause (C2)", () => {
     const eng = engine(store, root, { maxIdleStops: 2 });
     store.updateReviewChain("c1", {
       confirm_left: null,
@@ -423,9 +423,37 @@ describe("review-engine P0 matrix", () => {
     });
     expect(stop(eng, "c1", 0)?.kind).toBe("need_evidence");
     expect(store.getSession("c1")!.idle_stop_count).toBe(1);
-    expect(stop(eng, "c1", 0)?.kind).toBe("stuck");
-    expect(store.getSession("c1")!.paused).toBe(1);
-    expect(store.getSession("c1")!.paused_reason).toBe("stuck");
+    const stuck = stop(eng, "c1", 0);
+    expect(stuck?.kind).toBe("stuck");
+    expect(stuck?.loop).toBe(true);
+    // stuck_soft copy: tip still classifies as stuck, but does not demand RESUME.
+    expect(stuck?.message ?? "").toMatch(/^Stuck:/);
+    expect(stuck?.message ?? "").toMatch(/not required|stays armed/i);
+    const sess = store.getSession("c1")!;
+    expect(sess.idle_stop_count).toBe(2);
+    // Soft idle stuck: nudge only — keep armed/unpaused so the agent can retry.
+    expect(sess.paused).toBe(0);
+    expect(sess.paused_reason).toBeNull();
+    expect(sess.armed).toBe(1);
+
+    // Soft stuck tip must not require RESUME: clear tip + soft evidence → advance
+    store.updateReviewChain("c1", {
+      pending_followup: null,
+      pending_followup_at: null,
+      pending_redeliver_at: null,
+      chain_pending: 0,
+    });
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true }),
+    );
+    const advanced = stop(eng, "c1", 0);
+    expect(advanced?.kind).toBe("advance");
+    expect(store.getSession("c1")!.idle_stop_count).toBe(0);
+    expect(store.getSession("c1")!.paused).toBe(0);
+    expect(store.getSession("c1")!.armed).toBe(1);
   });
 
   it("F-DIRTY-STOP: shell-dirty product path arms fix instead of soft need_evidence", () => {
@@ -3307,6 +3335,9 @@ describe("review-engine P0 matrix", () => {
     expect(stop(eng, "c1")?.kind).toBe("verify_fix");
     const stuck = stop(eng, "c1");
     expect(stuck?.kind).toBe("stuck");
+    expect(stuck?.message ?? "").toMatch(/RESUME/);
+    expect(stuck?.message ?? "").not.toMatch(/not required|stays armed|无需 RESUME/i);
+    expect(store.getSession("c1")!.paused).toBe(1);
     expect(store.getSession("c1")!.paused_reason).toBe("stuck");
     expect(store.getSession("c1")!.armed).toBe(0);
   });

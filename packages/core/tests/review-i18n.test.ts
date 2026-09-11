@@ -49,6 +49,28 @@ describe("review-i18n", () => {
     expect(render("advance", { nextId: "a", nextTitle: "A" })).toContain("a — A");
   });
 
+  it("stuck_soft never falls back to hard stuck RESUME copy", () => {
+    const softOnly = createRenderFollowup({
+      followup: {
+        ...zhBundle.followup,
+        stuck: "卡住：请发送 Autopilot RESUME。",
+        // stuck_soft omitted on purpose
+      },
+      lens: zhBundle.lens,
+    });
+    const msg = softOnly("stuck_soft", {});
+    expect(msg).toMatch(/^Stuck:/);
+    expect(msg).toMatch(/not required|stays armed/i);
+    expect(msg).not.toMatch(/请发送 Autopilot RESUME/);
+
+    const zh = JSON.parse(
+      fs.readFileSync(path.join(localesDir, "zh-CN.json"), "utf8"),
+    ) as FollowupLocaleBundle;
+    const zhSoft = createRenderFollowup(zh)("stuck_soft", {});
+    expect(zhSoft).toMatch(/^卡住[:：]/);
+    expect(zhSoft).toMatch(/无需 RESUME|仍在运行/);
+  });
+
   it("shipped zh-CN/en recover copy is neutral (no 不要推进)", () => {
     const zh = JSON.parse(
       fs.readFileSync(path.join(localesDir, "zh-CN.json"), "utf8"),
