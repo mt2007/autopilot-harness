@@ -26,6 +26,7 @@ import {
   parsePlatformsCliList,
   primaryBinding,
 } from "./init/platforms.js";
+import { parseInitReviewScope } from "./init/wizard-helpers.js";
 import { loadLocale } from "@autopilot-harness/i18n";
 
 const program = new Command();
@@ -55,6 +56,10 @@ program
   .option("--locale <locale>", "Locale", "en")
   .option("-y, --yes", "Non-interactive defaults")
   .option(
+    "--scope <scope>",
+    "Fresh-init review.scope: executing_only|project (default: project)",
+  )
+  .option(
     "--force",
     "Refresh hook/skills/pin + merge hooks (keeps existing config.yml)",
   )
@@ -67,6 +72,7 @@ program
       surface?: string;
       locale: string;
       yes?: boolean;
+      scope?: string;
       force?: boolean;
     }) => {
       const addPlatformRaw =
@@ -127,6 +133,13 @@ program
           process.exitCode = 1;
           return;
         }
+        if (typeof opts.scope === "string" && opts.scope.trim() !== "") {
+          console.error(
+            `init failed: --scope requires --yes (interactive init asks for review.scope in the wizard)`,
+          );
+          process.exitCode = 1;
+          return;
+        }
         const code = await runInteractiveInit({
           projectRoot: process.cwd(),
           force: Boolean(opts.force),
@@ -139,6 +152,13 @@ program
         return;
       }
 
+      const scopeParsed = parseInitReviewScope(opts.scope);
+      if (!scopeParsed.ok) {
+        console.error(`init failed: ${scopeParsed.error}`);
+        process.exitCode = 1;
+        return;
+      }
+
       const result = installInitYes({
         projectRoot: process.cwd(),
         platform: primary.id,
@@ -147,6 +167,7 @@ program
         mergePlatforms,
         locale: opts.locale,
         force: Boolean(opts.force) || mergePlatforms,
+        reviewScope: scopeParsed.value,
         packageVersion: PACKAGE_VERSION,
       });
 

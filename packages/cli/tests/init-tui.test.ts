@@ -973,7 +973,7 @@ describe("interactive init (scripted prompts)", () => {
           "en",
           "plans",
           "commit",
-          "executing_only",
+          "project",
           "skip",
           "unlimited",
           "skip",
@@ -987,6 +987,7 @@ describe("interactive init (scripted prompts)", () => {
     expect(answers!.plansDir).toBe("plans");
     expect(answers!.plansGit).toBe("commit");
     expect(answers!.verifyEnabled).toBe(false);
+    expect(answers!.reviewScope).toBe("project");
     expect(answers!.maxErrorsBeforePause).toBe(0);
     expect(answers!.shellAlias).toBe("skip");
   });

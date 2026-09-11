@@ -160,6 +160,59 @@ describe("upgradeProject", () => {
     if (!r.ok) expect(r.error).toMatch(/not initialized/i);
   });
 
+  it("does not overwrite existing review.scope", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        reviewScope: "executing_only",
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    expect(fs.readFileSync(configPath, "utf8")).toMatch(/scope:\s*executing_only/);
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.1.0" });
+    expect(r.ok).toBe(true);
+    const after = fs.readFileSync(configPath, "utf8");
+    expect(after).toMatch(/scope:\s*executing_only/);
+    expect(after).not.toMatch(/scope:\s*project/);
+  });
+
+  it("fill-missing review.scope stays executing_only (runtime default), not project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    // Legacy-ish: review present but no scope key (runtime defaulted to executing_only).
+    fs.writeFileSync(
+      configPath,
+      `platforms:
+  - id: cursor
+    surface: ide
+locale: en
+review:
+  confirm_rounds: 5
+`,
+      "utf8",
+    );
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.1.0" });
+    expect(r.ok).toBe(true);
+    const after = fs.readFileSync(configPath, "utf8");
+    expect(after).toMatch(/scope:\s*executing_only/);
+    expect(after).not.toMatch(/scope:\s*project/);
+  });
+
   it("dry-run lists actions without writing pin bump side effects twice", () => {
     root = tmpProject();
     expect(

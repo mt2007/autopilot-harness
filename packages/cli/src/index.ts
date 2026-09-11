@@ -61,6 +61,7 @@ export {
   installableHostOptions,
   writeQuickstart,
   normalizePlansDir,
+  parseInitReviewScope,
   resolveCliCommand,
   tryResolveRunningCliScript,
   autopilotShellAliasLine,

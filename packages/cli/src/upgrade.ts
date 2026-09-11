@@ -342,11 +342,14 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const hadLegacyHostScalars =
       configYamlHasLegacyHostScalars(existingConfig);
     // Defaults include platforms[] so upgrade can append the key to legacy configs.
+    // Keep review.scope fill-missing at executing_only (historical runtime default)
+    // so upgrade never flips ambient review when the key was absent.
     const defaultsYaml = defaultConfigYaml({
       platforms,
       platform: hints.platform,
       surface: hints.surface,
       locale,
+      reviewScope: "executing_only",
     });
 
     const merged = mergeConfigYamlMissingKeys(existingConfig, defaultsYaml);

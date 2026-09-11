@@ -91,7 +91,7 @@ export interface InitWizardAnswers {
   plansDir: string;
   plansGit: PlansGitPolicy;
   verifyEnabled: boolean;
-  /** executing_only = after RUN; project = any product-code edit. */
+  /** project = any product-code edit (init default); executing_only = after RUN. */
   reviewScope: "executing_only" | "project";
   /** 0 = unlimited. */
   maxErrorsBeforePause: number;
@@ -148,6 +148,29 @@ export function normalizePlansDir(
     };
   }
   return { ok: true, value };
+}
+
+/** Parse CLI `--scope` for fresh init (`project` default when omitted/blank). */
+export function parseInitReviewScope(
+  raw: string | undefined | null,
+):
+  | { ok: true; value: "executing_only" | "project" }
+  | { ok: false; error: string } {
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return { ok: true, value: "project" };
+  }
+  // Match runtime parseReviewScope: case-insensitive; always|all → project.
+  const value = String(raw).trim().toLowerCase();
+  if (value === "executing_only") {
+    return { ok: true, value: "executing_only" };
+  }
+  if (value === "project" || value === "always" || value === "all") {
+    return { ok: true, value: "project" };
+  }
+  return {
+    ok: false,
+    error: `invalid --scope (want executing_only|project)`,
+  };
 }
 
 export function probeProject(projectRoot: string): ProjectProbe {
@@ -763,8 +786,8 @@ ${afterInstall.map((l) => `- ${l}`).join("\n")}
 
 | 取值 | 含义 |
 |------|------|
-| **\`executing_only\`**（默认） | 仅在 \`/autopilot-run\`（checklist 执行中）且改了产品代码后，才走修复 → 多角度确认 |
-| **\`project\`** | **任意**产品代码编辑都会自审——**不需要**先 ON / RUN |
+| **\`project\`**（默认） | **任意**产品代码编辑都会自审——**不需要**先 ON / RUN |
+| **\`executing_only\`** | 仅在 \`/autopilot-run\`（checklist 执行中）且改了产品代码后，才走修复 → 多角度确认 |
 
 产品代码排除命中 \`.autopilotignore\` 的路径，以及**未跟踪且被 \`.gitignore\` 忽略**的路径。暂停 / OFF 期间不跑自审链，需 resume。
 
@@ -853,8 +876,8 @@ In \`.autopilot/config.yml\`:
 
 | Value | Meaning |
 |-------|---------|
-| **\`executing_only\`** (default) | Fix → confirm only after \`/autopilot-run\` (checklist executing) + product-code edits |
-| **\`project\`** | Fix → confirm on **any** product-code edit — **no** ON/RUN required |
+| **\`project\`** (default) | Fix → confirm on **any** product-code edit — **no** ON/RUN required |
+| **\`executing_only\`** | Fix → confirm only after \`/autopilot-run\` (checklist executing) + product-code edits |
 
 Product-code paths exclude \`.autopilotignore\` hits and **untracked** \`.gitignore\` hits. Paused/OFF skips the chain until resume.
 

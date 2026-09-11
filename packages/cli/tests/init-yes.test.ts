@@ -16,6 +16,7 @@ import {
   autopilotStopHasUnlimitedLoop,
   commandHasPlatformStamp,
 } from "../src/init/hooks-merge.js";
+import { parseInitReviewScope } from "../src/init/wizard-helpers.js";
 import { MAX_UNTRUSTED_TEXT_BYTES } from "../src/read-untrusted-file.js";
 import * as readUntrusted from "../src/read-untrusted-file.js";
 import { runDoctor } from "../src/status-doctor.js";
@@ -1245,6 +1246,101 @@ locale: zh-CN
       }).ok,
     ).toBe(true);
     expect(fs.readFileSync(configPath, "utf8")).toBe(before);
+  });
+
+  it("fresh --yes defaults review.scope to project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const yaml = fs.readFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "utf8",
+    );
+    expect(yaml).toMatch(/scope:\s*project/);
+    expect(yaml).not.toMatch(/scope:\s*executing_only/);
+  });
+
+  it("honors reviewScope executing_only on fresh init", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        reviewScope: "executing_only",
+      }).ok,
+    ).toBe(true);
+    expect(
+      fs.readFileSync(path.join(root, ".autopilot", "config.yml"), "utf8"),
+    ).toMatch(/scope:\s*executing_only/);
+  });
+
+  it("--force does not rewrite existing review.scope", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        reviewScope: "executing_only",
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const before = fs.readFileSync(configPath, "utf8");
+    expect(before).toMatch(/scope:\s*executing_only/);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: true,
+        reviewScope: "project",
+      }).ok,
+    ).toBe(true);
+    expect(fs.readFileSync(configPath, "utf8")).toBe(before);
+  });
+});
+
+describe("parseInitReviewScope", () => {
+  it("defaults blank/omitted to project and rejects unknown values", () => {
+    expect(parseInitReviewScope(undefined)).toEqual({
+      ok: true,
+      value: "project",
+    });
+    expect(parseInitReviewScope("")).toEqual({ ok: true, value: "project" });
+    expect(parseInitReviewScope("project")).toEqual({
+      ok: true,
+      value: "project",
+    });
+    expect(parseInitReviewScope("executing_only")).toEqual({
+      ok: true,
+      value: "executing_only",
+    });
+    expect(parseInitReviewScope("PROJECT")).toEqual({
+      ok: true,
+      value: "project",
+    });
+    expect(parseInitReviewScope("all")).toEqual({
+      ok: true,
+      value: "project",
+    });
+    expect(parseInitReviewScope("always")).toEqual({
+      ok: true,
+      value: "project",
+    });
+    expect(parseInitReviewScope("bogus").ok).toBe(false);
   });
 });
 

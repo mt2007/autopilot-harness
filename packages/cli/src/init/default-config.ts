@@ -47,7 +47,7 @@ export function defaultConfigYaml(opts: {
   verifyEnabled?: boolean;
   /** 0 = unlimited (default). */
   maxErrorsBeforePause?: number;
-  /** executing_only | project */
+  /** project (default) | executing_only */
   reviewScope?: "executing_only" | "project";
 }): string {
   const plansNorm = normalizePlansDir(opts.plansDir);
@@ -67,6 +67,8 @@ export function defaultConfigYaml(opts: {
   const resume = JSON.stringify(triggers.resume);
   const replan = JSON.stringify(triggers.replan);
   const resumeReview = JSON.stringify(triggers.resume_review);
+  const reviewScope =
+    opts.reviewScope === "executing_only" ? "executing_only" : "project";
 
   return `# Autopilot Harness — project config (init defaults)
 # Enabled hosts (id + surface). surface: ide | cli | runner
@@ -94,8 +96,8 @@ concurrency:
   worktrees_dir: .autopilot/worktrees
 
 review:
-  # executing_only = self-review only after Autopilot RUN; project = any product-code edit
-  scope: ${opts.reviewScope ?? "executing_only"}
+  # project = any product-code edit (default); executing_only = only after Autopilot RUN
+  scope: ${reviewScope}
   # 5 = full lenses; 3 = light mode (lenses 1→2→5 only)
   confirm_rounds: 5
   verify:

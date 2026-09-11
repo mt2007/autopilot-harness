@@ -854,7 +854,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       ? opts.maxErrorsBeforePause
       : 0;
   const reviewScope =
-    opts.reviewScope === "project" ? "project" : "executing_only";
+    opts.reviewScope === "executing_only" ? "executing_only" : "project";
   const writeQs = opts.writeQuickstart !== false;
   const locale = resolveInstallLocale(
     opts.locale,

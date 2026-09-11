@@ -279,7 +279,7 @@ export async function collectWizardAnswers(
       plansDir: "plans",
       plansGit: "commit",
       verifyEnabled: false,
-      reviewScope: "executing_only",
+      reviewScope: "project",
       maxErrorsBeforePause: 0,
       shellAlias,
       force: true,
@@ -440,17 +440,17 @@ export async function collectWizardAnswers(
     message: "When should automatic self-review run?",
     options: [
       {
-        value: "executing_only",
-        label: "Only during Autopilot RUN",
-        hint: "default — checklist executing mode",
-      },
-      {
         value: "project",
         label: "Project-wide (edits + error recovery)",
-        hint: "no ON/RUN required",
+        hint: "default — no ON/RUN required",
+      },
+      {
+        value: "executing_only",
+        label: "Only during Autopilot RUN",
+        hint: "checklist executing mode only",
       },
     ],
-    initialValue: "executing_only",
+    initialValue: "project",
   });
   if (p.isCancel(reviewScopeChoice)) {
     return cancelOut(p, "Cancelled — nothing was changed.");
