@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PACKAGE_VERSION } from "../src/init/types.js";
+import { PUBLIC_PACKAGE_DIRS } from "./public-npm-packages.js";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -15,6 +16,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/cli",
   "packages/ports/cursor",
   "packages/ports/claude-code",
+  "packages/ports/codex",
 ] as const;
 
 function workspaceHarnessDeps(
@@ -63,6 +65,19 @@ function readPackedPackageJson(tgz: string): {
  * `pnpm publish` / `pnpm pack` rewrites those to concrete versions — lock that in.
  */
 describe("pnpm pack rewrites workspace:* for publish", () => {
+  it("PACKAGES_WITH_WORKSPACE_DEPS covers every public package with workspace:*", () => {
+    for (const rel of PUBLIC_PACKAGE_DIRS) {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, rel, "package.json"), "utf8"),
+      ) as { dependencies?: Record<string, string> };
+      if (workspaceHarnessDeps(pkg.dependencies).length === 0) continue;
+      expect(
+        PACKAGES_WITH_WORKSPACE_DEPS as readonly string[],
+        `${rel} declares workspace:* but is missing from PACKAGES_WITH_WORKSPACE_DEPS`,
+      ).toContain(rel);
+    }
+  });
+
   for (const rel of PACKAGES_WITH_WORKSPACE_DEPS) {
     it(`${rel} tarball deps are concrete ${PACKAGE_VERSION} (no workspace:)`, () => {
       const pkgDir = path.join(repoRoot, rel);

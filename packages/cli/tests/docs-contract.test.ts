@@ -6,16 +6,7 @@ import { writeQuickstart } from "../src/init/wizard-helpers.js";
 import { PACKAGE_VERSION } from "../src/init/types.js";
 import { CLI_NAME, NPM_PACKAGE_NAME } from "../src/names.js";
 import os from "node:os";
-
-/** Public npm packages that must share PACKAGE_VERSION on release bumps. */
-const PUBLIC_PACKAGE_JSON_PATHS = [
-  "packages/cli/package.json",
-  "packages/core/package.json",
-  "packages/i18n/package.json",
-  "packages/ports/cursor/package.json",
-  "packages/ports/claude-code/package.json",
-  "packages/ports/codex/package.json",
-] as const;
+import { PUBLIC_PACKAGE_JSON_PATHS } from "./public-npm-packages.js";
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -398,7 +389,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -417,6 +408,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.13\]/);
     expect(log).toMatch(/## \[0\.2\.14\]/);
     expect(log).toMatch(/## \[0\.2\.15\]/);
+    expect(log).toMatch(/## \[0\.3\.0\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -485,9 +477,28 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0215).toMatch(/do not restart at Q1|Round k/i);
     expect(section0215).toMatch(/README|zh-CN/i);
     expect(section0215).toMatch(/pnpm publish|pnpm pack/i);
+    const section030 = changelogSection(log, "0.3.0");
+    expect(section030).toMatch(/port-codex|@autopilot-harness\/port-codex/i);
+    expect(section030).toMatch(/handleCodexUserPromptSubmit/);
+    expect(section030).toMatch(/handleCodexPostToolUse/);
+    expect(section030).toMatch(/handleCodexStop/);
+    expect(section030).toMatch(/docs-codex-shipped/i);
+    expect(section030).toMatch(/marked \*\*Shipped\*\*/);
+    expect(section030).toMatch(/packages\/ports\/codex\/package\.json/);
+    expect(section030).toMatch(/\.codex\/hooks\.json/);
+    expect(section030).toMatch(/triggers\.on/);
+    expect(section030).toMatch(/triggers\.run/);
+    expect(section030).toMatch(/core\s*→\s*i18n\s*→\s*ports[\s\S]*→\s*cli/i);
+    expect(section030).toMatch(/pnpm publish|pnpm pack/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
-    // Release compare URL lands with git-tag / gh release — do not pretentag.
+    // Release compare URL lands with git-tag / gh release — do not pretentag
+    // current or 0.2.x lines (0.1.0 footer link is historical).
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
+    expect(log).not.toMatch(
+      new RegExp(
+        `\\[${escapeRegExp(PACKAGE_VERSION)}\\]:\\s*https:\\/\\/github\\.com`,
+      ),
+    );
 
     const contrib = fs.readFileSync(
       path.join(repoRoot, "CONTRIBUTING.md"),
@@ -502,8 +513,29 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     for (const rel of PUBLIC_PACKAGE_JSON_PATHS) {
       const pkg = JSON.parse(
         fs.readFileSync(path.join(repoRoot, rel), "utf8"),
-      ) as { version?: string };
+      ) as { version?: string; description?: string };
       expect(pkg.version, rel).toBe(PACKAGE_VERSION);
     }
+    const rootPkg = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+    ) as { version?: string; description?: string; private?: boolean };
+    expect(rootPkg.private).toBe(true);
+    expect(rootPkg.version).toBe(PACKAGE_VERSION);
+    expect(rootPkg.description).toMatch(/Cursor, Claude Code, and Codex/);
+    const cliPkg = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
+    ) as { description?: string; keywords?: string[] };
+    expect(cliPkg.description).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(cliPkg.keywords).toEqual(
+      expect.arrayContaining(["cursor", "claude-code", "codex"]),
+    );
+    const kimiPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/kimi-code/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string };
+    expect(kimiPkg.description).toMatch(/Coming v0\.4/);
+    expect(kimiPkg.description).not.toMatch(/Coming v0\.3\b/);
   });
 });

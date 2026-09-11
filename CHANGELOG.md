@@ -9,10 +9,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-12
+
 ### Added
 
-- **docs-codex-shipped**: Codex host documented as **Shipped** across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; ternary `--platform` dispatch + aliased `handleCodex*` exports; `apply_patch` parse + dirty-arm; `/hooks` trust/re-trust; omit timeout or ≥120s; P0 line-start `triggers.on` / `triggers.run` (no default skills/`AGENTS.md`).
-- docs-contract: Codex **Planned→Shipped**; `PUBLIC_PACKAGE_JSON_PATHS` includes `packages/ports/codex/package.json`.
+- **Codex hook port** (`@autopilot-harness/port-codex`): UserPromptSubmit / PostToolUse / Stop adapters; fail-open on errors; Stop continue = `{ decision:"block", reason }` (hard-stop may use `continue:false`; never `continue:false` to keep the chain going); needPick via `additionalContext` + slug truncation; `apply_patch` path parse from `tool_input.command` with dirty-arm backup; ignore `permission_mode:plan`; no StopFailure / SubagentStop.
+- **Ternary vendor dispatch**: hook commands stamp `--platform <id>`; aliased exports `handleCodexUserPromptSubmit` / `handleCodexPostToolUse` / `handleCodexStop` (no clash with Claude bare names); cross-stamp / cross-payload abort + conflict resolver.
+- **Init / upgrade / uninstall / doctor** for Codex: installable `surface:cli`; non-destructive `.codex/hooks.json` merge (does **not** edit `config.toml` hooks); PostToolUse matcher `apply_patch|Edit|Write`; omit timeout (or ≥120s); `--add-platform codex`; no default Autopilot skills / `AGENTS.md`; doctor WARNs for missing entries, timeout < 120s, and `/hooks` trust/re-trust.
+- **docs-codex-shipped**: Codex marked **Shipped** across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Planned→Shipped; public package matrix includes `packages/ports/codex/package.json`; P0 line-start `triggers.on` / `triggers.run` (no default skills/`AGENTS.md`; typed `/autopilot-*` still parses).
+- Contract / triple-host matrix tests for Codex I/O, aliases, merge, doctor, and Cursor/Claude cross-fire.
 
 ### Fixed
 
@@ -25,6 +30,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Dual-host cheat sheet: when Codex is included with other hosts, add Codex line-start preference notes (slash remains primary for Cursor/Claude).
 - `formatCheatSheet` dedupes platform ids (duplicate/`CODEX` casing no longer flips Codex-only into slash-first dual wording).
 - Init copy helpers share `uniquePlatformIds` (outro / tips / cheat sheet / plain activation lines) so duplicate hosts stay single-host wording.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.3.0 public packages.
 
 ## [0.2.15] — 2026-09-11
 
