@@ -18,6 +18,7 @@ import {
   isLastUnchecked,
   isProductCodeEdit,
   isRealpathInsideProject,
+  isRecoverOrStuckFollowupMessage,
   isRunnableTrack,
   listTracks,
   migrate,
@@ -429,6 +430,7 @@ describe("review-engine P0 matrix", () => {
     // stuck_soft copy: tip still classifies as stuck, but does not demand RESUME.
     expect(stuck?.message ?? "").toMatch(/^Stuck:/);
     expect(stuck?.message ?? "").toMatch(/not required|stays armed/i);
+    expect(isRecoverOrStuckFollowupMessage(stuck?.message ?? "")).toBe(true);
     const sess = store.getSession("c1")!;
     expect(sess.idle_stop_count).toBe(2);
     // Soft idle stuck: nudge only — keep armed/unpaused so the agent can retry.
@@ -454,6 +456,96 @@ describe("review-engine P0 matrix", () => {
     expect(store.getSession("c1")!.idle_stop_count).toBe(0);
     expect(store.getSession("c1")!.paused).toBe(0);
     expect(store.getSession("c1")!.armed).toBe(1);
+  });
+
+  it("F-E0-NUDGE: soft stuck tip blocks soft advance until cleared (C2 tip ownership)", () => {
+    const eng = engine(store, root, { maxIdleStops: 1 });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+    });
+    const stuck = stop(eng, "c1", 0);
+    expect(stuck?.kind).toBe("stuck");
+    expect(isRecoverOrStuckFollowupMessage(stuck?.message ?? "")).toBe(true);
+    expect(store.getSession("c1")!.paused).toBe(0);
+    expect(store.getSession("c1")!.armed).toBe(1);
+    const tip = store.getReviewChain("c1")!.pending_followup!;
+    expect(tip).toBeTruthy();
+
+    const reportPath = path.join(root, ".autopilot", "verify-last.json");
+    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify({ itemId: "item-a", ok: true }),
+    );
+    // No transcript_path: undelivered stuck tip → refuse soft advance (not silent advance).
+    expect(stop(eng, "c1", 0)).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(tip);
+    expect(store.getSession("c1")!.idle_stop_count).toBe(1);
+    expect(firstUnchecked(parseChecklist(cp))!.id).toBe("item-a");
+
+    // Transcript without tip delivered → redeliver stuck; stay armed.
+    const transcript = path.join(root, "transcript.jsonl");
+    fs.writeFileSync(
+      transcript,
+      JSON.stringify({
+        role: "assistant",
+        message: { content: [{ type: "text", text: "working…" }] },
+      }) + "\n",
+    );
+    const again = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(again?.kind).toBe("stuck");
+    expect(again?.meta?.redeliver).toBe(true);
+    expect(again?.message).toBe(tip);
+    expect(store.getSession("c1")!.paused).toBe(0);
+    expect(store.getSession("c1")!.armed).toBe(1);
+  });
+
+  it("F-E0-NUDGE: soft stuck tip wins over sticky code_edited until cleared (C2)", () => {
+    const eng = engine(store, root, { maxIdleStops: 1 });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+    });
+    const stuck = stop(eng, "c1", 0);
+    expect(stuck?.kind).toBe("stuck");
+    const tip = store.getReviewChain("c1")!.pending_followup!;
+
+    // Product edit arms sticky code_edited while soft stuck tip still owns the chain.
+    store.updateReviewChain("c1", { code_edited: 1, fix_round: 0 });
+    expect(stop(eng, "c1", 0)).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBe(tip);
+
+    const transcript = path.join(root, "transcript-code.jsonl");
+    fs.writeFileSync(
+      transcript,
+      JSON.stringify({
+        role: "assistant",
+        message: { content: [{ type: "text", text: "edited" }] },
+      }) + "\n",
+    );
+    const redelivered = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(redelivered?.kind).toBe("stuck");
+    expect(redelivered?.meta?.redeliver).toBe(true);
+    expect(redelivered?.message).toBe(tip);
+    // Sticky edit preserved for after tip clears.
+    expect(store.getReviewChain("c1")!.code_edited).toBe(1);
+    expect(store.getSession("c1")!.armed).toBe(1);
+    expect(store.getSession("c1")!.paused).toBe(0);
   });
 
   it("F-DIRTY-STOP: shell-dirty product path arms fix instead of soft need_evidence", () => {
@@ -506,6 +598,62 @@ describe("review-engine P0 matrix", () => {
     expect(chain.code_edited).toBe(0);
     expect(chain.fix_round).toBeGreaterThan(0);
     expect(chain.chain_pending).toBe(1);
+    dirtyStore.close();
+  });
+
+  it("F-DIRTY-STOP: only .autopilotignore dirt stays on soft need_evidence (A)", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(
+      path.join(dirtyRoot, ".autopilotignore"),
+      "plans/**\n.autopilot/**\n",
+    );
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    // Dirt only under ignored .autopilot/ — must not arm product code_edited.
+    // Use .ts so this asserts `.autopilot/**` (fixture ignore replaces defaults;
+    // default `*.txt` would not apply here).
+    fs.mkdirSync(path.join(dirtyRoot, ".autopilot"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilot", "scratch.ts"), "export {};\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    const dirtyCp = writeChecklist(
+      dirtyRoot,
+      "ignore-dirty",
+      `- [ ] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    sessionExecuting(dirtyStore, dirtyRoot, "ig1", dirtyCp);
+    dirtyStore.ensureReviewChain("ig1");
+    dirtyStore.updateReviewChain("ig1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const eng = engine(dirtyStore, dirtyRoot);
+    const out = eng.handleStop({
+      conversationId: "ig1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out?.kind).toBe("need_evidence");
+    expect(dirtyStore.getReviewChain("ig1")!.code_edited).toBe(0);
+    expect(dirtyStore.getReviewChain("ig1")!.fix_round).toBe(0);
     dirtyStore.close();
   });
 
