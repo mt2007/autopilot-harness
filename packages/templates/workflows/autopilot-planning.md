@@ -4,10 +4,14 @@ Built-in grill / design-tree workflow. Do **not** write product code until `/aut
 
 ## Frontier format (every round)
 
-List every decision you can ask **now** (premises already settled):
+Open each round with a round heading, then list every decision you can ask **now** (premises already settled).
+
+Number questions **globally across rounds** (`Q1`, `Q2`, …). Continue numbering from the last question in prior rounds; **do not restart at Q1**.
 
 ```markdown
-❓ **Q1** - **<title>**: <body; options if useful>
+### Round k
+
+❓ **Qn** - **<title>**: <body; options if useful>
 
 ➡️ <recommended answer>
 ```
