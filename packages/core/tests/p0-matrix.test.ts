@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyOff,
   applyOn,
@@ -425,6 +426,124 @@ describe("review-engine P0 matrix", () => {
     expect(stop(eng, "c1", 0)?.kind).toBe("stuck");
     expect(store.getSession("c1")!.paused).toBe(1);
     expect(store.getSession("c1")!.paused_reason).toBe("stuck");
+  });
+
+  it("F-DIRTY-STOP: shell-dirty product path arms fix instead of soft need_evidence", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    // Shell-style write (no afterFileEdit): dirties product file vs HEAD.
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    const dirtyCp = writeChecklist(
+      dirtyRoot,
+      "dirty-demo",
+      `- [ ] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    sessionExecuting(dirtyStore, dirtyRoot, "dirty1", dirtyCp);
+    dirtyStore.ensureReviewChain("dirty1");
+    dirtyStore.updateReviewChain("dirty1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const eng = engine(dirtyStore, dirtyRoot);
+    const out = eng.handleStop({
+      conversationId: "dirty1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out?.kind).toBe("review.fix");
+    const chain = dirtyStore.getReviewChain("dirty1")!;
+    // e2Fix clears code_edited when the fix tip is committed (same as afterFileEdit path).
+    expect(chain.code_edited).toBe(0);
+    expect(chain.fix_round).toBeGreaterThan(0);
+    expect(chain.chain_pending).toBe(1);
+    dirtyStore.close();
+  });
+
+  it("F-DIRTY-STOP: dirty_unarmed refuses soft even with matching verify-last", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    const dirtyCp = writeChecklist(
+      dirtyRoot,
+      "dirty-unarmed",
+      `- [ ] item-a — First\n- [ ] item-b — Second\n`,
+    );
+    sessionExecuting(dirtyStore, dirtyRoot, "du1", dirtyCp);
+    dirtyStore.ensureReviewChain("du1");
+    dirtyStore.updateReviewChain("du1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    fs.mkdirSync(path.join(dirtyRoot, ".autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dirtyRoot, ".autopilot", "verify-last.json"),
+      JSON.stringify({
+        itemId: "item-a",
+        ok: true,
+        at: new Date().toISOString(),
+      }),
+    );
+    // Simulate arm failure: dirty tree seen but code_edited never sticks.
+    const markSpy = vi
+      .spyOn(StateStore.prototype, "markCodeEdited")
+      .mockImplementation(() => {});
+    try {
+      const eng = engine(dirtyStore, dirtyRoot);
+      const out = eng.handleStop({
+        conversationId: "du1",
+        status: "completed",
+        loopCount: 0,
+      });
+      expect(out).toBeNull();
+      expect(dirtyStore.getReviewChain("du1")!.code_edited).toBe(0);
+    } finally {
+      markSpy.mockRestore();
+      dirtyStore.close();
+    }
   });
 
   it("F-E0-NUDGE: sticky reviewing_item_id binds need_evidence after premature [x]", () => {

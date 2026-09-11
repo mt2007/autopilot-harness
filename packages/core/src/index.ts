@@ -130,7 +130,7 @@ export {
   type TranscriptEvent,
 } from "./transcript-followup.js";
 
-export { isProductCodeEdit, type ProductCodeEditOptions } from "./code-edit-detector.js";
+export { isProductCodeEdit, hasDirtyProductCode, type ProductCodeEditOptions } from "./code-edit-detector.js";
 
 export {
   DEFAULT_AUTOPILOT_IGNORE_TEXT,

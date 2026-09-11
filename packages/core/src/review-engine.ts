@@ -56,6 +56,7 @@ import {
   hasNoCodeCompletionEvidence,
   type VerifyCommandConfig,
 } from "./verify-report.js";
+import { hasDirtyProductCode } from "./code-edit-detector.js";
 
 export type FollowupKind =
   | "review.fix"
@@ -341,6 +342,35 @@ export class ReviewEngine {
     });
   }
 
+  /**
+   * Stop-time arm when Shell (or other non-afterFileEdit) dirtied product paths.
+   * - `clean`: no product dirty → caller may soft E0
+   * - `armed`: code_edited set → caller must prefer E2 (never soft)
+   * - `dirty_unarmed`: dirty seen but arm failed → caller must not soft
+   *   (otherwise unreviewed product could soft-advance)
+   */
+  private maybeArmCodeEditedFromDirtyTree(
+    session: SessionRow,
+  ): "clean" | "armed" | "dirty_unarmed" {
+    const root = this.trustedProjectRoot();
+    if (!root) return "clean";
+    let dirty = false;
+    try {
+      dirty = hasDirtyProductCode(root);
+    } catch {
+      // Unknown dirty state — refuse soft rather than advance over possible edits.
+      return "dirty_unarmed";
+    }
+    if (!dirty) return "clean";
+    try {
+      this.onCodeEdited(session.conversation_id);
+    } catch {
+      return "dirty_unarmed";
+    }
+    const live = this.store.getReviewChain(session.conversation_id);
+    return live?.code_edited === 1 ? "armed" : "dirty_unarmed";
+  }
+
   handleStop(input: StopHandlerInput): FollowupAction | null {
     // Corrupt/legacy ids must not reach error-stop upserts (or ensure).
     if (!this.store.isConversationIdOk(input.conversationId)) {
@@ -614,6 +644,57 @@ export class ReviewEngine {
       ) {
         return this.e3ArmConfirm(session, chainNow);
       }
+
+      // Shell / out-of-band writes never fire afterFileEdit. Before soft E0,
+      // arm code_edited from git dirty product paths (vs HEAD + untracked).
+      if (chainNow.code_edited === 0 && isChecklistExecuting(session)) {
+        const dirtyArm = this.maybeArmCodeEditedFromDirtyTree(session);
+        if (dirtyArm === "dirty_unarmed") {
+          // Product dirt exists (or dirty probe threw) but code_edited was not
+          // armed — do not soft-advance past unreviewed edits.
+          return null;
+        }
+        if (dirtyArm === "armed") {
+          const armed =
+            this.store.getReviewChain(session.conversation_id) ?? chainNow;
+          if (armed.code_edited === 1) {
+            const tip = armed.pending_followup?.trim() ?? "";
+            if (isRecoverOrStuckFollowupMessage(tip)) {
+              // TOCTOU: recover/stuck landed under the dirty-arm window — redeliver
+              // instead of silent null (same pattern as residue-E2 miss).
+              const again = this.tryRedeliverPending(
+                session.conversation_id,
+                armed,
+                events,
+                transcriptPath,
+              );
+              if (again) return again;
+              return null;
+            }
+            const fix = this.e2Fix(session, armed);
+            if (fix) return fix;
+            const afterE2 =
+              this.store.getReviewChain(session.conversation_id) ?? armed;
+            const afterTip = afterE2.pending_followup?.trim() ?? "";
+            if (isRecoverOrStuckFollowupMessage(afterTip)) {
+              const again = this.tryRedeliverPending(
+                session.conversation_id,
+                afterE2,
+                events,
+                transcriptPath,
+              );
+              if (again) return again;
+              return null;
+            }
+            // Armed in DB — never soft-advance with the pre-arm chain snapshot
+            // (stale code_edited=0 would skip the e0 gate and desync the chain).
+            return null;
+          }
+          // Armed reported but live row lost the marker — still refuse soft.
+          return null;
+        }
+      }
+
       // E0': no product-code edit — checklist continue via verify / soft evidence.
       return this.e0NoCodeContinue(session, chainNow);
     } catch (err) {
