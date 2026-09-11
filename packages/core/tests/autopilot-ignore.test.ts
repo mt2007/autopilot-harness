@@ -86,6 +86,9 @@ describe("isAutopilotIgnoredPath", () => {
       isAutopilotIgnoredPath(".claude/settings.json", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(true);
     expect(
+      isAutopilotIgnoredPath(".codex/hooks.json", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
+    ).toBe(true);
+    expect(
       isAutopilotIgnoredPath("docs/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(false);
     expect(

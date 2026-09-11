@@ -20,7 +20,7 @@ Vibe coding 很快，但范围漂移、验收含糊、「看起来做完了」�
 2. **按 checklist 执行**（`plans/<slug>/`）  
 3. **多角度自审通过后**再勾选完成  
 
-它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**v0.2 已支持 Cursor 与 Claude Code**；Codex / Runner 见 [宿主说明](./docs/hosts.md)。
+它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**本仓已接入 Cursor、Claude Code 与 Codex**；Runner 见 [宿主说明](./docs/hosts.md)。
 
 Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、落在 checklist 范围内、并在多种审查镜头下压测过，再宣称某一项完成。
 
@@ -104,8 +104,11 @@ cd /path/to/your-app
 npx @autopilot-harness/cli init --platform cursor --yes
 # 或 Claude Code（hooks 在终端与 IDE 共用）
 npx @autopilot-harness/cli init --platform claude-code --yes
-# 双宿主：Cursor init 之后再加 Claude（不必整仓重装）
+# 或 Codex（`.codex/hooks.json`；`/hooks` trust；P0 = 行首 triggers）
+npx @autopilot-harness/cli init --platform codex --yes
+# 双/三宿主：第一个 init 之后再加（不必整仓重装）
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
+# npx @autopilot-harness/cli init --yes --add-platform codex
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```
@@ -114,21 +117,21 @@ npx @autopilot-harness/cli doctor
 
 从本仓库克隆开发或 dogfood：见 [Contributing](./CONTRIBUTING.md)。
 
-重载宿主窗口（Cursor：Reload Window；Claude Code：重启 / 新开会话），然后：
+重载宿主窗口（Cursor：Reload Window；Claude Code / Codex：重启 / 新开会话），然后：
 
-1. `/autopilot-on` — 规划  
-2. `/autopilot-run` — 执行 checklist  
+1. 规划 — Cursor/Claude：`/autopilot-on`；Codex：行首 `triggers.on`（如 `开启自动驾驶`；无 skills UI；手打 slash 仍可解析；需 `/hooks` trust）→ grill → `plans/<slug>/`  
+2. 执行 — Cursor/Claude：`/autopilot-run`；Codex：行首 `triggers.run`（如 `开始执行`）  
 
 更多命令：[docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md)（[English](./docs/autopilot/quickstart.md)）。
 
-`init` 会写入 `.autopilot/`、合并宿主 hooks，并安装 skills/workflows。Claude Code 还会合并 `.claude/settings.json`（hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`）与 `.claude/skills/autopilot-*`。与自审相关的配置键包括 `locale`、`review.scope`（`executing_only` | `project`）、`review.confirm_rounds`，以及可选的 `review.verify.*`（见 [配置说明](./docs/config.md)、[Architecture](./docs/architecture.md)，以及上方 **何时跑自审**）。
+`init` 会写入 `.autopilot/`、合并宿主 hooks，并在支持的宿主安装 skills/workflows。Claude Code 还会合并 `.claude/settings.json`（hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`）与 `.claude/skills/autopilot-*`。Codex 合并 `.codex/hooks.json`（省略 timeout；matcher `apply_patch|Edit|Write`）— 默认不写 `AGENTS.md`。与自审相关的配置键包括 `locale`、`review.scope`（`executing_only` | `project`）、`review.confirm_rounds`，以及可选的 `review.verify.*`（见 [配置说明](./docs/config.md)、[Architecture](./docs/architecture.md)，以及上方 **何时跑自审**）。
 
 ## 文档
 
 - [Architecture](./docs/architecture.md)  
 - [配置说明](./docs/config.md)  
 - [排障](./docs/troubleshooting.md)  
-- [宿主说明](./docs/hosts.md)（Cursor / Claude Code 已支持）  
+- [宿主说明](./docs/hosts.md)（Cursor / Claude Code / Codex 已支持）  
 - [宿主 Plan 桥接（设计）](./docs/host-plan-bridge.md)  
 - [快速开始（中文）](./docs/autopilot/quickstart.zh-CN.md)  
 - [Contributing](./CONTRIBUTING.md)  

@@ -9,6 +9,23 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **docs-codex-shipped**: Codex host documented as **Shipped** across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; ternary `--platform` dispatch + aliased `handleCodex*` exports; `apply_patch` parse + dirty-arm; `/hooks` trust/re-trust; omit timeout or ≥120s; P0 line-start `triggers.on` / `triggers.run` (no default skills/`AGENTS.md`).
+- docs-contract: Codex **Planned→Shipped**; `PUBLIC_PACKAGE_JSON_PATHS` includes `packages/ports/codex/package.json`.
+
+### Fixed
+
+- Default `.autopilotignore` includes `.codex/**` (parity with `.cursor/**` / `.claude/**`) so Codex hook installs do not open spurious self-review.
+- Init/upgrade Codex outro + activation tips (and architecture P0 line) mention `triggers.run` and typed slash parse — aligned with hosts/README.
+- `@autopilot-harness/cli` npm README: Codex shipped + non-slash activation path (no longer “v0.2 Cursor and Claude Code” only).
+- `writeQuickstart` embeds the selected `--platform` (no longer hardcodes `cursor` after Codex/Claude init).
+- Codex `writeQuickstart`: Planning/Executing prefer line-start triggers (not slash-first); drop `autopilot-run` skill wording (no Autopilot skills path).
+- Codex `formatCheatSheet`: same line-start-first Planning/Executing preference.
+- Dual-host cheat sheet: when Codex is included with other hosts, add Codex line-start preference notes (slash remains primary for Cursor/Claude).
+- `formatCheatSheet` dedupes platform ids (duplicate/`CODEX` casing no longer flips Codex-only into slash-first dual wording).
+- Init copy helpers share `uniquePlatformIds` (outro / tips / cheat sheet / plain activation lines) so duplicate hosts stay single-host wording.
+
 ## [0.2.15] — 2026-09-11
 
 ### Fixed

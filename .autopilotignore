@@ -19,6 +19,7 @@
 .autopilot/**
 .cursor/**
 .claude/**
+.codex/**
 
 # Planning artifacts
 plans/**

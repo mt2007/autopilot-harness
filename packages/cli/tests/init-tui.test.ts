@@ -265,6 +265,7 @@ dist/
     expect(qsZh).toMatch(/认领/);
     expect(qsZh).toMatch(/排障速查/);
     expect(qsZh).toMatch(/loop_limit/);
+    expect(qsZh).toMatch(/--platform cursor/);
 
     const rootEn = tmpProject();
     try {
@@ -282,10 +283,32 @@ dist/
       expect(qsEn).toMatch(/claim/);
       expect(qsEn).toMatch(/Troubleshooting/);
       expect(qsEn).toMatch(/loop_limit/);
+      expect(qsEn).toMatch(/--platform cursor/);
       expect(qsEn).not.toMatch(/快速开始/);
     } finally {
       fs.rmSync(rootEn, { recursive: true, force: true });
     }
+
+    const rootCodex = tmpProject();
+    try {
+      const rel = writeQuickstart(rootCodex, "en", "plans", "codex");
+      const qs = fs.readFileSync(path.join(rootCodex, rel!), "utf8");
+      expect(qs).toMatch(/--platform codex/);
+      expect(qs).not.toMatch(/--platform cursor/);
+      expect(qs).toMatch(/triggers\.on/);
+      expect(qs).toMatch(/triggers\.run/);
+      expect(qs).toMatch(/\.codex\/hooks\.json/);
+      expect(qs).toMatch(/`\/hooks`/);
+      // P0 invariant: line-start preferred over slash; no Autopilot skills path.
+      expect(qs).toMatch(/Preferred: in Codex, line-start `Autopilot ON`/);
+      expect(qs).toMatch(/Preferred: line-start `Autopilot RUN`/);
+      expect(qs).not.toMatch(/Preferred: in Codex, `\/autopilot-on`/);
+      expect(qs).not.toMatch(/`autopilot-run` skill:/);
+      expect(qs).toMatch(/no Autopilot Codex skills path|no Autopilot skills UI/);
+    } finally {
+      fs.rmSync(rootCodex, { recursive: true, force: true });
+    }
+
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /Planning/,
     );
@@ -334,12 +357,58 @@ dist/
     expect(formatHostActivationTips("codex").join("\n")).toMatch(
       /triggers\.on/,
     );
+    expect(formatHostActivationTips("codex").join("\n")).toMatch(
+      /triggers\.run/,
+    );
+    expect(formatPostInstallOutro("codex")).toMatch(/triggers\.on/);
+    expect(formatPostInstallOutro("codex")).toMatch(/triggers\.run/);
+    expect(formatPostInstallOutro("codex")).toMatch(/\/hooks/);
+    expect(formatPostInstallOutro(["cursor", "codex"])).toMatch(/triggers\.run/);
     const footer = formatPostInstallFooter("cursor").join("\n");
     expect(footer).toMatch(/You're all set/);
     expect(footer).toMatch(/Reload Window/);
     expect(
       formatCheatSheet("en", "cmd", "plans", "claude-code").join("\n"),
     ).toMatch(/hooks shared: terminal \+ IDE/);
+    expect(
+      formatCheatSheet("en", "cmd", "plans", "codex").join("\n"),
+    ).toMatch(/triggers\.on/);
+    expect(
+      formatCheatSheet("en", "cmd", "plans", "codex").join("\n"),
+    ).toMatch(/triggers\.run/);
+    expect(
+      formatCheatSheet("en", "cmd", "plans", "codex").join("\n"),
+    ).toMatch(/\.codex\/hooks\.json/);
+    const codexSheet = formatCheatSheet("en", "cmd", "plans", "codex").join(
+      "\n",
+    );
+    expect(codexSheet).toMatch(/Preferred: in Codex, line-start Autopilot ON/);
+    expect(codexSheet).toMatch(/Preferred: line-start Autopilot RUN/);
+    expect(codexSheet).not.toMatch(/Preferred: in Codex, \/autopilot-on/);
+    expect(
+      formatCheatSheet("zh-CN", "cmd", "plans", "codex").join("\n"),
+    ).toMatch(/行首 Autopilot ON/);
+    const dualSheet = formatCheatSheet("en", "cmd", "plans", [
+      "cursor",
+      "codex",
+    ]).join("\n");
+    expect(dualSheet).toMatch(/Preferred: in Cursor \/ Codex, \/autopilot-on/);
+    expect(dualSheet).toMatch(/Codex:\s+prefer line-start Autopilot ON/);
+    expect(dualSheet).toMatch(/Codex:\s+prefer line-start Autopilot RUN/);
+    const dupCodex = formatCheatSheet("en", "cmd", "plans", [
+      "codex",
+      "CODEX",
+      "codex",
+    ]).join("\n");
+    expect(dupCodex).toMatch(/Preferred: in Codex, line-start Autopilot ON/);
+    expect(dupCodex).not.toMatch(/Codex \/ Codex/);
+    expect(dupCodex).not.toMatch(/Preferred: in Codex, \/autopilot-on/);
+    expect(formatPostInstallOutro(["codex", "CODEX", "codex"])).toMatch(
+      /in Codex, use line-start/,
+    );
+    expect(formatPostInstallOutro(["codex", "CODEX", "codex"])).not.toMatch(
+      /Codex, Codex/,
+    );
     // Hostile platform ids must not leak C0 controls into terminal tips.
     expect(formatHostDisplayName("cur\nsor")).toBe("Cursor");
     expect(formatHostDisplayName("claude-\x00code")).toBe("Claude Code");

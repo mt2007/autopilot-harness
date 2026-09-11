@@ -77,8 +77,11 @@ cd /path/to/your-app
 npx @autopilot-harness/cli init --platform cursor --yes
 # or Claude Code (hooks shared across terminal + IDE; surface: cli ≠ CLI-only)
 npx @autopilot-harness/cli init --platform claude-code --yes
-# dual-host after the first install:
+# or Codex (`.codex/hooks.json`; trust via `/hooks`; P0 = line-start triggers)
+npx @autopilot-harness/cli init --platform codex --yes
+# dual/triple-host after the first install:
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
+# npx @autopilot-harness/cli init --yes --add-platform codex
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 npx @autopilot-harness/cli upgrade --dry-run
@@ -88,10 +91,11 @@ Developing or dogfooding from a clone of this repo: see [Contributing](../../CON
 
 ## After install
 
-- Try `/autopilot-on` in Cursor or Claude Code.
-- If skills / hooks do not appear: reload the host (Cursor: `Developer: Reload Window`; Claude Code: restart / new session), or start a new Agent chat.
+- Try `/autopilot-on` in Cursor or Claude Code (Codex: line-start `triggers.on` / `triggers.run` — no Autopilot skills path; typed slash still parses).
+- If skills / hooks do not appear: reload the host (Cursor: `Developer: Reload Window`; Claude Code / Codex: restart / new session), or start a new Agent chat. Codex: run `/hooks` trust (re-trust after upgrade).
 - Review stops mid-chain (Cursor): ensure Autopilot stop has `loop_limit: null` (run `upgrade` / see [Troubleshooting](../troubleshooting.md)).
 - Review stops mid-chain (Claude Code): ensure `.claude/settings.json` has `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`. If the cap env never applies, accept the project **trust** dialog (project `env` may be gated until trusted).
+- Review stalls / hooks ignored (Codex): ensure `.codex/hooks.json` Autopilot entries exist, timeout omitted or ≥120s, and `/hooks` is trusted.
 - More failure modes: [Troubleshooting](../troubleshooting.md).
 
 ## Self-review scope (`review.scope`)

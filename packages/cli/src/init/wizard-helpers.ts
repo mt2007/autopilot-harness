@@ -503,6 +503,23 @@ export function appendShellAlias(
  */
 // sanitizePlatformId lives in ./platforms.js (shared with config parsing).
 
+/** Deduped, sanitized host ids for init/upgrade copy (empty if none usable). */
+function uniquePlatformIds(
+  platformOrPlatforms: string | readonly string[],
+): string[] {
+  return [
+    ...new Set(
+      (
+        typeof platformOrPlatforms === "string"
+          ? [platformOrPlatforms]
+          : [...platformOrPlatforms]
+      )
+        .map(sanitizePlatformId)
+        .filter(Boolean),
+    ),
+  ];
+}
+
 /**
  * Human label for an agent host id (init/upgrade tips).
  * Init CLI copy is English; extend as new platforms ship.
@@ -532,20 +549,22 @@ export function formatHostDisplayName(platform: string): string {
 export function formatPostInstallOutro(
   platformOrPlatforms: string | readonly string[],
 ): string {
-  const ids = (
-    typeof platformOrPlatforms === "string"
-      ? [platformOrPlatforms]
-      : [...platformOrPlatforms]
-  )
-    .map(sanitizePlatformId)
-    .filter(Boolean);
+  const ids = uniquePlatformIds(platformOrPlatforms);
   if (ids.length === 0) {
     return "You're all set — try /autopilot-on in your agent host.";
   }
   if (ids.length === 1) {
-    return `You're all set — try /autopilot-on in ${formatHostDisplayName(ids[0]!)}.`;
+    const id = ids[0]!;
+    const name = formatHostDisplayName(id);
+    if (id === "codex") {
+      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (e.g. Autopilot ON / Autopilot RUN; typed /autopilot-* still parses). Trust hooks via /hooks.`;
+    }
+    return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
+  if (ids.includes("codex")) {
+    return `You're all set — try /autopilot-on in ${names} (Codex: line-start triggers.on / triggers.run; typed slash still parses).`;
+  }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
 
@@ -556,18 +575,9 @@ export function formatPostInstallOutro(
 export function formatHostActivationTips(
   platformOrPlatforms: string | readonly string[],
 ): string[] {
-  const ids = (
-    typeof platformOrPlatforms === "string"
-      ? [platformOrPlatforms]
-      : [...platformOrPlatforms]
-  )
-    .map(sanitizePlatformId)
-    .filter(Boolean);
+  const ids = uniquePlatformIds(platformOrPlatforms);
   const tips: string[] = [];
-  const seen = new Set<string>();
   for (const id of ids) {
-    if (seen.has(id)) continue;
-    seen.add(id);
     const host = formatHostDisplayName(id);
     if (id === "cursor") {
       tips.push(
@@ -579,7 +589,7 @@ export function formatHostActivationTips(
       );
     } else if (id === "codex") {
       tips.push(
-        `${host}: Autopilot wires .codex/hooks.json only (does not edit config.toml hooks). Trust project hooks via /hooks after install or upgrade. P0 activation is line-start phrases from triggers.on (no Autopilot skills installed — no stable Codex skills path).`,
+        `${host}: Autopilot wires .codex/hooks.json only (does not edit config.toml hooks). Trust project hooks via /hooks after install or upgrade. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills; typed /autopilot-* still parses).`,
       );
     } else {
       tips.push(
@@ -618,18 +628,9 @@ function hostActivationPlainLines(
   locale: InitLocale,
   platformOrPlatforms: string | readonly string[],
 ): string[] {
-  const ids = (
-    typeof platformOrPlatforms === "string"
-      ? [platformOrPlatforms]
-      : [...platformOrPlatforms]
-  )
-    .map(sanitizePlatformId)
-    .filter(Boolean);
+  const ids = uniquePlatformIds(platformOrPlatforms);
   const lines: string[] = [];
-  const seen = new Set<string>();
   for (const id of ids.length > 0 ? ids : ["cursor"]) {
-    if (seen.has(id)) continue;
-    seen.add(id);
     const host = formatHostDisplayName(id);
     if (locale === "zh-CN") {
       if (id === "cursor") {
@@ -644,7 +645,7 @@ function hostActivationPlainLines(
         );
       } else if (id === "codex") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on 行首短语开启（本 build 不装 Codex skills）。`,
+          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills；手打 slash 仍可解析）。`,
           `hooks 仅写 .codex/hooks.json；安装/升级后请用 /hooks 信任；不改 config.toml hooks。`,
         );
       } else {
@@ -665,7 +666,7 @@ function hostActivationPlainLines(
       );
     } else if (id === "codex") {
       lines.push(
-        `In ${host}, prefer line-start phrases from triggers.on (this build does not install Codex skills).`,
+        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills path; typed slash still parses).`,
         `Hooks are written to .codex/hooks.json only; trust via /hooks after install/upgrade; config.toml hooks are left untouched.`,
       );
     } else {
@@ -685,11 +686,14 @@ function hostActivationDocLines(
 ): string[] {
   return hostActivationPlainLines(locale, platform).map((l) =>
     l
-      .replace("/autopilot-on", "`/autopilot-on`")
-      .replace(
-        "Developer: Reload Window",
-        "`Developer: Reload Window`",
-      ),
+      .replaceAll("/autopilot-on", "`/autopilot-on`")
+      .replaceAll("/autopilot-*", "`/autopilot-*`")
+      .replaceAll("Developer: Reload Window", "`Developer: Reload Window`")
+      .replaceAll("triggers.on", "`triggers.on`")
+      .replaceAll("triggers.run", "`triggers.run`")
+      // Avoid splitting `.codex/hooks.json` when wrapping `/hooks`.
+      .replace(/\/hooks(?!\.json)/g, "`/hooks`")
+      .replaceAll(".codex/hooks.json", "`.codex/hooks.json`"),
   );
 }
 
@@ -724,8 +728,56 @@ export function writeQuickstart(
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code !== "ENOENT") throw err;
   }
-  const host = formatHostDisplayName(platform);
-  const afterInstall = hostActivationDocLines(locale, platform);
+  const platformId = sanitizePlatformId(platform) || "cursor";
+  const host = formatHostDisplayName(platformId);
+  const afterInstall = hostActivationDocLines(locale, platformId);
+  const isCodex = platformId === "codex";
+  const flowPlanYouZh = isCodex
+    ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
+    : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
+  const flowRunYouZh = isCodex
+    ? "行首 `Autopilot RUN` / `开始执行`（或手打 `/autopilot-run`，可带 `<slug>`）"
+    : "`/autopilot-run`（或带 `<slug>`）";
+  const planningPrefZh = isCodex
+    ? `推荐：在 ${host} 中优先行首 \`Autopilot ON\` / \`开启自动驾驶\`（无 Autopilot skills UI；手打 \`/autopilot-on\` 仍可解析）
+
+也可：\`/autopilot-on\` 或 \`/autopilot-on <需求描述>\``
+    : `推荐：在 ${host} 中使用 \`/autopilot-on\` 或 \`/autopilot-on <需求描述>\`
+
+也可：行首 \`Autopilot ON\` / \`开启自动驾驶\``;
+  const executingPrefZh = isCodex
+    ? `优先：行首 \`Autopilot RUN\` / \`开始执行\`（手打 \`/autopilot-run\` 仍可解析）
+
+也可：\`/autopilot-run\` 或 \`/autopilot-run <slug>\``
+    : `\`/autopilot-run\` 或 \`/autopilot-run <slug>\`
+
+也可：\`Autopilot RUN\` / \`开始执行\``;
+  const runSkillZh = isCodex
+    ? `**RUN：** 非 executing（needPick）时先选型；真正 executing 再跑 checklist（Codex 无 Autopilot skills 路径）。`
+    : `**\`autopilot-run\` skill：** 非 executing（needPick）时首分支**只选型**；真正 executing 再跑 checklist。`;
+  const flowPlanYouEn = isCodex
+    ? "line-start `Autopilot ON` (or typed `/autopilot-on`); reply to each grill round"
+    : "`/autopilot-on` (optional description); reply to each grill round";
+  const flowRunYouEn = isCodex
+    ? "line-start `Autopilot RUN` (or typed `/autopilot-run`, optional `<slug>`)"
+    : "`/autopilot-run` (or with `<slug>`)";
+  const planningPrefEn = isCodex
+    ? `Preferred: in ${host}, line-start \`Autopilot ON\` (no Autopilot skills UI; typed \`/autopilot-on\` still parses)
+
+Also: \`/autopilot-on\` or \`/autopilot-on <what to build>\``
+    : `Preferred: in ${host}, \`/autopilot-on\` or \`/autopilot-on <what to build>\`
+
+Also: line-start \`Autopilot ON\``;
+  const executingPrefEn = isCodex
+    ? `Preferred: line-start \`Autopilot RUN\` (typed \`/autopilot-run\` still parses)
+
+Also: \`/autopilot-run\` or \`/autopilot-run <slug>\``
+    : `\`/autopilot-run\` or \`/autopilot-run <slug>\`
+
+Also: \`Autopilot RUN\``;
+  const runSkillEn = isCodex
+    ? `**RUN:** when not executing (needPick), pick first; checklist execution only after executing is armed (no Autopilot Codex skills path).`
+    : `**\`autopilot-run\` skill:** when not executing (needPick), first branch is **pick only**; checklist execution only after executing is armed.`;
   const body =
     locale === "zh-CN"
       ? `# Autopilot 快速开始
@@ -736,23 +788,19 @@ export function writeQuickstart(
 
 | 步骤 | 你做什么 | Autopilot 做什么 | 产物 |
 |------|----------|------------------|------|
-| **1. 规划** | \`/autopilot-on\`（可带需求描述）；逐轮回答 grill | 写 \`${plansLabel}/<slug>/\`（可改文档），**不写产品代码** | \`brief.md\`、\`plan.md\`、\`checklist.md\` |
-| **2. 执行** | \`/autopilot-run\`（或带 \`<slug>\`） | 一项一项：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；推进/完成时 dirty 则本地 commit（干净则跳过；确认轮不 commit；默认不自动 push） |
+| **1. 规划** | ${flowPlanYouZh} | 写 \`${plansLabel}/<slug>/\`（可改文档），**不写产品代码** | \`brief.md\`、\`plan.md\`、\`checklist.md\` |
+| **2. 执行** | ${flowRunYouZh} | 一项一项：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；推进/完成时 dirty 则本地 commit（干净则跳过；确认轮不 commit；默认不自动 push） |
 | **3. 完成** | — | 勾选最后一项；dirty 则本地 commit（干净则跳过；默认不自动 push）；checklist 清空后停止 | 该轨结束 |
 
 ## Planning
 
-推荐：在 ${host} 中使用 \`/autopilot-on\` 或 \`/autopilot-on <需求描述>\`
-
-也可：行首 \`Autopilot ON\` / \`开启自动驾驶\`
+${planningPrefZh}
 
 **讨论 ≠ ON。** 普通闲聊不会开启 Autopilot；只有 slash \`/autopilot-on\` 或行首 ON 触发语（如 \`Autopilot ON\`、\`开启自动驾驶\`）才会 \`applyOn\`。
 
 ## Executing
 
-\`/autopilot-run\` 或 \`/autopilot-run <slug>\`
-
-也可：\`Autopilot RUN\` / \`开始执行\`
+${executingPrefZh}
 
 ### 多 plan 选型（通道 A）vs 硬错误（通道 C）
 
@@ -769,7 +817,7 @@ export function writeQuickstart(
 
 **候选来源：** 扫 runnable \`${plansLabel}/*/checklist.md\`，和/或 \`status\`（\`pending\` + \`candidates\`）；status 失败时回退扫盘。
 
-**\`autopilot-run\` skill：** 非 executing（needPick）时首分支**只选型**；真正 executing 再跑 checklist。
+${runSkillZh}
 
 **ON ≠ 锁：** planning 不占 \`one_executor\`。**Plans 绑定 / 脏 bind：** 本聊只编过 1 个 \`${plansLabel}/<slug>/\` → 裸 RUN 可直跑；≥2 / 脏 \`_multi\` → 仍 needPick；REPLAN/ON 换轨会清/失效 bind。
 
@@ -784,7 +832,7 @@ export function writeQuickstart(
 **安装**用 scoped 包名（不要用不存在的裸 \`npx ${CLI_NAME}\`）。\`cwd\` = 目标项目：
 
 \`\`\`bash
-npx ${NPM_PACKAGE_NAME} init --platform cursor --yes
+npx ${NPM_PACKAGE_NAME} init --platform ${platformId} --yes
 npx ${NPM_PACKAGE_NAME} status
 npx ${NPM_PACKAGE_NAME} doctor
 npx ${NPM_PACKAGE_NAME} upgrade --dry-run
@@ -826,23 +874,19 @@ Command cheat sheet + per-step artifacts.
 
 | Step | You do | Autopilot does | Artifacts |
 |------|--------|----------------|-----------|
-| **1. Plan** | \`/autopilot-on\` (optional description); reply to each grill round | Writes \`${plansLabel}/<slug>/\` (may edit docs); **no product code** | \`brief.md\`, \`plan.md\`, \`checklist.md\` |
-| **2. Run** | \`/autopilot-run\` (or with \`<slug>\`) | One item at a time: implement → fix → multi-lens confirm → advance | Code/docs for that item; on advance/done, local commit if dirty (skip if clean; confirm rounds do not commit; no auto-push) |
+| **1. Plan** | ${flowPlanYouEn} | Writes \`${plansLabel}/<slug>/\` (may edit docs); **no product code** | \`brief.md\`, \`plan.md\`, \`checklist.md\` |
+| **2. Run** | ${flowRunYouEn} | One item at a time: implement → fix → multi-lens confirm → advance | Code/docs for that item; on advance/done, local commit if dirty (skip if clean; confirm rounds do not commit; no auto-push) |
 | **3. Done** | — | Marks the last item; local commit if dirty (skip if clean; no auto-push); stops when the checklist is clear | Track complete |
 
 ## Planning
 
-Preferred: in ${host}, \`/autopilot-on\` or \`/autopilot-on <what to build>\`
-
-Also: line-start \`Autopilot ON\`
+${planningPrefEn}
 
 **Discussion ≠ ON.** Casual chat does not turn Autopilot on — only slash \`/autopilot-on\` or a line-start ON phrase (e.g. \`Autopilot ON\`) runs \`applyOn\`.
 
 ## Executing
 
-\`/autopilot-run\` or \`/autopilot-run <slug>\`
-
-Also: \`Autopilot RUN\`
+${executingPrefEn}
 
 ### Multi-plan pick (channel A) vs hard failures (channel C)
 
@@ -859,7 +903,7 @@ Also: \`Autopilot RUN\`
 
 **Candidate sources:** scan runnable \`${plansLabel}/*/checklist.md\`, and/or \`status\` (\`pending\` + \`candidates\`); fall back to the plans scan if status fails.
 
-**\`autopilot-run\` skill:** when not executing (needPick), first branch is **pick only**; checklist execution only after executing is armed.
+${runSkillEn}
 
 **ON ≠ lock:** planning does not hold \`one_executor\`. **Plans bind / dirty bind:** one edited \`${plansLabel}/<slug>/\` in this chat → bare RUN may auto-run; ≥2 / dirty \`_multi\` → still needPick; REPLAN/ON track change clears/invalidates the bind.
 
@@ -874,7 +918,7 @@ Also: \`Autopilot RUN\`
 **Install** with the scoped package (not bare \`npx ${CLI_NAME}\`). \`cwd\` = the app:
 
 \`\`\`bash
-npx ${NPM_PACKAGE_NAME} init --platform cursor --yes
+npx ${NPM_PACKAGE_NAME} init --platform ${platformId} --yes
 npx ${NPM_PACKAGE_NAME} status
 npx ${NPM_PACKAGE_NAME} doctor
 npx ${NPM_PACKAGE_NAME} upgrade --dry-run
@@ -921,27 +965,46 @@ export function formatCheatSheet(
 ): string[] {
   const normalized = normalizePlansDir(plansDir);
   const plansLabel = normalized.ok ? normalized.value : "plans";
-  const ids = (
-    typeof platformOrPlatforms === "string"
-      ? [platformOrPlatforms]
-      : [...platformOrPlatforms]
-  )
-    .map(sanitizePlatformId)
-    .filter(Boolean);
+  const ids = uniquePlatformIds(platformOrPlatforms);
   const host =
     ids.length <= 1
       ? formatHostDisplayName(ids[0] ?? "cursor")
       : ids.map((id) => formatHostDisplayName(id)).join(" / ");
+  const codexOnly = ids.length === 1 && ids[0] === "codex";
+  const hasCodex = ids.includes("codex");
   if (locale === "zh-CN") {
+    const planningBlock = codexOnly
+      ? [
+          `  推荐：在 ${host} 中行首 Autopilot ON / 开启自动驾驶`,
+          "        （无 Autopilot skills；手打 /autopilot-on 仍可解析）",
+          "  也可：/autopilot-on · /autopilot-on 我想做：<描述需求>",
+        ]
+      : [
+          `  推荐：在 ${host} 中 /autopilot-on`,
+          "        /autopilot-on 我想做：<描述需求>",
+          "  也可：Autopilot ON",
+          ...(hasCodex
+            ? ["  Codex：优先行首 Autopilot ON / 开启自动驾驶（手打 slash 仍可解析）"]
+            : []),
+        ];
+    const executingBlock = codexOnly
+      ? [
+          "  优先：行首 Autopilot RUN / 开始执行",
+          "  也可：/autopilot-run · /autopilot-run <slug>",
+        ]
+      : [
+          "  /autopilot-run",
+          "  /autopilot-run <slug>",
+          ...(hasCodex
+            ? ["  Codex：优先行首 Autopilot RUN / 开始执行"]
+            : []),
+        ];
     return [
       "── 新开任务（Planning）──────────────────",
-      `  推荐：在 ${host} 中 /autopilot-on`,
-      "        /autopilot-on 我想做：<描述需求>",
-      "  也可：Autopilot ON",
+      ...planningBlock,
       "",
       "── 开始执行 ─────────────────────────────",
-      "  /autopilot-run",
-      "  /autopilot-run <slug>",
+      ...executingBlock,
       "",
       "── 暂停 / 恢复 / 改方案 ─────────────────",
       "  Autopilot OFF · RESUME · REPLAN",
@@ -958,15 +1021,40 @@ export function formatCheatSheet(
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
   }
+  const planningBlockEn = codexOnly
+    ? [
+        `  Preferred: in ${host}, line-start Autopilot ON`,
+        "             (no Autopilot skills; typed /autopilot-on still parses)",
+        "  Also:      /autopilot-on · /autopilot-on <what to build>",
+      ]
+    : [
+        `  Preferred: in ${host}, /autopilot-on`,
+        "             /autopilot-on <what to build>",
+        "  Also:      Autopilot ON",
+        ...(hasCodex
+          ? [
+              "  Codex:     prefer line-start Autopilot ON (typed slash still parses)",
+            ]
+          : []),
+      ];
+  const executingBlockEn = codexOnly
+    ? [
+        "  Preferred: line-start Autopilot RUN",
+        "  Also:      /autopilot-run · /autopilot-run <slug>",
+      ]
+    : [
+        "  /autopilot-run",
+        "  /autopilot-run <slug>",
+        ...(hasCodex
+          ? ["  Codex:     prefer line-start Autopilot RUN"]
+          : []),
+      ];
   return [
     "── Planning ─────────────────────────────",
-    `  Preferred: in ${host}, /autopilot-on`,
-    "             /autopilot-on <what to build>",
-    "  Also:      Autopilot ON",
+    ...planningBlockEn,
     "",
     "── Executing ────────────────────────────",
-    "  /autopilot-run",
-    "  /autopilot-run <slug>",
+    ...executingBlockEn,
     "",
     "── Pause / resume / replan ──────────────",
     "  Autopilot OFF · RESUME · REPLAN",

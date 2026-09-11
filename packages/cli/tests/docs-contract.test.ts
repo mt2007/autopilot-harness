@@ -14,6 +14,7 @@ const PUBLIC_PACKAGE_JSON_PATHS = [
   "packages/i18n/package.json",
   "packages/ports/cursor/package.json",
   "packages/ports/claude-code/package.json",
+  "packages/ports/codex/package.json",
 ] as const;
 
 function escapeRegExp(s: string): string {
@@ -167,6 +168,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
     expect(tips).toMatch(/trust/i);
     expect(tips).toMatch(/--add-platform/);
+    expect(tips).toMatch(/\.codex\/hooks\.json/);
+    expect(tips).toMatch(/\/hooks/);
+    expect(tips).toMatch(/timeout/i);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -224,8 +228,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/\*\*`doctor`\*\*[\s\S]*stale_after_hours/);
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
-    expect(config).toMatch(/installs Cursor and\/or Claude Code/i);
+    expect(config).toMatch(/installs Cursor, Claude Code, and\/or Codex/i);
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
+    expect(config).toMatch(/\.codex\/\*\*/);
     expect(config).toMatch(/`review\.scope` \| `project` \(fresh init YAML\)/);
     expect(config).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
   });
@@ -263,6 +268,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
+    expect(cliReadme).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
+    expect(cliReadme).toMatch(/--platform codex|platform codex/);
+    expect(cliReadme).toMatch(/triggers\.on/);
+    expect(cliReadme).toMatch(/triggers\.run/);
     expect(cliReadme).toMatch(/no bare npm package named `autopilot-harness`/i);
     // Forbid recommending bare `npx autopilot-harness …` as an install command.
     expect(cliReadme).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
@@ -291,6 +301,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/\*\*`project`\*\* \(default\)/);
     expect(body).toMatch(/executing_only/);
     expect(body).not.toMatch(/\*\*`executing_only`\*\* \(default\)/);
+    // Codex has no Autopilot skills — install flow must not imply slash-only ON/RUN.
+    expect(body).toMatch(/Codex:[\s\S]*triggers\.on/);
+    expect(body).toMatch(/Codex:[\s\S]*triggers\.run/);
     expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
@@ -307,6 +320,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/\*\*`project`\*\*（默认）/);
     expect(body).toMatch(/executing_only/);
     expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
+    expect(body).toMatch(/Codex：[\s\S]*triggers\.on/);
+    expect(body).toMatch(/Codex：[\s\S]*triggers\.run/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} status`);
@@ -315,10 +330,21 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/发布到 npm 之后/);
   });
 
-  it("hosts.md marks Codex mitigation as Planned and Claude as shipped", () => {
+  it("hosts.md marks Codex and Claude as shipped", () => {
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
-    expect(hosts).toMatch(/Codex[\s\S]*\*\*Planned\*\*/);
-    expect(hosts).toMatch(/Claude Code[\s\S]*\*\*Shipped\*\*/);
+    expect(hosts).toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Shipped\*\*/);
+    expect(hosts).toMatch(/\|\s*\*\*Claude Code\*\*\s*\|\s*\*\*Shipped\*\*/);
+    expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*v0\.3 \/ v0\.4 planned\*\*/);
+    // Status column only (avoid Notes-column false positives/negatives).
+    expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Planned\*\*/);
+    expect(hosts).toMatch(/handleCodexUserPromptSubmit/);
+    expect(hosts).toMatch(/handleCodexPostToolUse/);
+    expect(hosts).toMatch(/handleCodexStop/);
+    expect(hosts).toMatch(/apply_patch/);
+    expect(hosts).toMatch(/\/hooks/);
+    expect(hosts).toMatch(/triggers\.on/);
+    expect(hosts).toMatch(/triggers\.run/);
+    expect(hosts).toMatch(/omit timeout|≥120s|&lt;120s/i);
     expect(hosts).toMatch(/surface: cli.*CLI-only|hooks are \*\*shared across terminal \+ IDE\*\*/i);
     expect(hosts).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0/);
     expect(hosts).toMatch(/host-plan-bridge\.md/);
@@ -360,9 +386,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
-    expect(body).toMatch(/installs Cursor and\/or Claude Code/i);
+    expect(body).toMatch(/installs Cursor, Claude Code, and\/or Codex/i);
     expect(body).toMatch(/ports\/claude-code/);
-    expect(body).toMatch(/Cursor and Claude Code/);
+    expect(body).toMatch(/ports\/codex/);
+    expect(body).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(body).toMatch(/handleCodex\*/);
+    expect(body).toMatch(/triggers\.on\s*\/\s*`?triggers\.run|triggers\.on`\s*\/\s*`triggers\.run/);
     expect(body).toMatch(/npm public/);
     // Forbid recommending bare `npx autopilot-harness …` as an install command.
     // Allow prose that warns against it (e.g. "not bare `npx autopilot-harness`").

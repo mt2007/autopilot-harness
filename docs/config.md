@@ -6,7 +6,7 @@ Project settings live in **`.autopilot/config.yml`** (written by `init`, editabl
 
 Canonical defaults: `packages/cli/src/init/default-config.ts`.
 
-**What actually reads which keys (v0.2 Cursor + Claude Code build):**
+**What actually reads which keys (this Cursor + Claude Code + Codex build):**
 
 | Consumer | Keys |
 |----------|------|
@@ -14,9 +14,9 @@ Canonical defaults: `packages/cli/src/init/default-config.ts`.
 | **Edit hook** | `review.scope` + `artifacts.plans_dir` (plans bind / `notePlansDirEdit`; other `review.*` / `locale` unused on edit) |
 | **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` (separate parser; Cursor skill files only surface slash in the UI; Claude skills under `.claude/skills/`; the hook parses typed slash commands either way) + line-start phrases from YAML `triggers.*` when a list has **≥1 non-blank phrase** (after trim), else that key falls back to `DEFAULT_TRIGGERS` (incl. resume_review; empty/`[]`/whitespace-only does **not** wipe builtins). Also loads `artifacts.plans_dir` for RUN / needPick / phaseActions. Does **not** load `review.*` / `locale` on submit. |
 | **`status`** | `locale`, `platforms` (legacy top-level `platform`/`surface` still read as fallback), `artifacts.plans_dir`, `cli.preferred_name` |
-| **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` when that host is installed |
+| **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` / Codex hooks + timeout&lt;120 WARN + `/hooks` trust when that host is installed |
 | **`session list`** | `session.stale_after_hours` only (via `readStaleAfterHours`; invalid → treat as `0` / disabled) |
-| **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor and/or Claude Code wiring for installable bindings |
+| **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor, Claude Code, and/or Codex wiring for installable bindings |
 | **`locale set`** | Updates `locale`, rewrites **stock** `triggers.*` lists in config.yml (custom lists preserved), rewrites skill descriptions |
 | **Written by init, not wired into the hook runtime yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token` |
 
@@ -27,7 +27,7 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `locale` | `en` | Template / followup **template** language (`en` \| `zh-CN`). User-visible chat replies still follow the **user’s** language. Change later with `locale set <code>`. |
-| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **Primary** = first installable binding in list order (no separate primary key). **This build installs Cursor and/or Claude Code** when those bindings are present. Claude uses `surface: cli` (hooks shared across terminal + IDE — not CLI-only). Dual-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for dispatch. |
+| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **Primary** = first installable binding in list order (no separate primary key). **This build installs Cursor, Claude Code, and/or Codex** when those bindings are present. Claude/Codex use `surface: cli` (Claude hooks shared across terminal + IDE — not CLI-only; Codex: `.codex/hooks.json` + `/hooks` trust). Dual/triple-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for ternary dispatch. |
 | `platform` / `surface` | — | **Deprecated.** Older configs may still have these scalars; readers fall back to them only when `platforms` is absent. Fresh `init` does not write them; `upgrade` / `init --force` remove them after materializing `platforms`. |
 | `integration` | `hook` | Integration style written by init (`hook`). |
 
@@ -70,7 +70,7 @@ Aliases accepted for scope: `project`, `always`, and `all` all map to **`project
 
 ## Triggers
 
-Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code.
+Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code. **Codex P0** has no Autopilot skills path / no default `AGENTS.md`; use line-start `triggers.on` / `triggers.run` (typed `/autopilot-*` still parses).
 
 | Key | Role |
 |-----|------|
@@ -87,7 +87,7 @@ Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRI
 
 | File | Role |
 |------|------|
-| **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `.cursor/**`, `.claude/**`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
+| **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `.cursor/**`, `.claude/**`, `.codex/**`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
 | **`.gitignore`** | Untracked ignored paths are also skipped as product code; **tracked** files still count even if listed in `.gitignore`. |
 
 On completed stop, Autopilot also treats **git-dirty product paths** (vs HEAD / untracked product files) as code edits even when the host never fired `afterFileEdit` (e.g. Shell writes) — same `.autopilotignore` / untracked-gitignore filters. See [Troubleshooting](./troubleshooting.md#edited-code-but-no-self-review).
@@ -95,6 +95,6 @@ On completed stop, Autopilot also treats **git-dirty product paths** (vs HEAD / 
 ## Related
 
 - [Troubleshooting](./troubleshooting.md) — `doctor` WARNs, double hooks, missing skills, Claude `BLOCK_CAP` / trust  
-- [Hosts](./hosts.md) — Cursor / Claude Code (shipped) / Codex / Runner stop-loop caps  
+- [Hosts](./hosts.md) — Cursor / Claude Code / Codex (shipped) / Runner stop-loop caps  
 - [Host Plan-mode bridge](./host-plan-bridge.md) — why Cursor/Claude Plan modes are not Autopilot ON  
 - [Quickstart](./autopilot/quickstart.md) — commands and claim/resume/replan boundaries  

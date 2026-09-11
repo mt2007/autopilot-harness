@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json` or `.claude/settings.json`) and skills under the project skills path (`.cursor/skills/` or `.claude/skills/`).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code or Codex) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, or `.codex/hooks.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex has no Autopilot skills path).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -34,6 +34,16 @@ Claude’s consecutive Stop **block cap** defaults to **8**.
 - `doctor` WARNs when Claude is installed but the cap is missing or not `0`.
 - Project `env` may need workspace **trust** before Claude applies it — if the cap never takes effect, accept the trust dialog for the project folder, then restart Claude / open a new session.
 - Dual-host: after Cursor init, `npx @autopilot-harness/cli init --yes --add-platform claude-code`.
+
+### Codex
+
+Codex has **no documented numeric** consecutive Stop block cap (research snapshot 2026-09). Long confirm chains still need a healthy install:
+
+- Autopilot init / upgrade writes `.codex/hooks.json` only (**not** `config.toml` hooks); PostToolUse matcher `apply_patch|Edit|Write`; **omit timeout** (default ~600s).
+- `doctor` WARNs when Codex is enabled but Autopilot entries are missing, when `timeout` is set and **&lt; 120s**, and reminds **`/hooks` trust** (re-trust after hook definition changes).
+- Stop continue shape is `{ decision: "block", reason }` — hard-stop may use `continue: false`; never `continue: false` to keep the chain going.
+- Dual/triple-host: `npx @autopilot-harness/cli init --yes --add-platform codex`.
+- P0 activation is **line-start** `triggers.on` / `triggers.run` (no Autopilot Codex skills; no default `AGENTS.md`; typed slash still parses).
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).
 

@@ -2,7 +2,7 @@
 
 CLI for **Autopilot** — a vibecoding harness that turns open-ended agent chat into **structured planning → checklist execution → multi-lens self-review**.
 
-Bin name: `autopilot-harness`. Requires **Node.js 22+**. **v0.2 ships Cursor and Claude Code.**
+Bin name: `autopilot-harness`. Requires **Node.js 22+**. **This build ships Cursor, Claude Code, and Codex.**
 
 Autopilot does **not** guarantee bug-free software. It raises confidence that work was planned, checklist-scoped, and pressure-tested under several review lenses.
 
@@ -12,6 +12,8 @@ From the app you want to instrument (`cwd` = that project):
 
 ```bash
 npx @autopilot-harness/cli init --platform cursor --yes
+# or: --platform claude-code | --platform codex
+# dual/triple-host: init --yes --add-platform <id>
 ```
 
 Interactive TUI (platform still defaults to cursor):
@@ -20,10 +22,10 @@ Interactive TUI (platform still defaults to cursor):
 npx @autopilot-harness/cli init
 ```
 
-Then reload the Cursor window (or start a new Agent chat) and run:
+Reload the host (Cursor: Reload Window; Claude Code / Codex: restart / new session). Trust Codex hooks via `/hooks` when applicable, then:
 
-1. `/autopilot-on` — plan (grill → `plans/<slug>/`)
-2. `/autopilot-run` — execute the checklist
+1. Plan — Cursor/Claude: `/autopilot-on`; Codex: line-start `triggers.on` (typed slash still parses)
+2. Execute — Cursor/Claude: `/autopilot-run`; Codex: line-start `triggers.run`
 
 ## Useful commands
 
