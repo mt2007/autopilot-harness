@@ -225,6 +225,254 @@ describe("hook vendor runtime", () => {
     store.close();
   });
 
+  it("ternary --platform codex routes to Codex handlers (not Claude)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const planDir = path.join(root, "plans", "codex-wire");
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, "plan.md"), "# codex-wire\n");
+    fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+
+    const cid = "hook-codex-aaaa-bbbb-cccc-ddddeeee0001";
+    const onProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "codex"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          prompt: "/autopilot-on codex-wire",
+          permission_mode: "plan",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(JSON.parse(onProc.stdout.trim() || "{}")).toEqual({});
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("codex");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    // Stop with PascalCase + stop_hook_active must still honor --platform codex
+    // (shape is shared with Claude; must not call Claude recover path wrongly).
+    const stopProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "codex"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          hook_event_name: "Stop",
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopProc.status).toBe(0);
+    const stopOut = JSON.parse(stopProc.stdout.trim() || "{}") as Record<
+      string,
+      unknown
+    >;
+    // Idle planning stop → allow stop (no Autopilot followup required).
+    expect(stopOut.decision).toBeUndefined();
+    expect(stopOut.continue).toBeUndefined();
+
+    // Armed executing + code_edited → Codex continuing followup (block, never continue:false).
+    const armedStore = new StateStore(root);
+    armedStore.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "codex",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "codex-wire",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    armedStore.updateReviewChain(cid, { code_edited: 1 });
+    armedStore.close();
+
+    const armedStop = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "codex"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          hook_event_name: "Stop",
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(armedStop.status).toBe(0);
+    const armedOut = JSON.parse(armedStop.stdout.trim() || "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(armedOut.decision).toBe("block");
+    expect(armedOut.reason).toBeTruthy();
+    expect(armedOut.continue).toBeUndefined();
+    expect(armedOut.followup_message).toBeUndefined();
+
+    // Universal abort: Codex stamp + Cursor-shaped aborted payload → halt {}.
+    const abortStop = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "codex"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          status: "aborted",
+          hook_event_name: "stop",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(abortStop.status).toBe(0);
+    expect(JSON.parse(abortStop.stdout.trim() || "{}")).toEqual({});
+
+    // PostToolUse Write must arm via Codex alias (not no-op / Claude confusion).
+    const cidEdit = "hook-codex-aaaa-bbbb-cccc-ddddeeee0002";
+    spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "codex"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cidEdit,
+          prompt: "/autopilot-on codex-wire",
+          permission_mode: "plan",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    const editStore = new StateStore(root);
+    editStore.upsertSession({
+      conversation_id: cidEdit,
+      project_root: root,
+      code_root: root,
+      platform: "codex",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "codex-wire",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    editStore.close();
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    const editProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PostToolUse", "--platform", "codex"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cidEdit,
+          tool_name: "Write",
+          tool_input: { file_path: path.join(root, "src", "app.ts") },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(editProc.status).toBe(0);
+    const verifyEdit = new StateStore(root);
+    expect(verifyEdit.getReviewChain(cidEdit)?.code_edited).toBe(1);
+    expect(verifyEdit.getSession(cidEdit)?.platform).toBe("codex");
+    verifyEdit.close();
+  });
+
+  it("Stop Layer C: cursor stamp + Pascal Stop shape still routes Claude (no regression)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const planDir = path.join(root, "plans", "demo");
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, "plan.md"), "# demo\n");
+    fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const cid = "hook-xf-aaaa-bbbb-cccc-ddddeeee0001";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    store.updateReviewChain(cid, { code_edited: 1 });
+    store.close();
+
+    // Historical cross-fire: argv says cursor, payload is Claude/Codex-shaped Stop.
+    const proc = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "cursor"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          hook_event_name: "Stop",
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(proc.status).toBe(0);
+    const out = JSON.parse(proc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      followup_message?: string;
+      loop?: boolean;
+    };
+    // Claude path: decision:block + reason (not Cursor followup_message).
+    expect(out.decision).toBe("block");
+    expect(out.reason).toBeTruthy();
+    expect(out.followup_message).toBeUndefined();
+    expect(out.loop).toBeUndefined();
+  });
+
   it("Claude UserPromptSubmit / Stop dispatch via same vendor (no Cursor regression)", () => {
     root = tmpProject();
     expect(

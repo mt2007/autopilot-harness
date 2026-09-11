@@ -9,6 +9,10 @@
  * Events:
  *   Cursor: beforeSubmitPrompt | afterFileEdit | stop
  *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure
+ *   Codex: UserPromptSubmit | PostToolUse | Stop (no StopFailure)
+ *
+ * Dispatch is explicit ternary via --platform (cursor | claude-code | codex).
+ * Shared PascalCase event names must NOT imply Claude when platform is codex.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -36,10 +40,16 @@ const CLAUDE_EVENTS = new Set([
   "Stop",
   "StopFailure",
 ]);
-const KNOWN_PLATFORMS = new Set(["cursor", "claude-code"]);
+/** Codex shares submit/edit/stop names with Claude; routed by --platform only. */
+const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
+const KNOWN_PLATFORMS = new Set(["cursor", "claude-code", "codex"]);
 
 function parseArgs(argv) {
-  const allowed = new Set([...CURSOR_EVENTS, ...CLAUDE_EVENTS]);
+  const allowed = new Set([
+    ...CURSOR_EVENTS,
+    ...CLAUDE_EVENTS,
+    ...CODEX_EVENTS,
+  ]);
   const out = { event: "beforeSubmitPrompt", platform: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--event" && argv[i + 1]) {
@@ -63,8 +73,25 @@ function isClaudeEvent(event) {
   return CLAUDE_EVENTS.has(event);
 }
 
-/** Strong Claude Stop markers (override a lying `--platform cursor`). */
-function isClaudeShapedStopPayload(payload) {
+/**
+ * Resolve host id: stamped --platform wins; legacy installs fall back to
+ * event-name heuristics (Claude-shaped events → claude-code, else cursor).
+ * Never map PascalCase events to Claude when --platform codex is set.
+ */
+function resolveHostId(declaredPlatform, event) {
+  if (
+    declaredPlatform === "cursor" ||
+    declaredPlatform === "claude-code" ||
+    declaredPlatform === "codex"
+  ) {
+    return declaredPlatform;
+  }
+  if (isClaudeEvent(event)) return "claude-code";
+  return "cursor";
+}
+
+/** Strong Claude/Codex Stop markers (override a lying `--platform cursor`). */
+function isPascalStopShapedPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return false;
   }
@@ -156,10 +183,20 @@ async function loadCoreFromNodeModules() {
   return loadPortPackage("@autopilot-harness/core");
 }
 
+async function loadHostPortPackage(hostId) {
+  if (hostId === "claude-code") {
+    return loadPortPackage("@autopilot-harness/port-claude-code");
+  }
+  if (hostId === "codex") {
+    return loadPortPackage("@autopilot-harness/port-codex");
+  }
+  return loadPortPackage("@autopilot-harness/port-cursor");
+}
+
 /**
  * Fail-open shapes must match the host:
  * - Cursor submit → { continue: true }
- * - Claude UserPromptSubmit → {} (allow; no decision:block)
+ * - Claude/Codex UserPromptSubmit → {} (allow; no decision:block)
  * - other events → {}
  */
 function failOpen(event) {
@@ -198,7 +235,8 @@ function cursorStopHandler(port) {
     return port.handleCursorStop;
   }
   // Dual/legacy vendor: deprecated handleStop === Cursor only when Cursor
-  // submit exists. Never fall through to Claude-only package handleStop.
+  // submit exists. Never fall through to Claude-only package handleStop
+  // (also never Codex package handleStop).
   if (
     typeof port.handleStop === "function" &&
     typeof port.handleBeforeSubmitPrompt === "function"
@@ -211,8 +249,9 @@ function cursorStopHandler(port) {
 /**
  * Resolve Claude Stop handler without falling through to Cursor's handleStop
  * on the dual-port vendor (where deprecated `handleStop` === handleCursorStop).
- * node_modules `@autopilot-harness/port-claude-code` exports Claude as handleStop
- * and has no Cursor submit handler.
+ * Package-only Claude exports handleStop + handleStopFailure (Codex has no
+ * StopFailure) — require StopFailure for the bare-handleStop fallback so a
+ * Codex package load is not mistaken for Claude.
  */
 function claudeStopHandler(port) {
   if (typeof port.handleClaudeStop === "function") {
@@ -220,9 +259,90 @@ function claudeStopHandler(port) {
   }
   if (
     typeof port.handleStop === "function" &&
-    typeof port.handleBeforeSubmitPrompt !== "function"
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure === "function"
   ) {
     return port.handleStop;
+  }
+  return undefined;
+}
+
+/**
+ * Codex Stop: prefer aliased vendor export; package-only uses handleStop when
+ * there is no Cursor submit and no Claude StopFailure.
+ */
+function codexStopHandler(port) {
+  if (typeof port.handleCodexStop === "function") {
+    return port.handleCodexStop;
+  }
+  if (
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure !== "function" &&
+    typeof port.handleClaudeStop !== "function"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+function hostPortReady(hostId, port) {
+  if (!port || typeof port !== "object") return false;
+  if (hostId === "cursor") {
+    return typeof port.handleBeforeSubmitPrompt === "function";
+  }
+  if (hostId === "codex") {
+    if (typeof port.handleCodexUserPromptSubmit === "function") return true;
+    return (
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleClaudeStop !== "function"
+    );
+  }
+  // Claude: vendor alias or package-only (StopFailure fingerprint).
+  // Do not treat a Codex-only package (bare submit, no StopFailure) as Claude.
+  if (typeof port.handleUserPromptSubmit !== "function") return false;
+  if (typeof port.handleClaudeStop === "function") return true;
+  return typeof port.handleStopFailure === "function";
+}
+
+function resolveUserPromptSubmit(hostId, port) {
+  if (hostId === "codex") {
+    if (typeof port.handleCodexUserPromptSubmit === "function") {
+      return port.handleCodexUserPromptSubmit;
+    }
+    // Package-only Codex (bare export); never fall back to Claude on vendor.
+    if (
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleClaudeStop !== "function"
+    ) {
+      return port.handleUserPromptSubmit;
+    }
+    return undefined;
+  }
+  if (hostId === "claude-code") {
+    return port.handleUserPromptSubmit;
+  }
+  return undefined;
+}
+
+function resolvePostToolUse(hostId, port) {
+  if (hostId === "codex") {
+    if (typeof port.handleCodexPostToolUse === "function") {
+      return port.handleCodexPostToolUse;
+    }
+    if (
+      typeof port.handlePostToolUse === "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleClaudeStop !== "function"
+    ) {
+      return port.handlePostToolUse;
+    }
+    return undefined;
+  }
+  if (hostId === "claude-code") {
+    return port.handlePostToolUse;
   }
   return undefined;
 }
@@ -235,10 +355,10 @@ function claudeStopHandler(port) {
  * into followup and fights the real abort path.
  *
  * Heuristic (order matters):
- * 1) Explicit Claude hook names (`Stop` / `StopFailure`) → not Cursor
+ * 1) Explicit PascalCase Stop / StopFailure → not Cursor
  * 2) Lowercase `stop` → Cursor
- * 3) `stop_hook_active` present (Claude continuum) → not Cursor
- * 4) Cursor status vocab + `conversation_id` → Cursor; bare `session_id` → Claude
+ * 3) `stop_hook_active` present (Claude/Codex continuum) → not Cursor
+ * 4) Cursor status vocab + `conversation_id` → Cursor; bare `session_id` → not Cursor
  */
 function isCursorShapedStopPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -250,7 +370,7 @@ function isCursorShapedStopPayload(payload) {
   if (hookName === "Stop" || /^stopfailure$/i.test(hookName)) return false;
   if (hookName === "stop") return true;
 
-  // Claude Stop threads stop_hook_active (bool); Cursor uses loop_count.
+  // Claude/Codex Stop threads stop_hook_active (bool); Cursor uses loop_count.
   if (
     typeof payload.stop_hook_active === "boolean" ||
     typeof payload.stopHookActive === "boolean"
@@ -278,15 +398,31 @@ function isCursorShapedStopPayload(payload) {
   const sessionId = String(
     payload.session_id ?? payload.sessionId ?? "",
   ).trim();
-  // Claude-shaped id without conversation_id → keep Claude path
+  // Claude/Codex-shaped id without conversation_id → keep non-Cursor path
   if (sessionId) return false;
 
-  // Abort/cancel with no ids: prefer Cursor halt (no-op {}) over Claude recover
+  // Abort/cancel with no ids: prefer Cursor halt (no-op {}) over recover
   return (
     statusRaw === "aborted" ||
     statusRaw === "cancelled" ||
     statusRaw === "canceled"
   );
+}
+
+/**
+ * Pick Stop host after Cursor-shaped check.
+ * --platform codex must win over PascalStop shape (shared with Claude).
+ * Preserve dual-host cross-fire: Cursor stamp + Claude/Codex-shaped payload
+ * still routes to Claude (historical Layer C), unless stamp is explicitly codex.
+ */
+function resolveStopHostId(declaredPlatform, payload) {
+  if (isCursorShapedStopPayload(payload)) return "cursor";
+  if (declaredPlatform === "codex") return "codex";
+  if (declaredPlatform === "claude-code") return "claude-code";
+  // Shared Pascal Stop / stop_hook_active shape → Claude unless stamp was codex.
+  if (isPascalStopShapedPayload(payload)) return "claude-code";
+  if (declaredPlatform === "cursor") return "cursor";
+  return "claude-code";
 }
 
 let bootEvent = "beforeSubmitPrompt";
@@ -298,27 +434,13 @@ async function main() {
   bootEvent = event;
   try {
     const payload = await readStdin();
-    // Layer A: --platform; fall back to event-name heuristics for legacy installs.
-    const preferClaudePort =
-      declaredPlatform === "claude-code"
-        ? true
-        : declaredPlatform === "cursor"
-          ? false
-          : isClaudeEvent(event);
-    const claude = preferClaudePort;
+    const hostId = resolveHostId(declaredPlatform, event);
 
     const vendor = await loadVendorRuntime();
-    const port = vendor
-      ? vendor
-      : claude
-        ? await loadPortPackage("@autopilot-harness/port-claude-code")
-        : await loadPortPackage("@autopilot-harness/port-cursor");
+    const port = vendor ? vendor : await loadHostPortPackage(hostId);
     const coreMod = vendor ?? (await loadCoreFromNodeModules());
 
-    const portReady = claude
-      ? typeof port?.handleUserPromptSubmit === "function"
-      : typeof port?.handleBeforeSubmitPrompt === "function";
-    if (!portReady || !coreMod?.StateStore) {
+    if (!hostPortReady(hostId, port) || !coreMod?.StateStore) {
       failOpen(event);
       return;
     }
@@ -350,55 +472,51 @@ async function main() {
         return;
       }
       if (event === "UserPromptSubmit") {
-        const result = port.handleUserPromptSubmit(
-          store,
-          payload,
-          projectRoot,
-        );
+        const submitFn = resolveUserPromptSubmit(hostId, port);
+        if (typeof submitFn !== "function") {
+          failOpen(event);
+          return;
+        }
+        const result = submitFn(store, payload, projectRoot);
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
       if (event === "PostToolUse") {
-        port.handlePostToolUse?.(store, payload, projectRoot);
+        const editFn = resolvePostToolUse(hostId, port);
+        if (typeof editFn === "function") {
+          editFn(store, payload, projectRoot);
+        }
         writeReply("{}");
         return;
       }
       if (event === "Stop") {
         // Layer C: payload shape vs declared --platform (cross-fire / lying argv).
-        let useCursorStop = false;
-        if (isCursorShapedStopPayload(payload)) {
-          useCursorStop = true;
-        } else if (isClaudeShapedStopPayload(payload)) {
-          useCursorStop = false;
-        } else if (declaredPlatform === "cursor") {
-          useCursorStop = true;
-        } else {
-          useCursorStop = false;
-        }
-        if (useCursorStop) {
-          let stopFn = cursorStopHandler(port);
-          // Non-vendor Claude-only load + Cursor-shaped cross-fire needs Cursor port.
+        const stopHost = resolveStopHostId(declaredPlatform, payload);
+        let stopFn;
+        if (stopHost === "cursor") {
+          stopFn = cursorStopHandler(port);
           if (typeof stopFn !== "function") {
             const cursorPort = await loadPortPackage(
               "@autopilot-harness/port-cursor",
             );
             if (cursorPort) stopFn = cursorStopHandler(cursorPort);
           }
+        } else if (stopHost === "codex") {
+          stopFn = codexStopHandler(port);
           if (typeof stopFn !== "function") {
-            failOpen(event);
-            return;
+            const codexPort = await loadPortPackage(
+              "@autopilot-harness/port-codex",
+            );
+            if (codexPort) stopFn = codexStopHandler(codexPort);
           }
-          const result = stopFn(createEngine(coreMod, store), payload);
-          writeReply(JSON.stringify(result ?? {}));
-          return;
-        }
-        let stopFn = claudeStopHandler(port);
-        // Non-vendor Cursor-only load + Claude-shaped Stop needs Claude port.
-        if (typeof stopFn !== "function") {
-          const claudePort = await loadPortPackage(
-            "@autopilot-harness/port-claude-code",
-          );
-          if (claudePort) stopFn = claudeStopHandler(claudePort);
+        } else {
+          stopFn = claudeStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const claudePort = await loadPortPackage(
+              "@autopilot-harness/port-claude-code",
+            );
+            if (claudePort) stopFn = claudeStopHandler(claudePort);
+          }
         }
         if (typeof stopFn !== "function") {
           failOpen(event);
@@ -409,6 +527,11 @@ async function main() {
         return;
       }
       if (event === "StopFailure") {
+        // Codex has no StopFailure — fail-open if somehow invoked on codex.
+        if (hostId === "codex") {
+          failOpen(event);
+          return;
+        }
         let failFn = port.handleStopFailure;
         if (typeof failFn !== "function") {
           const stopFn = claudeStopHandler(port);

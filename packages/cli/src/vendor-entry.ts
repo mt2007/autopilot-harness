@@ -1,6 +1,6 @@
 /**
  * Single ESM entry bundled into assets/vendor/runtime.mjs for project hooks.
- * Consumers get core + port-cursor + port-claude-code + i18n without
+ * Consumers get core + port-cursor + port-claude-code + port-codex + i18n without
  * installing workspace packages.
  */
 import { loadLocale } from "@autopilot-harness/i18n";
@@ -32,6 +32,12 @@ export {
   handleStop as handleClaudeStop,
   handleStopFailure,
 } from "@autopilot-harness/port-claude-code";
+
+export {
+  handleUserPromptSubmit as handleCodexUserPromptSubmit,
+  handlePostToolUse as handleCodexPostToolUse,
+  handleStop as handleCodexStop,
+} from "@autopilot-harness/port-codex";
 
 /** @deprecated Prefer handleCursorStop — kept for older hook.mjs copies. */
 export { handleStop } from "@autopilot-harness/port-cursor";

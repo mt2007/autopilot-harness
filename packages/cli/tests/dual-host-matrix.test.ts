@@ -447,6 +447,9 @@ describe("dual-host Cursor non-regression matrix", () => {
     const src = fs.readFileSync(vendor, "utf8");
     expect(src).toMatch(/handleClaudeStop/);
     expect(src).toMatch(/handleCursorStop/);
+    expect(src).toMatch(/handleCodexStop/);
+    expect(src).toMatch(/handleCodexUserPromptSubmit/);
+    expect(src).toMatch(/handleCodexPostToolUse/);
     // Bundled Claude abort normalizer present
     expect(src).toMatch(/normalizeClaudeStopStatus|statusRaw === \"aborted\"/);
     // Cursor stop must not fall through to Claude-only handleStop
@@ -454,6 +457,9 @@ describe("dual-host Cursor non-regression matrix", () => {
     expect(hookSrc).toMatch(
       /Never fall through to Claude-only package handleStop/,
     );
+    // Ternary Stop host pick (codex stamp wins over shared Pascal shape)
+    expect(hookSrc).toMatch(/resolveStopHostId/);
+    expect(hookSrc).toMatch(/declaredPlatform === \"codex\"/);
   });
 
   it("CLI lifecycle: add-platform / upgrade keep Cursor Autopilot hooks", () => {

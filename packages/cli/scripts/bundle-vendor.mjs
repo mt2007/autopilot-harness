@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Bundle core + port-cursor + port-claude-code into assets/vendor/runtime.mjs
+ * Bundle core + port-cursor + port-claude-code + port-codex into assets/vendor/runtime.mjs
  * for project hooks. Also copies migration SQL beside the bundle
  * (migrate.ts resolves relative paths).
  */
@@ -49,6 +49,14 @@ await esbuild.build({
       "packages",
       "ports",
       "claude-code",
+      "src",
+      "index.ts",
+    ),
+    "@autopilot-harness/port-codex": path.join(
+      repoRoot,
+      "packages",
+      "ports",
+      "codex",
       "src",
       "index.ts",
     ),

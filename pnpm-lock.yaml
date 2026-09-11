@@ -29,6 +29,9 @@ importers:
       '@autopilot-harness/port-claude-code':
         specifier: workspace:*
         version: link:../ports/claude-code
+      '@autopilot-harness/port-codex':
+        specifier: workspace:*
+        version: link:../ports/codex
       '@autopilot-harness/port-cursor':
         specifier: workspace:*
         version: link:../ports/cursor

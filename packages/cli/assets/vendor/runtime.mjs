@@ -6748,6 +6748,401 @@ function handleStopFailure(engine, payload) {
   return handleStop2(engine, payload, { status: "error" });
 }
 
+// ../ports/codex/src/index.ts
+var CODEX_PLATFORM = "codex";
+var MAX_NEED_PICK_SLUGS = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS = 2e3;
+var MAX_APPLY_PATCH_COMMAND_CHARS = 1048576;
+var MAX_APPLY_PATCH_PATHS = 256;
+function sid2(p) {
+  return (p.session_id ?? p.sessionId ?? p.conversation_id ?? p.conversationId ?? "").trim();
+}
+function loopCountFromStopHookActive2(payload) {
+  const active = payload.stop_hook_active ?? payload.stopHookActive;
+  return active === true ? 1 : 0;
+}
+function collectCodexStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const MAX_CHARS = 8192;
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const o = value;
+        for (const key of ["message", "error", "name", "stack", "detail"]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.reason);
+  } catch {
+    return "";
+  }
+  const joined = parts.join("\n");
+  return joined.length > MAX_CHARS ? joined.slice(0, MAX_CHARS) : joined;
+}
+function normalizeCodexStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "").toLowerCase().trim();
+  const errText = collectCodexStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
+}
+function blockReason2(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function allowNeedPickContext2(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS - 1)}\u2026`;
+  }
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: ctx
+    }
+  };
+}
+function pathsFromApplyPatchCommand(command) {
+  if (typeof command !== "string" || !command.trim()) return [];
+  const text = command.length > MAX_APPLY_PATCH_COMMAND_CHARS ? command.slice(0, MAX_APPLY_PATCH_COMMAND_CHARS) : command;
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (raw) => {
+    if (found.length >= MAX_APPLY_PATCH_PATHS) return;
+    let p = raw.trim();
+    if (!p || p === "/dev/null") return;
+    if (/[\0\r\n]/.test(p)) return;
+    p = p.replace(/^[ab]\//, "");
+    if (!p || seen.has(p)) return;
+    seen.add(p);
+    found.push(p);
+  };
+  for (const line of text.split(/\r?\n/)) {
+    if (found.length >= MAX_APPLY_PATCH_PATHS) break;
+    const rename = line.match(
+      /^\*\*\*\s+Rename\s+File:\s*(.+?)\s*->\s*(.+?)\s*$/i
+    );
+    if (rename?.[1] && rename[2]) {
+      push(rename[1]);
+      push(rename[2]);
+      continue;
+    }
+    const header = line.match(
+      /^\*\*\*\s+(?:Add|Update|Delete)\s+File:\s*(.+?)\s*$/i
+    );
+    if (header?.[1]) {
+      push(header[1]);
+      continue;
+    }
+    const plus = line.match(/^\+\+\+\s+(?:[ab]\/)?(.+?)\s*$/);
+    if (plus?.[1] && plus[1] !== "/dev/null") {
+      push(plus[1]);
+    }
+  }
+  return found;
+}
+function toolInputObject(payload) {
+  const input = payload.tool_input ?? payload.toolInput;
+  if (!input) return null;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    return input;
+  }
+  return null;
+}
+function filePathsFromCodexEdit(payload) {
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  const rawInput = payload.tool_input ?? payload.toolInput;
+  if (toolName === "apply_patch" || toolName === "ApplyPatch") {
+    if (typeof rawInput === "string") {
+      return pathsFromApplyPatchCommand(rawInput);
+    }
+    const input2 = toolInputObject(payload);
+    if (!input2) return [];
+    const cmd = input2.command;
+    if (typeof cmd === "string") return pathsFromApplyPatchCommand(cmd);
+    return [];
+  }
+  const input = toolInputObject(payload);
+  if (!input) return [];
+  const candidates = [
+    input.file_path,
+    input.filePath,
+    input.path,
+    input.notebook_path,
+    input.notebookPath
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return [c.trim()];
+  }
+  return [];
+}
+function isCodexEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "apply_patch" || n === "ApplyPatch" || n === "Edit" || n === "Write";
+}
+function stampCodexPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === CODEX_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: CODEX_PLATFORM
+  });
+}
+function handleUserPromptSubmit2(store, payload, projectRoot, portConfig) {
+  const conversationId = sid2(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampCodexPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: CODEX_PLATFORM
+      });
+      if (!result.ok) {
+        stampCodexPlatform(store, conversationId, projectRoot);
+        return {
+          decision: "block",
+          reason: blockReason2(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        stampCodexPlatform(store, conversationId, projectRoot);
+        return {
+          decision: "block",
+          reason: blockReason2(result.userMessage, gateFallback)
+        };
+      }
+      stampCodexPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampCodexPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: CODEX_PLATFORM
+      });
+      if (!result.ok) {
+        stampCodexPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return allowNeedPickContext2(result.userMessage, result.candidates);
+        }
+        return {
+          decision: "block",
+          reason: blockReason2(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: CODEX_PLATFORM
+      });
+      if (!result.ok) {
+        stampCodexPlatform(store, conversationId, projectRoot);
+        return {
+          decision: "block",
+          reason: blockReason2(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: CODEX_PLATFORM }
+      );
+      if (!result.ok) {
+        stampCodexPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return allowNeedPickContext2(result.userMessage, result.candidates);
+        }
+        return {
+          decision: "block",
+          reason: blockReason2(result.userMessage, gateFallback)
+        };
+      }
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampCodexPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      CODEX_PLATFORM
+    );
+  }
+  stampCodexPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handlePostToolUse2(store, payload, projectRoot) {
+  const conversationId = sid2(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isCodexEditTool(toolName)) return;
+  const filePaths = filePathsFromCodexEdit(payload);
+  if (filePaths.length === 0) {
+    stampCodexPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampCodexPlatform(store, conversationId, projectRoot);
+  }
+}
+function handleStop3(engine, payload, opts) {
+  const conversationId = sid2(payload);
+  if (!conversationId) return {};
+  const status = normalizeCodexStopStatus(payload, opts);
+  const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
+  const transcriptPath = typeof transcriptRaw === "string" && transcriptRaw.trim() ? transcriptRaw.trim() : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromStopHookActive2(payload),
+    transcriptPath,
+    platform: CODEX_PLATFORM
+  });
+  if (!action?.message) return {};
+  const reason = blockReason2(action.message, "Autopilot followup");
+  if (!action.loop) {
+    return { continue: false, stopReason: reason };
+  }
+  return {
+    decision: "block",
+    reason
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -6762,6 +7157,9 @@ export {
   handleAfterFileEdit,
   handleBeforeSubmitPrompt,
   handleStop2 as handleClaudeStop,
+  handlePostToolUse2 as handleCodexPostToolUse,
+  handleStop3 as handleCodexStop,
+  handleUserPromptSubmit2 as handleCodexUserPromptSubmit,
   handleStop as handleCursorStop,
   handlePostToolUse,
   handleStop,
