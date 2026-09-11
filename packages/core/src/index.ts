@@ -55,6 +55,7 @@ export {
   applyResume,
   applyResumeReview,
   type ApplyResumeResult,
+  type ApplyOnResult,
   type FollowupAction,
   type FollowupKind,
   type ReviewEngineConfig,

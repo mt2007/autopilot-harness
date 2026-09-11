@@ -3089,12 +3089,16 @@ export function applyOff(store: StateStore, conversationId: string): SessionRow 
 }
 
 /** Apply ON trigger side effects (v0.1). */
+export type ApplyOnResult =
+  | { ok: true; session: SessionRow }
+  | { ok: false; userMessage: string };
+
 export function applyOn(
   store: StateStore,
   conversationId: string,
   projectRoot: string,
   opts?: { initialBrief?: string; slug?: string; platform?: string },
-): { ok: true; session: SessionRow } | { ok: false; userMessage: string } {
+): ApplyOnResult {
   const root =
     normalizeProjectRoot(store.projectRoot) ??
     normalizeProjectRoot(projectRoot);
@@ -3126,12 +3130,15 @@ export function applyOn(
   // writer txn so a racing stop cannot redeliver 「全部完成」between the two.
   // Re-read session under the lock for executing / bind fields (outer read is
   // only a fast fail-closed).
-  return store.exclusiveWrite(() => {
+  return store.exclusiveWrite((): {
+    commit: boolean;
+    value: ApplyOnResult;
+  } => {
     const live = store.getSession(conversationId);
     if (live?.phase === "executing") {
       return {
         commit: false,
-        value: { ok: false as const, userMessage: onBlockedMsg },
+        value: { ok: false, userMessage: onBlockedMsg },
       };
     }
     const prevTid = live?.track_id ?? "_pending";
@@ -3164,7 +3171,7 @@ export function applyOn(
       track_candidates_json: null,
     });
     store.clearPendingFollowupIf(conversationId, isTerminalFollowupMessage);
-    return { commit: true, value: { ok: true as const, session: row } };
+    return { commit: true, value: { ok: true, session: row } };
   });
 }
 

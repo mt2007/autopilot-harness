@@ -2066,6 +2066,11 @@ function isRecoverOrStuckFollowupMessage(text) {
   if (!line) return false;
   return isRecoverFollowupMessage(line) || line.startsWith("Stuck:") || line.startsWith("\u5361\u4F4F\uFF1A") || line.startsWith("\u5361\u4F4F:");
 }
+function isTerminalFollowupMessage(text) {
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
+  return line.startsWith("All checklist") || line.startsWith("\u5168\u90E8\u5B8C\u6210") || line.startsWith("Review complete") || line.startsWith("\u81EA\u5BA1\u5B8C\u6210");
+}
 var USER_ABORT_MARKERS = [
   "user aborted",
   "interrupted manually",
@@ -4507,10 +4512,11 @@ function applyOn(store, conversationId, projectRoot, opts) {
   }
   projectRoot = root;
   const session = store.getSession(conversationId);
+  const onBlockedMsg = "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON.";
   if (session?.phase === "executing") {
     return {
       ok: false,
-      userMessage: "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON."
+      userMessage: onBlockedMsg
     };
   }
   if (opts?.slug !== void 0 && !isSafeTrackSlug(opts.slug)) {
@@ -4520,46 +4526,39 @@ function applyOn(store, conversationId, projectRoot, opts) {
       userMessage: `Invalid track slug "${sanitizeSessionDisplayText(raw).slice(0, 64)}".`
     };
   }
-  const prevTid = session?.track_id ?? "_pending";
-  const trackId = opts?.slug ?? (session?.track_id && isBoundRunTrackId(session.track_id) ? session.track_id : "_pending");
-  const checklistPath = trackId === prevTid ? session?.checklist_path ?? "" : "";
-  const platform = resolveSessionPlatform(
-    opts?.platform,
-    session?.platform ?? "cursor"
-  );
-  if (session?.phase === "done") {
-    const s2 = store.upsertSession({
+  return store.exclusiveWrite(() => {
+    const live = store.getSession(conversationId);
+    if (live?.phase === "executing") {
+      return {
+        commit: false,
+        value: { ok: false, userMessage: onBlockedMsg }
+      };
+    }
+    const prevTid = live?.track_id ?? "_pending";
+    const trackId = opts?.slug ?? (live?.track_id && isBoundRunTrackId(live.track_id) ? live.track_id : "_pending");
+    const checklistPath = trackId === prevTid ? live?.checklist_path ?? "" : "";
+    const platform = resolveSessionPlatform(
+      opts?.platform,
+      live?.platform ?? "cursor"
+    );
+    const row = store.upsertSession({
       conversation_id: conversationId,
       project_root: projectRoot,
       code_root: projectRoot,
+      platform,
       phase: "planning",
       armed: 0,
       paused: 0,
       paused_reason: null,
       track_id: trackId,
       checklist_path: checklistPath,
+      // ON returns to planning — drop mid-flow run/replan pick state.
       pending_action: null,
-      track_candidates_json: null,
-      platform
+      track_candidates_json: null
     });
-    return { ok: true, session: s2 };
-  }
-  const s = store.upsertSession({
-    conversation_id: conversationId,
-    project_root: projectRoot,
-    code_root: projectRoot,
-    platform,
-    phase: "planning",
-    armed: 0,
-    paused: 0,
-    paused_reason: null,
-    track_id: trackId,
-    checklist_path: checklistPath,
-    // ON returns to planning — drop mid-flow run/replan pick state.
-    pending_action: null,
-    track_candidates_json: null
+    store.clearPendingFollowupIf(conversationId, isTerminalFollowupMessage);
+    return { commit: true, value: { ok: true, session: row } };
   });
-  return { ok: true, session: s };
 }
 function finishLocalResume(store, conversationId, session) {
   const snap = store.getSession(conversationId);
