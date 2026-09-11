@@ -9,6 +9,27 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.14] — 2026-09-11
+
+### Added
+
+- **config-wire**: submit + edit hooks load YAML `triggers.*` (per-key non-empty phrase lists; empty/`[]`/whitespace-only fall back to `DEFAULT_TRIGGERS`) and `artifacts.plans_dir` (via `normalizeInProjectPlansDir`) for RUN / needPick / plans bind.
+- Fresh `init` (`--yes` + TUI) defaults `review.scope` to **`project`**; CLI `--scope executing_only|project`.
+- Init covers custom `plans_dir` in `.autopilotignore` (`<plansDir>/**`).
+- Bilingual stock trigger phrases (en/zh-CN aligned with `DEFAULT_TRIGGERS`).
+
+### Changed
+
+- Docs / quickstart / architecture / config / troubleshooting: init default scope is **`project`**; missing/invalid runtime scope still fail-open to **`executing_only`**; wiring table marks triggers + `plans_dir` as loaded.
+- `upgrade` fill-missing keeps historical `executing_only` and does **not** rewrite an existing `review.scope`.
+- Root `pnpm typecheck` builds `@autopilot-harness/cli` workspace deps first so ports see fresh `dist` types.
+- Vendor `runtime.mjs` rebuilt with hook loaders + bilingual stock; contract tests lock the matrix.
+- Prefer **`pnpm publish`** (and local `pnpm pack` assert: no `workspace:*`) for 0.2.14 public packages.
+
+### Fixed
+
+- Status/doctor `plans_dir` normalization shares core `normalizeInProjectPlansDir` (no divergent invalid-path behavior).
+
 ## [0.2.13] — 2026-09-11
 
 ### Fixed
