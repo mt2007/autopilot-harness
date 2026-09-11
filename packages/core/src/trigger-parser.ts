@@ -149,6 +149,23 @@ export function isRecoverOrStuckFollowupMessage(text: string): boolean {
   );
 }
 
+/**
+ * Terminal done / review_complete tips. Safe to drop on ON — otherwise a later
+ * planning stop redelivers them when the latest user message is no longer the tip
+ * (same-chat done → ON ghost 「全部完成」). Keep prefixes in sync with
+ * state-store SQL_PENDING_REDELIVER_KEEP_DISARMED terminal globs.
+ */
+export function isTerminalFollowupMessage(text: string): boolean {
+  const line = firstSubstantiveLine(text);
+  if (!line) return false;
+  return (
+    line.startsWith("All checklist") ||
+    line.startsWith("全部完成") ||
+    line.startsWith("Review complete") ||
+    line.startsWith("自审完成")
+  );
+}
+
 /** Cursor / host phrases that mean the user clicked Stop (not a model crash). */
 export const USER_ABORT_MARKERS = [
   "user aborted",

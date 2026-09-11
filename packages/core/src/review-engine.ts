@@ -47,6 +47,7 @@ import {
   firstSubstantiveLine,
   isRecoverFollowupMessage,
   isRecoverOrStuckFollowupMessage,
+  isTerminalFollowupMessage,
   substantivePromptBody,
 } from "./trigger-parser.js";
 import {
@@ -3102,11 +3103,12 @@ export function applyOn(
   }
   projectRoot = root;
   const session = store.getSession(conversationId);
+  const onBlockedMsg =
+    "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON.";
   if (session?.phase === "executing") {
     return {
       ok: false,
-      userMessage:
-        "Autopilot is executing. Send Autopilot OFF, REPLAN, or RESUME before ON.",
+      userMessage: onBlockedMsg,
     };
   }
 
@@ -3120,57 +3122,50 @@ export function applyOn(
     };
   }
 
-  const prevTid = session?.track_id ?? "_pending";
-  const trackId =
-    opts?.slug ??
-    (session?.track_id && isBoundRunTrackId(session.track_id)
-      ? session.track_id
-      : "_pending");
-
-  // bind-invalidate-dirty: ON that changes/downgrades track must drop stale
-  // checklist_path (e.g. alpha bind → ON beta, or _multi → bare ON → _pending).
-  const checklistPath =
-    trackId === prevTid ? (session?.checklist_path ?? "") : "";
-
-  const platform = resolveSessionPlatform(
-    opts?.platform,
-    session?.platform ?? "cursor",
-  );
-
-  if (session?.phase === "done") {
-    const s = store.upsertSession({
+  // Session → planning + drop terminal done/review_complete pending in one
+  // writer txn so a racing stop cannot redeliver 「全部完成」between the two.
+  // Re-read session under the lock for executing / bind fields (outer read is
+  // only a fast fail-closed).
+  return store.exclusiveWrite(() => {
+    const live = store.getSession(conversationId);
+    if (live?.phase === "executing") {
+      return {
+        commit: false,
+        value: { ok: false as const, userMessage: onBlockedMsg },
+      };
+    }
+    const prevTid = live?.track_id ?? "_pending";
+    const trackId =
+      opts?.slug ??
+      (live?.track_id && isBoundRunTrackId(live.track_id)
+        ? live.track_id
+        : "_pending");
+    // bind-invalidate-dirty: ON that changes/downgrades track must drop stale
+    // checklist_path (e.g. alpha bind → ON beta, or _multi → bare ON → _pending).
+    const checklistPath =
+      trackId === prevTid ? (live?.checklist_path ?? "") : "";
+    const platform = resolveSessionPlatform(
+      opts?.platform,
+      live?.platform ?? "cursor",
+    );
+    const row = store.upsertSession({
       conversation_id: conversationId,
       project_root: projectRoot,
       code_root: projectRoot,
+      platform,
       phase: "planning",
       armed: 0,
       paused: 0,
       paused_reason: null,
       track_id: trackId,
       checklist_path: checklistPath,
+      // ON returns to planning — drop mid-flow run/replan pick state.
       pending_action: null,
       track_candidates_json: null,
-      platform,
     });
-    return { ok: true, session: s };
-  }
-
-  const s = store.upsertSession({
-    conversation_id: conversationId,
-    project_root: projectRoot,
-    code_root: projectRoot,
-    platform,
-    phase: "planning",
-    armed: 0,
-    paused: 0,
-    paused_reason: null,
-    track_id: trackId,
-    checklist_path: checklistPath,
-    // ON returns to planning — drop mid-flow run/replan pick state.
-    pending_action: null,
-    track_candidates_json: null,
+    store.clearPendingFollowupIf(conversationId, isTerminalFollowupMessage);
+    return { commit: true, value: { ok: true as const, session: row } };
   });
-  return { ok: true, session: s };
 }
 
 export type ApplyResumeResult =

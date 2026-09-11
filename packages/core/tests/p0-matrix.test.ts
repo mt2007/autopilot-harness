@@ -3308,6 +3308,63 @@ describe("F-OFF / F-OFF-DONE / F-ON", () => {
       expect(ok.session.paused).toBe(0);
     }
   });
+
+  it("F-ON: clears terminal done/review_complete pending (not fix/confirm)", () => {
+    store.upsertSession({
+      conversation_id: "c-done-tip",
+      project_root: root,
+      code_root: root,
+      phase: "done",
+      armed: 0,
+      paused: 0,
+    });
+    store.ensureReviewChain("c-done-tip");
+    store.updateReviewChain("c-done-tip", {
+      pending_followup: "全部完成。自审确认已干净通过（确认轮不 commit）。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+    });
+    expect(applyOn(store, "c-done-tip", root).ok).toBe(true);
+    expect(store.getReviewChain("c-done-tip")!.pending_followup).toBeNull();
+
+    store.upsertSession({
+      conversation_id: "c-rc-tip",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+    });
+    store.ensureReviewChain("c-rc-tip");
+    store.updateReviewChain("c-rc-tip", {
+      pending_followup:
+        "Review complete. All 5 confirm rounds passed; the review chain has ended.",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+    });
+    expect(applyOn(store, "c-rc-tip", root).ok).toBe(true);
+    expect(store.getReviewChain("c-rc-tip")!.pending_followup).toBeNull();
+
+    store.upsertSession({
+      conversation_id: "c-fix-tip",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+    });
+    store.ensureReviewChain("c-fix-tip");
+    store.updateReviewChain("c-fix-tip", {
+      pending_followup: "自审修复 第 1 轮：缺陷优先",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 1,
+      code_edited: 1,
+    });
+    expect(applyOn(store, "c-fix-tip", root).ok).toBe(true);
+    expect(store.getReviewChain("c-fix-tip")!.pending_followup).toMatch(
+      /^自审修复/,
+    );
+  });
 });
 
 describe("F-RUN / F-E8 triggers + list-tracks", () => {

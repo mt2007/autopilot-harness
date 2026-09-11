@@ -145,6 +145,7 @@ export {
   isHarnessFollowupMessage,
   isRecoverOrStuckFollowupMessage,
   isRecoverFollowupMessage,
+  isTerminalFollowupMessage,
   isUserAbortText,
   USER_ABORT_MARKERS,
   DEFAULT_TRIGGERS,
