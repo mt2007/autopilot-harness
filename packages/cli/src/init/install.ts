@@ -32,7 +32,11 @@ import {
   assertPresentRealFile,
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
-import { DEFAULT_AUTOPILOT_IGNORE_TEXT } from "@autopilot-harness/core";
+import {
+  DEFAULT_AUTOPILOT_IGNORE_TEXT,
+  loadProjectHookConfig,
+  normalizeInProjectPlansDir,
+} from "@autopilot-harness/core";
 import { readConfigInstallHints, readConfigPlatformsOrThrow } from "./config-merge.js";
 import {
   applyPlatformsToConfigYaml,
@@ -431,15 +435,42 @@ function autopilotIgnorePatternLines(text: string): string[] {
 }
 
 /**
+ * Ensure `<plansDir>/**` appears in ignore text so planning artifacts under a
+ * custom artifacts.plans_dir do not arm product-code self-review.
+ * Prefer core in-project normalization when projectRoot is known (hook parity).
+ */
+export function ensurePlansDirInIgnoreText(
+  text: string,
+  plansDir: string,
+  projectRoot?: string,
+): string {
+  let dir = "plans";
+  if (typeof projectRoot === "string" && projectRoot.trim()) {
+    dir = normalizeInProjectPlansDir(projectRoot, plansDir) ?? "plans";
+  } else {
+    const norm = normalizePlansDir(plansDir);
+    dir = norm.ok ? norm.value : "plans";
+  }
+  const pattern = `${dir}/**`;
+  let body = text;
+  if (!body.endsWith("\n")) body += "\n";
+  if (autopilotIgnoreOwnedPatterns(body).has(pattern)) return body;
+  return `${body}\n# artifacts.plans_dir (${dir})\n${pattern}\n`;
+}
+
+/**
  * Write `.autopilotignore` when missing; when present, append template pattern
  * lines that are not already present or commented-out (never delete user lines).
+ * Always ensures `plansDir/**` is covered (default `plans` or custom).
  */
 export function ensureAutopilotIgnore(
   projectRoot: string,
   templatesRoot: string,
+  plansDir: string = "plans",
 ): string | null {
   const dest = path.join(projectRoot, ".autopilotignore");
   let contents = resolveAutopilotIgnoreTemplate(templatesRoot);
+  contents = ensurePlansDirInIgnoreText(contents, plansDir, projectRoot);
   if (!contents.endsWith("\n")) contents += "\n";
 
   let existing: string | null = null;
@@ -494,6 +525,23 @@ export function ensureAutopilotIgnore(
   // Do not write a merge that exceeds the untrusted size cap — runtime would
   // reject the file and fall back to DEFAULT, silently dropping user rules.
   if (Buffer.byteLength(next, "utf8") > MAX_UNTRUSTED_TEXT_BYTES) {
+    // Prefer covering configured plans_dir alone when the full template
+    // merge cannot fit (still never exceed the cap).
+    const plansPattern = `${
+      normalizeInProjectPlansDir(projectRoot, plansDir) ?? "plans"
+    }/**`;
+    if (!have.has(plansPattern) && missing.includes(plansPattern)) {
+      let slim = existing;
+      if (!slim.endsWith("\n")) slim += "\n";
+      slim +=
+        "\n# --- merged artifacts.plans_dir (upgrade/init) ---\n" +
+        plansPattern +
+        "\n";
+      if (Buffer.byteLength(slim, "utf8") <= MAX_UNTRUSTED_TEXT_BYTES) {
+        writeFileAtomic(dest, slim, projectRoot, ".autopilotignore");
+        return ".autopilotignore";
+      }
+    }
     return null;
   }
   writeFileAtomic(dest, next, projectRoot, ".autopilotignore");
@@ -1087,7 +1135,15 @@ export function installInitYes(opts: InitYesOptions): InitResult {
 
     written.push(...installWorkflows(templatesRoot, projectRoot));
 
-    const ignoreRel = ensureAutopilotIgnore(projectRoot, templatesRoot);
+    // Force/upgrade: cover configured plans_dir; fresh init: wizard/opts plansDir.
+    const ignorePlansDir = configExists
+      ? loadProjectHookConfig(projectRoot).plansDir
+      : plansDir;
+    const ignoreRel = ensureAutopilotIgnore(
+      projectRoot,
+      templatesRoot,
+      ignorePlansDir,
+    );
     if (ignoreRel && !written.includes(ignoreRel)) written.push(ignoreRel);
 
     // Fresh init only: plans tree / plans gitignore / quickstart follow wizard.

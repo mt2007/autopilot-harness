@@ -1311,6 +1311,61 @@ locale: zh-CN
     ).toBe(true);
     expect(fs.readFileSync(configPath, "utf8")).toBe(before);
   });
+
+  it("init with custom plansDir covers it in .autopilotignore", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        plansDir: "work/plans",
+      }).ok,
+    ).toBe(true);
+    const ignore = fs.readFileSync(
+      path.join(root, ".autopilotignore"),
+      "utf8",
+    );
+    expect(ignore).toMatch(/^work\/plans\/\*\*$/m);
+    expect(
+      fs.readFileSync(path.join(root, ".autopilot", "config.yml"), "utf8"),
+    ).toMatch(/plans_dir:\s*work\/plans/);
+  });
+
+  it("force refresh merges configured plans_dir into .autopilotignore", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        plansDir: "work/plans",
+      }).ok,
+    ).toBe(true);
+    // Simulate older ignore that only had default plans/**
+    fs.writeFileSync(
+      path.join(root, ".autopilotignore"),
+      "plans/**\n.autopilot/**\n",
+      "utf8",
+    );
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: true,
+        // Intentionally omit plansDir — must read from config.yml
+      }).ok,
+    ).toBe(true);
+    expect(
+      fs.readFileSync(path.join(root, ".autopilotignore"), "utf8"),
+    ).toMatch(/^work\/plans\/\*\*$/m);
+  });
 });
 
 describe("parseInitReviewScope", () => {
@@ -1418,5 +1473,79 @@ describe("ensureAutopilotIgnore merge", () => {
     const rel = ensureAutopilotIgnore(root, templatesRoot);
     expect(rel).toBeNull();
     expect(fs.readFileSync(dest, "utf8")).toBe(before);
+  });
+
+  it("fresh write includes custom plansDir/**", () => {
+    root = tmpProject();
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "work/plans");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    expect(body).toMatch(/^plans\/\*\*$/m);
+    expect(body).toMatch(/^work\/plans\/\*\*$/m);
+  });
+
+  it("merges custom plansDir/** into existing ignore", () => {
+    root = tmpProject();
+    fs.writeFileSync(
+      path.join(root, ".autopilotignore"),
+      "plans/**\n.autopilot/**\n",
+      "utf8",
+    );
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "docs/plans");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    expect(body).toMatch(/^docs\/plans\/\*\*$/m);
+  });
+
+  it("does not re-add custom plansDir when user commented it out", () => {
+    root = tmpProject();
+    fs.writeFileSync(
+      path.join(root, ".autopilotignore"),
+      "plans/**\n# work/plans/**\n",
+      "utf8",
+    );
+    ensureAutopilotIgnore(root, templatesRoot, "work/plans");
+    // May still merge other template lines, but must not activate work/plans/**
+    const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    const active = body
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l === "work/plans/**");
+    expect(active).toHaveLength(0);
+    expect(body).toMatch(/#\s*work\/plans\/\*\*/);
+  });
+
+  it("invalid plansDir falls back to plans/** without injecting raw input", () => {
+    root = tmpProject();
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "../escape");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    expect(body).toMatch(/^plans\/\*\*$/m);
+    expect(body).not.toMatch(/\.\.\/escape/);
+  });
+
+  it("near size cap still merges plansDir/** when full template merge cannot fit", () => {
+    root = tmpProject();
+    const dest = path.join(root, ".autopilotignore");
+    // Large existing file with room for a short plansDir line only.
+    const header = "custom-only/**\n";
+    const fillerLen =
+      MAX_UNTRUSTED_TEXT_BYTES -
+      Buffer.byteLength(header, "utf8") -
+      Buffer.byteLength(
+        "\n# --- merged artifacts.plans_dir (upgrade/init) ---\nwork/plans/**\n",
+        "utf8",
+      ) -
+      20;
+    fs.writeFileSync(dest, header + "z".repeat(Math.max(fillerLen, 1)) + "\n", "utf8");
+    const beforeLen = Buffer.byteLength(fs.readFileSync(dest), "utf8");
+    expect(beforeLen).toBeLessThanOrEqual(MAX_UNTRUSTED_TEXT_BYTES);
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "work/plans");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(dest, "utf8");
+    expect(body).toMatch(/^work\/plans\/\*\*$/m);
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
+      MAX_UNTRUSTED_TEXT_BYTES,
+    );
   });
 });
