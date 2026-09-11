@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.13] — 2026-09-11
+
+### Fixed
+
+- **shell-dirty-stuck**: on completed stop, git-dirty product paths (vs HEAD / untracked product files) arm `code_edited` even when the host never fired `afterFileEdit` (e.g. Shell writes), using the same `.autopilotignore` / untracked-gitignore filters.
+- Soft `need_evidence` idle that hits `review.stuck.max_idle_stops` injects a stuck nudge (`stuck_soft` copy) **without** hard-pausing or disarming the track; required verify failures at the same threshold still hard-stuck pause.
+
+### Changed
+
+- Contract tests lock dirty-arm, soft stuck tip ownership, and soft stuck vs E5c hard stuck; docs/config + troubleshooting note shell dirty arm and soft stuck without hard pause.
+- Prefer **`pnpm publish`** (and local `pnpm pack` assert: no `workspace:*`) for 0.2.13 public packages.
+
 ## [0.2.12] — 2026-09-11
 
 ### Fixed

@@ -345,7 +345,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -361,6 +361,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.10\]/);
     expect(log).toMatch(/## \[0\.2\.11\]/);
     expect(log).toMatch(/## \[0\.2\.12\]/);
+    expect(log).toMatch(/## \[0\.2\.13\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -406,6 +407,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0212).toMatch(/applyOn|pending_followup|terminal/i);
     expect(section0212).toMatch(/全部完成|All checklist/i);
     expect(section0212).toMatch(/pnpm publish|pnpm pack/i);
+    const section0213 = changelogSection(log, "0.2.13");
+    expect(section0213).toMatch(/shell-dirty-stuck|git-dirty|afterFileEdit/i);
+    expect(section0213).toMatch(/need_evidence|max_idle_stops|hard-paus/i);
+    expect(section0213).toMatch(/stuck_soft|verify|armed/i);
+    expect(section0213).toMatch(/pnpm publish|pnpm pack/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
