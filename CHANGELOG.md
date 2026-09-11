@@ -9,6 +9,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.12] — 2026-09-11
+
+### Fixed
+
+- **done-on-pending**: Autopilot ON (`applyOn`) clears terminal done / review-complete `pending_followup`, so a same-chat ghost tip (`All checklist…` / `全部完成…`) is not redelivered on a later stop when the latest user message is ON (not the prior Done).
+
+### Changed
+
+- Contract test locks done pending → ON → stop no longer injects the completion tip.
+- Prefer **`pnpm publish`** (and local `pnpm pack` assert: no `workspace:*`) for 0.2.12 public packages; do not use bare `npm publish`.
+
 ## [0.2.11] — 2026-09-11
 
 ### Fixed
