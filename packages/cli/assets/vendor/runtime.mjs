@@ -5,12 +5,12 @@ var en_default = {
     help: "Autopilot Harness \u2014 Planning \u2192 Executing agent harness"
   },
   triggers: {
-    on: ["Autopilot ON", "Enable autopilot"],
-    run: ["Autopilot RUN", "Start execution"],
-    off: ["Autopilot OFF", "Disable autopilot"],
-    resume: ["Autopilot RESUME"],
-    replan: ["Autopilot REPLAN"],
-    resume_review: ["Resume review"]
+    on: ["Autopilot ON", "Enable autopilot", "\u5F00\u542F\u81EA\u52A8\u9A7E\u9A76"],
+    run: ["Autopilot RUN", "Start execution", "\u5F00\u59CB\u6267\u884C"],
+    off: ["Autopilot OFF", "Disable autopilot", "\u5173\u95ED\u81EA\u52A8\u9A7E\u9A76"],
+    resume: ["Autopilot RESUME", "\u7EE7\u7EED\u6267\u884C"],
+    replan: ["Autopilot REPLAN", "\u4FEE\u6539\u65B9\u6848"],
+    resume_review: ["Resume review", "\u7EE7\u7EED\u81EA\u5BA1"]
   },
   skill: {
     autopilot_on: {
@@ -82,12 +82,12 @@ var zh_CN_default = {
     help: "Autopilot Harness \u2014 \u4E24\u9636\u6BB5 Agent \u5916\u9AA8\u9ABC\uFF1A\u89C4\u5212 \u2192 \u6267\u884C"
   },
   triggers: {
-    on: ["Autopilot ON", "\u5F00\u542F\u81EA\u52A8\u9A7E\u9A76"],
-    run: ["Autopilot RUN", "\u5F00\u59CB\u6267\u884C"],
-    off: ["Autopilot OFF", "\u5173\u95ED\u81EA\u52A8\u9A7E\u9A76"],
+    on: ["Autopilot ON", "Enable autopilot", "\u5F00\u542F\u81EA\u52A8\u9A7E\u9A76"],
+    run: ["Autopilot RUN", "Start execution", "\u5F00\u59CB\u6267\u884C"],
+    off: ["Autopilot OFF", "Disable autopilot", "\u5173\u95ED\u81EA\u52A8\u9A7E\u9A76"],
     resume: ["Autopilot RESUME", "\u7EE7\u7EED\u6267\u884C"],
     replan: ["Autopilot REPLAN", "\u4FEE\u6539\u65B9\u6848"],
-    resume_review: ["\u7EE7\u7EED\u81EA\u5BA1", "Resume review"]
+    resume_review: ["Resume review", "\u7EE7\u7EED\u81EA\u5BA1"]
   },
   skill: {
     autopilot_on: {
@@ -5084,6 +5084,31 @@ var DEFAULT_PROJECT_REVIEW_CONFIG = {
   maxErrorsBeforePause: 0,
   locale: "en"
 };
+var TRIGGER_PHRASE_KEYS = [
+  "on",
+  "run",
+  "off",
+  "resume",
+  "replan",
+  "resume_review"
+];
+function cloneDefaultTriggers() {
+  return {
+    match: "line_start",
+    on: [...DEFAULT_TRIGGERS.on],
+    run: [...DEFAULT_TRIGGERS.run],
+    off: [...DEFAULT_TRIGGERS.off],
+    resume: [...DEFAULT_TRIGGERS.resume],
+    replan: [...DEFAULT_TRIGGERS.replan],
+    resume_review: [...DEFAULT_TRIGGERS.resume_review]
+  };
+}
+function cloneDefaultHookConfig() {
+  return {
+    triggers: cloneDefaultTriggers(),
+    plansDir: "plans"
+  };
+}
 function parseReviewScope(raw) {
   const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
   if (s === "project" || s === "always" || s === "all") return "project";
@@ -5124,6 +5149,16 @@ function coerceScalar(value) {
   if (value === "true") return true;
   if (value === "false") return false;
   if (value === "null" || value === "~") return null;
+  const trimmed = value.trim();
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+        return parsed;
+      }
+    } catch {
+    }
+  }
   return unquote(value);
 }
 function lineIndent(line) {
@@ -5227,70 +5262,95 @@ function parseVerifyCommands(raw) {
   }
   return out;
 }
-function loadProjectReviewConfig(projectRoot) {
+function readProjectConfigYaml(projectRoot) {
   const root = normalizeProjectRoot(projectRoot);
-  if (!root) {
-    return cloneDefaultProjectReviewConfig();
-  }
+  if (!root) return null;
   const configPath = path8.join(root, ".autopilot", "config.yml");
   try {
     const nofollow = typeof fs8.constants.O_NOFOLLOW === "number" ? fs8.constants.O_NOFOLLOW : 0;
     if (nofollow === 0) {
-      if (!fs8.existsSync(configPath)) return cloneDefaultProjectReviewConfig();
-      if (fs8.lstatSync(configPath).isSymbolicLink()) {
-        return cloneDefaultProjectReviewConfig();
-      }
+      if (!fs8.existsSync(configPath)) return null;
+      if (fs8.lstatSync(configPath).isSymbolicLink()) return null;
     }
     let fd;
     try {
       fd = fs8.openSync(configPath, fs8.constants.O_RDONLY | nofollow);
     } catch {
-      return cloneDefaultProjectReviewConfig();
+      return null;
     }
     let raw;
     try {
       const st = fs8.fstatSync(fd);
-      if (!st.isFile() || st.size > MAX_CONFIG_BYTES) {
-        return cloneDefaultProjectReviewConfig();
-      }
+      if (!st.isFile() || st.size > MAX_CONFIG_BYTES) return null;
       const lst = fs8.lstatSync(configPath);
-      if (lst.isSymbolicLink() || !lst.isFile()) {
-        return cloneDefaultProjectReviewConfig();
-      }
-      if (lst.ino !== st.ino || lst.dev !== st.dev) {
-        return cloneDefaultProjectReviewConfig();
-      }
-      if (!isRealpathInsideProject(root, configPath)) {
-        return cloneDefaultProjectReviewConfig();
-      }
+      if (lst.isSymbolicLink() || !lst.isFile()) return null;
+      if (lst.ino !== st.ino || lst.dev !== st.dev) return null;
+      if (!isRealpathInsideProject(root, configPath)) return null;
       const buf = Buffer.alloc(st.size);
       const n = fs8.readSync(fd, buf, 0, st.size, 0);
       raw = buf.subarray(0, n).toString("utf8");
     } finally {
       fs8.closeSync(fd);
     }
-    if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) {
-      return cloneDefaultProjectReviewConfig();
-    }
+    if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) return null;
     const text = raw.charCodeAt(0) === 65279 ? raw.slice(1) : raw;
     const parsed = parseSimpleYaml(text);
-    if (!isPlainObject(parsed)) return cloneDefaultProjectReviewConfig();
-    const review = isPlainObject(parsed.review) ? parsed.review : {};
-    const verify = isPlainObject(review.verify) ? review.verify : {};
-    const stuck = isPlainObject(review.stuck) ? review.stuck : {};
-    const errors = isPlainObject(review.errors) ? review.errors : {};
-    return normalizeProjectReviewConfig({
-      confirmRounds: review.confirm_rounds,
-      reviewScope: review.scope,
-      verifyEnabled: verify.enabled,
-      verifyCommands: verify.commands,
-      maxIdleStops: stuck.max_idle_stops,
-      maxErrorsBeforePause: errors.max_before_pause,
-      locale: parsed.locale
-    });
+    if (!isPlainObject(parsed)) return null;
+    return { root, parsed };
   } catch {
-    return cloneDefaultProjectReviewConfig();
+    return null;
   }
+}
+function nonEmptyPhraseList(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const t = item.trim();
+    if (t) out.push(t);
+  }
+  return out.length > 0 ? out : null;
+}
+function triggersFromParsed(parsed) {
+  const base = cloneDefaultTriggers();
+  const triggers = isPlainObject(parsed.triggers) ? parsed.triggers : {};
+  for (const key of TRIGGER_PHRASE_KEYS) {
+    const phrases = nonEmptyPhraseList(triggers[key]);
+    if (phrases) base[key] = phrases;
+  }
+  return base;
+}
+function plansDirFromParsed(root, parsed) {
+  const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
+  const raw = artifacts.plans_dir;
+  const candidate = typeof raw === "string" ? raw : "plans";
+  return normalizeInProjectPlansDir(root, candidate) ?? "plans";
+}
+function loadProjectReviewConfig(projectRoot) {
+  const loaded = readProjectConfigYaml(projectRoot);
+  if (!loaded) return cloneDefaultProjectReviewConfig();
+  const { parsed } = loaded;
+  const review = isPlainObject(parsed.review) ? parsed.review : {};
+  const verify = isPlainObject(review.verify) ? review.verify : {};
+  const stuck = isPlainObject(review.stuck) ? review.stuck : {};
+  const errors = isPlainObject(review.errors) ? review.errors : {};
+  return normalizeProjectReviewConfig({
+    confirmRounds: review.confirm_rounds,
+    reviewScope: review.scope,
+    verifyEnabled: verify.enabled,
+    verifyCommands: verify.commands,
+    maxIdleStops: stuck.max_idle_stops,
+    maxErrorsBeforePause: errors.max_before_pause,
+    locale: parsed.locale
+  });
+}
+function loadProjectHookConfig(projectRoot) {
+  const loaded = readProjectConfigYaml(projectRoot);
+  if (!loaded) return cloneDefaultHookConfig();
+  return {
+    triggers: triggersFromParsed(loaded.parsed),
+    plansDir: plansDirFromParsed(loaded.root, loaded.parsed)
+  };
 }
 function normalizeProjectReviewConfig(raw) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -6203,13 +6263,18 @@ function handleBeforeSubmitPrompt(store, payload, projectRoot, portConfig) {
   } catch {
   }
   const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
   const trigger = parseTrigger({
     prompt,
     conversationId,
     projectRoot,
-    pendingAction: session?.pending_action
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
   });
-  const actionConfig = portConfig?.phaseActions;
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
   if (trigger) {
     if (trigger.kind === "off") {
       applyOff(store, conversationId);
@@ -6289,7 +6354,14 @@ function handleAfterFileEdit(store, payload, projectRoot) {
   const filePath = payload.file_path ?? payload.filePath ?? "";
   if (!conversationId || !filePath) return;
   try {
-    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+    const hookCfg = loadProjectHookConfig(projectRoot);
+    notePlansDirEdit(
+      store,
+      conversationId,
+      projectRoot,
+      filePath,
+      hookCfg.plansDir
+    );
   } catch {
   }
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
@@ -6486,13 +6558,18 @@ function handleUserPromptSubmit(store, payload, projectRoot, portConfig) {
   } catch {
   }
   const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
   const trigger = parseTrigger({
     prompt,
     conversationId,
     projectRoot,
-    pendingAction: session?.pending_action
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
   });
-  const actionConfig = portConfig?.phaseActions;
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
   const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
   if (trigger) {
     if (trigger.kind === "off") {
@@ -6602,7 +6679,14 @@ function handlePostToolUse(store, payload, projectRoot) {
   const filePath = filePathFromClaudeEdit(payload);
   if (!filePath) return;
   try {
-    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+    const hookCfg = loadProjectHookConfig(projectRoot);
+    notePlansDirEdit(
+      store,
+      conversationId,
+      projectRoot,
+      filePath,
+      hookCfg.plansDir
+    );
   } catch {
   }
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
