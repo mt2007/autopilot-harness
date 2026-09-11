@@ -632,4 +632,228 @@ describe("uninstallProject", () => {
       ),
     ).toBe(false);
   });
+
+  it("uninstalls Codex Autopilot hooks and keeps foreign entries", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+    file.hooks.Stop = [
+      ...(file.hooks.Stop ?? []),
+      { hooks: [{ type: "command", command: "echo keep-codex" }] },
+    ];
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.codex\/hooks\.json/i.test(a))).toBe(true);
+    const after = JSON.parse(fs.readFileSync(hooksPath, "utf8"));
+    expect(JSON.stringify(after)).not.toMatch(/autopilot-harness-hook\.mjs/);
+    expect(JSON.stringify(after)).toMatch(/echo keep-codex/);
+    expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+  });
+
+  it("Cursor-only uninstall strips in-project leftover Codex Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
+    fs.writeFileSync(
+      hooksPath,
+      JSON.stringify(
+        {
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command:
+                      "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop --platform codex",
+                  },
+                  { type: "command", command: "echo keep-codex-foreign" },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.codex\/hooks\.json/i.test(a))).toBe(true);
+    const after = JSON.parse(fs.readFileSync(hooksPath, "utf8"));
+    expect(JSON.stringify(after)).not.toMatch(/autopilot-harness-hook\.mjs/);
+    expect(JSON.stringify(after)).toMatch(/echo keep-codex-foreign/);
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+  });
+
+  it("Cursor-only uninstall soft-skips corrupt leftover .codex/hooks.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.mkdirSync(path.join(root, ".codex"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".codex", "hooks.json"),
+      "{not-json",
+      "utf8",
+    );
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /skip \.codex\/hooks\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(fs.readFileSync(path.join(root, ".codex", "hooks.json"), "utf8")).toBe(
+      "{not-json",
+    );
+  });
+
+  it("Codex-only uninstall fails closed on corrupt hooks.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".codex", "hooks.json"),
+      "{not-json",
+      "utf8",
+    );
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/\.codex\/hooks\.json/i);
+      expect(r.error).toMatch(
+        /not a JSON object|valid JSON|Expected property name|JSON/i,
+      );
+    }
+  });
+
+  it("Cursor-only uninstall soft-skips Autopilot Codex hooks under symlinked .codex", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-codex-link-"));
+    fs.writeFileSync(
+      path.join(outside, "hooks.json"),
+      JSON.stringify(
+        {
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command:
+                      "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop --platform codex",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+    );
+    fs.symlinkSync(outside, path.join(root, ".codex"));
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /skip \.codex\/hooks\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(root, ".cursor", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+    // Outside tree must remain untouched (no write-through).
+    expect(
+      JSON.stringify(
+        JSON.parse(fs.readFileSync(path.join(outside, "hooks.json"), "utf8")),
+      ),
+    ).toMatch(/autopilot-harness-hook\.mjs/);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("Codex-only uninstall fails closed when .codex is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-codex-want-"));
+    const hooks = fs.readFileSync(
+      path.join(root, ".codex", "hooks.json"),
+      "utf8",
+    );
+    fs.writeFileSync(path.join(outside, "hooks.json"), hooks);
+    fs.rmSync(path.join(root, ".codex"), { recursive: true, force: true });
+    fs.symlinkSync(outside, path.join(root, ".codex"));
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/\.codex/i);
+    expect(
+      JSON.stringify(
+        JSON.parse(fs.readFileSync(path.join(outside, "hooks.json"), "utf8")),
+      ),
+    ).toMatch(/autopilot-harness-hook\.mjs/);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
 });

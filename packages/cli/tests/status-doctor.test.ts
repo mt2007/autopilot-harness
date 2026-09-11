@@ -1707,6 +1707,191 @@ describe("runDoctor", () => {
     expect(lines.join("\n")).toMatch(/\.claude\/settings\.json missing/i);
   });
 
+  it("OKs Codex Autopilot entries and WARNs about /hooks trust", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/OK\s+\.codex\/hooks\.json Autopilot entries/);
+    expect(joined).toMatch(/\/hooks trust/i);
+    expect(joined).toMatch(/re-trust/i);
+    expect(joined).not.toMatch(/FAIL\s+\.codex\/hooks\.json missing/i);
+  });
+
+  it("FAILs when .codex/hooks.json is missing on a Codex-enabled project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".codex", "hooks.json"), { force: true });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/\.codex\/hooks\.json missing/i);
+  });
+
+  it("WARNs when Autopilot Codex hook timeout is set below 120s", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: { Stop?: Array<{ hooks?: Array<{ timeout?: number }> }> };
+    };
+    const stopHook = file.hooks?.Stop?.[0]?.hooks?.[0];
+    expect(stopHook).toBeTruthy();
+    stopHook!.timeout = 30;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/timeout set below 120s/i);
+  });
+
+  it("WARNs when Codex Autopilot hooks omit --platform stamp", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    fs.writeFileSync(
+      hooksPath,
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event UserPromptSubmit",
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "apply_patch|Edit|Write",
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event PostToolUse",
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/missing --platform codex/i);
+  });
+
+  it("WARNs on duplicate Codex Autopilot hooks without FAIL", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+    file.hooks.Stop = [
+      ...(file.hooks.Stop ?? []),
+      {
+        hooks: [
+          {
+            type: "command",
+            command:
+              "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop --platform codex",
+          },
+        ],
+      },
+    ];
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/\.codex\/hooks\.json.*duplicate/i);
+    expect(joined).not.toMatch(/FAIL\s+\.codex\/hooks\.json missing Autopilot/i);
+    expect(joined).not.toMatch(/OK\s+\.codex\/hooks\.json Autopilot entries/);
+  });
+
+  it("FAILs when a Codex Autopilot event is missing", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks: Record<string, unknown>;
+    };
+    delete file.hooks.Stop;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(
+      /FAIL\s+\.codex\/hooks\.json missing Autopilot for:.*Stop/i,
+    );
+  });
+
   it("OKs dual-host doctor for Cursor hooks + Claude settings (skills 10)", () => {
     root = tmpProject();
     expect(

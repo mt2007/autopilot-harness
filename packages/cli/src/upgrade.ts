@@ -21,6 +21,10 @@ import {
   validateClaudeSettingsShape,
   type ClaudeSettingsFile,
 } from "./init/claude-settings-merge.js";
+import {
+  validateCodexHooksShape,
+  type CodexHooksFile,
+} from "./init/codex-hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import type { InitLocale } from "./init/types.js";
 import {
@@ -48,6 +52,7 @@ function preflightHostSettings(
   projectRoot: string,
   wantCursor: boolean,
   wantClaude: boolean,
+  wantCodex: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -128,6 +133,40 @@ function preflightHostSettings(
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, error: `Cannot read ${settingsPath}: ${msg}` };
       }
+    }
+  }
+
+  if (wantCodex) {
+    const hooksPath = path.join(projectRoot, ".codex", "hooks.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".codex"), ".codex/");
+      assertNotSymlink(hooksPath, ".codex/hooks.json");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        ".codex/hooks.json",
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${hooksPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateCodexHooksShape(parsed as CodexHooksFile);
+      if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
+      }
+      // Missing hooks.json is OK — force refresh will create it.
     }
   }
 
@@ -400,6 +439,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     actions.push("merge .autopilotignore (append missing default patterns)");
     const wantCursor = configWantsInstallableHost(platforms, "cursor");
     const wantClaude = configWantsInstallableHost(platforms, "claude-code");
+    const wantCodex = configWantsInstallableHost(platforms, "codex");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -410,6 +450,9 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         "merge .claude/settings.json (Autopilot hooks + BLOCK_CAP=0)",
       );
     }
+    if (wantCodex) {
+      actions.push("merge .codex/hooks.json (Autopilot entries; no skills)");
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -418,7 +461,12 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
 
     // Fail closed before any backup/migrate/write (incl. dry-run honesty).
-    const hostPre = preflightHostSettings(projectRoot, wantCursor, wantClaude);
+    const hostPre = preflightHostSettings(
+      projectRoot,
+      wantCursor,
+      wantClaude,
+      wantCodex,
+    );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };
     }

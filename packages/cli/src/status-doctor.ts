@@ -30,6 +30,13 @@ import {
   validateClaudeSettingsShape,
   type ClaudeSettingsFile,
 } from "./init/claude-settings-merge.js";
+import {
+  codexAutopilotHasSmallTimeout,
+  codexHooksHavePlatformStamp,
+  summarizeCodexAutopilotHooks,
+  validateCodexHooksShape,
+  type CodexHooksFile,
+} from "./init/codex-hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -711,6 +718,7 @@ export function runDoctor(
   const hooksPath = path.join(root, ".cursor", "hooks.json");
   const wantCursor = configWantsInstallableHost(cfg.platforms, "cursor");
   const wantClaude = configWantsInstallableHost(cfg.platforms, "claude-code");
+  const wantCodex = configWantsInstallableHost(cfg.platforms, "codex");
 
   if (wantCursor) {
     try {
@@ -854,6 +862,84 @@ export function runDoctor(
         const msg = err instanceof Error ? err.message : String(err);
         lines.push(
           `FAIL  settings.json unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
+    }
+  }
+
+  if (wantCodex) {
+    const codexHooksPath = path.join(root, ".codex", "hooks.json");
+    try {
+      const raw = readUntrustedUtf8File(
+        codexHooksPath,
+        MAX_CONFIG_BYTES,
+        ".codex/hooks.json",
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push("FAIL  .codex/hooks.json is not a JSON object");
+        ok = false;
+      } else {
+        const file = parsed as CodexHooksFile;
+        const shapeError = validateCodexHooksShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  .codex/hooks.json: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeCodexAutopilotHooks(file);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  .codex/hooks.json missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  .codex/hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (codexAutopilotHasSmallTimeout(file)) {
+            lines.push(
+              "WARN  Autopilot Codex hook timeout set below 120s — omit timeout (Codex default 600s) or raise it; run upgrade",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            !codexHooksHavePlatformStamp(file)
+          ) {
+            lines.push(
+              "WARN  Autopilot Codex hooks missing --platform codex — run upgrade",
+            );
+          }
+          // Informational: Codex requires project hook trust via /hooks (re-trust after upgrade).
+          if (missingEvents.length === 0) {
+            lines.push(
+              "WARN  Codex project hooks need /hooks trust (re-trust after install or upgrade)",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !codexAutopilotHasSmallTimeout(file) &&
+            codexHooksHavePlatformStamp(file)
+          ) {
+            lines.push("OK    .codex/hooks.json Autopilot entries");
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push("FAIL  .codex/hooks.json missing");
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  .codex/hooks.json unreadable (${safeDisplayToken(msg, "error")})`,
         );
         ok = false;
       }

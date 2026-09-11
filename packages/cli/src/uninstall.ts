@@ -11,6 +11,12 @@ import {
   validateClaudeSettingsShape,
   type ClaudeSettingsFile,
 } from "./init/claude-settings-merge.js";
+import {
+  stripAutopilotCodexHooks,
+  codexHooksContainAutopilot,
+  validateCodexHooksShape,
+  type CodexHooksFile,
+} from "./init/codex-hooks-merge.js";
 import { readConfigInstallHints } from "./init/config-merge.js";
 import { configWantsInstallableHost } from "./init/platforms.js";
 import {
@@ -210,6 +216,64 @@ function readClaudeSettingsFile(
   }
 }
 
+function readCodexHooksFile(
+  hooksPath: string,
+):
+  | { ok: true; value: CodexHooksFile | null }
+  | { ok: false; error: string } {
+  try {
+    assertNotSymlink(hooksPath, ".codex/hooks.json");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(hooksPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: ".codex/hooks.json is a symlink; refusing to open",
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error:
+          ".codex/hooks.json exists and is not a regular file; refusing to uninstall",
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access .codex/hooks.json: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".codex/hooks.json",
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error:
+          ".codex/hooks.json is not a JSON object; fix or remove it before uninstall.",
+      };
+    }
+    const file = parsed as CodexHooksFile;
+    const shape = validateCodexHooksShape(file);
+    if (shape) return { ok: false, error: `.codex/hooks.json: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read .codex/hooks.json: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -282,8 +346,11 @@ function formatUninstallSkipDetail(raw: string): string {
     .slice(0, 160);
 }
 
-/** Best-effort: config declares installable Claude Code (missing/unreadable → false). */
-function projectWantsClaudeHost(configPath: string): boolean {
+/** Best-effort: which installable hosts config declares (missing/unreadable → none). */
+function projectWantsInstallableHosts(configPath: string): {
+  claude: boolean;
+  codex: boolean;
+} {
   try {
     const yaml = readUntrustedUtf8File(
       configPath,
@@ -291,9 +358,12 @@ function projectWantsClaudeHost(configPath: string): boolean {
       ".autopilot/config.yml",
     );
     const platforms = readConfigInstallHints(yaml).platforms;
-    return configWantsInstallableHost(platforms, "claude-code");
+    return {
+      claude: configWantsInstallableHost(platforms, "claude-code"),
+      codex: configWantsInstallableHost(platforms, "codex"),
+    };
   } catch {
-    return false;
+    return { claude: false, codex: false };
   }
 }
 
@@ -358,14 +428,16 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const claudeDir = path.join(projectRoot, ".claude");
     const claudeSettingsPath = path.join(claudeDir, "settings.json");
     const claudeSkillsRoot = path.join(claudeDir, "skills");
+    const codexDir = path.join(projectRoot, ".codex");
+    const codexHooksPath = path.join(codexDir, "hooks.json");
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
 
-    const wantClaude = projectWantsClaudeHost(configPath);
-    // Only fail-closed on .claude tree when config declares Claude. Leftover
-    // Cursor-only .claude (incl. symlinked trees with Autopilot skills) must not
-    // block uninstall — Claude skill/settings cleanup soft-skips on error below.
+    const { claude: wantClaude, codex: wantCodex } =
+      projectWantsInstallableHosts(configPath);
+    // Only fail-closed on .claude/.codex trees when config declares that host.
+    // Leftover Cursor-only host dirs must not block uninstall — soft-skip below.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
     // isRealDirectory is false for symlinks — probe with lstat so links are caught.
@@ -381,6 +453,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       ];
       if (wantClaude) {
         dirs.push([claudeDir, ".claude/"], [claudeSkillsRoot, ".claude/skills/"]);
+      }
+      if (wantCodex) {
+        dirs.push([codexDir, ".codex/"]);
       }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
@@ -530,6 +605,65 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .claude/settings.json (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Codex hooks ---
+    // Cursor-only (etc.): soft-skip unreadable leftover .codex/hooks.json.
+    // Codex-enabled configs fail closed so Autopilot markers are not left behind.
+    const codexPre = readCodexHooksFile(codexHooksPath);
+    if (!codexPre.ok) {
+      if (wantCodex) {
+        return { ok: false, error: codexPre.error };
+      }
+      actions.push(
+        `skip .codex/hooks.json (${formatUninstallSkipDetail(codexPre.error)})`,
+      );
+    } else if (codexHooksContainAutopilot(codexPre.value)) {
+      const stripCodexHooks = (): void => {
+        assertNotSymlink(codexDir, ".codex/");
+        assertNotSymlink(codexHooksPath, ".codex/hooks.json");
+        if (dryRun) {
+          found = true;
+          actions.push("strip Autopilot entries from .codex/hooks.json");
+          return;
+        }
+        const codexFresh = readCodexHooksFile(codexHooksPath);
+        if (!codexFresh.ok) {
+          throw new Error(codexFresh.error);
+        }
+        const freshFile = codexFresh.value;
+        if (freshFile == null || !codexHooksContainAutopilot(freshFile)) {
+          found = true;
+          actions.push("strip Autopilot entries from .codex/hooks.json");
+          actions.push(
+            ".codex/hooks.json no longer has Autopilot entries (skipped write)",
+          );
+          return;
+        }
+        const stripped = stripAutopilotCodexHooks(freshFile);
+        writeJsonAtomic(
+          codexHooksPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          ".codex/hooks.json",
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push("strip Autopilot entries from .codex/hooks.json");
+        removed.push(
+          path.relative(projectRoot, codexHooksPath) + " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripCodexHooks();
+      } catch (err) {
+        if (wantCodex) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .codex/hooks.json (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

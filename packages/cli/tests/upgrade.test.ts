@@ -827,4 +827,144 @@ review:
     );
     expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(true);
   });
+
+  it("dry-run lists Codex hooks action when codex is enabled (no skills)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.codex\/hooks\.json/i.test(a))).toBe(true);
+    expect(r.actions.some((a) => /\.codex\/skills/i.test(a))).toBe(false);
+    expect(r.actions.some((a) => /\.cursor\/hooks\.json/i.test(a))).toBe(false);
+  });
+
+  it("upgrade refreshes Codex hooks and restores --platform stamp", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks: Record<string, Array<{ hooks?: Array<{ command?: string; timeout?: number }> }>>;
+    };
+    for (const groups of Object.values(file.hooks)) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (typeof h.command === "string") {
+            h.command = h.command.replace(/ --platform codex/, "");
+            h.timeout = 30;
+          }
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const after = fs.readFileSync(hooksPath, "utf8");
+    expect(after).toMatch(/--platform codex/);
+    expect(after).not.toMatch(/"timeout"\s*:\s*30/);
+  });
+
+  it("Cursor-only upgrade ignores corrupt leftover .codex/hooks.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const leftover = path.join(root, ".codex", "hooks.json");
+    fs.mkdirSync(path.dirname(leftover), { recursive: true });
+    const corrupt = "{not-json";
+    fs.writeFileSync(leftover, corrupt, "utf8");
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(true);
+    if (!dry.ok) return;
+    expect(dry.actions.some((a) => /\.codex\/hooks\.json/i.test(a))).toBe(
+      false,
+    );
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    expect(fs.readFileSync(leftover, "utf8")).toBe(corrupt);
+  });
+
+  it("Codex-enabled upgrade fails closed on corrupt .codex/hooks.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".codex", "hooks.json"),
+      "{not-json",
+      "utf8",
+    );
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) expect(dry.error).toMatch(/\.codex\/hooks\.json|valid JSON/i);
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/\.codex\/hooks\.json|valid JSON/i);
+  });
+
+  it("Codex-enabled upgrade fails closed when .codex is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-up-codex-"));
+    const hooks = fs.readFileSync(
+      path.join(root, ".codex", "hooks.json"),
+      "utf8",
+    );
+    fs.writeFileSync(path.join(outside, "hooks.json"), hooks);
+    fs.rmSync(path.join(root, ".codex"), { recursive: true, force: true });
+    fs.symlinkSync(outside, path.join(root, ".codex"));
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) expect(dry.error).toMatch(/\.codex/i);
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/\.codex/i);
+    expect(
+      JSON.stringify(
+        JSON.parse(fs.readFileSync(path.join(outside, "hooks.json"), "utf8")),
+      ),
+    ).toMatch(/autopilot-harness-hook\.mjs/);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
 });
