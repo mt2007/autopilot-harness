@@ -13,7 +13,7 @@
     "bundle-templates": "pnpm --filter @autopilot-harness/cli run bundle-templates",
     "test": "pnpm run bundle-vendor && pnpm run bundle-templates && pnpm --filter @autopilot-harness/cli run sync-dist-assets && vitest run",
     "test:watch": "vitest",
-    "typecheck": "pnpm -r run typecheck"
+    "typecheck": "pnpm --filter @autopilot-harness/cli^... run build && pnpm -r run typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
