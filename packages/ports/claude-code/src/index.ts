@@ -15,6 +15,7 @@ import {
   isRecoverOrStuckFollowupMessage,
   isSafeTrackSlug,
   isUserAbortText,
+  loadProjectHookConfig,
   loadProjectReviewConfig,
   notePlansDirEdit,
   parseAdvanceNextItemId,
@@ -341,14 +342,19 @@ export function handleUserPromptSubmit(
   }
 
   const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
   const trigger = parseTrigger({
     prompt,
     conversationId,
     projectRoot,
     pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers,
   });
 
-  const actionConfig = portConfig?.phaseActions;
+  const actionConfig: PhaseActionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir,
+  };
   const gateFallback =
     "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
 
@@ -471,7 +477,14 @@ export function handlePostToolUse(
 
   try {
     // bind-plans-dedicated-path: independent of isProductCodeEdit (plans/** ignored).
-    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+    const hookCfg = loadProjectHookConfig(projectRoot);
+    notePlansDirEdit(
+      store,
+      conversationId,
+      projectRoot,
+      filePath,
+      hookCfg.plansDir,
+    );
   } catch {
     /* best-effort */
   }

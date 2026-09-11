@@ -14,6 +14,7 @@ import {
   isProductCodeEdit,
   isRecoverOrStuckFollowupMessage,
   isUserAbortText,
+  loadProjectHookConfig,
   loadProjectReviewConfig,
   notePlansDirEdit,
   parseAdvanceNextItemId,
@@ -183,14 +184,19 @@ export function handleBeforeSubmitPrompt(
   }
 
   const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
   const trigger = parseTrigger({
     prompt,
     conversationId,
     projectRoot,
     pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers,
   });
 
-  const actionConfig = portConfig?.phaseActions;
+  const actionConfig: PhaseActionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir,
+  };
 
   if (trigger) {
     if (trigger.kind === "off") {
@@ -284,7 +290,14 @@ export function handleAfterFileEdit(
 
   // bind-plans-dedicated-path: independent of isProductCodeEdit (plans/** ignored).
   try {
-    notePlansDirEdit(store, conversationId, projectRoot, filePath);
+    const hookCfg = loadProjectHookConfig(projectRoot);
+    notePlansDirEdit(
+      store,
+      conversationId,
+      projectRoot,
+      filePath,
+      hookCfg.plansDir,
+    );
   } catch {
     /* best-effort */
   }
