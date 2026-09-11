@@ -24,12 +24,14 @@ describe("platforms helpers", () => {
       surface: "ide",
     });
     expect(defaultSurfaceFor("claude-code")).toBe("cli");
+    expect(defaultSurfaceFor("codex")).toBe("cli");
     expect(defaultSurfaceFor("runner")).toBe("runner");
   });
 
   it("configWantsInstallableHost defaults empty installable list to Cursor", () => {
     expect(configWantsInstallableHost([], "cursor")).toBe(true);
     expect(configWantsInstallableHost([], "claude-code")).toBe(false);
+    expect(configWantsInstallableHost([], "codex")).toBe(false);
     expect(
       configWantsInstallableHost(
         [{ id: "kimi-code", surface: "cli" }],
@@ -77,10 +79,19 @@ describe("platforms helpers", () => {
       assertInstallablePlatforms([{ id: "claude-code", surface: "cli" }]),
     ).toBeNull();
     expect(
+      assertInstallablePlatforms([{ id: "codex", surface: "cli" }]),
+    ).toBeNull();
+    expect(
       assertInstallablePlatforms([{ id: "claude-code", surface: "ide" }]),
+    ).toMatch(/Unsupported platform/);
+    expect(
+      assertInstallablePlatforms([{ id: "codex", surface: "ide" }]),
     ).toMatch(/Unsupported platform/);
     expect(formatBindingOptionLabel({ id: "claude-code", surface: "cli" })).toMatch(
       /hooks shared: terminal \+ IDE/,
+    );
+    expect(formatBindingOptionLabel({ id: "codex", surface: "cli" })).toMatch(
+      /Codex \(CLI hooks\.json\)/,
     );
   });
 

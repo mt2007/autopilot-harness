@@ -312,6 +312,7 @@ dist/
   it("host-aware post-install tips stay English and follow platform", () => {
     expect(formatHostDisplayName("cursor")).toBe("Cursor");
     expect(formatHostDisplayName("claude-code")).toBe("Claude Code");
+    expect(formatHostDisplayName("codex")).toBe("Codex");
     expect(formatPostInstallOutro("cursor")).toBe(
       "You're all set — try /autopilot-on in Cursor.",
     );
@@ -326,6 +327,12 @@ dist/
     );
     expect(formatHostActivationTips("claude-code").join("\n")).toMatch(
       /BLOCK_CAP|trusting/i,
+    );
+    expect(formatHostActivationTips("codex").join("\n")).toMatch(
+      /\.codex\/hooks\.json/,
+    );
+    expect(formatHostActivationTips("codex").join("\n")).toMatch(
+      /triggers\.on/,
     );
     const footer = formatPostInstallFooter("cursor").join("\n");
     expect(footer).toMatch(/You're all set/);

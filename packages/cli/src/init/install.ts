@@ -9,6 +9,11 @@ import {
   validateClaudeSettingsShape,
   type ClaudeSettingsFile,
 } from "./claude-settings-merge.js";
+import {
+  mergeCodexHooks,
+  validateCodexHooksShape,
+  type CodexHooksFile,
+} from "./codex-hooks-merge.js";
 import type {
   HooksFile,
   InitLocale,
@@ -88,6 +93,23 @@ export type {
   ClaudeMatcherGroup,
   ClaudeHookHandler,
 } from "./claude-settings-merge.js";
+export {
+  mergeCodexHooks,
+  validateCodexHooksShape,
+  hasCompleteCodexAutopilotHooks,
+  summarizeCodexAutopilotHooks,
+  stripAutopilotCodexHooks,
+  codexHooksContainAutopilot,
+  codexHooksHavePlatformStamp,
+  codexAutopilotHasSmallTimeout,
+  CODEX_AUTOPILOT_EVENTS,
+  CODEX_POST_TOOL_USE_MATCHER,
+} from "./codex-hooks-merge.js";
+export type {
+  CodexHooksFile,
+  CodexMatcherGroup,
+  CodexHookHandler,
+} from "./codex-hooks-merge.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -286,13 +308,17 @@ type ClaudeSettingsRead =
   | { ok: true; value: ClaudeSettingsFile | null }
   | { ok: false; error: string };
 
+type CodexHooksRead =
+  | { ok: true; value: CodexHooksFile | null }
+  | { ok: false; error: string };
+
 function platformsWantHost(
   platforms: readonly PlatformBinding[],
   hostId: string,
 ): boolean {
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
-  // `claude-code`/`cursor` with the wrong surface must not force reads/writes
+  // `claude-code`/`cursor`/`codex` with the wrong surface must not force reads/writes
   // (e.g. corrupt leftover settings blocking --add-platform of another host).
   return platforms.some(
     (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
@@ -382,6 +408,45 @@ function readClaudeSettingsFile(filePath: string): ClaudeSettingsRead {
     }
     const obj = parsed as ClaudeSettingsFile;
     const shapeError = validateClaudeSettingsShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
+/** Read `.codex/hooks.json`; refuse to clobber an existing unreadable file. */
+function readCodexHooksFile(filePath: string): CodexHooksRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".codex/hooks.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as CodexHooksFile;
+    const shapeError = validateCodexHooksShape(obj);
     if (shapeError) {
       return { ok: false, error: `${filePath}: ${shapeError}` };
     }
@@ -795,14 +860,16 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
         "Missing assets/vendor (or dist/assets/vendor) runtime.mjs/migrations — run pnpm bundle-vendor (or pnpm build)",
     };
   }
-  // Host settings (`.cursor/hooks.json` / `.claude/settings.json`) are validated
-  // only for platforms that will be wired — see installInitYes.
+  // Host settings (`.cursor/hooks.json` / `.claude/settings.json` /
+  // `.codex/hooks.json`) are validated only for platforms that will be wired —
+  // see installInitYes.
   return { ok: true };
 }
 
 /**
  * Non-interactive init (`--yes`). Writes .autopilot + host hooks/skills
- * (`.cursor/hooks.json` and/or `.claude/settings.json` per platforms).
+ * (`.cursor/hooks.json` and/or `.claude/settings.json` and/or `.codex/hooks.json`
+ * per platforms). Does not write Codex `config.toml` hooks or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
  * updates the `platforms` list (committed only after hooks succeed).
@@ -831,6 +898,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const hooksPath = path.join(cursorDir, "hooks.json");
   const claudeDir = path.join(projectRoot, ".claude");
   const claudeSettingsPath = path.join(claudeDir, "settings.json");
+  const codexDir = path.join(projectRoot, ".codex");
+  const codexHooksPath = path.join(codexDir, "hooks.json");
   const mergePlatforms = Boolean(opts.mergePlatforms);
   // Adding hosts into an existing config requires the force/refresh path.
   const force = Boolean(opts.force) || mergePlatforms;
@@ -993,11 +1062,12 @@ export function installInitYes(opts: InitYesOptions): InitResult {
 
     const wantCursor = platformsWantHost(effectivePlatforms, "cursor");
     const wantClaude = platformsWantHost(effectivePlatforms, "claude-code");
-    if (!wantCursor && !wantClaude) {
+    const wantCodex = platformsWantHost(effectivePlatforms, "codex");
+    if (!wantCursor && !wantClaude && !wantCodex) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor and/or claude-code).",
+          "No installable host platform to wire (need cursor, claude-code, and/or codex).",
       };
     }
 
@@ -1026,6 +1096,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const claudePre = readClaudeSettingsFile(claudeSettingsPath);
       if (!claudePre.ok) {
         return { ok: false, error: claudePre.error };
+      }
+    }
+    if (wantCodex) {
+      try {
+        assertNotSymlink(codexDir, ".codex/");
+        assertNotSymlink(codexHooksPath, ".codex/hooks.json");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const codexPre = readCodexHooksFile(codexHooksPath);
+      if (!codexPre.ok) {
+        return { ok: false, error: codexPre.error };
       }
     }
 
@@ -1175,6 +1258,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     // dual-host TOCTOU failure does not leave only one side refreshed.
     let hooksFresh: HooksRead | null = null;
     let claudeFresh: ClaudeSettingsRead | null = null;
+    let codexFresh: CodexHooksRead | null = null;
     if (wantCursor) {
       hooksFresh = readHooksFile(hooksPath);
       if (!hooksFresh.ok) {
@@ -1205,6 +1289,21 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantCodex) {
+      codexFresh = readCodexHooksFile(codexHooksPath);
+      if (!codexFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: codexFresh.error };
+      }
+      try {
+        assertNotSymlink(codexDir, ".codex/");
+        assertNotSymlink(codexHooksPath, ".codex/hooks.json");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
 
     // Fail-fast: merge the pre-skills snapshot in memory so shape errors cannot
     // leave orphan host skills. Final re-read+merge happens immediately before
@@ -1216,6 +1315,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantClaude && claudeFresh?.ok) {
         mergeClaudeSettings(claudeFresh.value);
       }
+      if (wantCodex && codexFresh?.ok) {
+        mergeCodexHooks(codexFresh.value);
+      }
     } catch (err) {
       rollbackFreshConfig();
       const msg = err instanceof Error ? err.message : String(err);
@@ -1223,6 +1325,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
+    // Codex has no stable skills install path in this build — skip.
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1237,6 +1340,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     // Final re-read + merge immediately before any host settings write.
     let mergedHooks: ReturnType<typeof mergeHooksJson> | null = null;
     let mergedClaude: ReturnType<typeof mergeClaudeSettings> | null = null;
+    let mergedCodex: ReturnType<typeof mergeCodexHooks> | null = null;
     try {
       if (wantCursor) {
         const hooksFinal = readHooksFile(hooksPath);
@@ -1257,6 +1361,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(claudeDir, ".claude/");
         assertNotSymlink(claudeSettingsPath, ".claude/settings.json");
         mergedClaude = mergeClaudeSettings(claudeFinal.value);
+      }
+      if (wantCodex) {
+        const codexFinal = readCodexHooksFile(codexHooksPath);
+        if (!codexFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: codexFinal.error };
+        }
+        assertNotSymlink(codexDir, ".codex/");
+        assertNotSymlink(codexHooksPath, ".codex/hooks.json");
+        mergedCodex = mergeCodexHooks(codexFinal.value);
       }
     } catch (err) {
       rollbackFreshConfig();
@@ -1286,6 +1400,18 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".claude/",
       );
       written.push(path.relative(projectRoot, claudeSettingsPath));
+    }
+
+    if (mergedCodex) {
+      mkdirRealDirSync(path.dirname(codexHooksPath), ".codex/", projectRoot);
+      assertRealpathInside(projectRoot, path.dirname(codexHooksPath), ".codex/");
+      writeFileAtomic(
+        codexHooksPath,
+        JSON.stringify(mergedCodex, null, 2) + "\n",
+        projectRoot,
+        ".codex/",
+      );
+      written.push(path.relative(projectRoot, codexHooksPath));
     }
 
     // Commit platforms merge after hooks: re-read so concurrent edits between

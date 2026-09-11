@@ -4,6 +4,7 @@ import { AUTOPILOT_EVENTS } from "./types.js";
 /** Installed `--platform` ids (argv primary dispatch). */
 export const HOOK_PLATFORM_CURSOR = "cursor";
 export const HOOK_PLATFORM_CLAUDE_CODE = "claude-code";
+export const HOOK_PLATFORM_CODEX = "codex";
 
 /** Canonical Autopilot hook command line (platform + event). */
 export function autopilotHookCommandLine(

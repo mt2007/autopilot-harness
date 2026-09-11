@@ -2,9 +2,9 @@
 
 Product front door: [README.md](../README.md). Stop-loop internals: [architecture.md](./architecture.md).
 
-Autopilot separates **core** (FSM, SQLite, checklist, review) from **ports** (host adapters). **v0.2 ships Cursor and Claude Code**; Codex / Runner remain planned.
+Autopilot separates **core** (FSM, SQLite, checklist, review) from **ports** (host adapters). **v0.2 ships Cursor and Claude Code**; **Codex** init/hooks wiring lands in **v0.3** (status below); Runner remains later.
 
-Installed hook commands stamp **`--platform <id>`** (e.g. `cursor` / `claude-code`) as the primary dispatch switch. Runtime still applies **universal abort** and a **payload conflict resolver** so IDE cross-fire (Cursor-shaped stdin on a Claude-stamped command) cannot recover into `decision:block`.
+Installed hook commands stamp **`--platform <id>`** (e.g. `cursor` / `claude-code` / `codex`) as the primary dispatch switch. Runtime still applies **universal abort** and a **payload conflict resolver** so IDE cross-fire (Cursor-shaped stdin on a Claude-stamped command) cannot recover into `decision:block`.
 
 ## Status
 
@@ -12,10 +12,10 @@ Installed hook commands stamp **`--platform <id>`** (e.g. `cursor` / `claude-cod
 |------|--------|---------|-------|
 | **Cursor** | **Shipped** (v0.1+) | `ide` (hooks) | Skills `/autopilot-*`, Stop / submit / edit hooks, vendored `runtime.mjs`. |
 | **Claude Code** | **Shipped** (v0.2) | `cli` | Official hooks are **shared across terminal + IDE** (`surface: cli` ≠ CLI-only). Stop inject = `decision: "block"` + `reason`. Init sets `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`. |
-| **Codex** | **v0.3 / v0.4 planned** | hooks (not Runner-first) | `.codex/hooks.json` + skills; require `/hooks` trust; measure long confirm chains at implement time. |
+| **Codex** | **v0.3 / v0.4 planned** | `cli` (hooks) | Init: `.codex/hooks.json` only (**not** `config.toml` hooks); matcher `apply_patch\|Edit\|Write`; omit timeout (default 600s). Trust via `/hooks`. **P0 activation = line-start `triggers.on`** (no Autopilot skills — no stable Codex skills path; no default `AGENTS.md`). |
 | **Runner** ports | Later | `runner` | External process loop; size `max iterations` ≥ worst-case review chain, or chunk work. |
 
-`platforms` in `.autopilot/config.yml` lists enabled hosts (`id` + `surface`: `ide` \| `cli` \| `runner`). This build installs **Cursor and/or Claude Code** when those bindings are present; listing future ids in config does not invent a missing port. Dual-host: `init --yes --add-platform claude-code` (or `cursor`) after the first host is wired.
+`platforms` in `.autopilot/config.yml` lists enabled hosts (`id` + `surface`: `ide` \| `cli` \| `runner`). This build installs **Cursor**, **Claude Code**, and/or **Codex** when those bindings are present; listing other future ids in config does not invent a missing port. Dual/triple-host: `init --yes --add-platform <id>` after the first host is wired.
 
 ## Stop-loop caps (why ports matter)
 

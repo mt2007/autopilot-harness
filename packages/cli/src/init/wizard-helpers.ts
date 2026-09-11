@@ -514,6 +514,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Cursor";
     case "claude-code":
       return "Claude Code";
+    case "codex":
+      return "Codex";
     case "kimi-code":
       return "Kimi Code";
     default: {
@@ -574,6 +576,10 @@ export function formatHostActivationTips(
     } else if (id === "claude-code") {
       tips.push(
         `${host} hooks are shared across terminal and IDE. If skills/hooks do not appear: restart ${host} and open a new session. Project env (CLAUDE_CODE_STOP_HOOK_BLOCK_CAP) may require trusting this folder.`,
+      );
+    } else if (id === "codex") {
+      tips.push(
+        `${host}: Autopilot wires .codex/hooks.json only (does not edit config.toml hooks). Trust project hooks via /hooks after install or upgrade. P0 activation is line-start phrases from triggers.on (no Autopilot skills installed — no stable Codex skills path).`,
       );
     } else {
       tips.push(
@@ -636,6 +642,11 @@ function hostActivationPlainLines(
           `在 ${host} 中试用 /autopilot-on（hooks 跨终端与 IDE 共用）。`,
           `若 skills / hooks 未出现：重启 ${host} 并开新会话；项目 env（BLOCK_CAP）可能需先信任本目录。`,
         );
+      } else if (id === "codex") {
+        lines.push(
+          `在 ${host} 中优先用 triggers.on 行首短语开启（本 build 不装 Codex skills）。`,
+          `hooks 仅写 .codex/hooks.json；安装/升级后请用 /hooks 信任；不改 config.toml hooks。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -651,6 +662,11 @@ function hostActivationPlainLines(
       lines.push(
         `Try /autopilot-on in ${host} (hooks shared: terminal + IDE).`,
         `If skills or hooks are missing: restart ${host} and open a new session; project env (BLOCK_CAP) may require trusting this folder.`,
+      );
+    } else if (id === "codex") {
+      lines.push(
+        `In ${host}, prefer line-start phrases from triggers.on (this build does not install Codex skills).`,
+        `Hooks are written to .codex/hooks.json only; trust via /hooks after install/upgrade; config.toml hooks are left untouched.`,
       );
     } else {
       lines.push(

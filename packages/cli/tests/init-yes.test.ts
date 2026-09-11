@@ -441,6 +441,91 @@ describe("init --yes install", () => {
     expect(config).toMatch(/surface:\s*cli/);
   });
 
+  it("inits codex with .codex/hooks.json matcher, no timeout, no skills/AGENTS.md", () => {
+    root = tmpProject();
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "codex",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(true);
+
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    expect(fs.existsSync(hooksPath)).toBe(true);
+    const hooks = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    const json = JSON.stringify(hooks.hooks);
+    expect(json).toMatch(/UserPromptSubmit/);
+    expect(json).toMatch(/PostToolUse/);
+    expect(json).toMatch(/apply_patch\|Edit\|Write/);
+    expect(json).toMatch(/--platform codex/);
+    expect(json).toMatch(/--event Stop/);
+    expect(json).not.toMatch(/StopFailure/);
+    expect(json).not.toMatch(/"timeout"/);
+    // Stable skills dirs only — Codex does not get Autopilot skills.
+    expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
+    expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(false);
+    // Never touch config.toml hooks representation.
+    expect(fs.existsSync(path.join(root, ".codex", "config.toml"))).toBe(false);
+
+    const config = fs.readFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "utf8",
+    );
+    expect(config).toMatch(/id:\s*codex/);
+    expect(config).toMatch(/surface:\s*cli/);
+  });
+
+  it("add-platform codex merges hooks without dropping Cursor hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const add = installInitYes({
+      projectRoot: root,
+      platform: "codex",
+      surface: "cli",
+      platforms: [{ id: "codex", surface: "cli" }],
+      mergePlatforms: true,
+      locale: "en",
+      force: true,
+    });
+    expect(add.ok).toBe(true);
+
+    const cursorHooks = JSON.parse(
+      fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
+    );
+    expect(
+      cursorHooks.hooks.beforeSubmitPrompt.some((h: { command: string }) =>
+        h.command.includes("autopilot-harness"),
+      ),
+    ).toBe(true);
+
+    const codexHooks = JSON.parse(
+      fs.readFileSync(path.join(root, ".codex", "hooks.json"), "utf8"),
+    );
+    expect(JSON.stringify(codexHooks.hooks)).toMatch(/--platform codex/);
+    expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+
+    const config = fs.readFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "utf8",
+    );
+    expect(config).toMatch(/id:\s*cursor/);
+    expect(config).toMatch(/id:\s*codex/);
+  });
+
   it("claude-only init ignores corrupt leftover .cursor/hooks.json", () => {
     root = tmpProject();
     fs.mkdirSync(path.join(root, ".cursor"), { recursive: true });
@@ -459,6 +544,67 @@ describe("init --yes install", () => {
     expect(fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8")).toBe(
       "{not-json",
     );
+  });
+
+  it("codex-only init ignores corrupt leftover .cursor/hooks.json", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".cursor"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".cursor", "hooks.json"), "{not-json");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "codex",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(root, ".codex", "hooks.json"))).toBe(true);
+    expect(fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8")).toBe(
+      "{not-json",
+    );
+  });
+
+  it("--force refreshes codex hooks without duplicating Autopilot or dropping foreign", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".codex", "hooks.json");
+    const existing = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+    existing.hooks.Stop = [
+      ...(existing.hooks.Stop ?? []),
+      { hooks: [{ command: "echo foreign-codex-stop" }] },
+      // Legacy flat Autopilot that force must scrub (not stack).
+      {
+        command:
+          "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+      },
+    ];
+    fs.writeFileSync(hooksPath, JSON.stringify(existing, null, 2) + "\n");
+
+    const second = installInitYes({
+      projectRoot: root,
+      platform: "codex",
+      surface: "cli",
+      locale: "en",
+      force: true,
+    });
+    expect(second.ok).toBe(true);
+    const refreshed = JSON.parse(fs.readFileSync(hooksPath, "utf8"));
+    const stopJson = JSON.stringify(refreshed.hooks?.Stop);
+    expect(stopJson).toMatch(/foreign-codex-stop/);
+    expect(stopJson).toMatch(/--platform codex/);
+    const autopilotStops = stopJson.match(/autopilot-harness-hook\.mjs/g);
+    expect(autopilotStops?.length).toBe(1);
+    expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
   });
 
   it("cursor-only init ignores corrupt leftover .claude/settings.json", () => {
@@ -544,6 +690,52 @@ describe("init --yes install", () => {
         fs.existsSync(path.join(root, ".claude", "skills", "autopilot-on")),
       ).toBe(false);
       expect(claudeReads).toBeGreaterThanOrEqual(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("dual-host init does not write cursor hooks if codex hooks go bad mid-init", () => {
+    root = tmpProject();
+    const codexDir = path.join(root, ".codex");
+    fs.mkdirSync(codexDir, { recursive: true });
+    const codexPath = path.join(codexDir, "hooks.json");
+    fs.writeFileSync(codexPath, JSON.stringify({ hooks: {} }), "utf8");
+
+    const orig = readUntrusted.readUntrustedUtf8File;
+    let codexReads = 0;
+    const spy = vi
+      .spyOn(readUntrusted, "readUntrustedUtf8File")
+      .mockImplementation((filePath, maxBytes, label) => {
+        if (path.resolve(String(filePath)) === path.resolve(codexPath)) {
+          codexReads += 1;
+          // codexPre ok; codexFresh (2nd) corrupt — before skills / any write.
+          if (codexReads >= 2) return "{not-json";
+        }
+        return orig(filePath, maxBytes, label);
+      });
+    try {
+      const result = installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "cursor", surface: "ide" },
+          { id: "codex", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      });
+      expect(result.ok).toBe(false);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+      expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(
+        false,
+      );
+      expect(
+        fs.existsSync(path.join(root, ".cursor", "skills", "autopilot-on")),
+      ).toBe(false);
+      expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+      expect(codexReads).toBeGreaterThanOrEqual(2);
     } finally {
       spy.mockRestore();
     }
@@ -932,6 +1124,52 @@ locale: en
     expect(
       fs.readFileSync(path.join(root, ".claude", "settings.json"), "utf8"),
     ).toBe("{not-json");
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
+    );
+  });
+
+  it("refuses to overwrite corrupt .codex/hooks.json", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".codex", "hooks.json"), "{not-json");
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "codex",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/not valid json/i);
+    }
+    expect(fs.readFileSync(path.join(root, ".codex", "hooks.json"), "utf8")).toBe(
+      "{not-json",
+    );
+    expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+      false,
+    );
+  });
+
+  it("refuses when .codex/hooks.json is a symlink", () => {
+    root = tmpProject();
+    const codexDir = path.join(root, ".codex");
+    fs.mkdirSync(codexDir, { recursive: true });
+    const hooksPath = path.join(codexDir, "hooks.json");
+    const outside = path.join(root, "outside-codex-hooks.json");
+    fs.writeFileSync(outside, JSON.stringify({ hooks: {} }), "utf8");
+    fs.symlinkSync(outside, hooksPath);
+    const result = installInitYes({
+      projectRoot: root,
+      platform: "codex",
+      surface: "cli",
+      locale: "en",
+      force: false,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/symlink/i);
+    expect(fs.lstatSync(hooksPath).isSymbolicLink()).toBe(true);
     expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
       false,
     );

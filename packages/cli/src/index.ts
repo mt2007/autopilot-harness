@@ -19,6 +19,16 @@ export {
   claudeSettingsContainAutopilot,
   CLAUDE_AUTOPILOT_EVENTS,
   CLAUDE_BLOCK_CAP_ENV,
+  mergeCodexHooks,
+  validateCodexHooksShape,
+  hasCompleteCodexAutopilotHooks,
+  summarizeCodexAutopilotHooks,
+  stripAutopilotCodexHooks,
+  codexHooksContainAutopilot,
+  codexHooksHavePlatformStamp,
+  codexAutopilotHasSmallTimeout,
+  CODEX_AUTOPILOT_EVENTS,
+  CODEX_POST_TOOL_USE_MATCHER,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
 export type {
@@ -26,6 +36,11 @@ export type {
   ClaudeMatcherGroup,
   ClaudeHookHandler,
 } from "./init/claude-settings-merge.js";
+export type {
+  CodexHooksFile,
+  CodexMatcherGroup,
+  CodexHookHandler,
+} from "./init/codex-hooks-merge.js";
 export type { PreflightResult } from "./init/install.js";
 export { PACKAGE_VERSION } from "./init/types.js";
 export { formatStatus, runDoctor, readPinVersion, readStaleAfterHours, hasGlobalSelfReviewHooks } from "./status-doctor.js";

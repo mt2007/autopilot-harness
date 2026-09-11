@@ -51,7 +51,7 @@ program
   )
   .option(
     "--surface <surface>",
-    "Surface for a single --platform (omit for host default: cursor→ide, claude-code→cli)",
+    "Surface for a single --platform (omit for host default: cursor→ide, claude-code→cli, codex→cli)",
   )
   .option("--locale <locale>", "Locale", "en")
   .option("-y, --yes", "Non-interactive defaults")
