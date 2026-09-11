@@ -163,6 +163,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
     expect(tips).toMatch(/trust/i);
     expect(tips).toMatch(/--add-platform/);
+    // Dual default: missing/invalid → executing_only; fresh init → project
+    expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
+    expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
 
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
     expect(hosts).toMatch(/Cursor/);
@@ -195,12 +198,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/one_executor/);
     expect(config).toMatch(/artifacts\.files\.checklist/);
     expect(config).toMatch(/worktree/);
-    // Honest wiring: do not imply YAML concurrency/triggers.files drive the hook yet
+    // Honest wiring: concurrency / artifacts.files / require_token still not hook-wired
     expect(config).toMatch(/not wired into the hook runtime yet/i);
     expect(config).toMatch(/DEFAULT_TRIGGERS/);
-    expect(config).toMatch(/does \*\*not\*\* yet load this key from YAML/i);
+    // plans_dir + triggers.* are loaded by submit/edit (≥1 non-blank phrase)
+    expect(config).toMatch(/≥1 non-blank phrase|>=1 non-blank phrase/i);
+    expect(config).toMatch(/Hook\*\* invalid[\s\S]*fail-open to `plans\/`/i);
+    expect(config).toMatch(/\*\*status\*\* shows `plans: invalid/i);
+    expect(config).toMatch(/\*\*doctor\*\* \*\*FAIL\*\*s on invalid/i);
+    expect(config).toMatch(/empty\/`\[\]`\/whitespace-only does \*\*not\*\* wipe builtins/i);
+    expect(config).toMatch(/YAML `triggers\.match` is not applied/i);
     expect(config).toMatch(/locale set/i);
-    expect(config).toMatch(/non-default value can leave init layout/i);
     expect(config).toMatch(/session list[\s\S]*`session\.stale_after_hours` only/i);
     expect(config).toMatch(
       /Submit hook[\s\S]*\/autopilot-on[\s\S]*DEFAULT_TRIGGERS|slash `\/autopilot-on`/i,
@@ -210,10 +218,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/armed=1/);
     expect(config).toMatch(/\*\*`status`\*\*[\s\S]*preferred_name/);
     expect(config).toMatch(/\*\*`doctor`\*\*[\s\S]*stale_after_hours/);
-    expect(config).toMatch(/Edit hook[\s\S]*review\.scope` only/i);
+    expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
     expect(config).toMatch(/installs Cursor and\/or Claude Code/i);
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
+    expect(config).toMatch(/`review\.scope` \| `project` \(fresh init YAML\)/);
+    expect(config).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
   });
 
   it("quickstarts keep scoped npx Install path", () => {
@@ -332,7 +342,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/on \*\*stop\*\*/);
     expect(body).toMatch(/on \*\*edit\*\*/);
-    expect(body).toMatch(/slash `\/autopilot-on` … `\/autopilot-replan` \+ `DEFAULT_TRIGGERS`|slash `\/autopilot-on`/);
+    expect(body).toMatch(
+      /YAML `triggers\.\*`[\s\S]*DEFAULT_TRIGGERS|slash `\/autopilot-on`/i,
+    );
+    expect(body).toMatch(/artifacts\.plans_dir/);
+    expect(body).toMatch(/<plansDir>\/<slug>\/checklist\.md|plansDir.*checklist/i);
     expect(body).toMatch(
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );

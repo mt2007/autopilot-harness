@@ -11,14 +11,14 @@ Canonical defaults: `packages/cli/src/init/default-config.ts`.
 | Consumer | Keys |
 |----------|------|
 | **Stop hook** (via `loadProjectReviewConfig` / `createConfiguredReviewEngine`) | `locale`, `review.*` |
-| **Edit hook** | `review.scope` only (same loader; other `review.*` / `locale` unused on edit) |
-| **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` + line-start `DEFAULT_TRIGGERS` (incl. resume_review phrases) — does **not** load review config or YAML `triggers.*`. (Cursor skill files only surface slash in the UI; Claude skills under `.claude/skills/`; the hook parses typed slash commands either way.) |
+| **Edit hook** | `review.scope` + `artifacts.plans_dir` (plans bind / `notePlansDirEdit`; other `review.*` / `locale` unused on edit) |
+| **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` (separate parser; Cursor skill files only surface slash in the UI; Claude skills under `.claude/skills/`; the hook parses typed slash commands either way) + line-start phrases from YAML `triggers.*` when a list has **≥1 non-blank phrase** (after trim), else that key falls back to `DEFAULT_TRIGGERS` (incl. resume_review; empty/`[]`/whitespace-only does **not** wipe builtins). Also loads `artifacts.plans_dir` for RUN / needPick / phaseActions. Does **not** load `review.*` / `locale` on submit. |
 | **`status`** | `locale`, `platforms` (legacy top-level `platform`/`surface` still read as fallback), `artifacts.plans_dir`, `cli.preferred_name` |
 | **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` when that host is installed |
 | **`session list`** | `session.stale_after_hours` only (via `readStaleAfterHours`; invalid → treat as `0` / disabled) |
 | **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor and/or Claude Code wiring for installable bindings |
 | **`locale set`** | Updates `locale`, rewrites **stock** `triggers.*` lists in config.yml (custom lists preserved), rewrites skill descriptions |
-| **Written by init, not wired into the hook runtime yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token`, and **line-start phrase lists** under `triggers.*` |
+| **Written by init, not wired into the hook runtime yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token` |
 
 Effective RUN concurrency gate is still **`one_executor`** (code default when the hook does not pass `phaseActions`). Changing `concurrency.mode` in YAML alone does **not** switch modes today. The gate matches sessions with `phase=executing`, `armed=1`, and `paused=0`. **Planning / ON sessions never satisfy this gate** and do not block another chat’s RUN. Multi-plan selection (`needPick`) happens only on RUN and uses an allowed agent turn (not a hard block); busy/hard failures still block submit.
 
@@ -35,10 +35,10 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `artifacts.plans_dir` | `plans` | Track directory used by **init** (creates the folder) and **doctor/status** path checks. Prefer the default `plans/` — init TUI can offer a custom path, but the hook RUN path currently defaults to `plans/` and does **not** yet load this key from YAML (a non-default value can leave init layout and RUN looking at different trees). |
+| `artifacts.plans_dir` | `plans` | Track directory for **init** (creates the folder), **doctor/status** path checks, and the **hook** (submit RUN / needPick / phaseActions + edit plans-bind). Init TUI can offer a custom path. **Hook** invalid/non-string values fail-open to `plans/`; **status** shows `plans: invalid (…)`; **doctor** **FAIL**s on invalid paths. Init also covers this dir in `.autopilotignore`. |
 | `artifacts.files.brief` | `brief.md` | Written by init. Filenames are **fixed** in core (`brief.md` / `plan.md` / `checklist.md`) — renaming these keys does not change runtime paths yet. |
 | `artifacts.files.plan` | `plan.md` | Same as above. |
-| `artifacts.files.checklist` | `checklist.md` | Same as above. Checklist is **progress authority**; hook/core resolve it as `<plansDir>/<slug>/checklist.md` with **`plansDir` defaulting to `plans`** (YAML `artifacts.files.*` / custom `plans_dir` are not applied by the hook yet). |
+| `artifacts.files.checklist` | `checklist.md` | Same as above. Checklist is **progress authority**; hook/core resolve it as `<plansDir>/<slug>/checklist.md` where **`plansDir` comes from YAML `artifacts.plans_dir`** (default `plans`). Renaming `artifacts.files.*` still does **not** change those fixed basenames. |
 | `cli.preferred_name` | `Autopilot` | Display name in status / some messages (sanitized). |
 
 ## Session
@@ -59,23 +59,23 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `review.scope` | `executing_only` | When fix→confirm may run. See [README — When does self-review run?](../README.md#when-does-self-review-run-reviewscope). |
+| `review.scope` | `project` (fresh init YAML) | When fix→confirm may run. Fresh `init` writes **`project`**. **Missing / invalid** values still load as **`executing_only`** (runtime fail-open). `upgrade` fill-missing writes `executing_only` and does **not** rewrite an existing scope key. See [README — When does self-review run?](../README.md#when-does-self-review-run-reviewscope). |
 | `review.confirm_rounds` | `5` | Confirm lenses per item. Clamped to **1..5**. Only **`3`** is light mode (`1 → 2 → 5`, skip concurrency & security); other values use sequential lenses `1..N`. |
 | `review.verify.enabled` | `false` | When `true`, advance/done gates on `.autopilot/verify-last.json` (agent runs the listed commands and writes that report). |
 | `review.verify.commands` | `[]` | List of `{ id, run, required? }` shell commands (only when verify enabled). Treat `run` as **trusted project config** (agent will execute it). |
 | `review.stuck.max_idle_stops` | `5` | Idle-stop streak before a stuck nudge. Clamped to **1..100**. Soft `need_evidence` idle hits the nudge **without** hard-pausing / disarming the track; repeated required-verify failures still hard-stuck pause. |
 | `review.errors.max_before_pause` | `0` | Consecutive turn errors/aborts before `repeated_errors` pause. `0` = never pause on errors (unlimited recover). Clamped to **0..1000**. |
 
-Aliases accepted for scope: `project`, `always`, and `all` all map to **`project`**. Anything else falls back to **`executing_only`**.
+Aliases accepted for scope: `project`, `always`, and `all` all map to **`project`**. Missing key, empty, or anything else falls back to **`executing_only`**.
 
 ## Triggers
 
-Init seeds locale stock phrases under `triggers.*`; `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code.
+Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code.
 
 | Key | Role |
 |-----|------|
-| `triggers.match` | Documented as `line_start` (only matcher in the trigger parser). |
-| `triggers.on` / `run` / `off` / `resume` / `replan` / `resume_review` | Phrase lists written for locale migration / future host wiring. **Hook line-start matching does not read these YAML lists yet** — it uses built-in `DEFAULT_TRIGGERS` (hardcoded bilingual phrases). Slash `/autopilot-on` … `/autopilot-replan` is a separate built-in parser path (not these lists; no slash for resume_review). |
+| `triggers.match` | Written by init as `line_start`. Parser only supports `line_start`; **YAML `triggers.match` is not applied** (changing it has no effect today). |
+| `triggers.on` / `run` / `off` / `resume` / `replan` / `resume_review` | Phrase lists loaded by the **submit** hook for line-start matching. A YAML list with **≥1 non-blank phrase** (after trim) replaces that key; empty/`[]`/whitespace-only/missing falls back to `DEFAULT_TRIGGERS` for that key. Slash `/autopilot-on` … `/autopilot-replan` is a separate built-in parser path (not these lists; no slash for resume_review). |
 
 ## Security
 

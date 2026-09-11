@@ -42,7 +42,7 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 | **推进** | — | 勾选 `[x]`；dirty 则本地 commit（干净跳过；**不**自动 push），然后下一项 | 更新 `checklist.md` |
 | **完成** | — | 勾选最后一项；dirty 则本地 commit（**不**自动 push）；清单清空后停止 | 该轨结束 |
 
-默认自审在 **RUN 中**（`review.scope: executing_only`）。想在闲聊改代码时也自审，设 `review.scope: project` — 见下方专节与英文 README。
+默认自审为 **`review.scope: project`**（闲聊改产品代码也会自审）。只要 RUN 中才审，设 `review.scope: executing_only` — 见下方专节与英文 README。
 
 暂停 / 改方案 / 恢复：`/autopilot-off`、`/autopilot-replan`、`/autopilot-resume`（细节见 [快速开始](./docs/autopilot/quickstart.zh-CN.md)）。
 
@@ -76,8 +76,8 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 
 | `review.scope` | 何时走修复 → 确认 | 典型用途 |
 |----------------|-------------------|----------|
-| **`executing_only`**（默认） | 仅在 Autopilot **RUN**（checklist 执行中）且改了产品代码 | 结构化轨：`/autopilot-on` → `/autopilot-run` → 按项自审 |
-| **`project`** | 项目内**任意**产品代码编辑——**不需要**先 ON / RUN | 闲聊改代码仍要多角度压测 + 错误恢复 |
+| **`project`**（默认） | 项目内**任意**产品代码编辑——**不需要**先 ON / RUN | 闲聊改代码仍要多角度压测 + 错误恢复 |
+| **`executing_only`** | 仅在 Autopilot **RUN**（checklist 执行中）且改了产品代码 | 结构化轨：`/autopilot-on` → `/autopilot-run` → 按项自审 |
 
 要点：
 

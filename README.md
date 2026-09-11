@@ -40,7 +40,7 @@ done (checklist clear)
 | **Advance** | — | Marks the item `[x]`, local commit if dirty (skip if clean; **no auto-push**), then next item | Updated `checklist.md` |
 | **Done** | — | Marks the last item; local commit if dirty (**no auto-push**); stops when checklist is clear | Track complete |
 
-Default self-review is **during RUN** (`review.scope: executing_only`). For review on casual edits without ON/RUN, set `review.scope: project` — see [When does self-review run?](#when-does-self-review-run-reviewscope).
+Default self-review is **`review.scope: project`** (any product-code edit, no ON/RUN required). For review only during checklist RUN, set `review.scope: executing_only` — see [When does self-review run?](#when-does-self-review-run-reviewscope).
 
 Pause, change the plan, or resume with `/autopilot-off`, `/autopilot-replan`, and `/autopilot-resume` (details in the [quickstart](./docs/autopilot/quickstart.md)).
 
@@ -76,8 +76,8 @@ Configured in `.autopilot/config.yml` under `review.scope` (chosen at `init`, ch
 
 | `review.scope` | When fix → confirm runs | Typical use |
 |----------------|-------------------------|-------------|
-| **`executing_only`** (default) | Only while Autopilot is in **RUN** (checklist executing) and product code changes | Structured tracks: `/autopilot-on` → `/autopilot-run` → review per item |
-| **`project`** | On **any** product-code edit in the project — **no** `/autopilot-on` or `/autopilot-run` required | Casual coding chats; still want multi-lens pressure-test + error recover |
+| **`project`** (default) | On **any** product-code edit in the project — **no** `/autopilot-on` or `/autopilot-run` required | Casual coding chats; still want multi-lens pressure-test + error recover |
+| **`executing_only`** | Only while Autopilot is in **RUN** (checklist executing) and product code changes | Structured tracks only: `/autopilot-on` → `/autopilot-run` → review per item |
 
 Notes:
 

@@ -100,8 +100,8 @@ npx @autopilot-harness/cli upgrade --dry-run
 
 | 取值 | 含义 |
 |------|------|
-| **`executing_only`**（默认） | 仅在 `/autopilot-run`（checklist 执行中）且改了产品代码后，才走修复 → 多角度确认 |
-| **`project`** | **任意**产品代码编辑都会自审——**不需要**先 ON / RUN |
+| **`project`**（默认） | **任意**产品代码编辑都会自审——**不需要**先 ON / RUN |
+| **`executing_only`** | 仅在 `/autopilot-run`（checklist 执行中）且改了产品代码后，才走修复 → 多角度确认 |
 
 产品代码排除命中 `.autopilotignore` 的路径，以及**未跟踪且被 `.gitignore` 忽略**的路径。暂停 / OFF 期间不跑自审链，需 resume。
 

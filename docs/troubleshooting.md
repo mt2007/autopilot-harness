@@ -49,7 +49,7 @@ If `review.scope` is **`project`** and you also run a **global** Cursor self-rev
 Check in order:
 
 1. **Paused / OFF** — `/autopilot-resume` (even with `project` scope).
-2. **`review.scope`** — default `executing_only` only runs during checklist **RUN**.
+2. **`review.scope`** — check `.autopilot/config.yml`. Fresh `init` writes **`project`** (any product-code edit). If the key is **missing / invalid**, runtime still loads **`executing_only`** (only during checklist **RUN**). Explicit `executing_only` is the same RUN-only gate.
 3. **Path filters** — `.autopilotignore` hits, or **untracked** + `.gitignore`, do not count as product code.
 4. **Shell / out-of-band writes** — if the host skipped `afterFileEdit`, stop still arms fix→confirm from **git-dirty product paths** (same filters as above). Dirt only under `.autopilotignore` / untracked-gitignore paths does **not** arm fix→confirm (soft evidence / `need_evidence` may still apply).
 5. Host Plan modes (Cursor Plan Mode, etc.) are **not** bridged; they do not arm Autopilot review by themselves.

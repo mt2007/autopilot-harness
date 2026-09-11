@@ -25,9 +25,10 @@ packages/i18n               en + zh-CN
 packages/templates          skills (*.tpl) + planning/executing workflows
 ```
 
-State lives in `.autopilot/state.db`. Progress authority is `plans/<slug>/checklist.md`.
+State lives in `.autopilot/state.db`. Progress authority is
+`<plansDir>/<slug>/checklist.md` (YAML `artifacts.plans_dir`, default `plans/`).
 
-`review.scope` in `.autopilot/config.yml`: **`executing_only`** (default) runs fix→confirm only during Autopilot RUN; **`project`** runs on any product-code edit without ON/RUN (idle/ambient or **planning** ends at review-complete, not checklist advance). See README **When does self-review run?** and [Config](./config.md).
+`review.scope` in `.autopilot/config.yml`: **`project`** (init default) runs on any product-code edit without ON/RUN (idle/ambient or **planning** ends at review-complete, not checklist advance); **`executing_only`** runs fix→confirm only during Autopilot RUN. See README **When does self-review run?** and [Config](./config.md).
 
 ### Hook vendor runtime
 
@@ -41,10 +42,11 @@ repos do not need `@autopilot-harness/core` in `node_modules`:
 3. **Entry:** `.autopilot/bin/autopilot-harness-hook.mjs` imports `./vendor/runtime.mjs` and dispatches by **`--platform <id>`** (when present) + host event + payload conflict resolver (cross-fire)
 
 The vendor runtime reads `.autopilot/config.yml` on **stop** (`locale`,
-`review.*`) and on **edit** (`review.scope` only). Submit does not load review
-config (built-in slash `/autopilot-on` … `/autopilot-replan` + `DEFAULT_TRIGGERS`; not YAML
-`triggers.*`). Other init keys
-(`concurrency.*`, `triggers.*` phrase lists, `artifacts.files.*`, …) are
+`review.*`), on **edit** (`review.scope` + `artifacts.plans_dir`), and on
+**submit** (built-in slash `/autopilot-on` … `/autopilot-replan`; YAML
+`triggers.*` when a list has ≥1 non-blank phrase, else that key uses `DEFAULT_TRIGGERS`;
+plus `artifacts.plans_dir`). Other init keys
+(`concurrency.*`, `artifacts.files.*`, `security.require_token`, …) are
 **not** loaded by the hook runtime yet — see [Config](./config.md) wiring table.
 Commit order prefers migration then runtime so a torn
 upgrade keeps a loadable (old runtime + new SQL) pair rather than the reverse.

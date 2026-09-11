@@ -100,8 +100,8 @@ In `.autopilot/config.yml` (full key list: [Config](../config.md)):
 
 | Value | Meaning |
 |-------|---------|
-| **`executing_only`** (default) | Fix → confirm only after `/autopilot-run` (checklist executing) + product-code edits |
-| **`project`** | Fix → confirm on **any** product-code edit — **no** ON/RUN required |
+| **`project`** (default) | Fix → confirm on **any** product-code edit — **no** ON/RUN required |
+| **`executing_only`** | Fix → confirm only after `/autopilot-run` (checklist executing) + product-code edits |
 
 Product-code paths exclude `.autopilotignore` hits and **untracked** `.gitignore` hits. Paused/OFF skips the chain until resume.
 
