@@ -44,7 +44,7 @@ const EN_MARKERS = [
   /Self-review scope/,
   /review\.scope/,
   /executing_only/,
-  /\*\*`project`\*\*/,
+  /\*\*`project`\*\* \(default\)/,
   /claim/,
   /unpaused/,
   /loop_limit/,
@@ -67,7 +67,7 @@ const ZH_MARKERS = [
   /自审范围/,
   /review\.scope/,
   /executing_only/,
-  /\*\*`project`\*\*/,
+  /\*\*`project`\*\*（默认）/,
   /认领/,
   /未 pause/,
   /loop_limit/,
@@ -96,6 +96,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       "utf8",
     );
     for (const re of EN_MARKERS) expect(body).toMatch(re);
+    expect(body).not.toMatch(/\*\*`executing_only`\*\* \(default\)/);
     expect(body).toMatch(/docs\/config\.md|Config\]\(\.\.\/config\.md\)/);
     expect(body).toMatch(/Troubleshooting/);
   });
@@ -106,6 +107,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       "utf8",
     );
     for (const re of ZH_MARKERS) expect(body).toMatch(re);
+    expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
   });
 
   it("init writeQuickstart(en) matches OSS review.scope markers", () => {
@@ -114,6 +116,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       const rel = writeQuickstart(root, "en");
       const body = fs.readFileSync(path.join(root, rel!), "utf8");
       for (const re of EN_MARKERS) expect(body).toMatch(re);
+      expect(body).not.toMatch(/\*\*`executing_only`\*\* \(default\)/);
       expect(body).toMatch(/### Install|\*\*Install\*\*/);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
@@ -134,6 +137,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       const rel = writeQuickstart(root, "zh-CN");
       const body = fs.readFileSync(path.join(root, rel!), "utf8");
       for (const re of ZH_MARKERS) expect(body).toMatch(re);
+      expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
       expect(body).toMatch(/### 安装|\*\*安装\*\*/);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
       expect(body).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
@@ -211,7 +215,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/locale set/i);
     expect(config).toMatch(/session list[\s\S]*`session\.stale_after_hours` only/i);
     expect(config).toMatch(
-      /Submit hook[\s\S]*\/autopilot-on[\s\S]*DEFAULT_TRIGGERS|slash `\/autopilot-on`/i,
+      /Submit hook[\s\S]*\/autopilot-on[\s\S]*DEFAULT_TRIGGERS/i,
     );
     expect(config).toMatch(/skill files only surface|parses typed/i);
     expect(config).toMatch(/no slash for resume_review|separate built-in parser path/i);
@@ -284,8 +288,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
     expect(body).toMatch(/When does self-review run\?/);
     expect(body).toMatch(/review\.scope/);
+    expect(body).toMatch(/\*\*`project`\*\* \(default\)/);
     expect(body).toMatch(/executing_only/);
-    expect(body).toMatch(/\*\*`project`\*\*/);
+    expect(body).not.toMatch(/\*\*`executing_only`\*\* \(default\)/);
     expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
@@ -299,7 +304,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
     expect(body).toMatch(/何时跑自审/);
     expect(body).toMatch(/review\.scope/);
+    expect(body).toMatch(/\*\*`project`\*\*（默认）/);
     expect(body).toMatch(/executing_only/);
+    expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} status`);
@@ -342,11 +349,14 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/on \*\*stop\*\*/);
     expect(body).toMatch(/on \*\*edit\*\*/);
+    // Submit loads slash + YAML triggers (order in architecture prose); do not
+    // let an earlier "YAML artifacts.plans_dir" alone satisfy the contract.
     expect(body).toMatch(
-      /YAML `triggers\.\*`[\s\S]*DEFAULT_TRIGGERS|slash `\/autopilot-on`/i,
+      /slash `\/autopilot-on`[\s\S]*`triggers\.\*`[\s\S]*DEFAULT_TRIGGERS/,
     );
     expect(body).toMatch(/artifacts\.plans_dir/);
-    expect(body).toMatch(/<plansDir>\/<slug>\/checklist\.md|plansDir.*checklist/i);
+    expect(body).toMatch(/<plansDir>\/<slug>\/checklist\.md/);
+    expect(body).not.toMatch(/does \*\*not\*\* yet load this key from YAML/i);
     expect(body).toMatch(
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
