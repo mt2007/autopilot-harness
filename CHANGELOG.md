@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.10] — 2026-09-11
+
+### Fixed
+
+- **on-skill-gate**: `autopilot-on` skill description no longer matches casual “discuss / 讨论” chat; only slash `/autopilot-on` or configured ON phrases (e.g. `Autopilot ON` / project `triggers.on`) should attach the skill.
+- Skill body gates planning: write `plans/` only after a real ON trigger this turn **or** when the session is already `phase=planning`; otherwise do not pretend Autopilot is ON.
+- Docs/quickstart: discussion ≠ Autopilot ON (slash / `triggers.on` only apply ON).
+
+### Changed
+
+- Contract tests lock description + skill-gate copy; vendor runtime rebuilt with tightened ON descriptions; CLI skill templates synced.
+
 ## [0.2.9] — 2026-09-10
 
 ### Added
