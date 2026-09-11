@@ -2,8 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { StateStore } from "@autopilot-harness/core";
+import {
+  normalizeInProjectPlansDir,
+  StateStore,
+} from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
+import { normalizePlansDir } from "../src/init/wizard-helpers.js";
 import {
   formatStatus,
   hasGlobalSelfReviewHooks,
@@ -1177,7 +1181,12 @@ describe("runDoctor", () => {
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(false);
     expect(lines.join("\n")).toMatch(/plans_dir invalid/i);
+    // Lock core normalizer (wizard used different "plansDir must …" wording).
+    expect(lines.join("\n")).toMatch(
+      /not a valid in-project path/i,
+    );
     expect(formatStatus(root)).toMatch(/plans:\s*invalid/i);
+    expect(formatStatus(root)).toMatch(/not a valid in-project path/i);
   });
 
   it("readStaleAfterHours respects config (number or numeric string)", () => {
@@ -1756,5 +1765,49 @@ describe("runDoctor", () => {
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
+  });
+});
+
+describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", () => {
+  let root: string;
+  afterEach(() => {
+    if (root && fs.existsSync(root)) {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts the same relative dirs as the hook normalizer", () => {
+    root = tmpProject();
+    for (const dir of ["plans", "work/plans", "docs/plans"]) {
+      expect(normalizeInProjectPlansDir(root, dir)).toBe(dir);
+      expect(normalizePlansDir(dir)).toEqual({ ok: true, value: dir });
+    }
+  });
+
+  it("rejects the same escapes as the hook normalizer", () => {
+    root = tmpProject();
+    for (const dir of ["../escape", "/abs", "plans/../etc", "a\\b", "plans\nfoo"]) {
+      expect(normalizeInProjectPlansDir(root, dir)).toBeNull();
+      expect(normalizePlansDir(dir).ok).toBe(false);
+    }
+  });
+
+  it("status/doctor report custom plans_dir that core accepts", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+        plansDir: "work/plans",
+      }).ok,
+    ).toBe(true);
+    expect(normalizeInProjectPlansDir(root, "work/plans")).toBe("work/plans");
+    expect(formatStatus(root)).toMatch(/plans:\s*work\/plans/);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/OK\s+plans \(work\/plans\/\)/);
   });
 });

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   getLatestSchemaVersion,
+  normalizeInProjectPlansDir,
   sanitizeSessionDisplayText,
   StateStore,
   type Phase,
@@ -30,7 +31,7 @@ import {
   type ClaudeSettingsFile,
 } from "./init/claude-settings-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
-import { assertNotSymlink, assertRealpathInside, normalizePlansDir } from "./init/wizard-helpers.js";
+import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
@@ -295,14 +296,17 @@ function parseConfigObject(configYaml: string): Record<string, unknown> | null {
   }
 }
 
-function readStatusConfig(configYaml: string): {
+function readStatusConfig(
+  configYaml: string,
+  projectRoot: string,
+): {
   configOk: boolean;
   platform: string;
   platforms: PlatformBinding[];
   locale: string;
   preferredName: string;
   plansDir: string;
-  /** Set when artifacts.plans_dir failed normalizePlansDir. */
+  /** Set when artifacts.plans_dir failed core normalizeInProjectPlansDir. */
   plansDirError: string | null;
   staleAfterHours: number;
   /** True when session.stale_after_hours was present but unusable. */
@@ -325,7 +329,7 @@ function readStatusConfig(configYaml: string): {
   const cli = isPlainObject(parsed.cli) ? parsed.cli : {};
   const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
   const session = isPlainObject(parsed.session) ? parsed.session : {};
-  let plansRaw = "plans";
+  let plansRaw: string | undefined = "plans";
   let plansDirTypeError: string | null = null;
   if (
     Object.prototype.hasOwnProperty.call(artifacts, "plans_dir") &&
@@ -336,9 +340,11 @@ function readStatusConfig(configYaml: string): {
       plansRaw = artifacts.plans_dir;
     } else {
       plansDirTypeError = "artifacts.plans_dir must be a string";
+      plansRaw = undefined;
     }
   }
-  const plansNorm = normalizePlansDir(plansRaw);
+  // Same normalizer as hook/runtime — keep status/doctor and RUN looking at one tree.
+  const plansNorm = normalizeInProjectPlansDir(projectRoot, plansRaw);
   const staleParsed = parseStaleAfterHours(session.stale_after_hours);
   const preferredRaw =
     typeof cli.preferred_name === "string" && cli.preferred_name.trim()
@@ -354,12 +360,12 @@ function readStatusConfig(configYaml: string): {
         ? safeDisplayToken(parsed.locale)
         : "?",
     preferredName: preferredRaw || "Autopilot",
-    plansDir: plansNorm.ok ? plansNorm.value : "plans",
+    plansDir: plansNorm ?? "plans",
     plansDirError: plansDirTypeError
       ? plansDirTypeError
-      : plansNorm.ok
+      : plansNorm
         ? null
-        : plansNorm.error,
+        : "artifacts.plans_dir is not a valid in-project path",
     staleAfterHours: staleParsed.hours,
     staleHoursInvalid: staleParsed.invalid,
   };
@@ -373,7 +379,7 @@ export function readStaleAfterHours(projectRoot: string): number {
   const root = path.resolve(projectRoot.trim());
   const configPath = path.join(root, ".autopilot", "config.yml");
   try {
-    const cfg = readStatusConfig(readProjectConfigYaml(configPath));
+    const cfg = readStatusConfig(readProjectConfigYaml(configPath), root);
     if (!cfg.configOk || cfg.staleHoursInvalid) return 0;
     return cfg.staleAfterHours;
   } catch (err) {
@@ -438,7 +444,7 @@ export function formatStatus(projectRoot: string): string {
   const configPath = path.join(root, ".autopilot", "config.yml");
   let cfg: ReturnType<typeof readStatusConfig>;
   try {
-    cfg = readStatusConfig(readProjectConfigYaml(configPath));
+    cfg = readStatusConfig(readProjectConfigYaml(configPath), root);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") {
@@ -541,7 +547,7 @@ export function runDoctor(
   const configPath = path.join(root, ".autopilot", "config.yml");
   let cfg: ReturnType<typeof readStatusConfig>;
   try {
-    cfg = readStatusConfig(readProjectConfigYaml(configPath));
+    cfg = readStatusConfig(readProjectConfigYaml(configPath), root);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") {
