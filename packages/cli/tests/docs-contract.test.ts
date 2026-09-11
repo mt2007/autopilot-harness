@@ -397,8 +397,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0210).toMatch(/phase=planning|skill body|plans\//i);
     expect(section0210).toMatch(/discussion|Autopilot ON|quickstart/i);
     const section0211 = changelogSection(log, "0.2.11");
-    expect(section0211).toMatch(/workspace:\*|pnpm publish|0\.2\.11/i);
-    expect(section0211).toMatch(/EUNSUPPORTEDPROTOCOL|uninstallable|republish/i);
+    expect(section0211).toMatch(/workspace:\*/i);
+    expect(section0211).toMatch(/pnpm publish/i);
+    expect(section0211).toMatch(/EUNSUPPORTEDPROTOCOL|uninstallable/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
