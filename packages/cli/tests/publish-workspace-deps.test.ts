@@ -103,6 +103,19 @@ describe("pnpm pack rewrites workspace:* for publish", () => {
           expect(deps[name]).not.toMatch(/^workspace:/);
         }
         expect(JSON.stringify(deps)).not.toMatch(/workspace:/);
+        // cli ships compiled PACKAGE_VERSION — stale dist must not ship after a bump.
+        if (rel === "packages/cli") {
+          const typesJs = execFileSync(
+            "tar",
+            ["-xOf", tgz, "package/dist/init/types.js"],
+            { encoding: "utf8" },
+          );
+          const assignments =
+            typesJs.match(/export const PACKAGE_VERSION\s*=\s*"[^"]+"/g) ?? [];
+          expect(assignments).toEqual([
+            `export const PACKAGE_VERSION = "${PACKAGE_VERSION}"`,
+          ]);
+        }
       });
     });
   }
