@@ -63,7 +63,7 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | `review.confirm_rounds` | `5` | Confirm lenses per item. Clamped to **1..5**. Only **`3`** is light mode (`1 → 2 → 5`, skip concurrency & security); other values use sequential lenses `1..N`. |
 | `review.verify.enabled` | `false` | When `true`, advance/done gates on `.autopilot/verify-last.json` (agent runs the listed commands and writes that report). |
 | `review.verify.commands` | `[]` | List of `{ id, run, required? }` shell commands (only when verify enabled). Treat `run` as **trusted project config** (agent will execute it). |
-| `review.stuck.max_idle_stops` | `5` | Idle-stop streak before a stuck nudge. Clamped to **1..100**. |
+| `review.stuck.max_idle_stops` | `5` | Idle-stop streak before a stuck nudge. Clamped to **1..100**. Soft `need_evidence` idle hits the nudge **without** hard-pausing / disarming the track; repeated required-verify failures still hard-stuck pause. |
 | `review.errors.max_before_pause` | `0` | Consecutive turn errors/aborts before `repeated_errors` pause. `0` = never pause on errors (unlimited recover). Clamped to **0..1000**. |
 
 Aliases accepted for scope: `project`, `always`, and `all` all map to **`project`**. Anything else falls back to **`executing_only`**.
@@ -89,6 +89,8 @@ Init seeds locale stock phrases under `triggers.*`; `locale set` rewrites those 
 |------|------|
 | **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `.cursor/**`, `.claude/**`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
 | **`.gitignore`** | Untracked ignored paths are also skipped as product code; **tracked** files still count even if listed in `.gitignore`. |
+
+On completed stop, Autopilot also treats **git-dirty product paths** (vs HEAD / untracked product files) as code edits even when the host never fired `afterFileEdit` (e.g. Shell writes) — same `.autopilotignore` / untracked-gitignore filters. See [Troubleshooting](./troubleshooting.md#edited-code-but-no-self-review).
 
 ## Related
 

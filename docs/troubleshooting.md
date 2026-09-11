@@ -51,7 +51,10 @@ Check in order:
 1. **Paused / OFF** — `/autopilot-resume` (even with `project` scope).
 2. **`review.scope`** — default `executing_only` only runs during checklist **RUN**.
 3. **Path filters** — `.autopilotignore` hits, or **untracked** + `.gitignore`, do not count as product code.
-4. Host Plan modes (Cursor Plan Mode, etc.) are **not** bridged; they do not arm Autopilot review by themselves.
+4. **Shell / out-of-band writes** — if the host skipped `afterFileEdit`, stop still arms fix→confirm from **git-dirty product paths** (same filters as above). Dirt only under `.autopilotignore` / untracked-gitignore paths does **not** arm fix→confirm (soft evidence / `need_evidence` may still apply).
+5. Host Plan modes (Cursor Plan Mode, etc.) are **not** bridged; they do not arm Autopilot review by themselves.
+
+Soft missing-evidence idle may inject a **stuck** nudge after `review.stuck.max_idle_stops` while the session stays **armed** (no hard pause). Required verify failures that hit the same threshold still hard-pause (`paused_reason=stuck`); use `/autopilot-resume` (or line-start `Autopilot RESUME`) only when the session is actually paused.
 
 ## `/autopilot-on` alone never starts self-review
 
