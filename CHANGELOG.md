@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.15] — 2026-09-11
+
+### Fixed
+
+- **planning-global-qn**: grill frontier questions are numbered **globally across rounds** (continue from the last `Qn`; do not restart at Q1 each round), with a `### Round k` heading on each frontier.
+
+### Changed
+
+- Planning workflow template synced to CLI assets / docs dogfood copy; contract test locks global-Qn wording and forbids `**Q1**` in the frontier example fence.
+- README / README.zh-CN Planning sections document global `Qn` + Round labels.
+- Prefer **`pnpm publish`** (and local `pnpm pack` assert: no `workspace:*`) for 0.2.15 public packages.
+
 ## [0.2.14] — 2026-09-11
 
 ### Added
