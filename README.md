@@ -50,7 +50,7 @@ On one **author-run** track in **Cursor**, after `/autopilot-run`, Autopilot sus
 
 ### Planning (grill)
 
-`/autopilot-on` starts a design-tree grill: each round asks the current **frontier** of decisions (with recommended answers), then waits for you before the next round. Planning may edit `plans/**` and docs — **no product code** until `/autopilot-run`.
+`/autopilot-on` starts a design-tree grill: each round asks the current **frontier** of decisions (with recommended answers), then waits for you before the next round. Questions are numbered **globally across rounds** (`Q1`, `Q2`, … — do not restart at Q1), and each frontier is labeled with its **Round**. Planning may edit `plans/**` and docs — **no product code** until `/autopilot-run`.
 
 Artifacts land in `plans/<slug>/brief.md`, `plan.md`, and `checklist.md`.
 

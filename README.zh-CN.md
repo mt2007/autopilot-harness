@@ -52,7 +52,7 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 
 ### 规划（grill）
 
-`/autopilot-on` 启动设计树烤问：每轮问当前决策**前沿**（并给推荐答），等你回复再下一轮。规划可改 `plans/**` 与文档 — **直到** `/autopilot-run` 才写产品代码。
+`/autopilot-on` 启动设计树烤问：每轮问当前决策**前沿**（并给推荐答），等你回复再下一轮。问题序号**跨轮全局递增**（`Q1`、`Q2`…，勿每轮从 Q1 重计），并标注当前 **Round**。规划可改 `plans/**` 与文档 — **直到** `/autopilot-run` 才写产品代码。
 
 产物在 `plans/<slug>/brief.md`、`plan.md`、`checklist.md`。烤问灵感来自 **grill-me / grilling** 设计树技能。
 
