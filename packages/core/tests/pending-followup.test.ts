@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ReviewEngine,
   StateStore,
+  applyOn,
   applyResume,
   automationFollowupPresent,
   followupInFlight,
@@ -1653,5 +1654,99 @@ describe("pending followup + session round", () => {
     });
     expect(out?.kind).toBe("advance");
     expect(store.getReviewChain("c1")!.pending_followup).toBe(out!.message);
+  });
+
+  it("F-DONE-ON: applyOn clears tip so planning stop does not redeliver 全部完成", () => {
+    const eng = new ReviewEngine(store, {
+      confirmRounds: 5,
+      reviewScope: "project",
+      verifyEnabled: false,
+      verifyCommands: [],
+      maxIdleStops: 5,
+      maxErrorsBeforePause: 0,
+      recoverDebounceMs: 0,
+      projectRoot: root,
+    });
+    const tip =
+      "全部完成。自审确认已干净通过（确认轮不 commit）。勾选最后一项 [x]。";
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      checklist_path: "",
+      track_id: "t",
+    });
+    store.ensureReviewChain("c1");
+    store.updateReviewChain("c1", {
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      fix_round: 0,
+    });
+    // Latest user message is ON — automationFollowupPresent only checks latest,
+    // so an uncleared tip would be treated as undelivered and redelivered.
+    writeTranscript(transcript, [
+      { role: "user", text: tip },
+      { role: "assistant", text: "on-skill-gate done." },
+      { role: "user", text: "/autopilot-on\n参考 v0.2.9 再发一版" },
+      { role: "assistant", text: "Round 1 questions…" },
+    ]);
+
+    // Baseline: planning + uncleared tip → ghost done redeliver.
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+    });
+    const ghost = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(ghost?.kind).toBe("done");
+    expect(ghost?.message).toMatch(/^全部完成/);
+    expect(ghost?.meta?.redeliver).toBe(true);
+
+    // Fix path: re-seed tip on done, applyOn clears it, stop must not redeliver.
+    store.updateReviewChain("c1", {
+      pending_followup: tip,
+      pending_followup_at: new Date().toISOString(),
+      pending_redeliver_at: null,
+      chain_pending: 0,
+      code_edited: 0,
+      confirm_left: null,
+      fix_round: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "done",
+      armed: 0,
+      paused: 0,
+    });
+    expect(applyOn(store, "c1", root).ok).toBe(true);
+    expect(store.getSession("c1")!.phase).toBe("planning");
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
+
+    const out = eng.handleStop({
+      conversationId: "c1",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    // No product edit / no tip → planning stop should be silent (not ghost done).
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c1")!.pending_followup).toBeNull();
   });
 });
