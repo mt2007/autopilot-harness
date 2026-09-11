@@ -20,6 +20,22 @@ describe("P1 workflow templates", () => {
     expect(text.toLowerCase()).toMatch(/no product code|禁.*产品代码|do \*\*not\*\* write product code/);
   });
 
+  it("planning locks global Qn across rounds (no per-round Q1 example)", () => {
+    const text = fs.readFileSync(
+      path.join(root, "autopilot-planning.md"),
+      "utf8",
+    );
+    expect(text).toMatch(/globally across rounds/i);
+    expect(text).toMatch(/do not restart at Q1/i);
+
+    const fenceMatch = text.match(/```markdown\r?\n([\s\S]*?)```/);
+    expect(fenceMatch?.[1], "frontier example fence").toBeTruthy();
+    const fence = fenceMatch![1]!;
+    expect(fence).toMatch(/### Round k/);
+    expect(fence).toContain("❓ **Qn**");
+    expect(fence).not.toContain("**Q1**");
+  });
+
   it("executing requires checkoff before next item and obeys lenses", () => {
     const text = fs.readFileSync(
       path.join(root, "autopilot-executing.md"),
