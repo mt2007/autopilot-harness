@@ -9,6 +9,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.11] — 2026-09-11
+
+### Fixed
+
+- Republish public packages with `pnpm publish` so `workspace:*` dependencies are rewritten to concrete `0.2.11` versions. npm-published `@autopilot-harness/cli` / `port-cursor` / `port-claude-code@0.2.10` were uninstallable (`EUNSUPPORTEDPROTOCOL workspace:*`); prefer **0.2.11**.
+
 ## [0.2.10] — 2026-09-11
 
 ### Fixed
@@ -20,6 +26,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Contract tests lock description + skill-gate copy; vendor runtime rebuilt with tightened ON descriptions; CLI skill templates synced.
+
+### Known issue
+
+- npm `0.2.10` tarballs for `cli` / `port-cursor` / `port-claude-code` kept raw `workspace:*` deps (published via `npm publish` instead of `pnpm publish`). Use **0.2.11**.
 
 ## [0.2.9] — 2026-09-10
 

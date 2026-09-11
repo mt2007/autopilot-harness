@@ -345,7 +345,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -359,6 +359,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.8\]/);
     expect(log).toMatch(/## \[0\.2\.9\]/);
     expect(log).toMatch(/## \[0\.2\.10\]/);
+    expect(log).toMatch(/## \[0\.2\.11\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -395,6 +396,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0210).toMatch(/description|discuss|triggers\.on/i);
     expect(section0210).toMatch(/phase=planning|skill body|plans\//i);
     expect(section0210).toMatch(/discussion|Autopilot ON|quickstart/i);
+    const section0211 = changelogSection(log, "0.2.11");
+    expect(section0211).toMatch(/workspace:\*|pnpm publish|0\.2\.11/i);
+    expect(section0211).toMatch(/EUNSUPPORTEDPROTOCOL|uninstallable|republish/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag.
     expect(log).not.toMatch(/\[0\.2\.\d+\]:\s*https:\/\/github\.com/);
