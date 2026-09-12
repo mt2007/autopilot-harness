@@ -574,7 +574,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "utf8",
       ),
     ) as { description?: string };
-    expect(kimiPkg.description).toMatch(/Coming v0\.4/);
+    expect(kimiPkg.description).toMatch(/Kimi Code|degraded Stop/i);
     expect(kimiPkg.description).not.toMatch(/Coming v0\.3\b/);
+    expect(kimiPkg.description).not.toMatch(/Coming v0\.4/);
   });
 });

@@ -29,6 +29,10 @@ export default defineConfig({
         __dirname,
         "packages/ports/codex/src/index.ts",
       ),
+      "@autopilot-harness/port-kimi-code": path.resolve(
+        __dirname,
+        "packages/ports/kimi-code/src/index.ts",
+      ),
       "@autopilot-harness/port-cursor": path.resolve(
         __dirname,
         "packages/ports/cursor/src/index.ts",
