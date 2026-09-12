@@ -20,7 +20,7 @@ Vibe coding 很快，但范围漂移、验收含糊、「看起来做完了」�
 2. **按 checklist 执行**（`plans/<slug>/`）  
 3. **多角度自审通过后**再勾选完成  
 
-它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**本仓已接入 Cursor、Claude Code 与 Codex**；Runner 见 [宿主说明](./docs/hosts.md)。
+它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**本仓已接入 Cursor、Claude Code 与 Codex**（CLI 与 App 共用同一 Codex port）。下一宿主候选为 **Kimi Code**；Copilot CLI / Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner 等见 [宿主说明](./docs/hosts.md) 路线图。
 
 Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、落在 checklist 范围内、并在多种审查镜头下压测过，再宣称某一项完成。
 
@@ -131,7 +131,7 @@ npx @autopilot-harness/cli doctor
 - [Architecture](./docs/architecture.md)  
 - [配置说明](./docs/config.md)  
 - [排障](./docs/troubleshooting.md)  
-- [宿主说明](./docs/hosts.md)（Cursor / Claude Code / Codex 已支持）  
+- [宿主说明](./docs/hosts.md)（Cursor / Claude Code / Codex 已支持；Kimi 下一优先；完整扩宿主路线图）  
 - [宿主 Plan 桥接（设计）](./docs/host-plan-bridge.md)  
 - [快速开始（中文）](./docs/autopilot/quickstart.zh-CN.md)  
 - [Contributing](./CONTRIBUTING.md)  

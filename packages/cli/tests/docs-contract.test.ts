@@ -339,6 +339,21 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/surface: cli.*CLI-only|hooks are \*\*shared across terminal \+ IDE\*\*/i);
     expect(hosts).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0/);
     expect(hosts).toMatch(/host-plan-bridge\.md/);
+    expect(hosts).toMatch(/## Roadmap \(not shipped\)/);
+    expect(hosts).toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Next\*\*/);
+    expect(hosts).toMatch(/GitHub Copilot CLI/);
+    expect(hosts).toMatch(/Grok Build CLI/);
+    expect(hosts).toMatch(/Gemini CLI/);
+    expect(hosts).toMatch(/Factory Droid/);
+    expect(hosts).toMatch(/Hermes Agent/);
+    expect(hosts).toMatch(/Antigravity/);
+    expect(hosts).toMatch(/OpenCode/);
+    expect(hosts).toMatch(/\bPi\b/);
+    expect(hosts).toMatch(/Devin CLI/);
+    expect(hosts).toMatch(/Codex CLI and Codex App/);
+    expect(hosts).toMatch(
+      /roadmap markers only[\s\S]*init[\s\S]*do \*\*not\*\* install them yet/i,
+    );
   });
 
   it("host-plan-bridge design doc exists and stays unimplemented", () => {

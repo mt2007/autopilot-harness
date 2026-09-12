@@ -9,6 +9,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **docs**: host roadmap — Kimi Code recommended next; Copilot CLI / Grok Build / Gemini CLI / Factory Droid / Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed; Codex App+CLI called out as one shipped port ([hosts.md](./docs/hosts.md)).
+
 ## [0.3.0] — 2026-09-12
 
 ### Added

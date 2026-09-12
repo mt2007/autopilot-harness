@@ -68,7 +68,8 @@ breaker; ports must disable or raise it, or the chain stalls mid-confirm
 | **Cursor** (shipped) | `hooks.json` `loop_limit` on **stop** / **subagentStop** | `5` if omitted | Write `"loop_limit": null` on Autopilot stop (`mergeHooksJson` / init / upgrade). `doctor` WARNs if missing. |
 | **Claude Code** (v0.2 shipped) | Stop `decision: "block"` consecutive **block cap** | **8**; `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (`0` disables) | Init writes `.claude/settings.json` hooks + `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`; `doctor` WARNs when missing or not `0`. Workspace **trust** may gate project `env`. |
 | **Codex** (shipped) | Stop `decision: "block"` + `reason` as next user prompt; `stop_hook_active` | No documented numeric block cap (2026-09 research) | **Shipped** hook port: `.codex/hooks.json` (omit timeout or ≥120s); `/hooks` trust + re-trust; P0 line-start `triggers.on` / `triggers.run` (no default skills/`AGENTS.md`; typed `/autopilot-*` still parses). |
-| **Runner** ports (later) | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. For hosts without stop continuation only. |
+| **Kimi Code** (next / planned) | Blockable `Stop` → append message and continue | Research (often short default timeout) | Planned `@autopilot-harness/port-kimi-code`; raise timeout; confirm multi-Stop streak. Full candidate list: [hosts.md](./hosts.md#roadmap-not-shipped). |
+| **Runner** (later) | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. For hosts without stop continuation only. |
 
 `beforeSubmitPrompt` / `afterFileEdit` (and Claude/Codex `UserPromptSubmit` analogues)
 are **not** subject to Cursor’s stop `loop_limit`; they do not emit Autopilot
