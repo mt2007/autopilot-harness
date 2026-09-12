@@ -17,6 +17,13 @@ import {
   validateCodexHooksShape,
   type CodexHooksFile,
 } from "./init/codex-hooks-merge.js";
+import {
+  kimiConfigTomlPath,
+  kimiTomlHasAutopilotHookTables,
+  readKimiConfigToml,
+  removeAutopilotKimiHooks,
+  resolveKimiCodeHome,
+} from "./init/kimi-hooks-merge.js";
 import { readConfigInstallHints } from "./init/config-merge.js";
 import { configWantsInstallableHost } from "./init/platforms.js";
 import {
@@ -29,6 +36,7 @@ import {
   assertParentDirInProject,
   assertRealpathInside,
   assertWrittenInsideProject,
+  isRealDirectory,
   isRealRegularFile,
   resolveProjectRootOrThrow,
 } from "./project-fs.js";
@@ -350,6 +358,7 @@ function formatUninstallSkipDetail(raw: string): string {
 function projectWantsInstallableHosts(configPath: string): {
   claude: boolean;
   codex: boolean;
+  kimi: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -361,9 +370,10 @@ function projectWantsInstallableHosts(configPath: string): {
     return {
       claude: configWantsInstallableHost(platforms, "claude-code"),
       codex: configWantsInstallableHost(platforms, "codex"),
+      kimi: configWantsInstallableHost(platforms, "kimi-code"),
     };
   } catch {
-    return { claude: false, codex: false };
+    return { claude: false, codex: false, kimi: false };
   }
 }
 
@@ -434,10 +444,11 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
 
-    const { claude: wantClaude, codex: wantCodex } =
+    const { claude: wantClaude, codex: wantCodex, kimi: wantKimi } =
       projectWantsInstallableHosts(configPath);
     // Only fail-closed on .claude/.codex trees when config declares that host.
     // Leftover Cursor-only host dirs must not block uninstall — soft-skip below.
+    // Kimi uses user-home config.toml (outside project) — strip separately.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
     // isRealDirectory is false for symlinks — probe with lstat so links are caught.
@@ -664,6 +675,77 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .codex/hooks.json (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Kimi Code user-home config.toml (fingerprint only; never local.toml) ---
+    const kimiHome = resolveKimiCodeHome();
+    const kimiTomlPath = kimiConfigTomlPath(kimiHome);
+    const kimiPre = readKimiConfigToml(kimiTomlPath);
+    if (!kimiPre.ok) {
+      if (wantKimi) {
+        return { ok: false, error: kimiPre.error };
+      }
+      actions.push(
+        `skip Kimi Code config.toml (${formatUninstallSkipDetail(kimiPre.error)})`,
+      );
+    } else if (kimiTomlHasAutopilotHookTables(kimiPre.value)) {
+      const stripKimiHooks = (): void => {
+        assertNotSymlink(kimiHome, "Kimi Code home/");
+        if (!isRealDirectory(kimiHome)) {
+          throw new Error("Kimi Code home/ is not a real directory");
+        }
+        assertNotSymlink(kimiTomlPath, "config.toml");
+        if (dryRun) {
+          found = true;
+          actions.push(
+            "strip Autopilot entries from $KIMI_CODE_HOME/config.toml",
+          );
+          return;
+        }
+        const kimiFresh = readKimiConfigToml(kimiTomlPath);
+        if (!kimiFresh.ok) {
+          throw new Error(kimiFresh.error);
+        }
+        if (!kimiTomlHasAutopilotHookTables(kimiFresh.value)) {
+          found = true;
+          actions.push(
+            "strip Autopilot entries from $KIMI_CODE_HOME/config.toml",
+          );
+          actions.push(
+            "Kimi Code config.toml no longer has Autopilot entries (skipped write)",
+          );
+          return;
+        }
+        const stripped = removeAutopilotKimiHooks(kimiFresh.value);
+        if (kimiTomlHasAutopilotHookTables(stripped)) {
+          throw new Error(
+            "Kimi Code config.toml still has Autopilot hook tables after strip",
+          );
+        }
+        // Re-check immediately before write (init parity; shrink TOCTOU).
+        assertNotSymlink(kimiHome, "Kimi Code home/");
+        if (!isRealDirectory(kimiHome)) {
+          throw new Error("Kimi Code home/ is not a real directory");
+        }
+        assertNotSymlink(kimiTomlPath, "config.toml");
+        writeFileReplaceSync(kimiTomlPath, stripped);
+        found = true;
+        hooksStripped = true;
+        actions.push(
+          "strip Autopilot entries from $KIMI_CODE_HOME/config.toml",
+        );
+        removed.push("Kimi Code config.toml (Autopilot entries)");
+      };
+
+      try {
+        stripKimiHooks();
+      } catch (err) {
+        if (wantKimi) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip Kimi Code config.toml (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

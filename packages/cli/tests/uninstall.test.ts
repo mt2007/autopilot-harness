@@ -856,4 +856,42 @@ describe("uninstallProject", () => {
     ).toMatch(/autopilot-harness-hook\.mjs/);
     fs.rmSync(outside, { recursive: true, force: true });
   });
+
+  it("uninstalls Kimi Autopilot hooks and keeps foreign [[hooks]]", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-un-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const tomlPath = path.join(kimiHome, "config.toml");
+      fs.appendFileSync(
+        tomlPath,
+        `\n[[hooks]]\nevent = "Notification"\ncommand = "echo keep-kimi"\ntimeout = 5\n`,
+        "utf8",
+      );
+      const r = uninstallProject({ projectRoot: root });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(
+        r.actions.some((a) => /Kimi Code config\.toml|KIMI_CODE_HOME/i.test(a)),
+      ).toBe(true);
+      const after = fs.readFileSync(tomlPath, "utf8");
+      expect(after).not.toMatch(/autopilot-harness-hook\.mjs/);
+      expect(after).toMatch(/echo keep-kimi/);
+      expect(fs.existsSync(path.join(kimiHome, "local.toml"))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
 });

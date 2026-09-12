@@ -25,6 +25,11 @@ import {
   validateCodexHooksShape,
   type CodexHooksFile,
 } from "./init/codex-hooks-merge.js";
+import {
+  kimiConfigTomlPath,
+  readKimiConfigToml,
+  resolveKimiCodeHome,
+} from "./init/kimi-hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import type { InitLocale } from "./init/types.js";
 import {
@@ -53,6 +58,7 @@ function preflightHostSettings(
   wantCursor: boolean,
   wantClaude: boolean,
   wantCodex: boolean,
+  wantKimi: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -168,6 +174,35 @@ function preflightHostSettings(
       }
       // Missing hooks.json is OK — force refresh will create it.
     }
+  }
+
+  if (wantKimi) {
+    const kimiHome = resolveKimiCodeHome();
+    const kimiTomlPath = kimiConfigTomlPath(kimiHome);
+    try {
+      assertNotSymlink(kimiHome, "Kimi Code home/");
+      assertNotSymlink(kimiTomlPath, "config.toml");
+      try {
+        const homeSt = fs.lstatSync(kimiHome);
+        if (!homeSt.isDirectory()) {
+          return {
+            ok: false,
+            error: "Kimi Code home/ exists and is not a directory",
+          };
+        }
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") throw err;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    const kimiPre = readKimiConfigToml(kimiTomlPath);
+    if (!kimiPre.ok) {
+      return { ok: false, error: kimiPre.error };
+    }
+    // Missing config.toml is OK — force refresh will create it.
   }
 
   return { ok: true };
@@ -440,6 +475,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantCursor = configWantsInstallableHost(platforms, "cursor");
     const wantClaude = configWantsInstallableHost(platforms, "claude-code");
     const wantCodex = configWantsInstallableHost(platforms, "codex");
+    const wantKimi = configWantsInstallableHost(platforms, "kimi-code");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -452,6 +488,11 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
     if (wantCodex) {
       actions.push("merge .codex/hooks.json (Autopilot entries; no skills)");
+    }
+    if (wantKimi) {
+      actions.push(
+        "merge $KIMI_CODE_HOME/config.toml Autopilot [[hooks]] (no skills)",
+      );
     }
 
     if (opts.target && opts.target !== version) {
@@ -466,6 +507,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantCursor,
       wantClaude,
       wantCodex,
+      wantKimi,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

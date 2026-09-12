@@ -1892,6 +1892,314 @@ describe("runDoctor", () => {
     );
   });
 
+  it("OKs Kimi Autopilot entries and WARNs Stop≤1 + /hooks", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-ok-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const { ok, lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(ok).toBe(true);
+      const joined = lines.join("\n");
+      expect(joined).toMatch(/OK\s+Kimi Code config\.toml Autopilot entries/);
+      expect(joined).toMatch(/Stop-continue.*≤1|≤1\/turn/i);
+      expect(joined).toMatch(/confirm_rounds:\s*1/);
+      expect(joined).toMatch(/\/hooks/i);
+      expect(joined).not.toMatch(/missing Autopilot/i);
+      expect(joined).not.toMatch(/timeout below 120/i);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs when Kimi Autopilot hooks are missing", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-miss-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      fs.writeFileSync(path.join(kimiHome, "config.toml"), "model = \"x\"\n", "utf8");
+      const { ok, lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).toMatch(
+        /WARN\s+Kimi Code config\.toml missing Autopilot/i,
+      );
+      expect(lines.join("\n")).not.toMatch(
+        /OK\s+Kimi Code config\.toml Autopilot entries/,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs when Autopilot Kimi hook timeout is below 120s", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-to-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const tomlPath = path.join(kimiHome, "config.toml");
+      let toml = fs.readFileSync(tomlPath, "utf8");
+      toml = toml.replace(/timeout = 120/g, "timeout = 30");
+      fs.writeFileSync(tomlPath, toml, "utf8");
+      const { ok, lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).toMatch(/timeout below 120/i);
+      expect(lines.join("\n")).not.toMatch(
+        /OK\s+Kimi Code config\.toml Autopilot entries/,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs when only legacy ~/.kimi exists without Kimi Code home", () => {
+    root = tmpProject();
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-leg-"));
+    const kimiCodeHome = path.join(fakeHome, ".kimi-code-missing-sibling");
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiCodeHome;
+    try {
+      fs.mkdirSync(path.join(fakeHome, ".kimi"), { recursive: true });
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      // Remove Code home so only legacy remains; leave config.yml wanting kimi.
+      fs.rmSync(kimiCodeHome, { recursive: true, force: true });
+      new StateStore(root).close();
+      const { lines } = runDoctor(root, {
+        homeDir: fakeHome,
+        kimiCodeHome,
+      });
+      expect(lines.join("\n")).toMatch(/legacy ~\/\.kimi/i);
+      expect(lines.join("\n")).toMatch(/Kimi Code home missing/i);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("FAILs when Kimi Code config.toml is a symlink (unreadable)", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-sym-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const tomlPath = path.join(kimiHome, "config.toml");
+      const outside = path.join(kimiHome, "outside.toml");
+      fs.renameSync(tomlPath, outside);
+      fs.symlinkSync(outside, tomlPath);
+      const { ok, lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(ok).toBe(false);
+      const joined = lines.join("\n");
+      expect(joined).toMatch(/FAIL\s+Kimi Code config\.toml unreadable/i);
+      expect(joined).toMatch(/Stop-continue.*≤1|≤1\/turn/i);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("does not OK Kimi when Autopilot stamps appear only in comments", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-cmt-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const tomlPath = path.join(kimiHome, "config.toml");
+      const real = fs.readFileSync(tomlPath, "utf8");
+      const commented = real
+        .split(/\r?\n/)
+        .map((line) => (line.trim() ? `# ${line}` : line))
+        .join("\n");
+      fs.writeFileSync(tomlPath, `model = "x"\n${commented}\n`, "utf8");
+      const { ok, lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(ok).toBe(true);
+      const joined = lines.join("\n");
+      expect(joined).toMatch(/WARN\s+Kimi Code config\.toml missing Autopilot/i);
+      expect(joined).not.toMatch(
+        /OK\s+Kimi Code config\.toml Autopilot entries/,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("does not OK Kimi for orphan markers plus comment stamps", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-orp-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const tomlPath = path.join(kimiHome, "config.toml");
+      const real = fs.readFileSync(tomlPath, "utf8");
+      const stampComments = real
+        .split(/\r?\n/)
+        .filter((line) => /autopilot-harness-hook\.mjs/.test(line))
+        .map((line) => `# ${line}`)
+        .join("\n");
+      fs.writeFileSync(
+        tomlPath,
+        `# --- autopilot-harness hooks begin ---\n${stampComments}\nmodel = "x"\n`,
+        "utf8",
+      );
+      const { lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      const joined = lines.join("\n");
+      expect(joined).toMatch(/WARN\s+Kimi Code config\.toml missing Autopilot/i);
+      expect(joined).not.toMatch(
+        /OK\s+Kimi Code config\.toml Autopilot entries/,
+      );
+      expect(joined).not.toMatch(/\/hooks if offered/i);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs when only some Autopilot Kimi hook events are installed", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-partial-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const tomlPath = path.join(kimiHome, "config.toml");
+      const real = fs.readFileSync(tomlPath, "utf8");
+      // Keep only the Stop table; leave other event stamps in comments so
+      // whole-file substring checks would wrongly look complete.
+      const lines = real.split(/\r?\n/);
+      const kept: string[] = [];
+      let i = 0;
+      while (i < lines.length) {
+        if (lines[i]!.trim() !== "[[hooks]]") {
+          const line = lines[i]!;
+          if (/autopilot-harness-hook\.mjs/.test(line) && !/Stop/.test(line)) {
+            kept.push(`# ${line}`);
+          } else if (!/autopilot-harness hooks (begin|end)/.test(line)) {
+            kept.push(line);
+          }
+          i += 1;
+          continue;
+        }
+        const block = [lines[i]!];
+        i += 1;
+        while (i < lines.length) {
+          const next = lines[i]!;
+          if (/^\s*\[\[/.test(next) || /^\s*\[[^[\]]/.test(next)) break;
+          block.push(next);
+          i += 1;
+        }
+        const text = block.join("\n");
+        if (/event\s*=\s*"Stop"/.test(text)) kept.push(...block);
+        else {
+          for (const bl of block) {
+            if (/autopilot-harness-hook\.mjs/.test(bl)) kept.push(`# ${bl}`);
+          }
+        }
+      }
+      fs.writeFileSync(tomlPath, `${kept.join("\n")}\n`, "utf8");
+      const { lines: doc } = runDoctor(root, { kimiCodeHome: kimiHome });
+      const joined = doc.join("\n");
+      expect(joined).toMatch(
+        /WARN\s+Kimi Code config\.toml missing Autopilot for:.*UserPromptSubmit/i,
+      );
+      expect(joined).toMatch(/PostToolUse/i);
+      expect(joined).not.toMatch(
+        /OK\s+Kimi Code config\.toml Autopilot entries/,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
   it("OKs dual-host doctor for Cursor hooks + Claude settings (skills 10)", () => {
     root = tmpProject();
     expect(

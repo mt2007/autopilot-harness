@@ -967,4 +967,66 @@ review:
     ).toMatch(/autopilot-harness-hook\.mjs/);
     fs.rmSync(outside, { recursive: true, force: true });
   });
+
+  it("dry-run lists Kimi config.toml action when kimi-code is enabled (no skills)", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-up-dry-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const r = upgradeProject({ projectRoot: root, dryRun: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(
+        r.actions.some((a) => /KIMI_CODE_HOME\/config\.toml/i.test(a)),
+      ).toBe(true);
+      expect(r.actions.some((a) => /\.codex\/skills/i.test(a))).toBe(false);
+      expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrade refreshes Kimi hooks and restores timeout ≥120", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-up-fix-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const tomlPath = path.join(kimiHome, "config.toml");
+      let toml = fs.readFileSync(tomlPath, "utf8");
+      toml = toml.replace(/timeout = 120/g, "timeout = 30");
+      fs.writeFileSync(tomlPath, toml, "utf8");
+      const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+      expect(r.ok).toBe(true);
+      const after = fs.readFileSync(tomlPath, "utf8");
+      expect(after).toMatch(/timeout = 120/);
+      expect(after).toMatch(/--platform kimi-code/);
+      expect(after).not.toMatch(/timeout = 30/);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
 });

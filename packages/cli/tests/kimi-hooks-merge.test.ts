@@ -4,17 +4,28 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   KIMI_AUTOPILOT_EVENTS,
+  KIMI_HOOKS_BEGIN_MARKER,
+  KIMI_HOOKS_END_MARKER,
   KIMI_HOOK_TIMEOUT_SEC,
   KIMI_POST_TOOL_USE_MATCHER,
   kimiAutopilotHasSmallTimeout,
+  kimiAutopilotMissingEvents,
+  kimiAutopilotMissingHookEvents,
   kimiConfigTomlPath,
   kimiHooksContainAutopilot,
   kimiHooksHavePlatformStamp,
+  kimiTomlHasAutopilotHookTables,
+  kimiTomlHasDroppableAutopilotHooks,
   mergeKimiConfigToml,
   readKimiConfigToml,
+  removeAutopilotKimiHooks,
   resolveKimiCodeHome,
   stripAutopilotKimiHooks,
 } from "../src/init/kimi-hooks-merge.js";
+import {
+  autopilotHookCommandLine,
+  HOOK_PLATFORM_KIMI_CODE,
+} from "../src/init/hooks-merge.js";
 import { installInitYes } from "../src/init/install.js";
 import { defaultConfigYaml } from "../src/init/default-config.js";
 import {
@@ -181,6 +192,92 @@ extra = true
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("removeAutopilotKimiHooks keeps foreign tables and drops Autopilot", () => {
+    const merged = mergeKimiConfigToml(`model = "x"
+
+[[hooks]]
+event = "Notification"
+command = "echo keep"
+timeout = 5
+`);
+    const stripped = removeAutopilotKimiHooks(merged);
+    expect(stripped).toMatch(/model = "x"/);
+    expect(stripped).toMatch(/echo keep/);
+    expect(stripped).not.toMatch(/autopilot-harness-hook\.mjs/);
+    expect(stripped).not.toMatch(/autopilot-harness hooks begin/);
+    expect(kimiAutopilotMissingEvents(stripped)).toEqual([
+      ...KIMI_AUTOPILOT_EVENTS,
+    ]);
+    expect(kimiTomlHasAutopilotHookTables(merged)).toBe(true);
+    expect(kimiTomlHasAutopilotHookTables(stripped)).toBe(false);
+    // Bare name in a comment is not a removable hook table.
+    expect(
+      kimiTomlHasAutopilotHookTables(
+        '# docs mention autopilot-harness-hook.mjs\nmodel = "x"\n',
+      ),
+    ).toBe(false);
+    expect(
+      kimiHooksContainAutopilot(
+        '# docs mention autopilot-harness-hook.mjs\nmodel = "x"\n',
+      ),
+    ).toBe(true);
+    // Orphan begin/end markers are removable residue (uninstall should clean).
+    const orphanBegin = `${KIMI_HOOKS_BEGIN_MARKER}\nmodel = "x"\n`;
+    expect(kimiTomlHasAutopilotHookTables(orphanBegin)).toBe(true);
+    const cleanedOrphan = removeAutopilotKimiHooks(orphanBegin);
+    expect(cleanedOrphan).toMatch(/model = "x"/);
+    expect(cleanedOrphan).not.toMatch(/hooks begin/);
+    expect(kimiTomlHasAutopilotHookTables(cleanedOrphan)).toBe(false);
+    // Inline marker substrings in comments must not count or be eaten.
+    const inlineDocs = `# note ${KIMI_HOOKS_BEGIN_MARKER} and ${KIMI_HOOKS_END_MARKER}\nmodel = "keep"\n`;
+    expect(kimiTomlHasAutopilotHookTables(inlineDocs)).toBe(false);
+    expect(removeAutopilotKimiHooks(inlineDocs)).toMatch(/model = "keep"/);
+    expect(removeAutopilotKimiHooks(inlineDocs)).toMatch(/note/);
+    // Spaced orphan lines still count (trim) and strip drops them.
+    const spacedOrphan = `  ${KIMI_HOOKS_BEGIN_MARKER}  \nmodel = "x"\n`;
+    expect(kimiTomlHasAutopilotHookTables(spacedOrphan)).toBe(true);
+    const cleanedSpaced = removeAutopilotKimiHooks(spacedOrphan);
+    expect(cleanedSpaced).toMatch(/model = "x"/);
+    expect(kimiTomlHasAutopilotHookTables(cleanedSpaced)).toBe(false);
+    // CRLF marker blocks strip cleanly.
+    const crlf = mergeKimiConfigToml('model = "x"\n').replace(/\n/g, "\r\n");
+    expect(kimiTomlHasAutopilotHookTables(crlf)).toBe(true);
+    const cleanedCrlf = removeAutopilotKimiHooks(crlf);
+    expect(cleanedCrlf).toMatch(/model = "x"/);
+    expect(cleanedCrlf).not.toMatch(/autopilot-harness-hook/);
+    expect(kimiTomlHasAutopilotHookTables(cleanedCrlf)).toBe(false);
+  });
+
+  it("missingHookEvents requires event field to match stamped --event", () => {
+    const stopCmd = autopilotHookCommandLine(HOOK_PLATFORM_KIMI_CODE, "Stop");
+    const upsCmd = autopilotHookCommandLine(
+      HOOK_PLATFORM_KIMI_CODE,
+      "UserPromptSubmit",
+    );
+    const mismatched = `[[hooks]]
+event = "Stop"
+command = "${upsCmd}"
+timeout = 120
+`;
+    expect(kimiAutopilotMissingHookEvents(mismatched)).toEqual([
+      ...KIMI_AUTOPILOT_EVENTS,
+    ]);
+    // Still droppable residue for uninstall even when event=/--event disagree.
+    expect(kimiTomlHasDroppableAutopilotHooks(mismatched)).toBe(true);
+    expect(kimiTomlHasAutopilotHookTables(mismatched)).toBe(true);
+
+    const aligned = `[[hooks]]
+event = "Stop"
+command = "${stopCmd}"
+timeout = 120
+`;
+    expect(kimiAutopilotMissingHookEvents(aligned)).toEqual([
+      "UserPromptSubmit",
+      "PostToolUse",
+    ]);
+    expect(kimiTomlHasDroppableAutopilotHooks(aligned)).toBe(true);
   });
 });
 

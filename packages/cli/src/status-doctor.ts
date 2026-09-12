@@ -37,6 +37,13 @@ import {
   validateCodexHooksShape,
   type CodexHooksFile,
 } from "./init/codex-hooks-merge.js";
+import {
+  kimiAutopilotHasSmallTimeout,
+  kimiAutopilotMissingHookEvents,
+  kimiConfigTomlPath,
+  readKimiConfigToml,
+  resolveKimiCodeHome,
+} from "./init/kimi-hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -221,6 +228,11 @@ export type DoctorOptions = {
   packageVersion?: string;
   /** Injectable home directory for global hooks dual-inject check (tests). */
   homeDir?: string;
+  /**
+   * Injectable Kimi Code data home (absolute). Tests only — production uses
+   * `$KIMI_CODE_HOME` / `~/.kimi-code` via {@link resolveKimiCodeHome}.
+   */
+  kimiCodeHome?: string;
 };
 
 export type DoctorResult = {
@@ -942,6 +954,73 @@ export function runDoctor(
           `FAIL  .codex/hooks.json unreadable (${safeDisplayToken(msg, "error")})`,
         );
         ok = false;
+      }
+    }
+  }
+
+  const wantKimi = configWantsInstallableHost(cfg.platforms, "kimi-code");
+  if (wantKimi) {
+    const injectHome = opts.kimiCodeHome;
+    const kimiHome =
+      typeof injectHome === "string" &&
+      injectHome &&
+      path.isAbsolute(injectHome)
+        ? injectHome
+        : resolveKimiCodeHome();
+    const kimiTomlPath = kimiConfigTomlPath(kimiHome);
+    const kimiRead = readKimiConfigToml(kimiTomlPath);
+    // Host hard-cap: always surface when this installable host is enabled.
+    lines.push(
+      "WARN  Kimi Code hard-caps Stop-continue at ≤1/turn — prefer confirm_rounds: 1",
+    );
+    if (!kimiRead.ok) {
+      lines.push(
+        `FAIL  Kimi Code config.toml unreadable (${safeDisplayToken(kimiRead.error, "error")})`,
+      );
+      ok = false;
+    } else {
+      // Event coverage from droppable [[hooks]] only — comment stamps do not count.
+      const missing = kimiAutopilotMissingHookEvents(kimiRead.value);
+      const smallTimeout = kimiAutopilotHasSmallTimeout(kimiRead.value);
+      if (missing.length > 0) {
+        lines.push(
+          `WARN  Kimi Code config.toml missing Autopilot for: ${missing.join(", ")} — run init --force`,
+        );
+      }
+      if (smallTimeout) {
+        lines.push(
+          "WARN  Autopilot Kimi hook timeout below 120s (or omitted; host default 30s) — run upgrade",
+        );
+      }
+      if (missing.length === 0) {
+        lines.push(
+          "WARN  Kimi Code hooks need host trust/reload after install or upgrade (/hooks if offered)",
+        );
+      }
+      if (missing.length === 0 && !smallTimeout) {
+        lines.push("OK    Kimi Code config.toml Autopilot entries");
+      }
+    }
+    const userHome = opts.homeDir ?? os.homedir();
+    if (typeof userHome === "string" && userHome && path.isAbsolute(userHome)) {
+      const legacyPath = path.join(userHome, ".kimi");
+      let hasLegacy = false;
+      let hasCodeHome = false;
+      try {
+        // Real directory only (symlink ≠ Autopilot-usable home; init refuses).
+        hasLegacy = fs.lstatSync(legacyPath).isDirectory();
+      } catch {
+        /* missing */
+      }
+      try {
+        hasCodeHome = fs.lstatSync(kimiHome).isDirectory();
+      } catch {
+        /* missing */
+      }
+      if (hasLegacy && !hasCodeHome) {
+        lines.push(
+          "WARN  legacy ~/.kimi present but Kimi Code home missing — Autopilot uses $KIMI_CODE_HOME or ~/.kimi-code; run init",
+        );
       }
     }
   }

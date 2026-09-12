@@ -140,13 +140,7 @@ export function stripAutopilotKimiHooks(toml: string): {
 } {
   const text = typeof toml === "string" ? toml.replace(/^\uFEFF/, "") : "";
   // Remove prior marker-wrapped Autopilot section first.
-  const withoutMarked = text.replace(
-    new RegExp(
-      `${escapeRegExp(KIMI_HOOKS_BEGIN_MARKER)}[\\s\\S]*?${escapeRegExp(KIMI_HOOKS_END_MARKER)}\\s*`,
-      "g",
-    ),
-    "",
-  );
+  const withoutMarked = text.replace(kimiAutopilotMarkerBlockRe(), "");
 
   const lines = withoutMarked.split(/\r?\n/);
   const preambleLines: string[] = [];
@@ -154,7 +148,16 @@ export function stripAutopilotKimiHooks(toml: string): {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i]!;
-    if (line.trim() === "[[hooks]]") {
+    const trimmedLine = line.trim();
+    // Drop orphan begin/end markers (corrupt / partial prior strip).
+    if (
+      trimmedLine === KIMI_HOOKS_BEGIN_MARKER ||
+      trimmedLine === KIMI_HOOKS_END_MARKER
+    ) {
+      i += 1;
+      continue;
+    }
+    if (trimmedLine === "[[hooks]]") {
       const blockLines = [line];
       i += 1;
       while (i < lines.length) {
@@ -164,19 +167,12 @@ export function stripAutopilotKimiHooks(toml: string): {
         i += 1;
       }
       const block = blockLines.join("\n");
-      const parsed = tryParseKimiHookTable(block);
       // Drop Autopilot by fingerprint even when the table is exotic/unparseable,
       // otherwise force refresh would stack a second Autopilot set beside it.
       // Prefer the install path segment (POSIX or Windows separators) so comments
       // / lookalike names do not drop foreign tables; parseable tables still use
       // isAutopilotCommand.
-      if (
-        (parsed && isAutopilotCommand(parsed.command)) ||
-        (!parsed &&
-          /^\s*command\s*=\s*.*autopilot[/\\]bin[/\\]autopilot-harness-hook\.mjs/m.test(
-            block,
-          ))
-      ) {
+      if (blockIsDroppableAutopilotKimiHook(block)) {
         continue;
       }
       foreignHookTables.push(block);
@@ -202,6 +198,17 @@ export function stripAutopilotKimiHooks(toml: string): {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Matched Autopilot begin…end marker block (non-greedy; global).
+ * Markers must be alone on their lines — inline mentions in comments must not match.
+ */
+function kimiAutopilotMarkerBlockRe(): RegExp {
+  return new RegExp(
+    `^${escapeRegExp(KIMI_HOOKS_BEGIN_MARKER)}[\\s\\S]*?^${escapeRegExp(KIMI_HOOKS_END_MARKER)}\\s*`,
+    "gm",
+  );
 }
 
 /** Parse a single `[[hooks]]` table; null if exotic / unsafe. */
@@ -273,14 +280,145 @@ export function kimiHooksContainAutopilot(toml: string): boolean {
   return typeof toml === "string" && /autopilot-harness-hook\.mjs/.test(toml);
 }
 
-/** True when every Autopilot event has a stamped command. */
+/**
+ * True when toml has marker-wrapped Autopilot blocks and/or [[hooks]] tables that
+ * {@link stripAutopilotKimiHooks} / {@link removeAutopilotKimiHooks} would drop.
+ * Narrower than {@link kimiHooksContainAutopilot} (ignores bare name mentions).
+ * Orphan begin/end lines count so uninstall can clean residue; strip removes them
+ * before the post-strip presence check.
+ */
+export function kimiTomlHasAutopilotHookTables(toml: string): boolean {
+  const text = typeof toml === "string" ? toml.replace(/^\uFEFF/, "") : "";
+  if (kimiAutopilotMarkerBlockRe().test(text)) return true;
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (
+      trimmed === KIMI_HOOKS_BEGIN_MARKER ||
+      trimmed === KIMI_HOOKS_END_MARKER
+    ) {
+      return true;
+    }
+  }
+  return kimiTomlHasDroppableAutopilotHooks(text);
+}
+
+/**
+ * True when toml has at least one droppable Autopilot [[hooks]] table.
+ * Ignores orphan markers and bare stamp substrings (uninstall / residue detect).
+ * Unlike {@link kimiAutopilotMissingHookEvents}, desynced event=/--event still counts.
+ */
+export function kimiTomlHasDroppableAutopilotHooks(toml: string): boolean {
+  const text = typeof toml === "string" ? toml.replace(/^\uFEFF/, "") : "";
+  const lines = text.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i]!.trim() !== "[[hooks]]") {
+      i += 1;
+      continue;
+    }
+    const blockLines = [lines[i]!];
+    i += 1;
+    while (i < lines.length) {
+      const next = lines[i]!;
+      if (/^\s*\[\[/.test(next) || /^\s*\[[^[\]]/.test(next)) break;
+      blockLines.push(next);
+      i += 1;
+    }
+    if (blockIsDroppableAutopilotKimiHook(blockLines.join("\n"))) return true;
+  }
+  return false;
+}
+
+/**
+ * Autopilot events that lack a droppable [[hooks]] table (not comment stamps).
+ * Parseable tables count only when `event` matches the stamped `--event` in command.
+ */
+export function kimiAutopilotMissingHookEvents(toml: string): string[] {
+  const text = typeof toml === "string" ? toml.replace(/^\uFEFF/, "") : "";
+  const present = new Set<string>();
+  const lines = text.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    if (lines[i]!.trim() !== "[[hooks]]") {
+      i += 1;
+      continue;
+    }
+    const blockLines = [lines[i]!];
+    i += 1;
+    while (i < lines.length) {
+      const next = lines[i]!;
+      if (/^\s*\[\[/.test(next) || /^\s*\[[^[\]]/.test(next)) break;
+      blockLines.push(next);
+      i += 1;
+    }
+    const block = blockLines.join("\n");
+    if (!blockIsDroppableAutopilotKimiHook(block)) continue;
+    const parsed = tryParseKimiHookTable(block);
+    if (parsed && isAutopilotCommand(parsed.command)) {
+      for (const event of KIMI_AUTOPILOT_EVENTS) {
+        if (parsed.event !== event) continue;
+        const needle = autopilotHookCommandLine(HOOK_PLATFORM_KIMI_CODE, event);
+        // Hand-edits can desync TOML event= from argv --event; require both.
+        if (parsed.command.includes(needle)) present.add(event);
+      }
+      continue;
+    }
+    // Unparseable but fingerprinted — match stamped command lines in the block.
+    for (const event of KIMI_AUTOPILOT_EVENTS) {
+      const needle = autopilotHookCommandLine(HOOK_PLATFORM_KIMI_CODE, event);
+      if (block.includes(needle)) present.add(event);
+    }
+  }
+  return KIMI_AUTOPILOT_EVENTS.filter((event) => !present.has(event));
+}
+
+function blockIsDroppableAutopilotKimiHook(block: string): boolean {
+  const parsed = tryParseKimiHookTable(block);
+  return Boolean(
+    (parsed && isAutopilotCommand(parsed.command)) ||
+      (!parsed &&
+        /^\s*command\s*=\s*.*autopilot[/\\]bin[/\\]autopilot-harness-hook\.mjs/m.test(
+          block,
+        )),
+  );
+}
+
+/** True when every Autopilot event has a stamped command substring (anywhere in toml). */
 export function kimiHooksHavePlatformStamp(toml: string): boolean {
+  return kimiAutopilotMissingEvents(toml).length === 0;
+}
+
+/**
+ * Autopilot events whose stamped command line is absent as a substring.
+ * Prefer {@link kimiAutopilotMissingHookEvents} for install health (tables only).
+ */
+export function kimiAutopilotMissingEvents(toml: string): string[] {
   const text = typeof toml === "string" ? toml : "";
+  const missing: string[] = [];
   for (const event of KIMI_AUTOPILOT_EVENTS) {
     const needle = autopilotHookCommandLine(HOOK_PLATFORM_KIMI_CODE, event);
-    if (!text.includes(needle)) return false;
+    if (!text.includes(needle)) missing.push(event);
   }
-  return true;
+  return missing;
+}
+
+/**
+ * Remove Autopilot marker block + fingerprinted tables; keep preamble + foreign
+ * hooks only (uninstall). Does not re-emit Autopilot entries.
+ */
+export function removeAutopilotKimiHooks(toml: string): string {
+  const { preamble, foreignHookTables } = stripAutopilotKimiHooks(
+    typeof toml === "string" ? toml : "",
+  );
+  const parts: string[] = [];
+  if (preamble.trim().length > 0) {
+    parts.push(preamble.trimEnd());
+  }
+  for (const table of foreignHookTables) {
+    parts.push(table.trimEnd());
+  }
+  return parts.length > 0 ? `${parts.join("\n\n")}\n` : "";
 }
 
 /** True when an Autopilot hook table has timeout &lt; 120 or omits timeout (Kimi default 30s). */
