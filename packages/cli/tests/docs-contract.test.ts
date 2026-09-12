@@ -302,6 +302,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(body).not.toMatch(/Today \(not on public npm yet\)/);
     expect(body).not.toMatch(/After npm publish/);
+    expect(body).toMatch(
+      /Kimi Code[\s\S]*degraded[\s\S]*≤1\s*\/\s*turn|degraded Stop ≤1\/turn/i,
+    );
   });
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
@@ -319,6 +322,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(body).not.toMatch(/今天（尚未上公共 npm）/);
     expect(body).not.toMatch(/发布到 npm 之后/);
+    expect(body).toMatch(
+      /Kimi Code[\s\S]*降级[\s\S]*≤1|Stop≤1\/turn 降级/,
+    );
   });
 
   it("hosts.md marks Codex and Claude as shipped", () => {
@@ -353,6 +359,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/Codex CLI and Codex App/);
     expect(hosts).toMatch(
       /roadmap markers only[\s\S]*init[\s\S]*do \*\*not\*\* install them yet/i,
+    );
+    expect(hosts).toMatch(/Stop-continue hard-capped at 1|≤1 continue \/ turn|Stop continue ≤1/i);
+    expect(hosts).toMatch(/confirm_rounds:\s*1|confirm_rounds: 1/);
+    expect(hosts).toMatch(/~\/\.kimi-code/);
+    expect(hosts).toMatch(/legacy kimi-cli/);
+    expect(hosts).toMatch(/~\/\.kimi\//);
+    expect(hosts).toMatch(/degraded hook port/i);
+    expect(hosts).toMatch(
+      /when possible[\s\S]*hard-caps[\s\S]*keep the stop streak short[\s\S]*confirm_rounds:\s*1/i,
     );
   });
 
@@ -402,6 +417,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     // Forbid recommending bare `npx autopilot-harness …` as an install command.
     // Allow prose that warns against it (e.g. "not bare `npx autopilot-harness`").
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
+    expect(body).toMatch(/Kimi Code[\s\S]*≤1 continuation \/ turn|Kimi Code[\s\S]*≤1 continue \/ turn/i);
+    expect(body).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*degraded/i);
+    expect(body).toMatch(
+      /when possible[\s\S]*hard-caps[\s\S]*keep the stop streak short/i,
+    );
   });
 
   it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 and CONTRIBUTING keeps dogfood", () => {
@@ -505,6 +525,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section030).toMatch(/triggers\.run/);
     expect(section030).toMatch(/core\s*→\s*i18n\s*→\s*ports[\s\S]*→\s*cli/i);
     expect(section030).toMatch(/pnpm publish|pnpm pack/i);
+    const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).toMatch(/Stop-continue hard-capped at 1\/turn/);
+    expect(unreleased).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1/);
+    expect(unreleased).toMatch(/~\/\.kimi-code/);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag
     // current or 0.2.x lines (0.1.0 footer link is historical).

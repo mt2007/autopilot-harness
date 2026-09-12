@@ -18,7 +18,7 @@ Vibe coding is fast until scope drifts, acceptance stays implicit, and “looks 
 2. **Execute against a checklist** (`plans/<slug>/`)  
 3. **Self-review under rotating lenses** before an item is marked done  
 
-It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **This build ships Cursor, Claude Code, and Codex** (CLI + App share one Codex port). Next host candidate is **Kimi Code**; Copilot CLI / Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner and others are on the roadmap — see [Hosts](./docs/hosts.md).
+It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **This build ships Cursor, Claude Code, and Codex** (CLI + App share one Codex port). Next host candidate is **Kimi Code** (planned **degraded** Stop-continue: ≤1 / turn); Copilot CLI / Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner and others are on the roadmap — see [Hosts](./docs/hosts.md).
 
 Autopilot does **not** guarantee bug-free software. It **raises confidence** that work was planned, checklist-scoped, and pressure-tested under several review lenses before you call an item complete.
 
@@ -129,7 +129,7 @@ More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quicks
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
 - [Config](./docs/config.md) — `.autopilot/config.yml`, triggers, concurrency, `.autopilotignore`  
 - [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills, Claude `BLOCK_CAP`, Codex trust/timeout  
-- [Hosts](./docs/hosts.md) — Cursor / Claude Code / Codex (shipped); Kimi next; full host roadmap  
+- [Hosts](./docs/hosts.md) — Cursor / Claude Code / Codex (shipped); Kimi next (degraded Stop ≤1/turn); full host roadmap  
 - [Host Plan-mode bridge](./docs/host-plan-bridge.md) — design only (not implemented)  
 - [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet ([中文](./docs/autopilot/quickstart.zh-CN.md))  
 - [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations  

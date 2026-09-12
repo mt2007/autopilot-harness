@@ -60,15 +60,18 @@ Hostile-workspace I/O helpers live in `packages/cli/src/read-untrusted-file.ts`
 
 Autopilot’s fix + multi-angle confirm routinely needs **many consecutive**
 stop continuations in one streak. Each **host** enforces its own circuit
-breaker; ports must disable or raise it, or the chain stalls mid-confirm
-(pending followup left in DB).
+breaker; ports must disable or raise it **when possible**. If the host
+**hard-caps** continuations (e.g. Kimi ≤1 / turn), ship **degraded**
+Autopilot (keep the stop streak short — for Kimi, recommend
+`confirm_rounds: 1`) — otherwise the chain stalls mid-confirm (pending
+followup left in DB).
 
 | Host | Mechanism | Default | Autopilot mitigation |
 | --- | --- | --- | --- |
 | **Cursor** (shipped) | `hooks.json` `loop_limit` on **stop** / **subagentStop** | `5` if omitted | Write `"loop_limit": null` on Autopilot stop (`mergeHooksJson` / init / upgrade). `doctor` WARNs if missing. |
 | **Claude Code** (v0.2 shipped) | Stop `decision: "block"` consecutive **block cap** | **8**; `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (`0` disables) | Init writes `.claude/settings.json` hooks + `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`; `doctor` WARNs when missing or not `0`. Workspace **trust** may gate project `env`. |
 | **Codex** (shipped) | Stop `decision: "block"` + `reason` as next user prompt; `stop_hook_active` | No documented numeric block cap (2026-09 research) | **Shipped** hook port: `.codex/hooks.json` (omit timeout or ≥120s); `/hooks` trust + re-trust; P0 line-start `triggers.on` / `triggers.run` (no default skills/`AGENTS.md`; typed `/autopilot-*` still parses). |
-| **Kimi Code** (next / planned) | Blockable `Stop` → append message and continue | Research (often short default timeout) | Planned `@autopilot-harness/port-kimi-code`; raise timeout; confirm multi-Stop streak. Full candidate list: [hosts.md](./hosts.md#roadmap-not-shipped). |
+| **Kimi Code** (next / planned) | Blockable `Stop` → **≤1 continuation / turn** (host hard cap) | Hook timeout default often **30s** | Planned `@autopilot-harness/port-kimi-code` as **degraded** Autopilot (recommend `confirm_rounds: 1`). Raise timeout ≥120s. Full list: [hosts.md](./hosts.md#roadmap-not-shipped). |
 | **Runner** (later) | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. For hosts without stop continuation only. |
 
 `beforeSubmitPrompt` / `afterFileEdit` (and Claude/Codex `UserPromptSubmit` analogues)

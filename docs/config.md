@@ -95,6 +95,6 @@ On completed stop, Autopilot also treats **git-dirty product paths** (vs HEAD / 
 ## Related
 
 - [Troubleshooting](./troubleshooting.md) — `doctor` WARNs, double hooks, missing skills, Claude `BLOCK_CAP` / trust  
-- [Hosts](./hosts.md) — Cursor / Claude Code / Codex (shipped); Kimi next; roadmap + stop-loop caps  
+- [Hosts](./hosts.md) — Cursor / Claude Code / Codex (shipped); Kimi next (degraded Stop ≤1/turn); roadmap + stop-loop caps  
 - [Host Plan-mode bridge](./host-plan-bridge.md) — why Cursor/Claude Plan modes are not Autopilot ON  
 - [Quickstart](./autopilot/quickstart.md) — commands and claim/resume/replan boundaries  
