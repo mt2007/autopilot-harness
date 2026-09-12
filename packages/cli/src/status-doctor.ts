@@ -315,6 +315,20 @@ function parseConfigObject(configYaml: string): Record<string, unknown> | null {
   }
 }
 
+/** YAML `review.confirm_rounds` as doctor sees it (1..5; missing/invalid → 5).
+ * Matches core `coerceIntInRange(String(...))` — never use `Number(true)===1`. */
+function parseConfiguredConfirmRounds(parsed: Record<string, unknown>): number {
+  const review = isPlainObject(parsed.review) ? parsed.review : {};
+  const raw = review.confirm_rounds;
+  if (raw == null) return 5;
+  const s = String(raw).trim();
+  if (!s) return 5;
+  const n = Number(s);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) return 5;
+  if (n > 5) return 5;
+  return n;
+}
+
 function readStatusConfig(
   configYaml: string,
   projectRoot: string,
@@ -330,6 +344,8 @@ function readStatusConfig(
   staleAfterHours: number;
   /** True when session.stale_after_hours was present but unusable. */
   staleHoursInvalid: boolean;
+  /** Configured confirm_rounds (pre–Kimi runtime clamp). */
+  confirmRounds: number;
 } {
   const parsed = parseConfigObject(configYaml);
   if (!parsed) {
@@ -343,6 +359,7 @@ function readStatusConfig(
       plansDirError: null,
       staleAfterHours: DEFAULT_STALE_HOURS,
       staleHoursInvalid: false,
+      confirmRounds: 5,
     };
   }
   const cli = isPlainObject(parsed.cli) ? parsed.cli : {};
@@ -387,6 +404,7 @@ function readStatusConfig(
         : "artifacts.plans_dir is not a valid in-project path",
     staleAfterHours: staleParsed.hours,
     staleHoursInvalid: staleParsed.invalid,
+    confirmRounds: parseConfiguredConfirmRounds(parsed),
   };
 }
 
@@ -970,9 +988,15 @@ export function runDoctor(
     const kimiTomlPath = kimiConfigTomlPath(kimiHome);
     const kimiRead = readKimiConfigToml(kimiTomlPath);
     // Host hard-cap: always surface when this installable host is enabled.
+    // Do not imply confirm×5 works on Kimi — recommend / warn toward 1.
     lines.push(
       "WARN  Kimi Code hard-caps Stop-continue at ≤1/turn — prefer confirm_rounds: 1",
     );
+    if (cfg.configOk && cfg.confirmRounds > 1) {
+      lines.push(
+        `WARN  review.confirm_rounds is ${cfg.confirmRounds} but Kimi Stop-continue is ≤1/turn — set confirm_rounds: 1 (runtime clamps to 1)`,
+      );
+    }
     if (!kimiRead.ok) {
       lines.push(
         `FAIL  Kimi Code config.toml unreadable (${safeDisplayToken(kimiRead.error, "error")})`,

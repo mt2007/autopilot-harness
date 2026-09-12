@@ -58,7 +58,7 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 
 ### 多角度自审
 
-在 **产品代码** 编辑之后，Autopilot 驱动 **修复**，再 **确认** 轮。每轮镜头不同（不是同一清单复读）。默认 `review.confirm_rounds: 5`；`3` 为轻量（镜头 **1 → 2 → 5**，跳过并发与安全）。
+在 **产品代码** 编辑之后，Autopilot 驱动 **修复**，再 **确认** 轮。每轮镜头不同（不是同一清单复读）。Cursor / Claude Code / Codex 默认 `review.confirm_rounds: 5`；启用可安装的 **Kimi Code** 时用 **`confirm_rounds: 1`**（宿主 Stop-continue 硬顶 ≤1/turn，不要指望 confirm×5；init 写 `1`，hook 也会钳到 `1`）。`3` 为轻量（镜头 **1 → 2 → 5**，跳过并发与安全）。
 
 产品代码路径：排除 `.autopilotignore`，以及**未跟踪且被 `.gitignore` 忽略**的路径。**暂停 / OFF** 会话在 resume 前不跑链。
 

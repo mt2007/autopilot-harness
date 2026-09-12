@@ -58,7 +58,7 @@ Planning grill rounds are inspired by the **grill-me / grilling** design-tree sk
 
 ### Multi-lens self-review
 
-After **product-code** edits (see below), Autopilot drives **fix**, then **confirm** rounds. Each confirm round uses a different lens (not the same checklist reread). Default `review.confirm_rounds: 5`. With `review.confirm_rounds: 3` (light), lenses are **1 → 2 → 5** (skip concurrency & security).
+After **product-code** edits (see below), Autopilot drives **fix**, then **confirm** rounds. Each confirm round uses a different lens (not the same checklist reread). Default `review.confirm_rounds: 5` on Cursor / Claude Code / Codex. When installable **Kimi Code** is enabled, use **`confirm_rounds: 1`** — that host hard-caps Stop-continue at ≤1/turn (do not expect confirm×5; init writes `1`, and the hook clamps to `1`). With `review.confirm_rounds: 3` (light), lenses are **1 → 2 → 5** (skip concurrency & security).
 
 A path counts as product code unless it is excluded by `.autopilotignore`, or it is **untracked and** ignored by `.gitignore`. Edits under a **paused** / OFF session do not run the chain until you resume.
 

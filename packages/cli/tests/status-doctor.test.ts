@@ -1917,6 +1917,80 @@ describe("runDoctor", () => {
       expect(joined).toMatch(/\/hooks/i);
       expect(joined).not.toMatch(/missing Autopilot/i);
       expect(joined).not.toMatch(/timeout below 120/i);
+      expect(joined).not.toMatch(
+        /review\.confirm_rounds is \d+ but Kimi Stop-continue/i,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs when Kimi is enabled and confirm_rounds > 1", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-cr-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const cfgPath = path.join(root, ".autopilot", "config.yml");
+      const yaml = fs.readFileSync(cfgPath, "utf8");
+      fs.writeFileSync(
+        cfgPath,
+        yaml.replace(/confirm_rounds:\s*\d+/, "confirm_rounds: 5"),
+        "utf8",
+      );
+      const { ok, lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(ok).toBe(true);
+      const joined = lines.join("\n");
+      expect(joined).toMatch(/prefer confirm_rounds:\s*1/);
+      expect(joined).toMatch(
+        /review\.confirm_rounds is 5 but Kimi Stop-continue[\s\S]*runtime clamps to 1/i,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs confirm_rounds>1 when YAML boolean true (not Number(true)→1)", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-doc-bool-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const cfgPath = path.join(root, ".autopilot", "config.yml");
+      const yaml = fs.readFileSync(cfgPath, "utf8");
+      fs.writeFileSync(
+        cfgPath,
+        yaml.replace(/confirm_rounds:\s*\d+/, "confirm_rounds: true"),
+        "utf8",
+      );
+      const { lines } = runDoctor(root, { kimiCodeHome: kimiHome });
+      expect(lines.join("\n")).toMatch(
+        /review\.confirm_rounds is 5 but Kimi Stop-continue/i,
+      );
     } finally {
       if (prev === undefined) delete process.env.KIMI_CODE_HOME;
       else process.env.KIMI_CODE_HOME = prev;

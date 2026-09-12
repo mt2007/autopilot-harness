@@ -63,6 +63,7 @@ export {
 } from "./review-engine.js";
 
 export {
+  configHasInstallableKimiCode,
   loadProjectReviewConfig,
   loadProjectHookConfig,
   normalizeProjectReviewConfig,

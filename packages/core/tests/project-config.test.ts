@@ -144,6 +144,178 @@ review:
     expect(cfg.maxErrorsBeforePause).toBe(0);
   });
 
+  it("clamps confirm_rounds to 1 when installable kimi-code is listed", () => {
+    const root = tmpRoot();
+    writeConfig(
+      root,
+      `
+platforms:
+  - id: kimi-code
+    surface: cli
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+    writeConfig(
+      root,
+      `
+platforms:
+  - id: cursor
+    surface: ide
+  - id: kimi-code
+    surface: cli
+review:
+  confirm_rounds: 3
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+  });
+
+  it("does not kimi-clamp confirm_rounds for wrong surface or absent kimi", () => {
+    const root = tmpRoot();
+    writeConfig(
+      root,
+      `
+platforms:
+  - id: kimi-code
+    surface: ide
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(5);
+    writeConfig(
+      root,
+      `
+platforms:
+  - id: cursor
+    surface: ide
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(5);
+  });
+
+  it("kimi-clamps for omitted surface, bare string, and legacy platform scalars", () => {
+    const root = tmpRoot();
+    writeConfig(
+      root,
+      `
+platforms:
+  - id: kimi-code
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+    writeConfig(
+      root,
+      `
+platforms:
+  - kimi-code
+review:
+  confirm_rounds: 4
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+    writeConfig(
+      root,
+      `
+platforms:
+  - platform: kimi-code
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+    writeConfig(
+      root,
+      `
+platform: kimi-code
+surface: cli
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+    writeConfig(
+      root,
+      `
+platform: kimi-code
+review:
+  confirm_rounds: 3
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+    writeConfig(
+      root,
+      `
+platform: kimi-code
+surface: ide
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(5);
+    writeConfig(
+      root,
+      `
+platforms:
+  - id: kimi-code
+    surface: "!!!"
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(5);
+    writeConfig(
+      root,
+      `
+platform: kimi-code
+surface: "!!!"
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(5);
+  });
+
+  it("does not kimi-clamp when kimi is past the 32 unique platforms cap", () => {
+    const root = tmpRoot();
+    const filler = Array.from({ length: 32 }, (_, i) =>
+      [`  - id: host${i}`, `    surface: ide`].join("\n"),
+    ).join("\n");
+    writeConfig(
+      root,
+      `
+platforms:
+${filler}
+  - id: kimi-code
+    surface: cli
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(5);
+    const underCap = Array.from({ length: 31 }, (_, i) =>
+      [`  - id: host${i}`, `    surface: ide`].join("\n"),
+    ).join("\n");
+    writeConfig(
+      root,
+      `
+platforms:
+${underCap}
+  - id: kimi-code
+    surface: cli
+review:
+  confirm_rounds: 5
+`,
+    );
+    expect(loadProjectReviewConfig(root).confirmRounds).toBe(1);
+  });
+
   it("clamps max_before_pause / max_idle_stops above max (not fail-open to default)", () => {
     const root = tmpRoot();
     writeConfig(

@@ -5327,6 +5327,63 @@ function plansDirFromParsed(root, parsed) {
   const candidate = typeof raw === "string" ? raw : "plans";
   return normalizeInProjectPlansDir(root, candidate) ?? "plans";
 }
+function softPlatformToken(raw, maxLen = 64) {
+  return raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/[^A-Za-z0-9._+-]/g, "").toLowerCase().slice(0, maxLen);
+}
+function defaultSurfaceForId(id) {
+  if (id === "kimi-code" || id === "claude-code" || id === "codex") return "cli";
+  if (id === "runner") return "runner";
+  return "ide";
+}
+function resolveBindingSurface(id, surfaceRaw) {
+  if (typeof surfaceRaw === "string" && surfaceRaw.trim() !== "") {
+    const surface = softPlatformToken(surfaceRaw, 32);
+    return surface || null;
+  }
+  return defaultSurfaceForId(id);
+}
+function legacyScalarsWantInstallableKimi(parsed) {
+  const legacyId = typeof parsed.platform === "string" ? softPlatformToken(parsed.platform) : "";
+  if (legacyId !== "kimi-code") return false;
+  const surface = resolveBindingSurface(legacyId, parsed.surface);
+  return surface === "cli";
+}
+var MAX_PLATFORM_BINDINGS = 32;
+function configHasInstallableKimiCode(parsed) {
+  if (!isPlainObject(parsed)) return false;
+  const platforms = parsed.platforms;
+  if (Array.isArray(platforms) && platforms.length > 0) {
+    let sawUsableBinding = false;
+    let uniqueCount = 0;
+    const seen = /* @__PURE__ */ new Set();
+    for (const entry of platforms) {
+      let id = "";
+      let surface = null;
+      if (typeof entry === "string") {
+        id = softPlatformToken(entry);
+        if (!id) continue;
+        surface = defaultSurfaceForId(id);
+      } else if (isPlainObject(entry)) {
+        const idRaw = typeof entry.id === "string" ? entry.id : typeof entry.platform === "string" ? entry.platform : "";
+        id = softPlatformToken(idRaw);
+        if (!id) continue;
+        surface = resolveBindingSurface(id, entry.surface);
+        if (!surface) continue;
+      } else {
+        continue;
+      }
+      const key = `${id}:${surface}`;
+      if (seen.has(key)) continue;
+      if (uniqueCount >= MAX_PLATFORM_BINDINGS) break;
+      seen.add(key);
+      uniqueCount += 1;
+      sawUsableBinding = true;
+      if (id === "kimi-code" && surface === "cli") return true;
+    }
+    if (sawUsableBinding) return false;
+  }
+  return legacyScalarsWantInstallableKimi(parsed);
+}
 function loadProjectReviewConfig(projectRoot) {
   const loaded = readProjectConfigYaml(projectRoot);
   if (!loaded) return cloneDefaultProjectReviewConfig();
@@ -5335,7 +5392,7 @@ function loadProjectReviewConfig(projectRoot) {
   const verify = isPlainObject(review.verify) ? review.verify : {};
   const stuck = isPlainObject(review.stuck) ? review.stuck : {};
   const errors = isPlainObject(review.errors) ? review.errors : {};
-  return normalizeProjectReviewConfig({
+  const cfg = normalizeProjectReviewConfig({
     confirmRounds: review.confirm_rounds,
     reviewScope: review.scope,
     verifyEnabled: verify.enabled,
@@ -5344,6 +5401,10 @@ function loadProjectReviewConfig(projectRoot) {
     maxErrorsBeforePause: errors.max_before_pause,
     locale: parsed.locale
   });
+  if (configHasInstallableKimiCode(parsed) && cfg.confirmRounds > 1) {
+    return { ...cfg, confirmRounds: 1 };
+  }
+  return cfg;
 }
 function loadProjectHookConfig(projectRoot) {
   const loaded = readProjectConfigYaml(projectRoot);

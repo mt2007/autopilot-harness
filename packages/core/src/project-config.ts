@@ -379,8 +379,111 @@ function plansDirFromParsed(
 }
 
 /**
+ * Lightweight id/surface normalize for config.yml — mirrors CLI
+ * `sanitizePlatformId` / `sanitizeSurfaceId` (controls, junk strip, lower, cap).
+ */
+function softPlatformToken(raw: string, maxLen = 64): string {
+  return raw
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .replace(/[^A-Za-z0-9._+-]/g, "")
+    .toLowerCase()
+    .slice(0, maxLen);
+}
+
+/** Same defaults as CLI `defaultSurfaceFor` (kimi/claude/codex → cli). */
+function defaultSurfaceForId(id: string): string {
+  if (id === "kimi-code" || id === "claude-code" || id === "codex") return "cli";
+  if (id === "runner") return "runner";
+  return "ide";
+}
+
+/**
+ * Resolve surface like CLI `normalizeBinding`: omitted/blank → default;
+ * explicit junk that sanitizes to empty → invalid (null).
+ */
+function resolveBindingSurface(
+  id: string,
+  surfaceRaw: unknown,
+): string | null {
+  if (typeof surfaceRaw === "string" && surfaceRaw.trim() !== "") {
+    const surface = softPlatformToken(surfaceRaw, 32);
+    return surface || null;
+  }
+  return defaultSurfaceForId(id);
+}
+
+function legacyScalarsWantInstallableKimi(
+  parsed: Record<string, unknown>,
+): boolean {
+  const legacyId =
+    typeof parsed.platform === "string"
+      ? softPlatformToken(parsed.platform)
+      : "";
+  if (legacyId !== "kimi-code") return false;
+  const surface = resolveBindingSurface(legacyId, parsed.surface);
+  return surface === "cli";
+}
+
+/** Match CLI `MAX_PLATFORM_BINDINGS` — ignore hosts past the unique cap. */
+const MAX_PLATFORM_BINDINGS = 32;
+
+/**
+ * True when config enables installable Kimi Code (`kimi-code` + `cli`).
+ * Aligns with CLI `parsePlatformBindingsFromConfig` + installable binding:
+ * platforms list (objects / bare strings), omitted surface → default `cli`,
+ * unique cap 32, and legacy top-level `platform`/`surface` when no usable
+ * `platforms` entries. That host hard-caps Stop-continue at ≤1/turn —
+ * confirm×N>1 stalls mid-chain.
+ */
+export function configHasInstallableKimiCode(
+  parsed: unknown,
+): boolean {
+  if (!isPlainObject(parsed)) return false;
+  const platforms = parsed.platforms;
+  if (Array.isArray(platforms) && platforms.length > 0) {
+    let sawUsableBinding = false;
+    let uniqueCount = 0;
+    const seen = new Set<string>();
+    for (const entry of platforms) {
+      let id = "";
+      let surface: string | null = null;
+      if (typeof entry === "string") {
+        id = softPlatformToken(entry);
+        if (!id) continue;
+        surface = defaultSurfaceForId(id);
+      } else if (isPlainObject(entry)) {
+        const idRaw =
+          typeof entry.id === "string"
+            ? entry.id
+            : typeof entry.platform === "string"
+              ? entry.platform
+              : "";
+        id = softPlatformToken(idRaw);
+        if (!id) continue;
+        surface = resolveBindingSurface(id, entry.surface);
+        if (!surface) continue; // explicit junk surface → drop (CLI null)
+      } else {
+        continue;
+      }
+      const key = `${id}:${surface}`;
+      if (seen.has(key)) continue;
+      if (uniqueCount >= MAX_PLATFORM_BINDINGS) break;
+      seen.add(key);
+      uniqueCount += 1;
+      sawUsableBinding = true;
+      if (id === "kimi-code" && surface === "cli") return true;
+    }
+    if (sawUsableBinding) return false;
+  }
+
+  return legacyScalarsWantInstallableKimi(parsed);
+}
+
+/**
  * Load review runtime settings from `.autopilot/config.yml`.
  * Missing / unreadable / corrupt → safe defaults (hook fail-open).
+ * When installable `kimi-code` is enabled, `confirmRounds` is clamped to **1**.
  */
 export function loadProjectReviewConfig(
   projectRoot: string,
@@ -394,7 +497,7 @@ export function loadProjectReviewConfig(
   const stuck = isPlainObject(review.stuck) ? review.stuck : {};
   const errors = isPlainObject(review.errors) ? review.errors : {};
 
-  return normalizeProjectReviewConfig({
+  const cfg = normalizeProjectReviewConfig({
     confirmRounds: review.confirm_rounds,
     reviewScope: review.scope,
     verifyEnabled: verify.enabled,
@@ -403,6 +506,10 @@ export function loadProjectReviewConfig(
     maxErrorsBeforePause: errors.max_before_pause,
     locale: parsed.locale,
   });
+  if (configHasInstallableKimiCode(parsed) && cfg.confirmRounds > 1) {
+    return { ...cfg, confirmRounds: 1 };
+  }
+  return cfg;
 }
 
 /**

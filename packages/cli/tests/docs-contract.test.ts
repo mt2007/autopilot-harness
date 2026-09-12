@@ -182,6 +182,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const config = fs.readFileSync(path.join(repoRoot, "docs/config.md"), "utf8");
     expect(config).toMatch(/1\.\.5/);
     expect(config).toMatch(/Only \*\*`3`\*\*/);
+    expect(config).toMatch(/Kimi Code[\s\S]*confirm_rounds:\s*1|prefer `confirm_rounds: 1`/i);
+    expect(config).toMatch(/clamps[\s\S]*1|clamp[\s\S]*1/i);
+    expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
   });
 
   it("config does not imply require_token is enforced", () => {
@@ -305,6 +308,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(
       /Kimi Code[\s\S]*degraded[\s\S]*≤1\s*\/\s*turn|degraded Stop ≤1\/turn/i,
     );
+    expect(body).toMatch(
+      /Kimi Code[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*Kimi/i,
+    );
+    expect(body).toMatch(/do not expect confirm×5|clamps to `1`/i);
   });
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
@@ -325,6 +332,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(
       /Kimi Code[\s\S]*降级[\s\S]*≤1|Stop≤1\/turn 降级/,
     );
+    expect(body).toMatch(
+      /Kimi Code[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*Kimi/i,
+    );
+    expect(body).toMatch(/不要指望 confirm×5|钳到 `1`/);
   });
 
   it("hosts.md marks Codex and Claude as shipped", () => {
