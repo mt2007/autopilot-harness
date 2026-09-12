@@ -483,7 +483,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -504,6 +504,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.15\]/);
     expect(log).toMatch(/## \[0\.3\.0\]/);
     expect(log).toMatch(/## \[0\.4\.0\]/);
+    expect(log).toMatch(/## \[0\.4\.1\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -603,9 +604,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /core\s*→\s*i18n\s*→\s*ports[\s\S]*kimi-code[\s\S]*→\s*cli|ports \(cursor, claude-code, codex, kimi-code\)/i,
     );
     expect(section040).toMatch(/pnpm publish|pnpm pack/i);
+    const section041 = changelogSection(log, "0.4.1");
+    expect(section041).toMatch(/autopilot-on/);
+    expect(section041).toMatch(/description/i);
+    expect(section041).toMatch(/skill body/i);
+    expect(section041).toMatch(/Start planning|开启规划/);
+    expect(section041).toMatch(/upgrade|locale set/i);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs-kimi-shipped/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
+    expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag
     // current or 0.2.x lines (0.1.0 footer link is historical).

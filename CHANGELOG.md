@@ -9,6 +9,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-12
+
+### Changed
+
+- **`autopilot-on` skill description**: Skills-panel copy is short and user-facing (`Start planning — write plans` / `开启规划 — 写 plans`). The ON gate stays in the **skill body** (slash or configured `triggers.on`, or already `phase=planning`). After upgrade, run `upgrade` or `locale set` so installed stock skills refresh ([quickstart](./docs/autopilot/quickstart.md)).
+
 ## [0.4.0] — 2026-09-12
 
 ### Added
