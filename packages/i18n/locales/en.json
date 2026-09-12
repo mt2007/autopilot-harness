@@ -13,7 +13,7 @@
   },
   "skill": {
     "autopilot_on": {
-      "description": "Start planning only after /autopilot-on or configured ON phrases (e.g. Autopilot ON; per project triggers.on); not for casual chat."
+      "description": "Start planning — write plans"
     },
     "autopilot_run": {
       "description": "Start Executing — run checklist"

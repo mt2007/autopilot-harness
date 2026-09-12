@@ -92,17 +92,16 @@ describe("i18n helpers", () => {
     expect(en).not.toBe(zh);
   });
 
-  it("autopilot-on description gates casual discuss; keeps ON routing cues", () => {
+  it("autopilot-on description is short user-facing; still bans casual discuss cues", () => {
     const en = skillDescription("en", "autopilot-on");
     const zh = skillDescription("zh-CN", "autopilot-on");
+    expect(en).toBe("Start planning — write plans");
+    expect(zh).toBe("开启规划 — 写 plans");
     expect(en).not.toMatch(/discuss what to build|\bdiscuss\b/i);
     expect(zh).not.toMatch(/讨论要做什么|讨论/);
-    expect(en).toMatch(/\/autopilot-on/);
-    expect(zh).toMatch(/\/autopilot-on/);
-    expect(en).toMatch(/Autopilot ON/);
-    expect(zh).toMatch(/开启自动驾驶/);
-    expect(en).toMatch(/triggers\.on/);
-    expect(zh).toMatch(/triggers\.on/);
+    // Gate cues live in skill body, not the Skills-panel description.
+    expect(en).not.toMatch(/\/autopilot-on|triggers\.on|casual chat/i);
+    expect(zh).not.toMatch(/\/autopilot-on|triggers\.on|普通闲聊/);
     // Stock ON phrases for locale migration must remain available (bilingual).
     expect(stockTriggers("en").on).toContain("Autopilot ON");
     expect(stockTriggers("en").on).toContain("Enable autopilot");
