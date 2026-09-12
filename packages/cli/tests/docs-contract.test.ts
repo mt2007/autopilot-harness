@@ -483,7 +483,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -503,6 +503,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.2\.14\]/);
     expect(log).toMatch(/## \[0\.2\.15\]/);
     expect(log).toMatch(/## \[0\.3\.0\]/);
+    expect(log).toMatch(/## \[0\.4\.0\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -584,13 +585,26 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section030).toMatch(/triggers\.run/);
     expect(section030).toMatch(/core\s*→\s*i18n\s*→\s*ports[\s\S]*→\s*cli/i);
     expect(section030).toMatch(/pnpm publish|pnpm pack/i);
+    const section040 = changelogSection(log, "0.4.0");
+    expect(section040).toMatch(/port-kimi-code|@autopilot-harness\/port-kimi-code/i);
+    expect(section040).toMatch(/handleKimiUserPromptSubmit/);
+    expect(section040).toMatch(/handleKimiPostToolUse/);
+    expect(section040).toMatch(/handleKimiStop/);
+    expect(section040).toMatch(/exit 2|exit2/i);
+    expect(section040).toMatch(/docs-kimi-shipped/i);
+    expect(section040).toMatch(/marked \*\*Shipped\*\*/);
+    expect(section040).toMatch(/packages\/ports\/kimi-code\/package\.json/);
+    expect(section040).toMatch(/Stop-continue hard-capped at 1\/turn|Stop≤1\/turn/);
+    expect(section040).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1/);
+    expect(section040).toMatch(/~\/\.kimi-code/);
+    expect(section040).not.toMatch(/Coming v0\.4/);
+    expect(section040).toMatch(/kimi-code/);
+    expect(section040).toMatch(
+      /core\s*→\s*i18n\s*→\s*ports[\s\S]*kimi-code[\s\S]*→\s*cli|ports \(cursor, claude-code, codex, kimi-code\)/i,
+    );
+    expect(section040).toMatch(/pnpm publish|pnpm pack/i);
     const unreleased = changelogSection(log, "Unreleased");
-    expect(unreleased).toMatch(/docs-kimi-shipped/i);
-    expect(unreleased).toMatch(/marked \*\*Shipped\*\*/);
-    expect(unreleased).toMatch(/packages\/ports\/kimi-code\/package\.json/);
-    expect(unreleased).toMatch(/Stop-continue hard-capped at 1\/turn|Stop≤1\/turn/);
-    expect(unreleased).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1/);
-    expect(unreleased).toMatch(/~\/\.kimi-code/);
+    expect(unreleased).not.toMatch(/docs-kimi-shipped/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag

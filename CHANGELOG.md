@@ -9,14 +9,22 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-12
+
 ### Added
 
+- **Kimi Code hook port** (`@autopilot-harness/port-kimi-code`): UserPromptSubmit / PostToolUse / Stop adapters; fail-open on errors; Stop continue = **exit 2 + stderr** (not Claude JSON); needPick via UPS allow + stdout context; PostToolUse matcher aligned with current Kimi Code tool names + dirty-arm backup; no SubagentStop / StopFailure.
+- **Quaternary vendor dispatch**: `--platform kimi-code` + aliased exports `handleKimiUserPromptSubmit` / `handleKimiPostToolUse` / `handleKimiStop` (no clash with Claude/Codex bare names); cross-stamp / cross-payload abort + conflict resolver across Cursor / Claude / Codex / Kimi.
+- **Init / upgrade / uninstall / doctor** for Kimi Code: installable `surface:cli`; non-destructive merge of user-home `$KIMI_CODE_HOME/config.toml` `[[hooks]]` (default `~/.kimi-code`; **never** `local.toml`); Autopilot timeout ≥120s; fingerprint uninstall; `--add-platform kimi-code`; no default Autopilot skills / `AGENTS.md`; P0 line-start `triggers.on` / `triggers.run`; doctor WARNs for missing entries, timeout &lt; 120s, **Stop-continue ≤1/turn**, legacy `~/.kimi` without Kimi Code home, and `/hooks` trust/reload when offered; symlink home/`config.toml` **FAIL**.
+- **`confirm_rounds` policy**: when installable `kimi-code` is enabled, init prefers `1` and the hook **clamps** effective rounds to **1 project-wide** (do not expect confirm×5 on Kimi or on other hosts in the same config).
 - **docs-kimi-shipped**: Kimi Code marked **Shipped** (degraded **Stop≤1/turn**) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/kimi-code/package.json`; stub description drops the Coming-v0.4 placeholder.
+- Contract / quad-host matrix tests for Kimi I/O, exit2 Stop, toml merge, doctor, add-platform, aliases, and Cursor/Claude/Codex cross-fire.
 
 ### Changed
 
 - **docs**: host roadmap — Copilot CLI recommended next after Kimi shipped; Grok Build / Gemini CLI / Factory Droid / Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed; Codex App+CLI called out as one shipped port ([hosts.md](./docs/hosts.md)).
 - **docs**: Kimi Code — host **Stop-continue hard-capped at 1/turn**; shipped as **degraded** (`confirm_rounds: 1`), not Claude-parity multi-lens streak; prefer `~/.kimi-code` over legacy `~/.kimi`.
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.4.0 public packages.
 
 ## [0.3.0] — 2026-09-12
 
