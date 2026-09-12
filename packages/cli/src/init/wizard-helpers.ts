@@ -822,6 +822,8 @@ ${planningPrefZh}
 
 **讨论 ≠ ON。** 普通闲聊不会开启 Autopilot；只有 slash \`/autopilot-on\` 或行首 ON 触发语（如 \`Autopilot ON\`、\`开启自动驾驶\`）才会 \`applyOn\`。
 
+Skills 面板上 \`/autopilot-on\` 的 **description** 只是短展示文案（**不是**触发条件）；门闩在 **skill 正文**。升到会改 stock skill 文案的版本后，请跑 \`npx @autopilot-harness/cli upgrade\` 或 \`npx @autopilot-harness/cli locale set <en|zh-CN>\` 刷新已安装 skill。
+
 ## Executing
 
 ${executingPrefZh}
@@ -907,6 +909,8 @@ Command cheat sheet + per-step artifacts.
 ${planningPrefEn}
 
 **Discussion ≠ ON.** Casual chat does not turn Autopilot on — only slash \`/autopilot-on\` or a line-start ON phrase (e.g. \`Autopilot ON\`) runs \`applyOn\`.
+
+The Skills-panel **description** for \`/autopilot-on\` is short user-facing copy only (not a trigger). The ON gate lives in the **skill body**. After upgrading to a release that changes stock skill copy, run \`npx @autopilot-harness/cli upgrade\` or \`npx @autopilot-harness/cli locale set <en|zh-CN>\` so installed skills refresh.
 
 ## Executing
 

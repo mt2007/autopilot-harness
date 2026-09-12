@@ -22,6 +22,8 @@ Also: line-start `Autopilot ON`
 
 **Discussion ≠ ON.** Casual chat does not turn Autopilot on — only slash `/autopilot-on` or a line-start ON phrase (e.g. `Autopilot ON`) runs `applyOn`.
 
+The Skills-panel **description** for `/autopilot-on` is short user-facing copy only (not a trigger). The ON gate lives in the **skill body**. After upgrading to a release that changes stock skill copy, run `npx @autopilot-harness/cli upgrade` or `npx @autopilot-harness/cli locale set <en|zh-CN>` so installed skills refresh.
+
 ## Executing
 
 `/autopilot-run` or `/autopilot-run <slug>`
