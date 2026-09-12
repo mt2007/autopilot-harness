@@ -40,6 +40,7 @@
     "@autopilot-harness/port-claude-code": "workspace:*",
     "@autopilot-harness/port-codex": "workspace:*",
     "@autopilot-harness/port-cursor": "workspace:*",
+    "@autopilot-harness/port-kimi-code": "workspace:*",
     "@clack/prompts": "^0.10.0",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"

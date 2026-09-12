@@ -1,6 +1,6 @@
 /**
  * v0.3 tests-codex-contract — umbrella matrix for Codex I/O, apply_patch,
- * needPick, Stop, merge, doctor, add-platform, ternary + aliased exports.
+ * needPick, Stop, merge, doctor, add-platform, quaternary + aliased exports.
  * Deeper suites live in port-codex / codex-hooks-merge / hook-vendor / init-yes.
  */
 import fs from "node:fs";
@@ -24,6 +24,9 @@ import {
   handleCodexPostToolUse,
   handleCodexStop,
   handleCodexUserPromptSubmit,
+  handleKimiPostToolUse,
+  handleKimiStop,
+  handleKimiUserPromptSubmit,
   handlePostToolUse as handleClaudePostToolUse,
   handleUserPromptSubmit as handleClaudeUserPromptSubmit,
 } from "../src/vendor-entry.js";
@@ -58,26 +61,38 @@ describe("codex contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Codex handlers without colliding with Claude bare names", () => {
+  it("vendor-entry aliases Codex/Kimi handlers without colliding with Claude bare names", () => {
     expect(handleCodexUserPromptSubmit).toBeTypeOf("function");
     expect(handleCodexPostToolUse).toBeTypeOf("function");
     expect(handleCodexStop).toBeTypeOf("function");
+    expect(handleKimiUserPromptSubmit).toBeTypeOf("function");
+    expect(handleKimiPostToolUse).toBeTypeOf("function");
+    expect(handleKimiStop).toBeTypeOf("function");
     // Aliases must be distinct function identities from Claude's bare exports.
     expect(handleCodexUserPromptSubmit).not.toBe(handleClaudeUserPromptSubmit);
     expect(handleCodexPostToolUse).not.toBe(handleClaudePostToolUse);
     expect(handleCodexStop).not.toBe(handleClaudeStop);
+    expect(handleKimiUserPromptSubmit).not.toBe(handleClaudeUserPromptSubmit);
+    expect(handleKimiPostToolUse).not.toBe(handleClaudePostToolUse);
+    expect(handleKimiStop).not.toBe(handleClaudeStop);
+    expect(handleKimiUserPromptSubmit).not.toBe(handleCodexUserPromptSubmit);
+    expect(handleKimiPostToolUse).not.toBe(handleCodexPostToolUse);
+    expect(handleKimiStop).not.toBe(handleCodexStop);
   });
 
-  it("shipped hook asset keeps ternary Codex dispatch (not PascalCase→Claude)", () => {
+  it("shipped hook asset keeps quaternary Codex/Kimi dispatch (not PascalCase→Claude)", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(/declaredPlatform === "codex"/);
+    expect(src).toMatch(/declaredPlatform === "kimi-code"/);
     expect(src).toMatch(/resolveStopHostId/);
     expect(src).toMatch(/handleCodexStop/);
+    expect(src).toMatch(/handleKimiStop/);
     expect(src).toMatch(/hostId === "codex"/);
+    expect(src).toMatch(/hostId === "kimi-code"/);
   });
 
   it("apply_patch command: Delete File + command-length cap", () => {

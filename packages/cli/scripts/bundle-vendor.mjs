@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Bundle core + port-cursor + port-claude-code + port-codex into assets/vendor/runtime.mjs
- * for project hooks. Also copies migration SQL beside the bundle
- * (migrate.ts resolves relative paths).
+ * Bundle core + port-cursor + port-claude-code + port-codex + port-kimi-code
+ * into assets/vendor/runtime.mjs for project hooks. Also copies migration SQL
+ * beside the bundle (migrate.ts resolves relative paths).
  */
 import esbuild from "esbuild";
 import fs from "node:fs";
@@ -57,6 +57,14 @@ await esbuild.build({
       "packages",
       "ports",
       "codex",
+      "src",
+      "index.ts",
+    ),
+    "@autopilot-harness/port-kimi-code": path.join(
+      repoRoot,
+      "packages",
+      "ports",
+      "kimi-code",
       "src",
       "index.ts",
     ),

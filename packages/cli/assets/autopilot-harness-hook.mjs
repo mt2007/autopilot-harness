@@ -10,9 +10,11 @@
  *   Cursor: beforeSubmitPrompt | afterFileEdit | stop
  *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure
  *   Codex: UserPromptSubmit | PostToolUse | Stop (no StopFailure)
+ *   Kimi Code: UserPromptSubmit | PostToolUse | Stop (exit 0/2 + stdio; no StopFailure)
  *
- * Dispatch is explicit ternary via --platform (cursor | claude-code | codex).
- * Shared PascalCase event names must NOT imply Claude when platform is codex.
+ * Dispatch is explicit quaternary via --platform
+ * (cursor | claude-code | codex | kimi-code). Shared PascalCase event names
+ * must NOT imply Claude when platform is codex or kimi-code.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -40,15 +42,22 @@ const CLAUDE_EVENTS = new Set([
   "Stop",
   "StopFailure",
 ]);
-/** Codex shares submit/edit/stop names with Claude; routed by --platform only. */
+/** Codex/Kimi share submit/edit/stop names with Claude; routed by --platform only. */
 const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
-const KNOWN_PLATFORMS = new Set(["cursor", "claude-code", "codex"]);
+const KIMI_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
+const KNOWN_PLATFORMS = new Set([
+  "cursor",
+  "claude-code",
+  "codex",
+  "kimi-code",
+]);
 
 function parseArgs(argv) {
   const allowed = new Set([
     ...CURSOR_EVENTS,
     ...CLAUDE_EVENTS,
     ...CODEX_EVENTS,
+    ...KIMI_EVENTS,
   ]);
   const out = { event: "beforeSubmitPrompt", platform: null };
   for (let i = 0; i < argv.length; i++) {
@@ -76,13 +85,14 @@ function isClaudeEvent(event) {
 /**
  * Resolve host id: stamped --platform wins; legacy installs fall back to
  * event-name heuristics (Claude-shaped events → claude-code, else cursor).
- * Never map PascalCase events to Claude when --platform codex is set.
+ * Never map PascalCase events to Claude when --platform is codex or kimi-code.
  */
 function resolveHostId(declaredPlatform, event) {
   if (
     declaredPlatform === "cursor" ||
     declaredPlatform === "claude-code" ||
-    declaredPlatform === "codex"
+    declaredPlatform === "codex" ||
+    declaredPlatform === "kimi-code"
   ) {
     return declaredPlatform;
   }
@@ -190,6 +200,9 @@ async function loadHostPortPackage(hostId) {
   if (hostId === "codex") {
     return loadPortPackage("@autopilot-harness/port-codex");
   }
+  if (hostId === "kimi-code") {
+    return loadPortPackage("@autopilot-harness/port-kimi-code");
+  }
   return loadPortPackage("@autopilot-harness/port-cursor");
 }
 
@@ -197,9 +210,18 @@ async function loadHostPortPackage(hostId) {
  * Fail-open shapes must match the host:
  * - Cursor submit → { continue: true }
  * - Claude/Codex UserPromptSubmit → {} (allow; no decision:block)
+ * - Kimi Code → bare exit 0 (no stdout; avoid appending `{}` to context)
  * - other events → {}
  */
-function failOpen(event) {
+function failOpen(event, platform = bootPlatform) {
+  if (platform === "kimi-code") {
+    // Do not clobber an intentional exit-2 reply (Stop continue / UPS gate)
+    // if stdio already flushed and the reply slot is claimed.
+    if (replied) return;
+    process.exitCode = 0;
+    replied = true;
+    return;
+  }
   if (event === "beforeSubmitPrompt") {
     writeReply(JSON.stringify({ continue: true }));
   } else {
@@ -214,6 +236,63 @@ function writeReply(text) {
   process.stdout.write(text);
   // Set only after a successful write so failOpen can still retry on throw.
   replied = true;
+}
+
+/**
+ * Kimi Code I/O: exit 0 + optional stdout (UPS needPick), exit 2 + stderr
+ * (gate / Stop continue). Never JSON-encode KimiHookResult for the host.
+ * Stop must not emit stdout — Kimi may append exit-0 stdout to context.
+ */
+const KIMI_MAX_STDIO_CHARS = 8_192;
+
+function clipKimiStdio(text) {
+  if (typeof text !== "string" || text.length === 0) return "";
+  // Bound before NUL scrub so a huge hostile payload cannot force large replaceAll.
+  const truncated = text.length > KIMI_MAX_STDIO_CHARS;
+  const bounded = truncated ? text.slice(0, KIMI_MAX_STDIO_CHARS) : text;
+  const cleaned = bounded.includes("\0")
+    ? bounded.replaceAll("\0", "")
+    : bounded;
+  if (cleaned.length === 0) return "";
+  if (!truncated) return cleaned;
+  // Match port-kimi clipHookText: keep total length ≤ MAX (ellipsis inclusive).
+  return `${cleaned.slice(0, KIMI_MAX_STDIO_CHARS - 1)}…`;
+}
+
+function writeKimiReply(result, opts = {}) {
+  if (replied) return;
+  const allowStdout = opts.allowStdout !== false;
+  const code =
+    result && typeof result === "object" && result.exitCode === 2 ? 2 : 0;
+  let ioDone = false;
+  try {
+    if (code === 2) {
+      const err = clipKimiStdio(
+        result && typeof result.stderr === "string" ? result.stderr : "",
+      );
+      if (err) process.stderr.write(err);
+      ioDone = true;
+      process.exitCode = 2;
+    } else if (allowStdout) {
+      const out = clipKimiStdio(
+        result && typeof result.stdout === "string" ? result.stdout : "",
+      );
+      if (out) process.stdout.write(out);
+      ioDone = true;
+      process.exitCode = 0;
+    } else {
+      ioDone = true;
+      process.exitCode = 0;
+    }
+  } catch {
+    // Stdio failed before the intentional body finished — clean fail-open.
+    // If the body already flushed, keep the exit code we set.
+    if (!ioDone) process.exitCode = 0;
+  } finally {
+    // Claim the reply slot even on throw so failOpen/outer catch cannot wipe
+    // a successful exit-2 that already flushed stderr.
+    replied = true;
+  }
 }
 
 function createEngine(coreMod, store) {
@@ -279,7 +358,30 @@ function codexStopHandler(port) {
     typeof port.handleStop === "function" &&
     typeof port.handleBeforeSubmitPrompt !== "function" &&
     typeof port.handleStopFailure !== "function" &&
-    typeof port.handleClaudeStop !== "function"
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleKimiStop !== "function" &&
+    port.KIMI_PLATFORM !== "kimi-code"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+/**
+ * Kimi Stop: prefer aliased vendor export; package-only uses handleStop when
+ * KIMI_PLATFORM is stamped (never confuse with Claude StopFailure or Codex).
+ */
+function kimiStopHandler(port) {
+  if (typeof port.handleKimiStop === "function") {
+    return port.handleKimiStop;
+  }
+  if (
+    port.KIMI_PLATFORM === "kimi-code" &&
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure !== "function" &&
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleCodexStop !== "function"
   ) {
     return port.handleStop;
   }
@@ -291,12 +393,20 @@ function hostPortReady(hostId, port) {
   if (hostId === "cursor") {
     return typeof port.handleBeforeSubmitPrompt === "function";
   }
+  if (hostId === "kimi-code") {
+    if (typeof port.handleKimiUserPromptSubmit === "function") return true;
+    return (
+      port.KIMI_PLATFORM === "kimi-code" &&
+      typeof port.handleUserPromptSubmit === "function"
+    );
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexUserPromptSubmit === "function") return true;
     return (
       typeof port.handleUserPromptSubmit === "function" &&
       typeof port.handleStopFailure !== "function" &&
-      typeof port.handleClaudeStop !== "function"
+      typeof port.handleClaudeStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code"
     );
   }
   // Claude: vendor alias or package-only (StopFailure fingerprint).
@@ -307,6 +417,18 @@ function hostPortReady(hostId, port) {
 }
 
 function resolveUserPromptSubmit(hostId, port) {
+  if (hostId === "kimi-code") {
+    if (typeof port.handleKimiUserPromptSubmit === "function") {
+      return port.handleKimiUserPromptSubmit;
+    }
+    if (
+      port.KIMI_PLATFORM === "kimi-code" &&
+      typeof port.handleUserPromptSubmit === "function"
+    ) {
+      return port.handleUserPromptSubmit;
+    }
+    return undefined;
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexUserPromptSubmit === "function") {
       return port.handleCodexUserPromptSubmit;
@@ -315,7 +437,8 @@ function resolveUserPromptSubmit(hostId, port) {
     if (
       typeof port.handleUserPromptSubmit === "function" &&
       typeof port.handleStopFailure !== "function" &&
-      typeof port.handleClaudeStop !== "function"
+      typeof port.handleClaudeStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -328,6 +451,18 @@ function resolveUserPromptSubmit(hostId, port) {
 }
 
 function resolvePostToolUse(hostId, port) {
+  if (hostId === "kimi-code") {
+    if (typeof port.handleKimiPostToolUse === "function") {
+      return port.handleKimiPostToolUse;
+    }
+    if (
+      port.KIMI_PLATFORM === "kimi-code" &&
+      typeof port.handlePostToolUse === "function"
+    ) {
+      return port.handlePostToolUse;
+    }
+    return undefined;
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexPostToolUse === "function") {
       return port.handleCodexPostToolUse;
@@ -335,7 +470,8 @@ function resolvePostToolUse(hostId, port) {
     if (
       typeof port.handlePostToolUse === "function" &&
       typeof port.handleStopFailure !== "function" &&
-      typeof port.handleClaudeStop !== "function"
+      typeof port.handleClaudeStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code"
     ) {
       return port.handlePostToolUse;
     }
@@ -411,27 +547,32 @@ function isCursorShapedStopPayload(payload) {
 
 /**
  * Pick Stop host after Cursor-shaped check.
- * --platform codex must win over PascalStop shape (shared with Claude).
+ * --platform codex / kimi-code must win over PascalStop shape (shared with Claude).
  * Preserve dual-host cross-fire: Cursor stamp + Claude/Codex-shaped payload
- * still routes to Claude (historical Layer C), unless stamp is explicitly codex.
+ * still routes to Claude (historical Layer C), unless stamp is explicitly
+ * codex or kimi-code.
  */
 function resolveStopHostId(declaredPlatform, payload) {
   if (isCursorShapedStopPayload(payload)) return "cursor";
   if (declaredPlatform === "codex") return "codex";
+  if (declaredPlatform === "kimi-code") return "kimi-code";
   if (declaredPlatform === "claude-code") return "claude-code";
-  // Shared Pascal Stop / stop_hook_active shape → Claude unless stamp was codex.
+  // Shared Pascal Stop / stop_hook_active shape → Claude unless stamp was
+  // codex / kimi-code.
   if (isPascalStopShapedPayload(payload)) return "claude-code";
   if (declaredPlatform === "cursor") return "cursor";
   return "claude-code";
 }
 
 let bootEvent = "beforeSubmitPrompt";
+let bootPlatform = null;
 
 async function main() {
   const { event, platform: declaredPlatform } = parseArgs(
     process.argv.slice(2),
   );
   bootEvent = event;
+  bootPlatform = declaredPlatform;
   try {
     const payload = await readStdin();
     const hostId = resolveHostId(declaredPlatform, event);
@@ -441,7 +582,7 @@ async function main() {
     const coreMod = vendor ?? (await loadCoreFromNodeModules());
 
     if (!hostPortReady(hostId, port) || !coreMod?.StateStore) {
-      failOpen(event);
+      failOpen(event, hostId);
       return;
     }
 
@@ -464,7 +605,7 @@ async function main() {
       if (event === "stop") {
         const stopFn = cursorStopHandler(port);
         if (typeof stopFn !== "function") {
-          failOpen(event);
+          failOpen(event, hostId);
           return;
         }
         const result = stopFn(createEngine(coreMod, store), payload);
@@ -474,10 +615,14 @@ async function main() {
       if (event === "UserPromptSubmit") {
         const submitFn = resolveUserPromptSubmit(hostId, port);
         if (typeof submitFn !== "function") {
-          failOpen(event);
+          failOpen(event, hostId);
           return;
         }
         const result = submitFn(store, payload, projectRoot);
+        if (hostId === "kimi-code") {
+          writeKimiReply(result);
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
@@ -485,6 +630,10 @@ async function main() {
         const editFn = resolvePostToolUse(hostId, port);
         if (typeof editFn === "function") {
           editFn(store, payload, projectRoot);
+        }
+        if (hostId === "kimi-code") {
+          writeKimiReply({ exitCode: 0 });
+          return;
         }
         writeReply("{}");
         return;
@@ -509,6 +658,14 @@ async function main() {
             );
             if (codexPort) stopFn = codexStopHandler(codexPort);
           }
+        } else if (stopHost === "kimi-code") {
+          stopFn = kimiStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const kimiPort = await loadPortPackage(
+              "@autopilot-harness/port-kimi-code",
+            );
+            if (kimiPort) stopFn = kimiStopHandler(kimiPort);
+          }
         } else {
           stopFn = claudeStopHandler(port);
           if (typeof stopFn !== "function") {
@@ -519,17 +676,33 @@ async function main() {
           }
         }
         if (typeof stopFn !== "function") {
+          // I/O shape follows argv stamp (bootPlatform), not Layer-C stopHost.
           failOpen(event);
           return;
         }
         const result = stopFn(createEngine(coreMod, store), payload);
+        // Kimi host always speaks exit/stdio — even when Layer C routes
+        // Cursor-shaped abort to the Cursor port (must not emit JSON "{}").
+        if (declaredPlatform === "kimi-code") {
+          if (
+            stopHost === "kimi-code" &&
+            result &&
+            typeof result === "object" &&
+            (result.exitCode === 0 || result.exitCode === 2)
+          ) {
+            writeKimiReply(result, { allowStdout: false });
+          } else {
+            writeKimiReply({ exitCode: 0 }, { allowStdout: false });
+          }
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
       if (event === "StopFailure") {
-        // Codex has no StopFailure — fail-open if somehow invoked on codex.
-        if (hostId === "codex") {
-          failOpen(event);
+        // Codex/Kimi have no StopFailure — fail-open if somehow invoked.
+        if (hostId === "codex" || hostId === "kimi-code") {
+          failOpen(event, hostId);
           return;
         }
         let failFn = port.handleStopFailure;
@@ -540,7 +713,7 @@ async function main() {
           }
         }
         if (typeof failFn !== "function") {
-          failOpen(event);
+          failOpen(event, hostId);
           return;
         }
         const result = failFn(createEngine(coreMod, store), payload);
@@ -556,14 +729,24 @@ async function main() {
       }
     }
   } catch (err) {
-    console.error("[autopilot-harness] hook error:", err?.message ?? err);
+    // Kimi uses stderr as the Stop-continue / gate channel (exit 2). Do not
+    // dump diagnostics there on fail-open (exit 0) or the host may mis-read it.
+    if (bootPlatform !== "kimi-code") {
+      console.error("[autopilot-harness] hook error:", err?.message ?? err);
+    }
     failOpen(event);
   }
 }
 
 main().catch((err) => {
-  console.error("[autopilot-harness] hook error:", err?.message ?? err);
+  if (bootPlatform !== "kimi-code") {
+    console.error("[autopilot-harness] hook error:", err?.message ?? err);
+  }
   // Prefer the parsed event when main() assigned it; else Cursor-safe default.
   failOpen(bootEvent);
+  // Never wipe a completed Kimi exit-2 continue/gate reply.
+  if (bootPlatform === "kimi-code" && process.exitCode === 2 && replied) {
+    return;
+  }
   process.exitCode = 0;
 });

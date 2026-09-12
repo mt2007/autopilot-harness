@@ -405,6 +405,205 @@ describe("hook vendor runtime", () => {
     verifyEdit.close();
   });
 
+  it("quaternary --platform kimi-code routes exit2/stderr Stop (not Claude JSON)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const planDir = path.join(root, "plans", "kimi-wire");
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, "plan.md"), "# kimi-wire\n");
+    fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+
+    const cid = "hook-kimi-aaaa-bbbb-cccc-ddddeeee0001";
+    const onProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          prompt: "/autopilot-on kimi-wire",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(onProc.stdout.trim()).toBe("");
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("kimi-code");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    const armedStore = new StateStore(root);
+    armedStore.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "kimi-code",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "kimi-wire",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    armedStore.updateReviewChain(cid, { code_edited: 1 });
+    armedStore.close();
+
+    const armedStop = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          hook_event_name: "Stop",
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(armedStop.status).toBe(2);
+    expect(armedStop.stderr.trim().length).toBeGreaterThan(0);
+    expect(armedStop.stdout.trim()).toBe("");
+    expect(armedStop.stderr).not.toMatch(/"decision"\s*:\s*"block"/);
+
+    // Universal abort: Kimi stamp + Cursor-shaped aborted → halt with bare
+    // exit 0 (no JSON "{}" on stdout — that would pollute Kimi context).
+    const abortStop = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          status: "aborted",
+          hook_event_name: "stop",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(abortStop.status).toBe(0);
+    expect(abortStop.stdout.trim()).toBe("");
+    expect(abortStop.stderr.trim()).toBe("");
+
+    // needPick Channel A: exit 0 + stdout context (never Claude JSON block).
+    for (const slug of ["kimi-alpha", "kimi-beta"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+    const pickCid = "hook-kimi-aaaa-bbbb-cccc-ddddeeee0003";
+    const pickProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: pickCid,
+          prompt: "/autopilot-run",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(pickProc.status).toBe(0);
+    expect(pickProc.stdout).toMatch(/kimi-alpha/);
+    expect(pickProc.stdout).toMatch(/kimi-beta/);
+    expect(pickProc.stdout).not.toMatch(/"decision"\s*:/);
+    expect(pickProc.stderr.trim()).toBe("");
+    const pickStore = new StateStore(root);
+    expect(pickStore.getSession(pickCid)?.pending_action).toBe("run");
+    expect(pickStore.getSession(pickCid)?.phase).not.toBe("executing");
+    pickStore.close();
+
+    // Hook clipKimiStdio stays aligned with port-kimi (≤MAX, ellipsis, no NUL).
+    const hookSrc = fs.readFileSync(hook, "utf8");
+    expect(hookSrc).toMatch(/KIMI_MAX_STDIO_CHARS\s*=\s*8_192/);
+    expect(hookSrc).toMatch(/replaceAll\("\\0"/);
+    expect(hookSrc).toMatch(/KIMI_MAX_STDIO_CHARS\s*-\s*1/);
+    expect(hookSrc).toContain("…");
+    // Bound-before-scrub (DoS): slice window before replaceAll.
+    expect(hookSrc).toMatch(
+      /truncated[\s\S]*?slice\(0,\s*KIMI_MAX_STDIO_CHARS\)[\s\S]*?replaceAll\("\\0"/,
+    );
+    // failOpen / outer catch must not clobber a finished Kimi exit-2 reply.
+    expect(hookSrc).toMatch(
+      /platform === "kimi-code"[\s\S]*?if \(replied\) return/,
+    );
+    expect(hookSrc).toMatch(
+      /bootPlatform === "kimi-code" && process\.exitCode === 2 && replied/,
+    );
+    expect(hookSrc).toMatch(/if \(!ioDone\) process\.exitCode = 0/);
+
+    const cidEdit = "hook-kimi-aaaa-bbbb-cccc-ddddeeee0002";
+    spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cidEdit,
+          prompt: "/autopilot-on kimi-wire",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    const editStore = new StateStore(root);
+    editStore.upsertSession({
+      conversation_id: cidEdit,
+      project_root: root,
+      code_root: root,
+      platform: "kimi-code",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "kimi-wire",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    editStore.close();
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    const editProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PostToolUse", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cidEdit,
+          tool_name: "Write",
+          tool_input: { file_path: path.join(root, "src", "app.ts") },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(editProc.status).toBe(0);
+    expect(editProc.stdout.trim()).toBe("");
+    const verifyEdit = new StateStore(root);
+    expect(verifyEdit.getReviewChain(cidEdit)?.code_edited).toBe(1);
+    expect(verifyEdit.getSession(cidEdit)?.platform).toBe("kimi-code");
+    verifyEdit.close();
+  });
+
   it("Stop Layer C: cursor stamp + Pascal Stop shape still routes Claude (no regression)", () => {
     root = tmpProject();
     expect(
