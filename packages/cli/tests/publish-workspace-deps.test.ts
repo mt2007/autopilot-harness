@@ -17,6 +17,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/cursor",
   "packages/ports/claude-code",
   "packages/ports/codex",
+  "packages/ports/kimi-code",
 ] as const;
 
 function workspaceHarnessDeps(

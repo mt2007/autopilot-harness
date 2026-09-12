@@ -18,7 +18,7 @@ Vibe coding is fast until scope drifts, acceptance stays implicit, and “looks 
 2. **Execute against a checklist** (`plans/<slug>/`)  
 3. **Self-review under rotating lenses** before an item is marked done  
 
-It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **This build ships Cursor, Claude Code, and Codex** (CLI + App share one Codex port). Next host candidate is **Kimi Code** (planned **degraded** Stop-continue: ≤1 / turn); Copilot CLI / Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner and others are on the roadmap — see [Hosts](./docs/hosts.md).
+It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **This build ships Cursor, Claude Code, Codex, and Kimi Code** (CLI + App share one Codex port; **Kimi Code** is a **degraded** Stop-continue port: **Stop≤1/turn**). Copilot CLI / Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner and others are on the roadmap — see [Hosts](./docs/hosts.md).
 
 Autopilot does **not** guarantee bug-free software. It **raises confidence** that work was planned, checklist-scoped, and pressure-tested under several review lenses before you call an item complete.
 
@@ -58,7 +58,7 @@ Planning grill rounds are inspired by the **grill-me / grilling** design-tree sk
 
 ### Multi-lens self-review
 
-After **product-code** edits (see below), Autopilot drives **fix**, then **confirm** rounds. Each confirm round uses a different lens (not the same checklist reread). Default `review.confirm_rounds: 5` on Cursor / Claude Code / Codex. When installable **Kimi Code** is enabled, use **`confirm_rounds: 1`** — that host hard-caps Stop-continue at ≤1/turn (do not expect confirm×5; init writes `1`, and the hook clamps to `1`). With `review.confirm_rounds: 3` (light), lenses are **1 → 2 → 5** (skip concurrency & security).
+After **product-code** edits (see below), Autopilot drives **fix**, then **confirm** rounds. Each confirm round uses a different lens (not the same checklist reread). Default `review.confirm_rounds: 5` on Cursor / Claude Code / Codex. When installable **Kimi Code** is enabled, use **`confirm_rounds: 1`** — that host hard-caps Stop-continue at ≤1/turn (do not expect confirm×5; init writes `1`, and the hook clamps to `1` **for the whole project**, including other hosts in the same `platforms` list). With `review.confirm_rounds: 3` (light), lenses are **1 → 2 → 5** (skip concurrency & security).
 
 A path counts as product code unless it is excluded by `.autopilotignore`, or it is **untracked and** ignored by `.gitignore`. Edits under a **paused** / OFF session do not run the chain until you resume.
 
@@ -104,9 +104,12 @@ npx @autopilot-harness/cli init --platform cursor --yes
 npx @autopilot-harness/cli init --platform claude-code --yes
 # or Codex (`.codex/hooks.json`; `/hooks` trust; P0 line-start triggers)
 npx @autopilot-harness/cli init --platform codex --yes
-# dual/triple-host: after first init, add another without full re-init
+# or Kimi Code (user-home `~/.kimi-code/config.toml`; degraded Stop≤1/turn; prefer confirm_rounds: 1)
+npx @autopilot-harness/cli init --platform kimi-code --yes
+# multi-host: after first init, add another without full re-init
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
+# npx @autopilot-harness/cli init --yes --add-platform kimi-code
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```
@@ -115,21 +118,21 @@ Interactive TUI: omit `--yes` (platform still defaults to cursor). More flags: `
 
 Developing or dogfooding from a clone of this repo: see [Contributing](./CONTRIBUTING.md).
 
-Reload the host window (Cursor: Reload Window; Claude Code / Codex: restart / new session), then:
+Reload the host window (Cursor: Reload Window; Claude Code / Codex / Kimi Code: restart / new session), then:
 
-1. Plan — Cursor/Claude: `/autopilot-on`; Codex: line-start `triggers.on` (e.g. `Autopilot ON`; no skills UI; typed slash still parses; trust `/hooks`) → grill → `plans/<slug>/`  
-2. Execute — Cursor/Claude: `/autopilot-run`; Codex: line-start `triggers.run` (e.g. `Autopilot RUN`)  
+1. Plan — Cursor/Claude: `/autopilot-on`; Codex: line-start `triggers.on` (e.g. `Autopilot ON`; no skills UI; typed slash still parses; trust `/hooks`); Kimi Code: same line-start path (**Stop≤1/turn** degraded) → grill → `plans/<slug>/`  
+2. Execute — Cursor/Claude: `/autopilot-run`; Codex: line-start `triggers.run` (e.g. `Autopilot RUN`); Kimi Code: same  
 
 More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md) ([中文](./docs/autopilot/quickstart.zh-CN.md)).
 
-`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows where the host supports them. For Claude Code it also merges `.claude/settings.json` (hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`) and `.claude/skills/autopilot-*`. For Codex it merges `.codex/hooks.json` (omit timeout; matcher `apply_patch|Edit|Write`) — no default `AGENTS.md`. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Config](./docs/config.md), [Architecture](./docs/architecture.md), and **When does self-review run?** above).
+`init` writes `.autopilot/`, merges host hooks, and installs skills/workflows where the host supports them. For Claude Code it also merges `.claude/settings.json` (hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`) and `.claude/skills/autopilot-*`. For Codex it merges `.codex/hooks.json` (omit timeout; matcher `apply_patch|Edit|Write`) — no default `AGENTS.md`. For **Kimi Code** it merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; timeout ≥120s; **Stop≤1/turn** degraded self-review; prefer `confirm_rounds: 1`) — no Autopilot skills / `AGENTS.md`. Review-oriented config keys include `locale`, `review.scope` (`executing_only` | `project`), `review.confirm_rounds`, and optional `review.verify.*` (see [Config](./docs/config.md), [Architecture](./docs/architecture.md), and **When does self-review run?** above).
 
 ## Docs
 
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
 - [Config](./docs/config.md) — `.autopilot/config.yml`, triggers, concurrency, `.autopilotignore`  
-- [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills, Claude `BLOCK_CAP`, Codex trust/timeout  
-- [Hosts](./docs/hosts.md) — Cursor / Claude Code / Codex (shipped); Kimi next (degraded Stop ≤1/turn); full host roadmap  
+- [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills, Claude `BLOCK_CAP`, Codex trust/timeout, Kimi Stop≤1/turn  
+- [Hosts](./docs/hosts.md) — Cursor / Claude Code / Codex / Kimi Code (shipped; Kimi **degraded Stop ≤1/turn**); full host roadmap  
 - [Host Plan-mode bridge](./docs/host-plan-bridge.md) — design only (not implemented)  
 - [Quickstart](./docs/autopilot/quickstart.md) — planning / executing cheat sheet ([中文](./docs/autopilot/quickstart.zh-CN.md))  
 - [Contributing](./CONTRIBUTING.md) — develop, test, docs PRs, translations  
@@ -147,6 +150,7 @@ More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quicks
 | `@autopilot-harness/port-cursor` | Cursor hook adapter |
 | `@autopilot-harness/port-claude-code` | Claude Code hook adapter |
 | `@autopilot-harness/port-codex` | Codex hook adapter |
+| `@autopilot-harness/port-kimi-code` | Kimi Code hook adapter (degraded Stop ≤1/turn) |
 
 ## Development
 

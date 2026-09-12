@@ -9,10 +9,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **docs-kimi-shipped**: Kimi Code marked **Shipped** (degraded **Stop≤1/turn**) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/kimi-code/package.json`; stub description drops the Coming-v0.4 placeholder.
+
 ### Changed
 
-- **docs**: host roadmap — Kimi Code recommended next; Copilot CLI / Grok Build / Gemini CLI / Factory Droid / Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed; Codex App+CLI called out as one shipped port ([hosts.md](./docs/hosts.md)).
-- **docs**: Kimi Code research note — host **Stop-continue hard-capped at 1/turn**; planned v0.4 port documented as **degraded** (`confirm_rounds: 1`), not Claude-parity multi-lens streak; prefer `~/.kimi-code` over legacy `~/.kimi`.
+- **docs**: host roadmap — Copilot CLI recommended next after Kimi shipped; Grok Build / Gemini CLI / Factory Droid / Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed; Codex App+CLI called out as one shipped port ([hosts.md](./docs/hosts.md)).
+- **docs**: Kimi Code — host **Stop-continue hard-capped at 1/turn**; shipped as **degraded** (`confirm_rounds: 1`), not Claude-parity multi-lens streak; prefer `~/.kimi-code` over legacy `~/.kimi`.
 
 ## [0.3.0] — 2026-09-12
 

@@ -6,7 +6,7 @@ Project settings live in **`.autopilot/config.yml`** (written by `init`, editabl
 
 Canonical defaults: `packages/cli/src/init/default-config.ts`.
 
-**What actually reads which keys (this Cursor + Claude Code + Codex build):**
+**What actually reads which keys (this Cursor + Claude Code + Codex + Kimi Code build):**
 
 | Consumer | Keys |
 |----------|------|
@@ -14,9 +14,9 @@ Canonical defaults: `packages/cli/src/init/default-config.ts`.
 | **Edit hook** | `review.scope` + `artifacts.plans_dir` (plans bind / `notePlansDirEdit`; other `review.*` / `locale` unused on edit) |
 | **Submit hook** | Built-in slash `/autopilot-on` … `/autopilot-replan` (separate parser; Cursor skill files only surface slash in the UI; Claude skills under `.claude/skills/`; the hook parses typed slash commands either way) + line-start phrases from YAML `triggers.*` when a list has **≥1 non-blank phrase** (after trim), else that key falls back to `DEFAULT_TRIGGERS` (incl. resume_review; empty/`[]`/whitespace-only does **not** wipe builtins). Also loads `artifacts.plans_dir` for RUN / needPick / phaseActions. Does **not** load `review.*` / `locale` on submit. |
 | **`status`** | `locale`, `platforms` (legacy top-level `platform`/`surface` still read as fallback), `artifacts.plans_dir`, `cli.preferred_name` |
-| **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` / Codex hooks + timeout&lt;120 WARN + `/hooks` trust when that host is installed |
+| **`doctor`** | `artifacts.plans_dir` (path checks), `session.stale_after_hours` (WARN/FAIL/prune); also checks config.yml readable; Cursor `loop_limit` / Claude `BLOCK_CAP` / Codex hooks + timeout&lt;120 WARN + `/hooks` trust / Kimi Code user-home `config.toml` + Stop≤1/turn WARN (and symlink FAIL) when that host is installed |
 | **`session list`** | `session.stale_after_hours` only (via `readStaleAfterHours`; invalid → treat as `0` / disabled) |
-| **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor, Claude Code, and/or Codex wiring for installable bindings |
+| **`init` / `upgrade`** | Read `locale` + `platforms` (upgrade reinstall hints); **init** also creates `artifacts.plans_dir` and writes the full default YAML; installs Cursor, Claude Code, Codex, and/or Kimi Code wiring for installable bindings |
 | **`locale set`** | Updates `locale`, rewrites **stock** `triggers.*` lists in config.yml (custom lists preserved), rewrites skill descriptions |
 | **Written by init, not wired into the hook runtime yet** | `concurrency.*`, `artifacts.files.*`, `security.require_token` |
 
@@ -27,7 +27,7 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `locale` | `en` | Template / followup **template** language (`en` \| `zh-CN`). User-visible chat replies still follow the **user’s** language. Change later with `locale set <code>`. |
-| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **Primary** = first installable binding in list order (no separate primary key). **This build installs Cursor, Claude Code, and/or Codex** when those bindings are present. Claude/Codex use `surface: cli` (Claude hooks shared across terminal + IDE — not CLI-only; Codex: `.codex/hooks.json` + `/hooks` trust). Dual/triple-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for ternary dispatch. |
+| `platforms` | `[{ id: cursor, surface: ide }]` | Enabled hosts (`surface`: `ide` \| `cli` \| `runner`). Cap: 32 unique bindings. **Primary** = first installable binding in list order (no separate primary key). **This build installs Cursor, Claude Code, Codex, and/or Kimi Code** when those bindings are present. Claude/Codex/Kimi use `surface: cli` (Claude hooks shared across terminal + IDE — not CLI-only; Codex: `.codex/hooks.json` + `/hooks` trust; Kimi: user-home `config.toml`, **Stop≤1/turn** degraded). Multi-host: `init --yes --add-platform <host>`. Installed Autopilot hook commands include `--platform <id>` for quaternary dispatch. |
 | `platform` / `surface` | — | **Deprecated.** Older configs may still have these scalars; readers fall back to them only when `platforms` is absent. Fresh `init` does not write them; `upgrade` / `init --force` remove them after materializing `platforms`. |
 | `integration` | `hook` | Integration style written by init (`hook`). |
 
@@ -60,7 +60,7 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `review.scope` | `project` (fresh init YAML) | When fix→confirm may run. Fresh `init` writes **`project`**. **Missing / invalid** values still load as **`executing_only`** (runtime fail-open). `upgrade` fill-missing writes `executing_only` and does **not** rewrite an existing scope key. See [README — When does self-review run?](../README.md#when-does-self-review-run-reviewscope). |
-| `review.confirm_rounds` | `5` (no Kimi); **`1` when installable `kimi-code` is enabled at init** | Confirm lenses per item. Clamped to **1..5**. Only **`3`** is light mode (`1 → 2 → 5`, skip concurrency & security); other values use sequential lenses `1..N`. **Kimi Code** hard-caps Stop-continue at ≤1/turn — do **not** expect confirm×5 there; prefer `confirm_rounds: 1`. When installable `kimi-code` is enabled (platforms list or legacy `platform`/`surface`), the hook **clamps** effective rounds to **1**. |
+| `review.confirm_rounds` | `5` (no Kimi); **`1` when installable `kimi-code` is enabled at init** | Confirm lenses per item. Clamped to **1..5**. Only **`3`** is light mode (`1 → 2 → 5`, skip concurrency & security); other values use sequential lenses `1..N`. **Kimi Code** hard-caps Stop-continue at ≤1/turn — do **not** expect confirm×5 there; prefer `confirm_rounds: 1`. When installable `kimi-code` is enabled (platforms list or legacy `platform`/`surface`), the hook **clamps** effective rounds to **1** **project-wide** (shared `.autopilot/config.yml` — Cursor / Claude / Codex sessions in the same project are clamped too). |
 | `review.verify.enabled` | `false` | When `true`, advance/done gates on `.autopilot/verify-last.json` (agent runs the listed commands and writes that report). |
 | `review.verify.commands` | `[]` | List of `{ id, run, required? }` shell commands (only when verify enabled). Treat `run` as **trusted project config** (agent will execute it). |
 | `review.stuck.max_idle_stops` | `5` | Idle-stop streak before a stuck nudge. Clamped to **1..100**. Soft `need_evidence` idle hits the nudge **without** hard-pausing / disarming the track; repeated required-verify failures still hard-stuck pause. |
@@ -70,7 +70,7 @@ Aliases accepted for scope: `project`, `always`, and `all` all map to **`project
 
 ## Triggers
 
-Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code. **Codex P0** has no Autopilot skills path / no default `AGENTS.md`; use line-start `triggers.on` / `triggers.run` (typed `/autopilot-*` still parses).
+Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code. **Codex / Kimi Code P0** have no Autopilot skills path / no default `AGENTS.md`; use line-start `triggers.on` / `triggers.run` (typed `/autopilot-*` still parses).
 
 | Key | Role |
 |-----|------|
@@ -95,6 +95,6 @@ On completed stop, Autopilot also treats **git-dirty product paths** (vs HEAD / 
 ## Related
 
 - [Troubleshooting](./troubleshooting.md) — `doctor` WARNs, double hooks, missing skills, Claude `BLOCK_CAP` / trust  
-- [Hosts](./hosts.md) — Cursor / Claude Code / Codex (shipped); Kimi next (degraded Stop ≤1/turn); roadmap + stop-loop caps  
+- [Hosts](./hosts.md) — Cursor / Claude Code / Codex / Kimi Code (shipped; Kimi **degraded Stop ≤1/turn**); roadmap + stop-loop caps  
 - [Host Plan-mode bridge](./host-plan-bridge.md) — why Cursor/Claude Plan modes are not Autopilot ON  
 - [Quickstart](./autopilot/quickstart.md) — commands and claim/resume/replan boundaries  

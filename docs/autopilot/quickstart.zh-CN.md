@@ -79,9 +79,12 @@ npx @autopilot-harness/cli init --platform cursor --yes
 npx @autopilot-harness/cli init --platform claude-code --yes
 # 或 Codex（`.codex/hooks.json`；`/hooks` trust；P0 = 行首 triggers）
 npx @autopilot-harness/cli init --platform codex --yes
+# 或 Kimi Code（`~/.kimi-code/config.toml`；Stop≤1/turn 降级；推荐 confirm_rounds: 1）
+npx @autopilot-harness/cli init --platform kimi-code --yes
 # 第一个宿主装好后再加：
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
+# npx @autopilot-harness/cli init --yes --add-platform kimi-code
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 npx @autopilot-harness/cli upgrade --dry-run
@@ -91,11 +94,12 @@ npx @autopilot-harness/cli upgrade --dry-run
 
 ## 安装后
 
-- 在 Cursor 或 Claude Code 中试用 `/autopilot-on`（Codex：行首 `triggers.on` / `triggers.run` — 无 Autopilot skills 路径；手打 slash 仍可解析）。
-- 若 skills / hooks 未出现：重载宿主（Cursor：`Developer: Reload Window`；Claude Code / Codex：重启 / 新开会话），或新开一条 Agent 对话。Codex：执行 `/hooks` trust（upgrade 后需 re-trust）。
+- 在 Cursor 或 Claude Code 中试用 `/autopilot-on`（Codex / Kimi Code：行首 `triggers.on` / `triggers.run` — 无 Autopilot skills 路径；手打 slash 仍可解析）。
+- 若 skills / hooks 未出现：重载宿主（Cursor：`Developer: Reload Window`；Claude Code / Codex / Kimi Code：重启 / 新开会话），或新开一条 Agent 对话。Codex：执行 `/hooks` trust（upgrade 后需 re-trust）。
 - 自审中途停住（Cursor）：确认 Autopilot stop 带 `loop_limit: null`（可 `upgrade`；详见 [排障](../troubleshooting.md)）。
 - 自审中途停住（Claude Code）：确认 `.claude/settings.json` 有 `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`。若 cap 环境变量不生效，接受项目 **trust** 对话框（项目 `env` 可能在信任前被拦住）。
 - Codex hooks 无效 / 中途卡住：确认 `.codex/hooks.json` 有 Autopilot 条目、省略 timeout 或 ≥120s，且 `/hooks` 已信任。
+- Kimi Code 为 **Stop≤1/turn 降级** — 推荐 `confirm_rounds: 1`；确认 `~/.kimi-code/config.toml` 有 Autopilot 条目且 timeout ≥120s（见 [排障](../troubleshooting.md)）。
 - 更多故障模式见 [排障](../troubleshooting.md)。
 
 ## 自审范围（`review.scope`）

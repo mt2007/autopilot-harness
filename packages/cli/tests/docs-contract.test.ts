@@ -162,6 +162,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/\.codex\/hooks\.json/);
     expect(tips).toMatch(/\/hooks/);
     expect(tips).toMatch(/timeout/i);
+    expect(tips).toMatch(/### Kimi Code/);
+    expect(tips).toMatch(/Stop≤1\/turn|≤1\/turn/);
+    expect(tips).toMatch(/~\/\.kimi-code|KIMI_CODE_HOME/);
+    expect(tips).toMatch(/project-wide|whole project/i);
+    expect(tips).toMatch(/machine-wide|user-home/i);
+    expect(tips).toMatch(/never[\s\S]*local\.toml|local\.toml/i);
+    expect(tips).toMatch(/symlink/i);
+    expect(tips).toMatch(/cwd-relative|project root/i);
+    expect(tips).toMatch(/projects you trust|trusted/i);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -185,6 +194,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/Kimi Code[\s\S]*confirm_rounds:\s*1|prefer `confirm_rounds: 1`/i);
     expect(config).toMatch(/clamps[\s\S]*1|clamp[\s\S]*1/i);
     expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
+    expect(config).toMatch(/project-wide|whole project/i);
+    expect(config).toMatch(
+      /installs Cursor, Claude Code, Codex, and\/or Kimi Code/i,
+    );
+    expect(config).toMatch(/quaternary dispatch/i);
+    expect(config).not.toMatch(/\bternary dispatch\b/);
+    expect(config).toMatch(/Cursor \+ Claude Code \+ Codex \+ Kimi Code build/);
+    expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
+    expect(config).toMatch(/Codex \/ Kimi Code P0|Kimi Code P0/);
   });
 
   it("config does not imply require_token is enforced", () => {
@@ -222,7 +240,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/\*\*`doctor`\*\*[\s\S]*stale_after_hours/);
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
-    expect(config).toMatch(/installs Cursor, Claude Code, and\/or Codex/i);
+    expect(config).toMatch(
+      /installs Cursor, Claude Code, Codex, and\/or Kimi Code/i,
+    );
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
     expect(config).toMatch(/\.codex\/\*\*/);
     expect(config).toMatch(/`review\.scope` \| `project` \(fresh init YAML\)/);
@@ -250,6 +270,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(zh).toContain(`裸 \`npx ${CLI_NAME}\``);
     expect(zh).not.toMatch(/今天（尚未上公共 npm）/);
     expect(zh).not.toMatch(/发布到 npm 之后/);
+    for (const body of [en, zh]) {
+      expect(body).toMatch(/--platform kimi-code|platform kimi-code/);
+      expect(body).toMatch(/Stop≤1\/turn|≤1\/turn/);
+      expect(body).toMatch(/--add-platform kimi-code/);
+    }
   });
 
   it("package npm READMEs keep install entrypoints", () => {
@@ -262,9 +287,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
-    expect(cliReadme).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(cliReadme).toMatch(/Cursor, Claude Code, Codex, and Kimi Code/);
     expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
     expect(cliReadme).toMatch(/--platform codex|platform codex/);
+    expect(cliReadme).toMatch(/kimi-code/);
+    expect(cliReadme).toMatch(/Stop≤1\/turn|degraded Stop/i);
     expect(cliReadme).toMatch(/triggers\.on/);
     expect(cliReadme).toMatch(/triggers\.run/);
     expect(cliReadme).toMatch(/no bare npm package named `autopilot-harness`/i);
@@ -298,6 +325,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     // Codex has no Autopilot skills — install flow must not imply slash-only ON/RUN.
     expect(body).toMatch(/Codex:[\s\S]*triggers\.on/);
     expect(body).toMatch(/Codex:[\s\S]*triggers\.run/);
+    expect(body).toMatch(/--platform kimi-code|init --platform kimi-code/);
+    expect(body).toMatch(/port-kimi-code/);
     expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
@@ -312,6 +341,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Kimi Code[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*Kimi/i,
     );
     expect(body).toMatch(/do not expect confirm×5|clamps to `1`/i);
+    expect(body).toMatch(/whole project|for the whole project/i);
   });
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
@@ -323,6 +353,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
     expect(body).toMatch(/Codex：[\s\S]*triggers\.on/);
     expect(body).toMatch(/Codex：[\s\S]*triggers\.run/);
+    expect(body).toMatch(/--platform kimi-code|init --platform kimi-code/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} status`);
@@ -336,18 +367,23 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Kimi Code[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*Kimi/i,
     );
     expect(body).toMatch(/不要指望 confirm×5|钳到 `1`/);
+    expect(body).toMatch(/整个项目/);
   });
 
-  it("hosts.md marks Codex and Claude as shipped", () => {
+  it("hosts.md marks Codex, Claude, and Kimi as shipped", () => {
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
     expect(hosts).toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Claude Code\*\*\s*\|\s*\*\*Shipped\*\*/);
+    expect(hosts).toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*v0\.3 \/ v0\.4 planned\*\*/);
     // Status column only (avoid Notes-column false positives/negatives).
     expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Planned\*\*/);
+    expect(hosts).not.toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Next\*\*/);
     expect(hosts).toMatch(/handleCodexUserPromptSubmit/);
     expect(hosts).toMatch(/handleCodexPostToolUse/);
     expect(hosts).toMatch(/handleCodexStop/);
+    expect(hosts).toMatch(/handleKimiUserPromptSubmit|handleKimi\*/);
+    expect(hosts).toMatch(/handleKimiPostToolUse|handleKimiStop/);
     expect(hosts).toMatch(/apply_patch/);
     expect(hosts).toMatch(/\/hooks/);
     expect(hosts).toMatch(/triggers\.on/);
@@ -357,8 +393,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0/);
     expect(hosts).toMatch(/host-plan-bridge\.md/);
     expect(hosts).toMatch(/## Roadmap \(not shipped\)/);
-    expect(hosts).toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Next\*\*/);
     expect(hosts).toMatch(/GitHub Copilot CLI/);
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Kimi Code\*\*/,
+    );
+    expect(hosts).toMatch(/Kimi Code \| \*\*Shipped\*\* \(degraded Stop≤1\/turn\)/);
     expect(hosts).toMatch(/Grok Build CLI/);
     expect(hosts).toMatch(/Gemini CLI/);
     expect(hosts).toMatch(/Factory Droid/);
@@ -371,12 +410,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /roadmap markers only[\s\S]*init[\s\S]*do \*\*not\*\* install them yet/i,
     );
-    expect(hosts).toMatch(/Stop-continue hard-capped at 1|≤1 continue \/ turn|Stop continue ≤1/i);
+    expect(hosts).toMatch(/Stop-continue hard-capped at 1|≤1 continue \/ turn|Stop continue ≤1|Stop≤1\/turn/i);
     expect(hosts).toMatch(/confirm_rounds:\s*1|confirm_rounds: 1/);
     expect(hosts).toMatch(/~\/\.kimi-code/);
     expect(hosts).toMatch(/legacy kimi-cli/);
     expect(hosts).toMatch(/~\/\.kimi\//);
     expect(hosts).toMatch(/degraded hook port/i);
+    expect(hosts).toMatch(/clamps `review\.confirm_rounds` to 1 for the whole project|project-wide/i);
+    expect(hosts).toMatch(/user-home.*config\.toml|config\.toml.*user-home/i);
+    expect(hosts).toMatch(/never[\s\S]*local\.toml|local\.toml/);
+    expect(hosts).toMatch(/symlink|projects you trust/i);
     expect(hosts).toMatch(
       /when possible[\s\S]*hard-caps[\s\S]*keep the stop streak short[\s\S]*confirm_rounds:\s*1/i,
     );
@@ -418,17 +461,22 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
-    expect(body).toMatch(/installs Cursor, Claude Code, and\/or Codex/i);
+    expect(body).toMatch(
+      /installs Cursor, Claude Code, Codex, and\/or Kimi Code/i,
+    );
     expect(body).toMatch(/ports\/claude-code/);
     expect(body).toMatch(/ports\/codex/);
-    expect(body).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(body).toMatch(/ports\/kimi-code/);
+    expect(body).toMatch(/Cursor, Claude Code, Codex, and Kimi Code/);
     expect(body).toMatch(/handleCodex\*/);
+    expect(body).toMatch(/handleKimi\*/);
+    expect(body).toMatch(/never `local\.toml`|never local\.toml/i);
     expect(body).toMatch(/triggers\.on\s*\/\s*`?triggers\.run|triggers\.on`\s*\/\s*`triggers\.run/);
     expect(body).toMatch(/npm public/);
     // Forbid recommending bare `npx autopilot-harness …` as an install command.
     // Allow prose that warns against it (e.g. "not bare `npx autopilot-harness`").
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
-    expect(body).toMatch(/Kimi Code[\s\S]*≤1 continuation \/ turn|Kimi Code[\s\S]*≤1 continue \/ turn/i);
+    expect(body).toMatch(/Kimi Code[\s\S]*≤1 continuation \/ turn|Kimi Code[\s\S]*≤1 continue \/ turn|Stop≤1\/turn/i);
     expect(body).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*degraded/i);
     expect(body).toMatch(
       /when possible[\s\S]*hard-caps[\s\S]*keep the stop streak short/i,
@@ -537,9 +585,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section030).toMatch(/core\s*→\s*i18n\s*→\s*ports[\s\S]*→\s*cli/i);
     expect(section030).toMatch(/pnpm publish|pnpm pack/i);
     const unreleased = changelogSection(log, "Unreleased");
-    expect(unreleased).toMatch(/Stop-continue hard-capped at 1\/turn/);
+    expect(unreleased).toMatch(/docs-kimi-shipped/i);
+    expect(unreleased).toMatch(/marked \*\*Shipped\*\*/);
+    expect(unreleased).toMatch(/packages\/ports\/kimi-code\/package\.json/);
+    expect(unreleased).toMatch(/Stop-continue hard-capped at 1\/turn|Stop≤1\/turn/);
     expect(unreleased).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1/);
     expect(unreleased).toMatch(/~\/\.kimi-code/);
+    expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag
     // current or 0.2.x lines (0.1.0 footer link is historical).
@@ -571,22 +623,34 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     ) as { version?: string; description?: string; private?: boolean };
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
-    expect(rootPkg.description).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(rootPkg.description).toMatch(
+      /Cursor, Claude Code, Codex, and Kimi Code/,
+    );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
-    expect(cliPkg.description).toMatch(/Cursor, Claude Code, and Codex/);
+    expect(cliPkg.description).toMatch(
+      /Cursor, Claude Code, Codex, and Kimi Code/,
+    );
     expect(cliPkg.keywords).toEqual(
-      expect.arrayContaining(["cursor", "claude-code", "codex"]),
+      expect.arrayContaining(["cursor", "claude-code", "codex", "kimi-code"]),
     );
     const kimiPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/kimi-code/package.json"),
         "utf8",
       ),
-    ) as { description?: string };
+    ) as { description?: string; private?: boolean };
+    expect(kimiPkg.private).not.toBe(true);
     expect(kimiPkg.description).toMatch(/Kimi Code|degraded Stop/i);
     expect(kimiPkg.description).not.toMatch(/Coming v0\.3\b/);
     expect(kimiPkg.description).not.toMatch(/Coming v0\.4/);
+    const runnerPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/runner/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string };
+    expect(runnerPkg.description).not.toMatch(/Coming v0\.4/);
   });
 });

@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code or Codex) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, or `.codex/hooks.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex has no Autopilot skills path).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, or Kimi Code) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, or Kimi Code user-home `config.toml`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code have no Autopilot skills path).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -44,6 +44,18 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 - Stop continue shape is `{ decision: "block", reason }` — hard-stop may use `continue: false`; never `continue: false` to keep the chain going.
 - Dual/triple-host: `npx @autopilot-harness/cli init --yes --add-platform codex`.
 - P0 activation is **line-start** `triggers.on` / `triggers.run` (no Autopilot Codex skills; no default `AGENTS.md`; typed slash still parses).
+
+### Kimi Code
+
+Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
+
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex in the same config).
+- Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
+- Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
+- `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
+- Stop continue is **exit 2 + stderr** (not Claude JSON).
+- Multi-host: `npx @autopilot-harness/cli init --yes --add-platform kimi-code` (expect confirm clamp to 1 afterward).
+- P0 activation is **line-start** `triggers.on` / `triggers.run` (no Autopilot Kimi skills; no default `AGENTS.md`; typed slash still parses).
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).
 
