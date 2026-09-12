@@ -4,6 +4,7 @@ import {
   mergePlatformBindings,
   mergedIncludesAllRequested,
   normalizeBinding,
+  isInstallableBinding,
   MAX_PLATFORM_BINDINGS,
   type PlatformBinding,
 } from "./platforms.js";
@@ -99,7 +100,8 @@ review:
   # project = any product-code edit (default); executing_only = only after Autopilot RUN
   scope: ${reviewScope}
   # 5 = full lenses; 3 = light mode (lenses 1→2→5 only)
-  confirm_rounds: 5
+  # Kimi Code hard-caps Stop-continue at 1/turn — use 1 when that installable host is enabled.
+  confirm_rounds: ${platforms.some((b) => isInstallableBinding(b) && b.id === "kimi-code") ? 1 : 5}
   verify:
     enabled: ${verifyEnabled}
     # When enabled, Agent runs these and writes .autopilot/verify-last.json:

@@ -14,6 +14,12 @@ import {
   validateCodexHooksShape,
   type CodexHooksFile,
 } from "./codex-hooks-merge.js";
+import {
+  kimiConfigTomlPath,
+  mergeKimiConfigToml,
+  readKimiConfigToml,
+  resolveKimiCodeHome,
+} from "./kimi-hooks-merge.js";
 import type {
   HooksFile,
   InitLocale,
@@ -110,6 +116,19 @@ export type {
   CodexMatcherGroup,
   CodexHookHandler,
 } from "./codex-hooks-merge.js";
+export {
+  mergeKimiConfigToml,
+  stripAutopilotKimiHooks,
+  kimiHooksContainAutopilot,
+  kimiHooksHavePlatformStamp,
+  kimiAutopilotHasSmallTimeout,
+  resolveKimiCodeHome,
+  kimiConfigTomlPath,
+  KIMI_AUTOPILOT_EVENTS,
+  KIMI_POST_TOOL_USE_MATCHER,
+  KIMI_HOOK_TIMEOUT_SEC,
+} from "./kimi-hooks-merge.js";
+export type { KimiHookEntry, KimiAutopilotEvent } from "./kimi-hooks-merge.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -318,8 +337,9 @@ function platformsWantHost(
 ): boolean {
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
-  // `claude-code`/`cursor`/`codex` with the wrong surface must not force reads/writes
-  // (e.g. corrupt leftover settings blocking --add-platform of another host).
+  // `claude-code`/`cursor`/`codex`/`kimi-code` with the wrong surface must not
+  // force reads/writes (e.g. corrupt leftover settings blocking --add-platform
+  // of another host).
   return platforms.some(
     (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
   );
@@ -869,7 +889,8 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
 /**
  * Non-interactive init (`--yes`). Writes .autopilot + host hooks/skills
  * (`.cursor/hooks.json` and/or `.claude/settings.json` and/or `.codex/hooks.json`
- * per platforms). Does not write Codex `config.toml` hooks or `AGENTS.md`.
+ * and/or Kimi `$KIMI_CODE_HOME/config.toml` per platforms). Does not write Codex
+ * `config.toml` hooks, Kimi `local.toml`, or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
  * updates the `platforms` list (committed only after hooks succeed).
@@ -1063,11 +1084,12 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantCursor = platformsWantHost(effectivePlatforms, "cursor");
     const wantClaude = platformsWantHost(effectivePlatforms, "claude-code");
     const wantCodex = platformsWantHost(effectivePlatforms, "codex");
-    if (!wantCursor && !wantClaude && !wantCodex) {
+    const wantKimi = platformsWantHost(effectivePlatforms, "kimi-code");
+    if (!wantCursor && !wantClaude && !wantCodex && !wantKimi) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, and/or codex).",
+          "No installable host platform to wire (need cursor, claude-code, codex, and/or kimi-code).",
       };
     }
 
@@ -1109,6 +1131,33 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const codexPre = readCodexHooksFile(codexHooksPath);
       if (!codexPre.ok) {
         return { ok: false, error: codexPre.error };
+      }
+    }
+    const kimiHome = resolveKimiCodeHome();
+    const kimiTomlPath = kimiConfigTomlPath(kimiHome);
+    if (wantKimi) {
+      try {
+        assertNotSymlink(kimiHome, "Kimi Code home/");
+        assertNotSymlink(kimiTomlPath, "config.toml");
+        try {
+          const homeSt = fs.lstatSync(kimiHome);
+          if (!homeSt.isDirectory()) {
+            return {
+              ok: false,
+              error: "Kimi Code home/ exists and is not a directory",
+            };
+          }
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code !== "ENOENT") throw err;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const kimiPre = readKimiConfigToml(kimiTomlPath);
+      if (!kimiPre.ok) {
+        return { ok: false, error: kimiPre.error };
       }
     }
 
@@ -1259,6 +1308,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let hooksFresh: HooksRead | null = null;
     let claudeFresh: ClaudeSettingsRead | null = null;
     let codexFresh: CodexHooksRead | null = null;
+    let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
     if (wantCursor) {
       hooksFresh = readHooksFile(hooksPath);
       if (!hooksFresh.ok) {
@@ -1304,6 +1354,21 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantKimi) {
+      kimiFresh = readKimiConfigToml(kimiTomlPath);
+      if (!kimiFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: kimiFresh.error };
+      }
+      try {
+        assertNotSymlink(kimiHome, "Kimi Code home/");
+        assertNotSymlink(kimiTomlPath, "config.toml");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
 
     // Fail-fast: merge the pre-skills snapshot in memory so shape errors cannot
     // leave orphan host skills. Final re-read+merge happens immediately before
@@ -1318,6 +1383,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantCodex && codexFresh?.ok) {
         mergeCodexHooks(codexFresh.value);
       }
+      if (wantKimi && kimiFresh?.ok) {
+        mergeKimiConfigToml(kimiFresh.value);
+      }
     } catch (err) {
       rollbackFreshConfig();
       const msg = err instanceof Error ? err.message : String(err);
@@ -1325,7 +1393,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex has no stable skills install path in this build — skip.
+    // Codex / Kimi Code have no Autopilot skills path in this build — skip.
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1341,6 +1409,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedHooks: ReturnType<typeof mergeHooksJson> | null = null;
     let mergedClaude: ReturnType<typeof mergeClaudeSettings> | null = null;
     let mergedCodex: ReturnType<typeof mergeCodexHooks> | null = null;
+    let mergedKimi: string | null = null;
     try {
       if (wantCursor) {
         const hooksFinal = readHooksFile(hooksPath);
@@ -1371,6 +1440,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(codexDir, ".codex/");
         assertNotSymlink(codexHooksPath, ".codex/hooks.json");
         mergedCodex = mergeCodexHooks(codexFinal.value);
+      }
+      if (wantKimi) {
+        const kimiFinal = readKimiConfigToml(kimiTomlPath);
+        if (!kimiFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: kimiFinal.error };
+        }
+        assertNotSymlink(kimiHome, "Kimi Code home/");
+        assertNotSymlink(kimiTomlPath, "config.toml");
+        mergedKimi = mergeKimiConfigToml(kimiFinal.value);
       }
     } catch (err) {
       rollbackFreshConfig();
@@ -1412,6 +1491,23 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".codex/",
       );
       written.push(path.relative(projectRoot, codexHooksPath));
+    }
+
+    if (mergedKimi != null) {
+      try {
+        fs.mkdirSync(kimiHome, { recursive: true });
+        assertNotSymlink(kimiHome, "Kimi Code home/");
+        if (!isRealDirectory(kimiHome)) {
+          throw new Error("Kimi Code home/ is not a real directory");
+        }
+        assertNotSymlink(kimiTomlPath, "config.toml");
+        writeFileReplaceSync(kimiTomlPath, mergedKimi);
+        written.push(kimiTomlPath);
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot write Kimi Code config.toml: ${msg}` };
+      }
     }
 
     // Commit platforms merge after hooks: re-read so concurrent edits between

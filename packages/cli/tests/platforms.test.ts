@@ -25,6 +25,7 @@ describe("platforms helpers", () => {
     });
     expect(defaultSurfaceFor("claude-code")).toBe("cli");
     expect(defaultSurfaceFor("codex")).toBe("cli");
+    expect(defaultSurfaceFor("kimi-code")).toBe("cli");
     expect(defaultSurfaceFor("runner")).toBe("runner");
   });
 
@@ -35,9 +36,15 @@ describe("platforms helpers", () => {
     expect(
       configWantsInstallableHost(
         [{ id: "kimi-code", surface: "cli" }],
-        "cursor",
+        "kimi-code",
       ),
     ).toBe(true);
+    expect(
+      configWantsInstallableHost(
+        [{ id: "kimi-code", surface: "cli" }],
+        "cursor",
+      ),
+    ).toBe(false);
     expect(
       configWantsInstallableHost(
         [{ id: "claude-code", surface: "cli" }],
@@ -87,12 +94,21 @@ describe("platforms helpers", () => {
     expect(
       assertInstallablePlatforms([{ id: "codex", surface: "ide" }]),
     ).toMatch(/Unsupported platform/);
+    expect(
+      assertInstallablePlatforms([{ id: "kimi-code", surface: "cli" }]),
+    ).toBeNull();
+    expect(
+      assertInstallablePlatforms([{ id: "kimi-code", surface: "ide" }]),
+    ).toMatch(/Unsupported platform/);
     expect(formatBindingOptionLabel({ id: "claude-code", surface: "cli" })).toMatch(
       /hooks shared: terminal \+ IDE/,
     );
     expect(formatBindingOptionLabel({ id: "codex", surface: "cli" })).toMatch(
       /Codex \(CLI hooks\.json\)/,
     );
+    expect(
+      formatBindingOptionLabel({ id: "kimi-code", surface: "cli" }),
+    ).toMatch(/Kimi Code.*config\.toml/);
   });
 
   it("caps platforms list length and does not drop existing for new adds", () => {

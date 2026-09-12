@@ -304,9 +304,24 @@ dist/
       expect(qs).toMatch(/Preferred: line-start `Autopilot RUN`/);
       expect(qs).not.toMatch(/Preferred: in Codex, `\/autopilot-on`/);
       expect(qs).not.toMatch(/`autopilot-run` skill:/);
-      expect(qs).toMatch(/no Autopilot Codex skills path|no Autopilot skills UI/);
+      expect(qs).toMatch(/no Autopilot skills path on Codex|no Autopilot skills UI/);
     } finally {
       fs.rmSync(rootCodex, { recursive: true, force: true });
+    }
+
+    const rootKimi = tmpProject();
+    try {
+      const rel = writeQuickstart(rootKimi, "en", "plans", "kimi-code");
+      const qs = fs.readFileSync(path.join(rootKimi, rel!), "utf8");
+      expect(qs).toMatch(/--platform kimi-code/);
+      expect(qs).toMatch(/Preferred: in Kimi Code, line-start `Autopilot ON`/);
+      expect(qs).toMatch(/Preferred: line-start `Autopilot RUN`/);
+      expect(qs).not.toMatch(/Preferred: in Kimi Code, `\/autopilot-on`/);
+      expect(qs).not.toMatch(/`autopilot-run` skill:/);
+      expect(qs).toMatch(/confirm_rounds/);
+      expect(qs).toMatch(/\$KIMI_CODE_HOME|~\/\.kimi-code/);
+    } finally {
+      fs.rmSync(rootKimi, { recursive: true, force: true });
     }
 
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
@@ -388,6 +403,13 @@ dist/
     expect(
       formatCheatSheet("zh-CN", "cmd", "plans", "codex").join("\n"),
     ).toMatch(/行首 Autopilot ON/);
+    const kimiSheet = formatCheatSheet("en", "cmd", "plans", "kimi-code").join(
+      "\n",
+    );
+    expect(kimiSheet).toMatch(/Preferred: in Kimi Code, line-start Autopilot ON/);
+    expect(kimiSheet).toMatch(/Preferred: line-start Autopilot RUN/);
+    expect(kimiSheet).toMatch(/confirm_rounds/);
+    expect(kimiSheet).not.toMatch(/Preferred: in Kimi Code, \/autopilot-on/);
     const dualSheet = formatCheatSheet("en", "cmd", "plans", [
       "cursor",
       "codex",
@@ -395,6 +417,24 @@ dist/
     expect(dualSheet).toMatch(/Preferred: in Cursor \/ Codex, \/autopilot-on/);
     expect(dualSheet).toMatch(/Codex:\s+prefer line-start Autopilot ON/);
     expect(dualSheet).toMatch(/Codex:\s+prefer line-start Autopilot RUN/);
+    const dualKimi = formatCheatSheet("en", "cmd", "plans", [
+      "cursor",
+      "kimi-code",
+    ]).join("\n");
+    expect(dualKimi).toMatch(/Kimi Code:\s+prefer line-start Autopilot ON/);
+    expect(dualKimi).toMatch(/confirm_rounds/);
+    const dualLineStart = formatCheatSheet("en", "cmd", "plans", [
+      "codex",
+      "kimi-code",
+    ]).join("\n");
+    expect(dualLineStart).toMatch(
+      /Preferred: in Codex \/ Kimi Code, line-start Autopilot ON/,
+    );
+    expect(dualLineStart).toMatch(/Preferred: line-start Autopilot RUN/);
+    expect(dualLineStart).not.toMatch(
+      /Preferred: in Codex \/ Kimi Code, \/autopilot-on/,
+    );
+    expect(dualLineStart).not.toMatch(/Codex:\s+prefer line-start/);
     const dupCodex = formatCheatSheet("en", "cmd", "plans", [
       "codex",
       "CODEX",
@@ -408,6 +448,10 @@ dist/
     );
     expect(formatPostInstallOutro(["codex", "CODEX", "codex"])).not.toMatch(
       /Codex, Codex/,
+    );
+    expect(formatPostInstallOutro("kimi-code")).toMatch(/confirm_rounds:\s*1/);
+    expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
+      /\$KIMI_CODE_HOME|~\/\.kimi-code/,
     );
     // Hostile platform ids must not leak C0 controls into terminal tips.
     expect(formatHostDisplayName("cur\nsor")).toBe("Cursor");

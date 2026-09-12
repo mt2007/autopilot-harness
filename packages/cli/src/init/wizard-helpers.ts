@@ -559,11 +559,14 @@ export function formatPostInstallOutro(
     if (id === "codex") {
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (e.g. Autopilot ON / Autopilot RUN; typed /autopilot-* still parses). Trust hooks via /hooks.`;
     }
+    if (id === "kimi-code") {
+      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in $KIMI_CODE_HOME/config.toml (default ~/.kimi-code). Prefer confirm_rounds: 1 — Stop-continue is hard-capped at 1/turn.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
-  if (ids.includes("codex")) {
-    return `You're all set — try /autopilot-on in ${names} (Codex: line-start triggers.on / triggers.run; typed slash still parses).`;
+  if (ids.includes("codex") || ids.includes("kimi-code")) {
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -590,6 +593,10 @@ export function formatHostActivationTips(
     } else if (id === "codex") {
       tips.push(
         `${host}: Autopilot wires .codex/hooks.json only (does not edit config.toml hooks). Trust project hooks via /hooks after install or upgrade. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills; typed /autopilot-* still parses).`,
+      );
+    } else if (id === "kimi-code") {
+      tips.push(
+        `${host}: Autopilot merges [[hooks]] into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml). Timeout ≥120s. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md). Prefer confirm_rounds: 1 — host Stop-continue hard-capped at 1/turn.`,
       );
     } else {
       tips.push(
@@ -648,6 +655,11 @@ function hostActivationPlainLines(
           `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills；手打 slash 仍可解析）。`,
           `hooks 仅写 .codex/hooks.json；安装/升级后请用 /hooks 信任；不改 config.toml hooks。`,
         );
+      } else if (id === "kimi-code") {
+        lines.push(
+          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `hooks 合并进 $KIMI_CODE_HOME/config.toml（默认 ~/.kimi-code；不写 local.toml）。推荐 confirm_rounds: 1（Stop-continue 硬顶 1/turn）。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -668,6 +680,11 @@ function hostActivationPlainLines(
       lines.push(
         `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills path; typed slash still parses).`,
         `Hooks are written to .codex/hooks.json only; trust via /hooks after install/upgrade; config.toml hooks are left untouched.`,
+      );
+    } else if (id === "kimi-code") {
+      lines.push(
+        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `Hooks merge into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml). Prefer confirm_rounds: 1 — Stop-continue hard-capped at 1/turn.`,
       );
     } else {
       lines.push(
@@ -691,6 +708,11 @@ function hostActivationDocLines(
       .replaceAll("Developer: Reload Window", "`Developer: Reload Window`")
       .replaceAll("triggers.on", "`triggers.on`")
       .replaceAll("triggers.run", "`triggers.run`")
+      .replaceAll("$KIMI_CODE_HOME", "`$KIMI_CODE_HOME`")
+      .replaceAll("~/.kimi-code", "`~/.kimi-code`")
+      .replaceAll("local.toml", "`local.toml`")
+      .replaceAll("confirm_rounds", "`confirm_rounds`")
+      .replaceAll("config.toml", "`config.toml`")
       // Avoid splitting `.codex/hooks.json` when wrapping `/hooks`.
       .replace(/\/hooks(?!\.json)/g, "`/hooks`")
       .replaceAll(".codex/hooks.json", "`.codex/hooks.json`"),
@@ -731,52 +753,54 @@ export function writeQuickstart(
   const platformId = sanitizePlatformId(platform) || "cursor";
   const host = formatHostDisplayName(platformId);
   const afterInstall = hostActivationDocLines(locale, platformId);
-  const isCodex = platformId === "codex";
-  const flowPlanYouZh = isCodex
+  // Codex + Kimi Code: P0 is line-start triggers (no Autopilot skills path).
+  const isLineStartHost =
+    platformId === "codex" || platformId === "kimi-code";
+  const flowPlanYouZh = isLineStartHost
     ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
     : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
-  const flowRunYouZh = isCodex
+  const flowRunYouZh = isLineStartHost
     ? "行首 `Autopilot RUN` / `开始执行`（或手打 `/autopilot-run`，可带 `<slug>`）"
     : "`/autopilot-run`（或带 `<slug>`）";
-  const planningPrefZh = isCodex
+  const planningPrefZh = isLineStartHost
     ? `推荐：在 ${host} 中优先行首 \`Autopilot ON\` / \`开启自动驾驶\`（无 Autopilot skills UI；手打 \`/autopilot-on\` 仍可解析）
 
 也可：\`/autopilot-on\` 或 \`/autopilot-on <需求描述>\``
     : `推荐：在 ${host} 中使用 \`/autopilot-on\` 或 \`/autopilot-on <需求描述>\`
 
 也可：行首 \`Autopilot ON\` / \`开启自动驾驶\``;
-  const executingPrefZh = isCodex
+  const executingPrefZh = isLineStartHost
     ? `优先：行首 \`Autopilot RUN\` / \`开始执行\`（手打 \`/autopilot-run\` 仍可解析）
 
 也可：\`/autopilot-run\` 或 \`/autopilot-run <slug>\``
     : `\`/autopilot-run\` 或 \`/autopilot-run <slug>\`
 
 也可：\`Autopilot RUN\` / \`开始执行\``;
-  const runSkillZh = isCodex
-    ? `**RUN：** 非 executing（needPick）时先选型；真正 executing 再跑 checklist（Codex 无 Autopilot skills 路径）。`
+  const runSkillZh = isLineStartHost
+    ? `**RUN：** 非 executing（needPick）时先选型；真正 executing 再跑 checklist（${host} 无 Autopilot skills 路径）。`
     : `**\`autopilot-run\` skill：** 非 executing（needPick）时首分支**只选型**；真正 executing 再跑 checklist。`;
-  const flowPlanYouEn = isCodex
+  const flowPlanYouEn = isLineStartHost
     ? "line-start `Autopilot ON` (or typed `/autopilot-on`); reply to each grill round"
     : "`/autopilot-on` (optional description); reply to each grill round";
-  const flowRunYouEn = isCodex
+  const flowRunYouEn = isLineStartHost
     ? "line-start `Autopilot RUN` (or typed `/autopilot-run`, optional `<slug>`)"
     : "`/autopilot-run` (or with `<slug>`)";
-  const planningPrefEn = isCodex
+  const planningPrefEn = isLineStartHost
     ? `Preferred: in ${host}, line-start \`Autopilot ON\` (no Autopilot skills UI; typed \`/autopilot-on\` still parses)
 
 Also: \`/autopilot-on\` or \`/autopilot-on <what to build>\``
     : `Preferred: in ${host}, \`/autopilot-on\` or \`/autopilot-on <what to build>\`
 
 Also: line-start \`Autopilot ON\``;
-  const executingPrefEn = isCodex
+  const executingPrefEn = isLineStartHost
     ? `Preferred: line-start \`Autopilot RUN\` (typed \`/autopilot-run\` still parses)
 
 Also: \`/autopilot-run\` or \`/autopilot-run <slug>\``
     : `\`/autopilot-run\` or \`/autopilot-run <slug>\`
 
 Also: \`Autopilot RUN\``;
-  const runSkillEn = isCodex
-    ? `**RUN:** when not executing (needPick), pick first; checklist execution only after executing is armed (no Autopilot Codex skills path).`
+  const runSkillEn = isLineStartHost
+    ? `**RUN:** when not executing (needPick), pick first; checklist execution only after executing is armed (no Autopilot skills path on ${host}).`
     : `**\`autopilot-run\` skill:** when not executing (needPick), first branch is **pick only**; checklist execution only after executing is armed.`;
   const body =
     locale === "zh-CN"
@@ -970,10 +994,16 @@ export function formatCheatSheet(
     ids.length <= 1
       ? formatHostDisplayName(ids[0] ?? "cursor")
       : ids.map((id) => formatHostDisplayName(id)).join(" / ");
-  const codexOnly = ids.length === 1 && ids[0] === "codex";
-  const hasCodex = ids.includes("codex");
+  // All selected hosts are line-start P0 (Codex and/or Kimi) — prefer triggers
+  // over slash, including the dual Codex+Kimi case.
+  const lineStartOnly =
+    ids.length > 0 &&
+    ids.every((id) => id === "codex" || id === "kimi-code");
+  const lineStartSideTips = lineStartOnly
+    ? []
+    : ids.filter((id) => id === "codex" || id === "kimi-code");
   if (locale === "zh-CN") {
-    const planningBlock = codexOnly
+    const planningBlock = lineStartOnly
       ? [
           `  推荐：在 ${host} 中行首 Autopilot ON / 开启自动驾驶`,
           "        （无 Autopilot skills；手打 /autopilot-on 仍可解析）",
@@ -983,11 +1013,12 @@ export function formatCheatSheet(
           `  推荐：在 ${host} 中 /autopilot-on`,
           "        /autopilot-on 我想做：<描述需求>",
           "  也可：Autopilot ON",
-          ...(hasCodex
-            ? ["  Codex：优先行首 Autopilot ON / 开启自动驾驶（手打 slash 仍可解析）"]
-            : []),
+          ...lineStartSideTips.map(
+            (id) =>
+              `  ${formatHostDisplayName(id)}：优先行首 Autopilot ON / 开启自动驾驶（手打 slash 仍可解析）`,
+          ),
         ];
-    const executingBlock = codexOnly
+    const executingBlock = lineStartOnly
       ? [
           "  优先：行首 Autopilot RUN / 开始执行",
           "  也可：/autopilot-run · /autopilot-run <slug>",
@@ -995,9 +1026,10 @@ export function formatCheatSheet(
       : [
           "  /autopilot-run",
           "  /autopilot-run <slug>",
-          ...(hasCodex
-            ? ["  Codex：优先行首 Autopilot RUN / 开始执行"]
-            : []),
+          ...lineStartSideTips.map(
+            (id) =>
+              `  ${formatHostDisplayName(id)}：优先行首 Autopilot RUN / 开始执行`,
+          ),
         ];
     return [
       "── 新开任务（Planning）──────────────────",
@@ -1021,7 +1053,7 @@ export function formatCheatSheet(
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
   }
-  const planningBlockEn = codexOnly
+  const planningBlockEn = lineStartOnly
     ? [
         `  Preferred: in ${host}, line-start Autopilot ON`,
         "             (no Autopilot skills; typed /autopilot-on still parses)",
@@ -1031,13 +1063,12 @@ export function formatCheatSheet(
         `  Preferred: in ${host}, /autopilot-on`,
         "             /autopilot-on <what to build>",
         "  Also:      Autopilot ON",
-        ...(hasCodex
-          ? [
-              "  Codex:     prefer line-start Autopilot ON (typed slash still parses)",
-            ]
-          : []),
+        ...lineStartSideTips.map(
+          (id) =>
+            `  ${formatHostDisplayName(id)}:     prefer line-start Autopilot ON (typed slash still parses)`,
+        ),
       ];
-  const executingBlockEn = codexOnly
+  const executingBlockEn = lineStartOnly
     ? [
         "  Preferred: line-start Autopilot RUN",
         "  Also:      /autopilot-run · /autopilot-run <slug>",
@@ -1045,9 +1076,10 @@ export function formatCheatSheet(
     : [
         "  /autopilot-run",
         "  /autopilot-run <slug>",
-        ...(hasCodex
-          ? ["  Codex:     prefer line-start Autopilot RUN"]
-          : []),
+        ...lineStartSideTips.map(
+          (id) =>
+            `  ${formatHostDisplayName(id)}:     prefer line-start Autopilot RUN`,
+        ),
       ];
   return [
     "── Planning ─────────────────────────────",

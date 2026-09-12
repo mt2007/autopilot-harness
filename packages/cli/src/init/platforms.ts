@@ -17,6 +17,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "cursor", surface: "ide" },
   { id: "claude-code", surface: "cli" },
   { id: "codex", surface: "cli" },
+  { id: "kimi-code", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -26,6 +27,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   cursor: "ide",
   "claude-code": "cli",
   codex: "cli",
+  "kimi-code": "cli",
   runner: "runner",
 });
 
@@ -133,6 +135,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "codex") {
     return "Codex (CLI hooks.json)";
+  }
+  if (id === "kimi-code") {
+    return "Kimi Code (user-home config.toml hooks)";
   }
   const host =
     id === "cursor"

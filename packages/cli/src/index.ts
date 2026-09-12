@@ -29,6 +29,16 @@ export {
   codexAutopilotHasSmallTimeout,
   CODEX_AUTOPILOT_EVENTS,
   CODEX_POST_TOOL_USE_MATCHER,
+  mergeKimiConfigToml,
+  stripAutopilotKimiHooks,
+  kimiHooksContainAutopilot,
+  kimiHooksHavePlatformStamp,
+  kimiAutopilotHasSmallTimeout,
+  resolveKimiCodeHome,
+  kimiConfigTomlPath,
+  KIMI_AUTOPILOT_EVENTS,
+  KIMI_POST_TOOL_USE_MATCHER,
+  KIMI_HOOK_TIMEOUT_SEC,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
 export type {
@@ -41,6 +51,10 @@ export type {
   CodexMatcherGroup,
   CodexHookHandler,
 } from "./init/codex-hooks-merge.js";
+export type {
+  KimiHookEntry,
+  KimiAutopilotEvent,
+} from "./init/kimi-hooks-merge.js";
 export type { PreflightResult } from "./init/install.js";
 export { PACKAGE_VERSION } from "./init/types.js";
 export { formatStatus, runDoctor, readPinVersion, readStaleAfterHours, hasGlobalSelfReviewHooks } from "./status-doctor.js";
