@@ -1029,4 +1029,170 @@ review:
       fs.rmSync(kimiHome, { recursive: true, force: true });
     }
   });
+
+  it("dry-run lists Copilot hooks action when copilot-cli is enabled (no skills)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      r.actions.some((a) => /\.github\/hooks\/autopilot-harness\.json/i.test(a)),
+    ).toBe(true);
+    expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+    expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
+  });
+
+  it("Cursor-only upgrade ignores corrupt leftover Copilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const leftover = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    fs.mkdirSync(path.dirname(leftover), { recursive: true });
+    const corrupt = "{not-json";
+    fs.writeFileSync(leftover, corrupt, "utf8");
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(true);
+    if (!dry.ok) return;
+    expect(
+      dry.actions.some((a) => /\.github\/hooks\/autopilot-harness\.json/i.test(a)),
+    ).toBe(false);
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    expect(fs.readFileSync(leftover, "utf8")).toBe(corrupt);
+  });
+
+  it("Copilot-enabled upgrade fails closed on corrupt hooks JSON", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      "{not-json",
+      "utf8",
+    );
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) {
+      expect(dry.error).toMatch(/autopilot-harness\.json|valid JSON/i);
+    }
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/autopilot-harness\.json|valid JSON/i);
+    }
+  });
+
+  it("upgrade refreshes Copilot hooks and restores timeoutSec ≥120", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, Array<{ timeoutSec?: number; bash?: string }>>;
+    };
+    for (const handlers of Object.values(file.hooks ?? {})) {
+      for (const h of handlers) {
+        if (typeof h.bash === "string" && h.bash.includes("autopilot-harness-hook")) {
+          h.timeoutSec = 30;
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, Array<{ timeoutSec?: number; bash?: string }>>;
+    };
+    const stop = after.hooks?.agentStop?.[0];
+    expect(stop?.timeoutSec).toBe(120);
+    expect(stop?.bash).toMatch(/--platform copilot-cli/);
+  });
+
+  it("Copilot-enabled upgrade fails closed when .github is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-up-copilot-"));
+    const hooksPath = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const hooks = fs.readFileSync(hooksPath, "utf8");
+    fs.mkdirSync(path.join(outside, "hooks"), { recursive: true });
+    fs.writeFileSync(
+      path.join(outside, "hooks", "autopilot-harness.json"),
+      hooks,
+    );
+    fs.rmSync(path.join(root, ".github"), { recursive: true, force: true });
+    fs.symlinkSync(outside, path.join(root, ".github"));
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) expect(dry.error).toMatch(/\.github/i);
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/\.github/i);
+    expect(
+      JSON.stringify(
+        JSON.parse(
+          fs.readFileSync(
+            path.join(outside, "hooks", "autopilot-harness.json"),
+            "utf8",
+          ),
+        ),
+      ),
+    ).toMatch(/autopilot-harness-hook\.mjs/);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
 });

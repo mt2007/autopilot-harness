@@ -7,6 +7,7 @@ import {
   StateStore,
 } from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
+import { applyPlatformsToConfigYaml } from "../src/init/platforms.js";
 import { normalizePlansDir } from "../src/init/wizard-helpers.js";
 import {
   formatStatus,
@@ -2332,6 +2333,380 @@ describe("runDoctor", () => {
     } finally {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     }
+  });
+
+  it("OKs Copilot Autopilot entries and WARNs Stop≤8 + restart", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /OK\s+\.github\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+    expect(joined).toMatch(/Stop-continue consecutive block cap ≤8/i);
+    expect(joined).toMatch(/Restart Copilot CLI/i);
+    expect(joined).not.toMatch(
+      /FAIL\s+\.github\/hooks\/autopilot-harness\.json missing/i,
+    );
+  });
+
+  it("FAILs when Copilot hooks file is missing on a Copilot-enabled project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(
+      path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      { force: true },
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /\.github\/hooks\/autopilot-harness\.json missing/i,
+    );
+    // Restart tip only when Autopilot events are present (Codex/Kimi parity).
+    expect(joined).not.toMatch(/Restart Copilot CLI/i);
+  });
+
+  it("FAILs corrupt Copilot hooks without Restart tip", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.writeFileSync(
+      path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      "{not-json",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/autopilot-harness\.json unreadable/i);
+    expect(joined).not.toMatch(/Restart Copilot CLI/i);
+  });
+
+  it("FAILs invalid Copilot hooks shape without Restart tip", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.writeFileSync(
+      path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      JSON.stringify({ version: 1, hooks: [] }, null, 2) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/autopilot-harness\.json/i);
+    expect(joined).toMatch(/invalid shape|must be an object/i);
+    expect(joined).not.toMatch(/Restart Copilot CLI/i);
+  });
+
+  it("FAILs incomplete Copilot Autopilot events without Restart tip", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    expect(file.hooks?.agentStop).toBeTruthy();
+    delete file.hooks!.agentStop;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing Autopilot for:.*agentStop/i);
+    expect(joined).not.toMatch(/Restart Copilot CLI/i);
+  });
+
+  it("WARNs when Autopilot Copilot hook timeoutSec is below 120", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: { agentStop?: Array<{ timeoutSec?: number }> };
+    };
+    const stop = file.hooks?.agentStop?.[0];
+    expect(stop).toBeTruthy();
+    stop!.timeoutSec = 30;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/timeoutSec below 120/i);
+  });
+
+  it("WARNs when Autopilot Copilot hooks omit --platform stamp (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<
+        string,
+        Array<{ bash?: string; powershell?: string; command?: string }>
+      >;
+    };
+    for (const handlers of Object.values(file.hooks ?? {})) {
+      for (const h of handlers) {
+        for (const field of ["bash", "powershell", "command"] as const) {
+          const cmd = h[field];
+          if (typeof cmd === "string") {
+            h[field] = cmd.replace(/\s+--platform\s+copilot-cli\b/g, "");
+          }
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing --platform copilot-cli/i);
+    expect(joined).toMatch(/Restart Copilot CLI/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.github\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when Claude Code + Copilot CLI are both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Claude Code \+ Copilot CLI both enabled/i,
+    );
+  });
+
+  it("WARNs when Claude-only project has leftover Copilot Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    // Narrow config back to Claude-only while leaving Copilot hooks on disk.
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "claude-code", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      ),
+    ).toBe(true);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Copilot Autopilot hooks present while Claude Code is enabled/i,
+    );
+  });
+
+  it("WARNs when Copilot-only project has leftover Claude Autopilot settings", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "copilot-cli", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Claude Autopilot hooks present while Copilot CLI is enabled/i,
+    );
+  });
+
+  it("WARNs when Cursor-only project has both Claude and Copilot leftover fingerprints", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [{ id: "cursor", surface: "ide" }]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      ),
+    ).toBe(true);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Claude \+ Copilot Autopilot fingerprints both present on disk/i,
+    );
   });
 });
 

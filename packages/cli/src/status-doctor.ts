@@ -25,6 +25,7 @@ import {
 } from "./init/hooks-merge.js";
 import {
   claudeHooksHavePlatformStamp,
+  claudeSettingsContainAutopilot,
   hasClaudeBlockCapZero,
   summarizeClaudeAutopilotHooks,
   validateClaudeSettingsShape,
@@ -44,6 +45,21 @@ import {
   readKimiConfigToml,
   resolveKimiCodeHome,
 } from "./init/kimi-hooks-merge.js";
+import {
+  COPILOT_HOOKS_REL_PATH,
+  COPILOT_HOOK_TIMEOUT_SEC,
+  copilotAutopilotHasSmallTimeout,
+  copilotHooksContainAutopilot,
+  copilotHooksHavePlatformStamp,
+  hasCompleteCopilotAutopilotHooks,
+  summarizeCopilotAutopilotHooks,
+  validateCopilotHooksShape,
+  type CopilotHooksFile,
+} from "./init/copilot-hooks-merge.js";
+import {
+  COPILOT_STOP_CAP_RAISE_FOUND,
+  COPILOT_STOP_CONSECUTIVE_BLOCK_CAP,
+} from "@autopilot-harness/port-copilot-cli";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -1046,6 +1062,162 @@ export function runDoctor(
           "WARN  legacy ~/.kimi present but Kimi Code home missing — Autopilot uses $KIMI_CODE_HOME or ~/.kimi-code; run init",
         );
       }
+    }
+  }
+
+  const wantCopilot = configWantsInstallableHost(cfg.platforms, "copilot-cli");
+  if (wantCopilot) {
+    const copilotHooksPath = path.join(
+      root,
+      ".github",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    // Host hard-cap: always surface when this installable host is enabled.
+    if (!COPILOT_STOP_CAP_RAISE_FOUND) {
+      lines.push(
+        `WARN  Copilot CLI Stop-continue consecutive block cap ≤${COPILOT_STOP_CONSECUTIVE_BLOCK_CAP} (no raise found) — expect mid-chain cutoffs`,
+      );
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        copilotHooksPath,
+        MAX_CONFIG_BYTES,
+        COPILOT_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push(`FAIL  ${COPILOT_HOOKS_REL_PATH} is not a JSON object`);
+        ok = false;
+      } else {
+        const file = parsed as CopilotHooksFile;
+        const shapeError = validateCopilotHooksShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${COPILOT_HOOKS_REL_PATH}: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeCopilotAutopilotHooks(file);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  ${COPILOT_HOOKS_REL_PATH} missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  ${COPILOT_HOOKS_REL_PATH} has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (copilotAutopilotHasSmallTimeout(file)) {
+            lines.push(
+              `WARN  Autopilot Copilot hook timeoutSec below ${COPILOT_HOOK_TIMEOUT_SEC} (or omitted; host default 30s) — run upgrade`,
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            !copilotHooksHavePlatformStamp(file)
+          ) {
+            lines.push(
+              "WARN  Autopilot Copilot hooks missing --platform copilot-cli — run upgrade",
+            );
+          }
+          // Align with Codex/Kimi reload tips: only after Autopilot event coverage
+          // is present (not on missing/corrupt/invalid shape / incomplete install).
+          if (missingEvents.length === 0) {
+            lines.push(
+              "WARN  Restart Copilot CLI after install or upgrade so Autopilot hooks reload",
+            );
+          }
+          // hasComplete ≡ missingEvents+duplicates; keep both for defense in depth.
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !copilotAutopilotHasSmallTimeout(file) &&
+            copilotHooksHavePlatformStamp(file) &&
+            hasCompleteCopilotAutopilotHooks(file)
+          ) {
+            lines.push(
+              `OK    ${COPILOT_HOOKS_REL_PATH} Autopilot entries`,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(`FAIL  ${COPILOT_HOOKS_REL_PATH} missing`);
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  ${COPILOT_HOOKS_REL_PATH} unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
+    }
+  }
+
+  // Dual Claude + Copilot Autopilot fingerprints (config and/or on-disk residue).
+  if (wantClaude && wantCopilot) {
+    lines.push(
+      "WARN  Claude Code + Copilot CLI both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFp = false;
+    let copilotFp = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFp = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore for dual-fingerprint WARN */
+      }
+    }
+    if (!wantCopilot) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".github", "hooks", "autopilot-harness.json"),
+          MAX_CONFIG_BYTES,
+          COPILOT_HOOKS_REL_PATH,
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          copilotFp = copilotHooksContainAutopilot(
+            parsed as CopilotHooksFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    // When one host is wanted, the other fingerprint is leftover residue.
+    // When neither is wanted but both leftovers remain, still surface dual-FP.
+    if (wantClaude && copilotFp) {
+      lines.push(
+        "WARN  Copilot Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Copilot or expect Stop routing care",
+      );
+    }
+    if (wantCopilot && claudeFp) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Copilot CLI is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (!wantClaude && !wantCopilot && claudeFp && copilotFp) {
+      lines.push(
+        "WARN  Claude + Copilot Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
     }
   }
 
