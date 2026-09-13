@@ -9,9 +9,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-13
+
 ### Added
 
+- **GitHub Copilot CLI hook port** (`@autopilot-harness/port-copilot-cli`): `userPromptSubmitted` / `userPromptTransformed` / `postToolUse` / `agentStop` adapters; fail-open on errors; Stop continue = `{ decision:"block", reason }` (hard-stop `{}`); UPS stdout ignored — needPick / busy / hard errors via Transform (`modifiedTransformedPrompt`); PostToolUse matcher aligned with current edit tools + dirty-arm backup; no `preToolUse` / SubagentStop / `postToolUseFailure`.
+- **Five-way vendor dispatch**: `--platform copilot-cli` + aliased exports `handleCopilotUserPromptSubmit` / `handleCopilotUserPromptTransformed` / `handleCopilotPostToolUse` / `handleCopilotStop` (no clash with Claude/Codex/Kimi bare names); cross-stamp / cross-payload abort + conflict resolver across Cursor / Claude / Codex / Kimi / Copilot.
+- **Init / upgrade / uninstall / doctor** for Copilot CLI: installable `surface:cli`; project `.github/hooks/autopilot-harness.json` (camelCase; **bash+powershell**; timeoutSec ≥120); fingerprint uninstall; `--add-platform copilot-cli`; no default Autopilot skills / `AGENTS.md`; P0 line-start `triggers.on` / `triggers.run`; does **not** clamp `confirm_rounds` (Kimi enablement still clamps project-wide); default `.autopilotignore` includes `.github/hooks/**`; doctor **FAIL**s on missing/incomplete hooks; WARNs for timeoutSec &lt; 120 (or omitted), **Stop consecutive ≤8** (no raise found), missing `--platform` stamp, **Restart Copilot CLI**, and **Claude+Copilot dual** fingerprints (enabled or leftover).
 - **docs-copilot-shipped**: GitHub Copilot CLI marked **Shipped** (**degraded Stop consecutive ≤8**; no raise found) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/copilot-cli/package.json`; mid-cutoff recovery via **pending / RESUME / nudge**; **Restart Copilot CLI** after install/upgrade; doctor **FAIL** on missing/incomplete `.github/hooks`, **WARN** on ≤8 / Restart / **Claude+Copilot dual** (enabled or leftover); explicitly **no preToolUse**.
+- Contract / five-host matrix tests for Copilot I/O, Transform needPick, hooks merge, doctor, add-platform, aliases, and Cursor/Claude/Codex/Kimi cross-fire.
+
+### Changed
+
+- **docs**: host roadmap — **1 (next)** = Grok Build CLI after Copilot shipped; Gemini / Factory / Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed ([hosts.md](./docs/hosts.md)).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.5.0 public packages.
 
 ## [0.4.1] — 2026-09-12
 

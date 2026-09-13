@@ -582,7 +582,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -604,6 +604,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.3\.0\]/);
     expect(log).toMatch(/## \[0\.4\.0\]/);
     expect(log).toMatch(/## \[0\.4\.1\]/);
+    expect(log).toMatch(/## \[0\.5\.0\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -709,18 +710,41 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section041).toMatch(/skill body/i);
     expect(section041).toMatch(/Start planning|开启规划/);
     expect(section041).toMatch(/upgrade|locale set/i);
-    const unreleased = changelogSection(log, "Unreleased");
-    expect(unreleased).toMatch(/docs-copilot-shipped/i);
-    expect(unreleased).toMatch(/port-copilot-cli|packages\/ports\/copilot-cli\/package\.json/i);
-    expect(unreleased).toMatch(/marked \*\*Shipped\*\*/);
-    expect(unreleased).toMatch(/Stop consecutive ≤8/);
-    expect(unreleased).toMatch(/pending|RESUME|nudge/i);
-    expect(unreleased).toMatch(/Restart Copilot CLI/i);
-    expect(unreleased).toMatch(/Claude\+Copilot|dual/i);
-    expect(unreleased).toMatch(
-      /FAIL[\s\S]*missing\/incomplete|FAIL on missing\/incomplete|missing\/incomplete `\.\.?github/i,
+    const section050 = changelogSection(log, "0.5.0");
+    expect(section050).toMatch(/port-copilot-cli|@autopilot-harness\/port-copilot-cli/i);
+    expect(section050).toMatch(/handleCopilotUserPromptSubmit/);
+    expect(section050).toMatch(/handleCopilotUserPromptTransformed/);
+    expect(section050).toMatch(/handleCopilotPostToolUse/);
+    expect(section050).toMatch(/handleCopilotStop/);
+    expect(section050).toMatch(/docs-copilot-shipped/i);
+    expect(section050).toMatch(/marked \*\*Shipped\*\*/);
+    expect(section050).toMatch(/packages\/ports\/copilot-cli\/package\.json/);
+    expect(section050).toMatch(/Stop consecutive ≤8/);
+    expect(section050).toMatch(/pending|RESUME|nudge/i);
+    expect(section050).toMatch(/Restart Copilot CLI/i);
+    expect(section050).toMatch(/Claude\+Copilot dual/i);
+    // Lock severity markers (avoid /FAIL/i matching "fail-open").
+    expect(section050).toMatch(
+      /\*\*FAIL\*\*s? on missing\/incomplete/,
     );
-    expect(unreleased).toMatch(/no preToolUse|explicitly \*\*no preToolUse\*\*/i);
+    expect(section050).toMatch(
+      /\*\*WARN\*\*[\s\S]{0,80}Claude\+Copilot dual/,
+    );
+    expect(section050).toMatch(
+      /does \*\*not\*\* clamp `confirm_rounds`[\s\S]{0,100}Kimi enablement still clamps project-wide/,
+    );
+    expect(section050).toMatch(/no `?preToolUse`?|explicitly \*\*no preToolUse\*\*/i);
+    expect(section050).toMatch(/\.github\/hooks/);
+    expect(section050).toMatch(/five-way|Five-way/i);
+    expect(section050).toMatch(/copilot-cli/);
+    expect(section050).toMatch(
+      /core\s*→\s*i18n\s*→\s*ports[\s\S]*copilot-cli[\s\S]*→\s*cli|ports \(cursor, claude-code, codex, kimi-code, copilot-cli\)/i,
+    );
+    expect(section050).toMatch(/pnpm publish|pnpm pack/i);
+    expect(section050).toMatch(/1 \(next\)[\s\S]{0,80}Grok Build/);
+    const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
+    expect(unreleased).not.toMatch(/handleCopilot/i);
     expect(unreleased).not.toMatch(/docs-kimi-shipped/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);

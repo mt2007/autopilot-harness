@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-copilot-cli",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Autopilot harness host port for GitHub Copilot CLI hooks (degraded Stop consecutive ≤8 unless raise found)",
   "license": "MIT",
   "repository": {
@@ -21,7 +21,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
