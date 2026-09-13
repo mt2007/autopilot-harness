@@ -1,0 +1,24 @@
+{
+  "itemId": "live-grok-smoke",
+  "ok": true,
+  "waived": true,
+  "passed": false,
+  "at": "2026-09-13T15:18:50Z",
+  "hostProduct": "Grok Build CLI (.grok/hooks/autopilot-harness.json) — not third-party ACP adapters",
+  "cliDetected": false,
+  "cliVersion": null,
+  "grokHomePresent": false,
+  "checks": {
+    "command -v grok": false,
+    "command -v grok-build": false,
+    "command -v xai": false,
+    "~/.grok": false,
+    "~/.config/grok": false,
+    "Applications name *grok*": false,
+    "npm @xai/grok-cli": false
+  },
+  "npmRegistryHint": "@xai/grok-cli not on npm registry (404); no local Grok Build CLI binary on PATH",
+  "liveRequired": "≥1 Stop-continue (decision:block+reason) + product edit/dirty-arm + proof Autopilot hook command fired on external disposable",
+  "stopCapClaim": "degraded ≤8/turn (per-turn reset); not Copilot consecutive",
+  "note": "Chat live waiver: no Grok Build CLI on this machine. Waive ≠ publish OK (human-gate-confirm still requires explicit 同意发 0.6.0)."
+}
