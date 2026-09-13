@@ -13,7 +13,7 @@
 - [x] docs-grok-shipped — README(+zh-CN)/hosts/architecture/config/troubleshooting/quickstart/CHANGELOG；**five-way→six-way**；Shipped **degraded Stop ≤8/turn**（每 turn 重置；勿双通道；勿抄 consecutive）；**trust**；**compat.hooks tip**；needPick 重提 slug；pending/RESUME/nudge；多指纹 WARN；PUBLIC + port-grok-build；**docs-contract**：改 **`docs/hosts.md` 当前正文**（Grok=Shipped；**1 (next)=Gemini**；six-way）并同步测试断言；**勿改写** CHANGELOG `[0.5.0]` 历史句（当时 next=Grok / five-way，测试仍校验那段）；新开 `[0.6.0]`；不接 PreToolUse
 - [x] changelog-bump-0-6-0 — `PACKAGE_VERSION`+公开包（含 port-grok-build）→0.6.0；CHANGELOG 0.6.0；core→i18n→ports→cli
 - [x] local-npm-pack-assert — pnpm pack；无 `workspace:*`；--help / status / doctor
-- [ ] commit-local — conventional commit；**勿** push/tag/publish
+- [x] commit-local — conventional commit；**勿** push/tag/publish
 - [ ] human-gate-confirm — 呈活链或 waive；**另等「同意发 0.6.0」**
 - [ ] push-tag-release — 人闸后：push → tag `v0.6.0` → `gh release create`
 - [ ] npm-publish-pnpm — 仅 `pnpm publish` 按序 → `npm view` / `npx` 抽检
