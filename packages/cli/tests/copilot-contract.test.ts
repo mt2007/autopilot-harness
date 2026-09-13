@@ -2,7 +2,7 @@
  * v0.5 tests-copilot-contract — umbrella matrix for Copilot I/O, Stop block,
  * UPS side-effects vs Transform needPick/busy, hooks merge (dual OS) /
  * fingerprint, .autopilotignore `.github/hooks/**`, doctor, add-platform,
- * five-way dispatch + aliased exports.
+ * five-way→six-way dispatch + aliased exports.
  * Deeper suites live in port-copilot / copilot-hooks-merge / hook-vendor /
  * status-doctor / upgrade.
  */
@@ -34,6 +34,9 @@ import {
   handleCopilotStop,
   handleCopilotUserPromptSubmit,
   handleCopilotUserPromptTransformed,
+  handleGrokPostToolUse,
+  handleGrokStop,
+  handleGrokUserPromptSubmit,
   handleKimiPostToolUse,
   handleKimiStop,
   handleKimiUserPromptSubmit,
@@ -77,11 +80,14 @@ describe("copilot contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Copilot handlers without colliding with Claude/Codex/Kimi bare names", () => {
+  it("vendor-entry aliases Copilot handlers without colliding with Claude/Codex/Kimi/Grok bare names", () => {
     expect(handleCopilotUserPromptSubmit).toBeTypeOf("function");
     expect(handleCopilotUserPromptTransformed).toBeTypeOf("function");
     expect(handleCopilotPostToolUse).toBeTypeOf("function");
     expect(handleCopilotStop).toBeTypeOf("function");
+    expect(handleGrokUserPromptSubmit).toBeTypeOf("function");
+    expect(handleGrokPostToolUse).toBeTypeOf("function");
+    expect(handleGrokStop).toBeTypeOf("function");
     expect(handleCopilotUserPromptSubmit).not.toBe(handleClaudeUserPromptSubmit);
     expect(handleCopilotPostToolUse).not.toBe(handleClaudePostToolUse);
     expect(handleCopilotStop).not.toBe(handleClaudeStop);
@@ -91,21 +97,39 @@ describe("copilot contract matrix", () => {
     expect(handleCopilotUserPromptSubmit).not.toBe(handleKimiUserPromptSubmit);
     expect(handleCopilotPostToolUse).not.toBe(handleKimiPostToolUse);
     expect(handleCopilotStop).not.toBe(handleKimiStop);
+    expect(handleGrokUserPromptSubmit).not.toBe(handleClaudeUserPromptSubmit);
+    expect(handleGrokPostToolUse).not.toBe(handleClaudePostToolUse);
+    expect(handleGrokStop).not.toBe(handleClaudeStop);
+    expect(handleGrokUserPromptSubmit).not.toBe(handleCodexUserPromptSubmit);
+    expect(handleGrokStop).not.toBe(handleCodexStop);
+    expect(handleGrokUserPromptSubmit).not.toBe(handleCopilotUserPromptSubmit);
+    expect(handleGrokStop).not.toBe(handleCopilotStop);
+    expect(handleGrokUserPromptSubmit).not.toBe(handleKimiUserPromptSubmit);
+    expect(handleGrokStop).not.toBe(handleKimiStop);
   });
 
-  it("shipped hook asset keeps five-way Copilot dispatch (Transform + aliases)", () => {
+  it("shipped hook asset keeps six-way dispatch (Copilot + Grok stamps)", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,?\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(/declaredPlatform === "copilot-cli"/);
+    expect(src).toMatch(/declaredPlatform === "grok-build"/);
     expect(src).toMatch(/handleCopilotUserPromptSubmit/);
     expect(src).toMatch(/handleCopilotUserPromptTransformed/);
     expect(src).toMatch(/handleCopilotPostToolUse/);
     expect(src).toMatch(/handleCopilotStop/);
+    expect(src).toMatch(/handleGrokUserPromptSubmit/);
+    expect(src).toMatch(/handleGrokPostToolUse/);
+    expect(src).toMatch(/handleGrokStop/);
     expect(src).toMatch(/userPromptTransformed/);
     expect(src).toMatch(/hostId === "copilot-cli"/);
+    expect(src).toMatch(/hostId === "grok-build"/);
+    // Grok Stop scrub: hard-stop (continue:false) before single-channel block.
+    expect(src).toMatch(
+      /stopHost === "grok-build"[\s\S]*?result\.continue === false[\s\S]*?decision === "block"/,
+    );
   });
 
   it("I/O: UPS side-effects only; Transform needPick prepends (stdout not the UPS channel)", () => {

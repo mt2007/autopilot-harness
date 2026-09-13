@@ -749,6 +749,262 @@ describe("hook vendor runtime", () => {
     expect(Object.keys(stopOut).sort()).toEqual(["decision", "reason"]);
   });
 
+  it("six-way --platform grok-build routes UPS/Stop/PostToolUse (block needPick; abort; StopFailure fail-open)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    for (const slug of ["grok-alpha", "grok-beta"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const cid = "hook-grok-aaaa-bbbb-cccc-ddddeeee0001";
+    const onProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(JSON.parse(onProc.stdout.trim() || "{}")).toEqual({});
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("grok-build");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    // Grok UPS needPick → decision:block (not Claude/Codex additionalContext).
+    const runProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot RUN",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(runProc.status).toBe(0);
+    const runOut = JSON.parse(runProc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      hookSpecificOutput?: unknown;
+    };
+    expect(runOut.decision).toBe("block");
+    expect(runOut.reason).toMatch(/Select a plan|grok-alpha|grok-beta/i);
+    expect(runOut.hookSpecificOutput).toBeUndefined();
+
+    // Pascal Stop + stop_hook_active must honor grok-build stamp (not Claude).
+    const armed = new StateStore(root);
+    armed.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "grok-build",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "grok-alpha",
+      checklist_path: path.join(root, "plans", "grok-alpha", "checklist.md"),
+    });
+    armed.updateReviewChain(cid, { code_edited: 1 });
+    armed.close();
+
+    const armedStop = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          hook_event_name: "Stop",
+          stop_hook_active: false,
+          reason: "end_turn",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(armedStop.status).toBe(0);
+    const armedOut = JSON.parse(armedStop.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      continue?: boolean;
+      hookSpecificOutput?: unknown;
+    };
+    expect(armedOut.decision).toBe("block");
+    expect(armedOut.reason).toBeTruthy();
+    expect(armedOut.continue).toBeUndefined();
+    expect(armedOut.hookSpecificOutput).toBeUndefined();
+    expect(Object.keys(armedOut).sort()).toEqual(["decision", "reason"]);
+
+    // PostToolUse Write must arm via Grok alias (not no-op / Claude confusion).
+    const cidEdit = "hook-grok-aaaa-bbbb-cccc-ddddeeee0002";
+    spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cidEdit,
+          prompt: "Autopilot ON grok-alpha",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    const editStore = new StateStore(root);
+    editStore.upsertSession({
+      conversation_id: cidEdit,
+      project_root: root,
+      code_root: root,
+      platform: "grok-build",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "grok-alpha",
+      checklist_path: path.join(root, "plans", "grok-alpha", "checklist.md"),
+    });
+    editStore.close();
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    const editProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PostToolUse", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cidEdit,
+          tool_name: "Write",
+          tool_input: { file_path: path.join(root, "src", "app.ts") },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(editProc.status).toBe(0);
+    expect(JSON.parse(editProc.stdout.trim() || "{}")).toEqual({});
+    const verifyEdit = new StateStore(root);
+    expect(verifyEdit.getReviewChain(cidEdit)?.code_edited).toBe(1);
+    expect(verifyEdit.getSession(cidEdit)?.platform).toBe("grok-build");
+    verifyEdit.close();
+
+    // StopFailure is not a Grok event — stamp must fail-open (not Claude recover).
+    const failProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "StopFailure", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          hook_event_name: "StopFailure",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(failProc.status).toBe(0);
+    expect(JSON.parse(failProc.stdout.trim() || "{}")).toEqual({});
+
+    // Grok stamp must beat hostile agentStop name (not Copilot Layer C).
+    // Fresh session — avoid flake from prior confirm/pending on `cid`.
+    const cidHostile = "hook-grok-aaaa-bbbb-cccc-ddddeeee0003";
+    const hostileStore = new StateStore(root);
+    hostileStore.upsertSession({
+      conversation_id: cidHostile,
+      project_root: root,
+      code_root: root,
+      platform: "grok-build",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "grok-alpha",
+      checklist_path: path.join(root, "plans", "grok-alpha", "checklist.md"),
+    });
+    hostileStore.updateReviewChain(cidHostile, { code_edited: 1 });
+    hostileStore.close();
+    const hostile = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cidHostile,
+          hook_event_name: "agentStop",
+          stop_hook_active: false,
+          reason: "end_turn",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(hostile.status).toBe(0);
+    const hostileOut = JSON.parse(hostile.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      continue?: boolean;
+    };
+    expect(hostileOut.decision).toBe("block");
+    expect(hostileOut.reason).toBeTruthy();
+    expect(hostileOut.continue).toBeUndefined();
+    expect(Object.keys(hostileOut).sort()).toEqual(["decision", "reason"]);
+    const hostileVerify = new StateStore(root);
+    expect(hostileVerify.getSession(cidHostile)?.platform).toBe("grok-build");
+    hostileVerify.close();
+
+    // Universal abort: Grok stamp + Cursor-shaped aborted → halt {} (before Grok FSM).
+    const mid = new StateStore(root);
+    const beforeAbort = mid.getReviewChain(cid)?.pending_followup ?? null;
+    mid.close();
+    const abortStop = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "grok-build"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          status: "aborted",
+          hook_event_name: "stop",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(abortStop.status).toBe(0);
+    expect(JSON.parse(abortStop.stdout.trim() || "{}")).toEqual({});
+    const after = new StateStore(root);
+    expect(after.getSession(cid)?.platform).toBe("grok-build");
+    expect(after.getReviewChain(cid)?.pending_followup ?? null).toBe(
+      beforeAbort,
+    );
+    after.close();
+  });
+
   it("unstamped agentStop + stopHookActive routes Copilot (not Claude Layer C)", () => {
     root = tmpProject();
     expect(

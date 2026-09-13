@@ -8205,6 +8205,426 @@ function handleStopInner2(engine, payload, opts) {
   };
 }
 
+// ../ports/grok-build/src/index.ts
+var GROK_PLATFORM = "grok-build";
+var MAX_NEED_PICK_SLUGS4 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS4 = 2e3;
+var MAX_HOOK_STDIO_CHARS3 = 8192;
+var MAX_TOOL_ARGS_JSON_CHARS2 = 1048576;
+function sid5(p) {
+  for (const v of [
+    p.session_id,
+    p.sessionId,
+    p.conversation_id,
+    p.conversationId
+  ]) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t) return t;
+    }
+  }
+  return "";
+}
+function clipText2(text, max = MAX_HOOK_STDIO_CHARS3) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function blockReason5(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function loopCountFromStopHookActive5(payload) {
+  const active = payload.stop_hook_active ?? payload.stopHookActive;
+  return active === true ? 1 : 0;
+}
+function collectGrokStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const o = value;
+        for (const key of ["message", "error", "name", "stack", "detail"]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.reason);
+  } catch {
+    return "";
+  }
+  return clipText2(parts.join("\n"));
+}
+function normalizeGrokStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "").toLowerCase().trim();
+  const errText = collectGrokStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
+}
+function isGrokStopCompletionReason(payload) {
+  const raw = payload?.reason;
+  if (raw == null) return true;
+  if (typeof raw !== "string") return false;
+  const r = raw.trim().toLowerCase();
+  if (!r) return true;
+  if (r === "end_turn" || r === "endturn" || r === "completed") return true;
+  return false;
+}
+function buildNeedPickContext2(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS4);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS4) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS4 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function blockSubmit2(userMessage, fallback) {
+  return {
+    decision: "block",
+    reason: clipText2(
+      blockReason5(
+        typeof userMessage === "string" ? userMessage : void 0,
+        fallback
+      ),
+      MAX_NEED_PICK_CONTEXT_CHARS4 + 256
+    )
+  };
+}
+function toolInputObject4(payload) {
+  const input = payload.tool_input ?? payload.toolInput;
+  if (!input) return null;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    return input;
+  }
+  if (typeof input === "string") {
+    if (input.length > MAX_TOOL_ARGS_JSON_CHARS2) return null;
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function filePathsFromGrokEdit(payload) {
+  const input = toolInputObject4(payload);
+  if (!input) return [];
+  const candidates = [
+    input.file_path,
+    input.filePath,
+    input.path,
+    input.target_file,
+    input.targetFile,
+    input.notebook_path,
+    input.notebookPath
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim() && !/[\0\r\n]/.test(c)) {
+      return [c.trim()];
+    }
+  }
+  return [];
+}
+function isGrokEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "search_replace" || n === "Edit" || n === "Write" || n === "MultiEdit" || n === "write_file" || n === "WriteFile";
+}
+function stampGrokPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === GROK_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: GROK_PLATFORM
+  });
+}
+function handleUserPromptSubmit5(store, payload, projectRoot, portConfig) {
+  try {
+    return handleUserPromptSubmitInner3(
+      store,
+      payload,
+      projectRoot,
+      portConfig
+    );
+  } catch {
+    return {};
+  }
+}
+function handleUserPromptSubmitInner3(store, payload, projectRoot, portConfig) {
+  const conversationId = sid5(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: GROK_PLATFORM
+      });
+      if (!result.ok) {
+        stampGrokPlatform(store, conversationId, projectRoot);
+        return blockSubmit2(result.userMessage, gateFallback);
+      }
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        stampGrokPlatform(store, conversationId, projectRoot);
+        return blockSubmit2(result.userMessage, gateFallback);
+      }
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: GROK_PLATFORM
+      });
+      if (!result.ok) {
+        stampGrokPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return blockSubmit2(
+            buildNeedPickContext2(result.userMessage, result.candidates),
+            gateFallback
+          );
+        }
+        return blockSubmit2(result.userMessage, gateFallback);
+      }
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: GROK_PLATFORM
+      });
+      if (!result.ok) {
+        stampGrokPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return blockSubmit2(
+            buildNeedPickContext2(result.userMessage, result.candidates),
+            gateFallback
+          );
+        }
+        return blockSubmit2(result.userMessage, gateFallback);
+      }
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: GROK_PLATFORM }
+      );
+      if (!result.ok) {
+        stampGrokPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return blockSubmit2(
+            buildNeedPickContext2(result.userMessage, result.candidates),
+            gateFallback
+          );
+        }
+        return blockSubmit2(result.userMessage, gateFallback);
+      }
+      stampGrokPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampGrokPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited4(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      GROK_PLATFORM
+    );
+  }
+  stampGrokPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handlePostToolUse5(store, payload, projectRoot) {
+  try {
+    handlePostToolUseInner3(store, payload, projectRoot);
+  } catch {
+  }
+}
+function handlePostToolUseInner3(store, payload, projectRoot) {
+  const conversationId = sid5(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isGrokEditTool(toolName)) return;
+  const filePaths = filePathsFromGrokEdit(payload);
+  if (filePaths.length === 0) {
+    stampGrokPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited4(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampGrokPlatform(store, conversationId, projectRoot);
+  }
+}
+function handleStop6(engine, payload, opts) {
+  try {
+    return handleStopInner3(engine, payload, opts);
+  } catch {
+    return {};
+  }
+}
+function handleStopInner3(engine, payload, opts) {
+  const conversationId = sid5(payload);
+  if (!conversationId) return {};
+  if (!isGrokStopCompletionReason(payload)) {
+    return {};
+  }
+  const status = normalizeGrokStopStatus(payload, opts);
+  const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
+  const transcriptPath = typeof transcriptRaw === "string" && transcriptRaw.trim() ? transcriptRaw.trim() : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromStopHookActive5(payload),
+    transcriptPath,
+    platform: GROK_PLATFORM
+  });
+  if (!action?.message) return {};
+  const reason = clipText2(
+    blockReason5(action.message, "Autopilot followup"),
+    MAX_HOOK_STDIO_CHARS3
+  );
+  if (!action.loop) {
+    return { continue: false, stopReason: reason };
+  }
+  return {
+    decision: "block",
+    reason
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -8213,6 +8633,7 @@ function createConfiguredReviewEngine2(store, projectRoot) {
 }
 export {
   COPILOT_PLATFORM,
+  GROK_PLATFORM,
   KIMI_PLATFORM,
   ReviewEngine,
   StateStore,
@@ -8229,6 +8650,9 @@ export {
   handleUserPromptSubmit4 as handleCopilotUserPromptSubmit,
   handleUserPromptTransformed as handleCopilotUserPromptTransformed,
   handleStop as handleCursorStop,
+  handlePostToolUse5 as handleGrokPostToolUse,
+  handleStop6 as handleGrokStop,
+  handleUserPromptSubmit5 as handleGrokUserPromptSubmit,
   handlePostToolUse3 as handleKimiPostToolUse,
   handleStop4 as handleKimiStop,
   handleUserPromptSubmit3 as handleKimiUserPromptSubmit,

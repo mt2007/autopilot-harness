@@ -38,6 +38,9 @@ importers:
       '@autopilot-harness/port-cursor':
         specifier: workspace:*
         version: link:../ports/cursor
+      '@autopilot-harness/port-grok-build':
+        specifier: workspace:*
+        version: link:../ports/grok-build
       '@autopilot-harness/port-kimi-code':
         specifier: workspace:*
         version: link:../ports/kimi-code
