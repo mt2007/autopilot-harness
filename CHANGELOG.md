@@ -9,6 +9,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-13
+
+### Added
+
+- **Grok Build CLI hook port** (`@autopilot-harness/port-grok-build`): UserPromptSubmit / PostToolUse / Stop adapters; fail-open on errors; Stop continue = `{ decision:"block", reason }` only (no Stop `additionalContext` continue; hard-stop may use `continue:false`); UPS allowing stdout discarded — needPick / busy / hard errors via **UPS `decision:block` + reason** (re-submit with slug); PostToolUse draft matcher + dirty-arm; no PreToolUse / SubagentStop / StopFailure.
+- **Six-way vendor dispatch**: `--platform grok-build` + aliased exports `handleGrokUserPromptSubmit` / `handleGrokPostToolUse` / `handleGrokStop` (no clash with Claude/Codex/Kimi/Copilot bare names); cross-stamp / cross-payload abort + conflict resolver across Cursor / Claude / Codex / Kimi / Copilot / Grok.
+- **Init / upgrade / uninstall / doctor** for Grok Build: installable `surface:cli`; project `.grok/hooks/autopilot-harness.json` (Codex-shaped; **timeout 120** always; UPS+PostToolUse+Stop; omit matcher on UPS/Stop); fingerprint uninstall; `--add-platform grok-build`; no default Autopilot skills / `AGENTS.md`; P0 line-start `triggers.on` / `triggers.run`; does **not** clamp `confirm_rounds`; default `.autopilotignore` includes `.grok/hooks/**`; doctor **FAIL**s on missing/incomplete hooks; WARNs for timeout omitted or &lt; 120, **Stop ≤8/turn** (per-turn reset; no raise found), missing `--platform` stamp, **trust** (`/hooks-trust` / `--trust`), reload/new session, and **Grok+Claude and/or Grok+Cursor** multi-fingerprints (both enabled or leftover). Docs optional **compat.hooks tip** (`compat.*.hooks=false`; does not auto-edit `~/.grok/config.toml`).
+- **docs-grok-shipped**: Grok Build CLI marked **Shipped** (**degraded Stop ≤8/turn**; per-turn reset; not consecutive) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/grok-build/package.json`; mid-cutoff recovery via **pending / RESUME / nudge**; needPick re-type slug; **trust** after install/upgrade; doctor multi-FP WARN; explicitly **no PreToolUse**.
+- Contract / six-host matrix tests for Grok I/O, Stop single-channel, UPS/needPick, hooks merge, doctor, add-platform, aliases, and Cursor/Claude/Codex/Kimi/Copilot cross-fire.
+
+### Changed
+
+- **docs**: host roadmap — **1 (next)** = Gemini CLI after Grok shipped; Factory / Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed ([hosts.md](./docs/hosts.md)).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.6.0 public packages.
+
 ## [0.5.0] — 2026-09-13
 
 ### Added
