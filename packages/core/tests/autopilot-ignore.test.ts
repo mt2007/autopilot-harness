@@ -89,6 +89,12 @@ describe("isAutopilotIgnoredPath", () => {
       isAutopilotIgnoredPath(".codex/hooks.json", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(true);
     expect(
+      isAutopilotIgnoredPath(
+        ".github/hooks/autopilot-harness.json",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
       isAutopilotIgnoredPath("docs/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(false);
     expect(

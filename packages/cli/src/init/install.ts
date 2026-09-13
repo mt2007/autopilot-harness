@@ -15,6 +15,11 @@ import {
   type CodexHooksFile,
 } from "./codex-hooks-merge.js";
 import {
+  mergeCopilotHooks,
+  validateCopilotHooksShape,
+  type CopilotHooksFile,
+} from "./copilot-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   mergeKimiConfigToml,
   readKimiConfigToml,
@@ -116,6 +121,25 @@ export type {
   CodexMatcherGroup,
   CodexHookHandler,
 } from "./codex-hooks-merge.js";
+export {
+  mergeCopilotHooks,
+  validateCopilotHooksShape,
+  hasCompleteCopilotAutopilotHooks,
+  summarizeCopilotAutopilotHooks,
+  stripAutopilotCopilotHooks,
+  copilotHooksContainAutopilot,
+  copilotHooksHavePlatformStamp,
+  copilotAutopilotHasSmallTimeout,
+  COPILOT_AUTOPILOT_EVENTS,
+  COPILOT_POST_TOOL_USE_MATCHER,
+  COPILOT_HOOK_TIMEOUT_SEC,
+  COPILOT_HOOKS_REL_PATH,
+} from "./copilot-hooks-merge.js";
+export type {
+  CopilotHooksFile,
+  CopilotHookHandler,
+  CopilotAutopilotEvent,
+} from "./copilot-hooks-merge.js";
 export {
   mergeKimiConfigToml,
   stripAutopilotKimiHooks,
@@ -337,15 +361,19 @@ type CodexHooksRead =
   | { ok: true; value: CodexHooksFile | null }
   | { ok: false; error: string };
 
+type CopilotHooksRead =
+  | { ok: true; value: CopilotHooksFile | null }
+  | { ok: false; error: string };
+
 function platformsWantHost(
   platforms: readonly PlatformBinding[],
   hostId: string,
 ): boolean {
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
-  // `claude-code`/`cursor`/`codex`/`kimi-code` with the wrong surface must not
-  // force reads/writes (e.g. corrupt leftover settings blocking --add-platform
-  // of another host).
+  // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli` with the wrong
+  // surface must not force reads/writes (e.g. corrupt leftover settings
+  // blocking --add-platform of another host).
   return platforms.some(
     (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
   );
@@ -473,6 +501,45 @@ function readCodexHooksFile(filePath: string): CodexHooksRead {
     }
     const obj = parsed as CodexHooksFile;
     const shapeError = validateCodexHooksShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
+/** Read `.github/hooks/autopilot-harness.json`; refuse to clobber unreadable. */
+function readCopilotHooksFile(filePath: string): CopilotHooksRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".github/hooks/autopilot-harness.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as CopilotHooksFile;
+    const shapeError = validateCopilotHooksShape(obj);
     if (shapeError) {
       return { ok: false, error: `${filePath}: ${shapeError}` };
     }
@@ -887,15 +954,16 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
     };
   }
   // Host settings (`.cursor/hooks.json` / `.claude/settings.json` /
-  // `.codex/hooks.json`) are validated only for platforms that will be wired —
-  // see installInitYes.
+  // `.codex/hooks.json` / `.github/hooks/autopilot-harness.json`) are validated
+  // only for platforms that will be wired — see installInitYes.
   return { ok: true };
 }
 
 /**
  * Non-interactive init (`--yes`). Writes .autopilot + host hooks/skills
  * (`.cursor/hooks.json` and/or `.claude/settings.json` and/or `.codex/hooks.json`
- * and/or Kimi `$KIMI_CODE_HOME/config.toml` per platforms). Does not write Codex
+ * and/or Kimi `$KIMI_CODE_HOME/config.toml` and/or
+ * `.github/hooks/autopilot-harness.json` per platforms). Does not write Codex
  * `config.toml` hooks, Kimi `local.toml`, or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
@@ -927,6 +995,12 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const claudeSettingsPath = path.join(claudeDir, "settings.json");
   const codexDir = path.join(projectRoot, ".codex");
   const codexHooksPath = path.join(codexDir, "hooks.json");
+  const githubDir = path.join(projectRoot, ".github");
+  const githubHooksDir = path.join(githubDir, "hooks");
+  const copilotHooksPath = path.join(
+    githubHooksDir,
+    "autopilot-harness.json",
+  );
   const mergePlatforms = Boolean(opts.mergePlatforms);
   // Adding hosts into an existing config requires the force/refresh path.
   const force = Boolean(opts.force) || mergePlatforms;
@@ -1091,11 +1165,18 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantClaude = platformsWantHost(effectivePlatforms, "claude-code");
     const wantCodex = platformsWantHost(effectivePlatforms, "codex");
     const wantKimi = platformsWantHost(effectivePlatforms, "kimi-code");
-    if (!wantCursor && !wantClaude && !wantCodex && !wantKimi) {
+    const wantCopilot = platformsWantHost(effectivePlatforms, "copilot-cli");
+    if (
+      !wantCursor &&
+      !wantClaude &&
+      !wantCodex &&
+      !wantKimi &&
+      !wantCopilot
+    ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, and/or kimi-code).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, and/or copilot-cli).",
       };
     }
 
@@ -1137,6 +1218,23 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const codexPre = readCodexHooksFile(codexHooksPath);
       if (!codexPre.ok) {
         return { ok: false, error: codexPre.error };
+      }
+    }
+    if (wantCopilot) {
+      try {
+        assertNotSymlink(githubDir, ".github/");
+        assertNotSymlink(githubHooksDir, ".github/hooks/");
+        assertNotSymlink(
+          copilotHooksPath,
+          ".github/hooks/autopilot-harness.json",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const copilotPre = readCopilotHooksFile(copilotHooksPath);
+      if (!copilotPre.ok) {
+        return { ok: false, error: copilotPre.error };
       }
     }
     const kimiHome = resolveKimiCodeHome();
@@ -1314,6 +1412,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let hooksFresh: HooksRead | null = null;
     let claudeFresh: ClaudeSettingsRead | null = null;
     let codexFresh: CodexHooksRead | null = null;
+    let copilotFresh: CopilotHooksRead | null = null;
     let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
     if (wantCursor) {
       hooksFresh = readHooksFile(hooksPath);
@@ -1360,6 +1459,25 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantCopilot) {
+      copilotFresh = readCopilotHooksFile(copilotHooksPath);
+      if (!copilotFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: copilotFresh.error };
+      }
+      try {
+        assertNotSymlink(githubDir, ".github/");
+        assertNotSymlink(githubHooksDir, ".github/hooks/");
+        assertNotSymlink(
+          copilotHooksPath,
+          ".github/hooks/autopilot-harness.json",
+        );
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
     if (wantKimi) {
       kimiFresh = readKimiConfigToml(kimiTomlPath);
       if (!kimiFresh.ok) {
@@ -1389,6 +1507,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantCodex && codexFresh?.ok) {
         mergeCodexHooks(codexFresh.value);
       }
+      if (wantCopilot && copilotFresh?.ok) {
+        mergeCopilotHooks(copilotFresh.value);
+      }
       if (wantKimi && kimiFresh?.ok) {
         mergeKimiConfigToml(kimiFresh.value);
       }
@@ -1399,7 +1520,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex / Kimi Code have no Autopilot skills path in this build — skip.
+    // Codex / Kimi Code / Copilot CLI have no Autopilot skills path — skip.
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1415,6 +1536,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedHooks: ReturnType<typeof mergeHooksJson> | null = null;
     let mergedClaude: ReturnType<typeof mergeClaudeSettings> | null = null;
     let mergedCodex: ReturnType<typeof mergeCodexHooks> | null = null;
+    let mergedCopilot: ReturnType<typeof mergeCopilotHooks> | null = null;
     let mergedKimi: string | null = null;
     try {
       if (wantCursor) {
@@ -1446,6 +1568,20 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(codexDir, ".codex/");
         assertNotSymlink(codexHooksPath, ".codex/hooks.json");
         mergedCodex = mergeCodexHooks(codexFinal.value);
+      }
+      if (wantCopilot) {
+        const copilotFinal = readCopilotHooksFile(copilotHooksPath);
+        if (!copilotFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: copilotFinal.error };
+        }
+        assertNotSymlink(githubDir, ".github/");
+        assertNotSymlink(githubHooksDir, ".github/hooks/");
+        assertNotSymlink(
+          copilotHooksPath,
+          ".github/hooks/autopilot-harness.json",
+        );
+        mergedCopilot = mergeCopilotHooks(copilotFinal.value);
       }
       if (wantKimi) {
         const kimiFinal = readKimiConfigToml(kimiTomlPath);
@@ -1497,6 +1633,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".codex/",
       );
       written.push(path.relative(projectRoot, codexHooksPath));
+    }
+
+    if (mergedCopilot) {
+      mkdirRealDirSync(githubDir, ".github/", projectRoot);
+      mkdirRealDirSync(githubHooksDir, ".github/hooks/", projectRoot);
+      assertRealpathInside(projectRoot, githubHooksDir, ".github/hooks/");
+      writeFileAtomic(
+        copilotHooksPath,
+        JSON.stringify(mergedCopilot, null, 2) + "\n",
+        projectRoot,
+        ".github/",
+      );
+      written.push(path.relative(projectRoot, copilotHooksPath));
     }
 
     if (mergedKimi != null) {

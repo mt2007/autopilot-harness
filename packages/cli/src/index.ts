@@ -29,6 +29,18 @@ export {
   codexAutopilotHasSmallTimeout,
   CODEX_AUTOPILOT_EVENTS,
   CODEX_POST_TOOL_USE_MATCHER,
+  mergeCopilotHooks,
+  validateCopilotHooksShape,
+  hasCompleteCopilotAutopilotHooks,
+  summarizeCopilotAutopilotHooks,
+  stripAutopilotCopilotHooks,
+  copilotHooksContainAutopilot,
+  copilotHooksHavePlatformStamp,
+  copilotAutopilotHasSmallTimeout,
+  COPILOT_AUTOPILOT_EVENTS,
+  COPILOT_POST_TOOL_USE_MATCHER,
+  COPILOT_HOOK_TIMEOUT_SEC,
+  COPILOT_HOOKS_REL_PATH,
   mergeKimiConfigToml,
   stripAutopilotKimiHooks,
   removeAutopilotKimiHooks,
@@ -57,6 +69,11 @@ export type {
   CodexMatcherGroup,
   CodexHookHandler,
 } from "./init/codex-hooks-merge.js";
+export type {
+  CopilotHooksFile,
+  CopilotHookHandler,
+  CopilotAutopilotEvent,
+} from "./init/copilot-hooks-merge.js";
 export type {
   KimiHookEntry,
   KimiAutopilotEvent,

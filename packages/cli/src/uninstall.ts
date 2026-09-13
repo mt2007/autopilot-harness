@@ -18,6 +18,12 @@ import {
   type CodexHooksFile,
 } from "./init/codex-hooks-merge.js";
 import {
+  stripAutopilotCopilotHooks,
+  copilotHooksContainAutopilot,
+  validateCopilotHooksShape,
+  type CopilotHooksFile,
+} from "./init/copilot-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   kimiTomlHasAutopilotHookTables,
   readKimiConfigToml,
@@ -282,6 +288,63 @@ function readCodexHooksFile(
   }
 }
 
+function readCopilotHooksFile(
+  hooksPath: string,
+):
+  | { ok: true; value: CopilotHooksFile | null }
+  | { ok: false; error: string } {
+  const label = ".github/hooks/autopilot-harness.json";
+  try {
+    assertNotSymlink(hooksPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(hooksPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: `${label} is a symlink; refusing to open`,
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: `${label} exists and is not a regular file; refusing to uninstall`,
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access ${label}: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      label,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${label} is not a JSON object; fix or remove it before uninstall.`,
+      };
+    }
+    const file = parsed as CopilotHooksFile;
+    const shape = validateCopilotHooksShape(file);
+    if (shape) return { ok: false, error: `${label}: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${label}: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -359,6 +422,7 @@ function projectWantsInstallableHosts(configPath: string): {
   claude: boolean;
   codex: boolean;
   kimi: boolean;
+  copilot: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -371,9 +435,10 @@ function projectWantsInstallableHosts(configPath: string): {
       claude: configWantsInstallableHost(platforms, "claude-code"),
       codex: configWantsInstallableHost(platforms, "codex"),
       kimi: configWantsInstallableHost(platforms, "kimi-code"),
+      copilot: configWantsInstallableHost(platforms, "copilot-cli"),
     };
   } catch {
-    return { claude: false, codex: false, kimi: false };
+    return { claude: false, codex: false, kimi: false, copilot: false };
   }
 }
 
@@ -440,15 +505,26 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const claudeSkillsRoot = path.join(claudeDir, "skills");
     const codexDir = path.join(projectRoot, ".codex");
     const codexHooksPath = path.join(codexDir, "hooks.json");
+    const githubDir = path.join(projectRoot, ".github");
+    const githubHooksDir = path.join(githubDir, "hooks");
+    const copilotHooksPath = path.join(
+      githubHooksDir,
+      "autopilot-harness.json",
+    );
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
 
-    const { claude: wantClaude, codex: wantCodex, kimi: wantKimi } =
-      projectWantsInstallableHosts(configPath);
-    // Only fail-closed on .claude/.codex trees when config declares that host.
-    // Leftover Cursor-only host dirs must not block uninstall — soft-skip below.
-    // Kimi uses user-home config.toml (outside project) — strip separately.
+    const {
+      claude: wantClaude,
+      codex: wantCodex,
+      kimi: wantKimi,
+      copilot: wantCopilot,
+    } = projectWantsInstallableHosts(configPath);
+    // Only fail-closed on .claude/.codex/.github trees when config declares
+    // that host. Leftover Cursor-only host dirs must not block uninstall —
+    // soft-skip below. Kimi uses user-home config.toml (outside project) —
+    // strip separately.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
     // isRealDirectory is false for symlinks — probe with lstat so links are caught.
@@ -467,6 +543,12 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
       if (wantCodex) {
         dirs.push([codexDir, ".codex/"]);
+      }
+      if (wantCopilot) {
+        dirs.push(
+          [githubDir, ".github/"],
+          [githubHooksDir, ".github/hooks/"],
+        );
       }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
@@ -675,6 +757,66 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .codex/hooks.json (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Copilot CLI hooks (.github/hooks/autopilot-harness.json) ---
+    // Fingerprint strip only; do not delete the whole .github/ tree.
+    const copilotLabel = ".github/hooks/autopilot-harness.json";
+    const copilotPre = readCopilotHooksFile(copilotHooksPath);
+    if (!copilotPre.ok) {
+      if (wantCopilot) {
+        return { ok: false, error: copilotPre.error };
+      }
+      actions.push(
+        `skip ${copilotLabel} (${formatUninstallSkipDetail(copilotPre.error)})`,
+      );
+    } else if (copilotHooksContainAutopilot(copilotPre.value)) {
+      const stripCopilotHooks = (): void => {
+        assertNotSymlink(githubDir, ".github/");
+        assertNotSymlink(githubHooksDir, ".github/hooks/");
+        assertNotSymlink(copilotHooksPath, copilotLabel);
+        if (dryRun) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${copilotLabel}`);
+          return;
+        }
+        const copilotFresh = readCopilotHooksFile(copilotHooksPath);
+        if (!copilotFresh.ok) {
+          throw new Error(copilotFresh.error);
+        }
+        const freshFile = copilotFresh.value;
+        if (freshFile == null || !copilotHooksContainAutopilot(freshFile)) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${copilotLabel}`);
+          actions.push(
+            `${copilotLabel} no longer has Autopilot entries (skipped write)`,
+          );
+          return;
+        }
+        const stripped = stripAutopilotCopilotHooks(freshFile);
+        writeJsonAtomic(
+          copilotHooksPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          copilotLabel,
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push(`strip Autopilot entries from ${copilotLabel}`);
+        removed.push(
+          path.relative(projectRoot, copilotHooksPath) + " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripCopilotHooks();
+      } catch (err) {
+        if (wantCopilot) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip ${copilotLabel} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

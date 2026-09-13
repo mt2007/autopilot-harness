@@ -18,6 +18,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "claude-code", surface: "cli" },
   { id: "codex", surface: "cli" },
   { id: "kimi-code", surface: "cli" },
+  { id: "copilot-cli", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -28,6 +29,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "claude-code": "cli",
   codex: "cli",
   "kimi-code": "cli",
+  "copilot-cli": "cli",
   runner: "runner",
 });
 
@@ -138,6 +140,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "kimi-code") {
     return "Kimi Code (user-home config.toml hooks)";
+  }
+  if (id === "copilot-cli") {
+    return "GitHub Copilot CLI (.github/hooks)";
   }
   const host =
     id === "cursor"

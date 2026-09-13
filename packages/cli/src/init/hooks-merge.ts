@@ -6,6 +6,7 @@ export const HOOK_PLATFORM_CURSOR = "cursor";
 export const HOOK_PLATFORM_CLAUDE_CODE = "claude-code";
 export const HOOK_PLATFORM_CODEX = "codex";
 export const HOOK_PLATFORM_KIMI_CODE = "kimi-code";
+export const HOOK_PLATFORM_COPILOT_CLI = "copilot-cli";
 
 /** Canonical Autopilot hook command line (platform + event). */
 export function autopilotHookCommandLine(

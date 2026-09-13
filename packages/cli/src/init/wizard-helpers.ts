@@ -535,6 +535,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Codex";
     case "kimi-code":
       return "Kimi Code";
+    case "copilot-cli":
+      return "GitHub Copilot CLI";
     default: {
       const parts = id.split(/[-_]/).filter(Boolean);
       if (parts.length === 0) return "your agent host";
@@ -562,11 +564,18 @@ export function formatPostInstallOutro(
     if (id === "kimi-code") {
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in $KIMI_CODE_HOME/config.toml (default ~/.kimi-code). Prefer confirm_rounds: 1 — Stop-continue is hard-capped at 1/turn.`;
     }
+    if (id === "copilot-cli") {
+      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .github/hooks/autopilot-harness.json (timeout ≥120s). Restart Copilot CLI after install or upgrade.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
-  if (ids.includes("codex") || ids.includes("kimi-code")) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+  if (
+    ids.includes("codex") ||
+    ids.includes("kimi-code") ||
+    ids.includes("copilot-cli")
+  ) {
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -597,6 +606,10 @@ export function formatHostActivationTips(
     } else if (id === "kimi-code") {
       tips.push(
         `${host}: Autopilot merges [[hooks]] into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml). Timeout ≥120s. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md). Prefer confirm_rounds: 1 — host Stop-continue hard-capped at 1/turn.`,
+      );
+    } else if (id === "copilot-cli") {
+      tips.push(
+        `${host}: Autopilot writes .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120; UPS+Transform+postToolUse+agentStop). P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md). Restart Copilot CLI after install or upgrade.`,
       );
     } else {
       tips.push(
@@ -660,6 +673,11 @@ function hostActivationPlainLines(
           `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
           `hooks 合并进 $KIMI_CODE_HOME/config.toml（默认 ~/.kimi-code；不写 local.toml）。推荐 confirm_rounds: 1（Stop-continue 硬顶 1/turn）。`,
         );
+      } else if (id === "copilot-cli") {
+        lines.push(
+          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `hooks 写入 .github/hooks/autopilot-harness.json（bash+powershell；timeoutSec ≥120）。安装/升级后请重启 Copilot CLI。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -685,6 +703,11 @@ function hostActivationPlainLines(
       lines.push(
         `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
         `Hooks merge into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml). Prefer confirm_rounds: 1 — Stop-continue hard-capped at 1/turn.`,
+      );
+    } else if (id === "copilot-cli") {
+      lines.push(
+        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `Hooks are written to .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120). Restart Copilot CLI after install or upgrade.`,
       );
     } else {
       lines.push(
@@ -713,8 +736,13 @@ function hostActivationDocLines(
       .replaceAll("local.toml", "`local.toml`")
       .replaceAll("confirm_rounds", "`confirm_rounds`")
       .replaceAll("config.toml", "`config.toml`")
-      // Avoid splitting `.codex/hooks.json` when wrapping `/hooks`.
-      .replace(/\/hooks(?!\.json)/g, "`/hooks`")
+      // Wrap long Copilot path before generic `/hooks` (avoids splitting it).
+      .replaceAll(
+        ".github/hooks/autopilot-harness.json",
+        "`.github/hooks/autopilot-harness.json`",
+      )
+      // Trust tip `/hooks` only — do not split `.github/hooks/...` or `.codex/hooks.json`.
+      .replace(/\/hooks(?!\.json)(?!\/)/g, "`/hooks`")
       .replaceAll(".codex/hooks.json", "`.codex/hooks.json`"),
   );
 }
@@ -753,9 +781,11 @@ export function writeQuickstart(
   const platformId = sanitizePlatformId(platform) || "cursor";
   const host = formatHostDisplayName(platformId);
   const afterInstall = hostActivationDocLines(locale, platformId);
-  // Codex + Kimi Code: P0 is line-start triggers (no Autopilot skills path).
+  // Codex + Kimi Code + Copilot CLI: P0 is line-start triggers (no Autopilot skills path).
   const isLineStartHost =
-    platformId === "codex" || platformId === "kimi-code";
+    platformId === "codex" ||
+    platformId === "kimi-code" ||
+    platformId === "copilot-cli";
   const flowPlanYouZh = isLineStartHost
     ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
     : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
@@ -998,14 +1028,20 @@ export function formatCheatSheet(
     ids.length <= 1
       ? formatHostDisplayName(ids[0] ?? "cursor")
       : ids.map((id) => formatHostDisplayName(id)).join(" / ");
-  // All selected hosts are line-start P0 (Codex and/or Kimi) — prefer triggers
-  // over slash, including the dual Codex+Kimi case.
+  // All selected hosts are line-start P0 (Codex/Kimi/Copilot) — prefer triggers
+  // over slash, including multi line-start-only host mixes.
   const lineStartOnly =
     ids.length > 0 &&
-    ids.every((id) => id === "codex" || id === "kimi-code");
+    ids.every(
+      (id) =>
+        id === "codex" || id === "kimi-code" || id === "copilot-cli",
+    );
   const lineStartSideTips = lineStartOnly
     ? []
-    : ids.filter((id) => id === "codex" || id === "kimi-code");
+    : ids.filter(
+        (id) =>
+          id === "codex" || id === "kimi-code" || id === "copilot-cli",
+      );
   if (locale === "zh-CN") {
     const planningBlock = lineStartOnly
       ? [

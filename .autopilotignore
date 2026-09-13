@@ -20,6 +20,7 @@
 .cursor/**
 .claude/**
 .codex/**
+.github/hooks/**
 
 # Planning artifacts
 plans/**

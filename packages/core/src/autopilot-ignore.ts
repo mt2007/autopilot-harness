@@ -24,6 +24,7 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .cursor/**
 .claude/**
 .codex/**
+.github/hooks/**
 
 # Planning artifacts
 plans/**
