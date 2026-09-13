@@ -20,6 +20,7 @@ import {
 import {
   autopilotStopHasUnlimitedLoop,
   cursorHooksHavePlatformStamp,
+  isAutopilotCommand,
   summarizeAutopilotHooks,
   validateHooksShape,
 } from "./init/hooks-merge.js";
@@ -57,9 +58,24 @@ import {
   type CopilotHooksFile,
 } from "./init/copilot-hooks-merge.js";
 import {
+  GROK_HOOKS_REL_PATH,
+  GROK_HOOK_TIMEOUT_SEC,
+  grokAutopilotHasOmittedOrSmallTimeout,
+  grokHooksContainAutopilot,
+  grokHooksHavePlatformStamp,
+  hasCompleteGrokAutopilotHooks,
+  summarizeGrokAutopilotHooks,
+  validateGrokHooksShape,
+  type GrokHooksFile,
+} from "./init/grok-hooks-merge.js";
+import {
   COPILOT_STOP_CAP_RAISE_FOUND,
   COPILOT_STOP_CONSECUTIVE_BLOCK_CAP,
 } from "@autopilot-harness/port-copilot-cli";
+import {
+  GROK_STOP_CAP_RAISE_FOUND,
+  GROK_STOP_PER_TURN_BLOCK_CAP,
+} from "@autopilot-harness/port-grok-build";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -277,6 +293,43 @@ export function hasGlobalSelfReviewHooks(homeDir: string): boolean {
       raw.includes("run-global-self-review") ||
       raw.includes("self-review-on-stop.py")
     );
+  } catch {
+    return false;
+  }
+}
+
+/** True when project `.cursor/hooks.json` still has Autopilot command fingerprints. */
+function cursorHooksContainAutopilot(hooks: HooksFile | null): boolean {
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
+    return false;
+  }
+  const bag =
+    hooks.hooks && typeof hooks.hooks === "object" && !Array.isArray(hooks.hooks)
+      ? hooks.hooks
+      : {};
+  for (const value of Object.values(bag)) {
+    if (!Array.isArray(value)) continue;
+    if (value.some((h) => isAutopilotCommand(h?.command))) return true;
+  }
+  return false;
+}
+
+/**
+ * Best-effort: leftover Grok Autopilot fingerprint on disk.
+ * Missing/unreadable/non-object → false (dual-fingerprint WARN only).
+ */
+function projectHasGrokAutopilotFingerprint(projectRoot: string): boolean {
+  try {
+    const raw = readUntrustedUtf8File(
+      path.join(projectRoot, ".grok", "hooks", "autopilot-harness.json"),
+      MAX_CONFIG_BYTES,
+      GROK_HOOKS_REL_PATH,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    return grokHooksContainAutopilot(parsed as GrokHooksFile);
   } catch {
     return false;
   }
@@ -1160,6 +1213,101 @@ export function runDoctor(
     }
   }
 
+  const wantGrok = configWantsInstallableHost(cfg.platforms, "grok-build");
+  if (wantGrok) {
+    const grokHooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    // Host hard-cap: always surface when this installable host is enabled.
+    if (!GROK_STOP_CAP_RAISE_FOUND) {
+      lines.push(
+        `WARN  Grok Build Stop-continue per-turn block cap ≤${GROK_STOP_PER_TURN_BLOCK_CAP} (no raise found) — expect mid-chain cutoffs`,
+      );
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        grokHooksPath,
+        MAX_CONFIG_BYTES,
+        GROK_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push(`FAIL  ${GROK_HOOKS_REL_PATH} is not a JSON object`);
+        ok = false;
+      } else {
+        const file = parsed as GrokHooksFile;
+        const shapeError = validateGrokHooksShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${GROK_HOOKS_REL_PATH}: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeGrokAutopilotHooks(file);
+          const badTimeout = grokAutopilotHasOmittedOrSmallTimeout(file);
+          const hasStamp = grokHooksHavePlatformStamp(file);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  ${GROK_HOOKS_REL_PATH} missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  ${GROK_HOOKS_REL_PATH} has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (badTimeout) {
+            lines.push(
+              `WARN  Autopilot Grok hook timeout below ${GROK_HOOK_TIMEOUT_SEC} (or omitted; host default too low) — run upgrade`,
+            );
+          }
+          if (missingEvents.length === 0 && !hasStamp) {
+            lines.push(
+              "WARN  Autopilot Grok hooks missing --platform grok-build — run upgrade",
+            );
+          }
+          // Align with Codex/Kimi reload tips: only after Autopilot event coverage
+          // is present (not on missing/corrupt/invalid shape / incomplete install).
+          if (missingEvents.length === 0) {
+            lines.push(
+              "WARN  Grok Build project hooks need /hooks-trust or --trust after install or upgrade",
+            );
+            lines.push(
+              "WARN  Reload Grok Build or open a new session after install or upgrade so Autopilot hooks reload",
+            );
+          }
+          // hasComplete ≡ missingEvents+duplicates; keep both for defense in depth.
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !badTimeout &&
+            hasStamp &&
+            hasCompleteGrokAutopilotHooks(file)
+          ) {
+            lines.push(`OK    ${GROK_HOOKS_REL_PATH} Autopilot entries`);
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(`FAIL  ${GROK_HOOKS_REL_PATH} missing`);
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  ${GROK_HOOKS_REL_PATH} unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
+    }
+  }
+
   // Dual Claude + Copilot Autopilot fingerprints (config and/or on-disk residue).
   if (wantClaude && wantCopilot) {
     lines.push(
@@ -1217,6 +1365,90 @@ export function runDoctor(
     if (!wantClaude && !wantCopilot && claudeFp && copilotFp) {
       lines.push(
         "WARN  Claude + Copilot Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
+  // Dual Grok + Claude Autopilot fingerprints (config and/or on-disk residue).
+  // Shared leftover read when Grok is not enabled (Claude/Cursor dual blocks).
+  const grokLeftoverFp = wantGrok
+    ? false
+    : projectHasGrokAutopilotFingerprint(root);
+  if (wantGrok && wantClaude) {
+    lines.push(
+      "WARN  Grok Build + Claude Code both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFpVsGrok = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFpVsGrok = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantGrok && claudeFpVsGrok) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Grok Build is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (wantClaude && grokLeftoverFp) {
+      lines.push(
+        "WARN  Grok Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Grok or expect Stop routing care",
+      );
+    }
+    if (!wantGrok && !wantClaude && grokLeftoverFp && claudeFpVsGrok) {
+      lines.push(
+        "WARN  Grok + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
+  // Dual Grok + Cursor Autopilot fingerprints (config and/or on-disk residue).
+  if (wantGrok && wantCursor) {
+    lines.push(
+      "WARN  Grok Build + Cursor both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let cursorFpVsGrok = false;
+    if (!wantCursor) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".cursor", "hooks.json"),
+          MAX_CONFIG_BYTES,
+          ".cursor/hooks.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          cursorFpVsGrok = cursorHooksContainAutopilot(parsed as HooksFile);
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantGrok && cursorFpVsGrok) {
+      lines.push(
+        "WARN  Cursor Autopilot hooks present while Grok Build is enabled — dual fingerprints; uninstall Cursor hooks or expect Stop routing care",
+      );
+    }
+    if (wantCursor && grokLeftoverFp) {
+      lines.push(
+        "WARN  Grok Autopilot hooks present while Cursor is enabled — dual fingerprints; uninstall Grok or expect Stop routing care",
+      );
+    }
+    if (!wantGrok && !wantCursor && grokLeftoverFp && cursorFpVsGrok) {
+      lines.push(
+        "WARN  Grok + Cursor Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
       );
     }
   }

@@ -1195,4 +1195,118 @@ review:
     ).toMatch(/autopilot-harness-hook\.mjs/);
     fs.rmSync(outside, { recursive: true, force: true });
   });
+
+  it("dry-run lists Grok hooks action when grok-build is enabled (no skills)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      r.actions.some((a) => /\.grok\/hooks\/autopilot-harness\.json/i.test(a)),
+    ).toBe(true);
+    expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+    expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
+  });
+
+  it("Grok-enabled upgrade fails closed on corrupt hooks JSON", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".grok", "hooks", "autopilot-harness.json"),
+      "{not-json",
+      "utf8",
+    );
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) {
+      expect(dry.error).toMatch(/autopilot-harness\.json|valid JSON|JSON/i);
+    }
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/autopilot-harness\.json|valid JSON|JSON/i);
+    }
+  });
+
+  it("upgrade refreshes Grok hooks and restores timeout 120", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ timeout?: number; command?: string }> }>
+      >;
+    };
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (
+            typeof h.command === "string" &&
+            h.command.includes("autopilot-harness-hook")
+          ) {
+            h.timeout = 30;
+          }
+        }
+      }
+    }
+    // Foreign sibling handler must survive fingerprint-only upgrade merge.
+    file.hooks ??= {};
+    file.hooks.Stop = [
+      ...(file.hooks.Stop ?? []),
+      {
+        hooks: [{ command: "echo foreign-grok-keep", timeout: 9 }],
+      },
+    ];
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ timeout?: number; command?: string }> }>
+      >;
+    };
+    const stopGroups = after.hooks?.Stop ?? [];
+    const autopilotStop = stopGroups
+      .flatMap((g) => g.hooks ?? [])
+      .find(
+        (h) =>
+          typeof h.command === "string" &&
+          h.command.includes("autopilot-harness-hook"),
+      );
+    expect(autopilotStop?.timeout).toBe(120);
+    expect(autopilotStop?.command).toMatch(/--platform grok-build/);
+    expect(JSON.stringify(stopGroups)).toMatch(/foreign-grok-keep/);
+  });
 });

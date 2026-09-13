@@ -2708,6 +2708,606 @@ describe("runDoctor", () => {
       /Claude \+ Copilot Autopilot fingerprints both present on disk/i,
     );
   });
+
+  it("OKs Grok Autopilot entries and WARNs Stop≤8/turn + trust + reload", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+    expect(joined).toMatch(/Stop-continue per-turn block cap ≤8/i);
+    expect(joined).toMatch(/hooks-trust|--trust/i);
+    expect(joined).toMatch(/Reload Grok Build|new session/i);
+    expect(joined).not.toMatch(
+      /FAIL\s+\.grok\/hooks\/autopilot-harness\.json missing/i,
+    );
+  });
+
+  it("FAILs when Grok hooks file is missing on a Grok-enabled project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".grok", "hooks", "autopilot-harness.json"), {
+      force: true,
+    });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/\.grok\/hooks\/autopilot-harness\.json missing/i);
+    expect(joined).not.toMatch(/hooks-trust|--trust/i);
+    expect(joined).not.toMatch(/Reload Grok Build|new session/i);
+  });
+
+  it("FAILs corrupt Grok hooks without trust/reload tips", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.writeFileSync(
+      path.join(root, ".grok", "hooks", "autopilot-harness.json"),
+      "{not-json",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/\.grok\/hooks\/autopilot-harness\.json unreadable/i);
+    expect(joined).not.toMatch(/hooks-trust|--trust/i);
+    expect(joined).not.toMatch(/Reload Grok Build|new session/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+  });
+
+  it("FAILs incomplete Grok Autopilot events without trust/reload tips", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    expect(file.hooks?.Stop).toBeTruthy();
+    delete file.hooks!.Stop;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing Autopilot for:.*Stop/i);
+    expect(joined).not.toMatch(/hooks-trust|--trust/i);
+    expect(joined).not.toMatch(/Reload Grok Build|new session/i);
+  });
+
+  it("FAILs invalid Grok hooks shape without trust/reload tips", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.writeFileSync(
+      path.join(root, ".grok", "hooks", "autopilot-harness.json"),
+      JSON.stringify({ version: 1, hooks: [] }, null, 2) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/\.grok\/hooks\/autopilot-harness\.json/i);
+    expect(joined).toMatch(/invalid shape|must be an object/i);
+    expect(joined).not.toMatch(/hooks-trust|--trust/i);
+    expect(joined).not.toMatch(/Reload Grok Build|new session/i);
+  });
+
+  it("WARNs when Autopilot Grok hooks omit timeout (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, Array<{ hooks?: Array<{ timeout?: number }> }>>;
+    };
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          delete h.timeout;
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/timeout below 120 \(or omitted/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when Autopilot Grok hook timeout is set below 120", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<string, Array<{ hooks?: Array<{ timeout?: number }> }>>;
+    };
+    const stop = file.hooks?.Stop?.[0]?.hooks?.[0];
+    expect(stop).toBeTruthy();
+    stop!.timeout = 30;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/timeout below 120/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs on duplicate Grok Autopilot hooks without FAIL", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks: Record<string, Array<Record<string, unknown>>>;
+    };
+    file.hooks.Stop = [
+      ...(file.hooks.Stop ?? []),
+      {
+        hooks: [
+          {
+            type: "command",
+            command:
+              "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop --platform grok-build",
+            timeout: 120,
+          },
+        ],
+      },
+    ];
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /\.grok\/hooks\/autopilot-harness\.json.*duplicate/i,
+    );
+    expect(joined).not.toMatch(
+      /FAIL\s+\.grok\/hooks\/autopilot-harness\.json missing Autopilot/i,
+    );
+    expect(joined).not.toMatch(
+      /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when Autopilot Grok hooks omit --platform stamp (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ command?: string }> }>
+      >;
+    };
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (typeof h.command === "string") {
+            h.command = h.command.replace(/\s+--platform\s+grok-build\b/g, "");
+          }
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing --platform grok-build/i);
+    expect(joined).toMatch(/hooks-trust|--trust/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when Grok Build + Claude Code are both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Grok Build \+ Claude Code both enabled/i,
+    );
+  });
+
+  it("WARNs when Grok Build + Cursor are both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/Grok Build \+ Cursor both enabled/i);
+  });
+
+  it("WARNs when Claude-only project has leftover Grok Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "claude-code", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Grok Autopilot hooks present while Claude Code is enabled/i,
+    );
+  });
+
+  it("WARNs when Cursor-only project has leftover Grok Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [{ id: "cursor", surface: "ide" }]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Grok Autopilot hooks present while Cursor is enabled/i,
+    );
+  });
+
+  it("WARNs when Grok-only project has leftover Claude Autopilot settings", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "grok-build", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Claude Autopilot hooks present while Grok Build is enabled/i,
+    );
+  });
+
+  it("WARNs when Grok-only project has leftover Cursor Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "grok-build", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(true);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Cursor Autopilot hooks present while Grok Build is enabled/i,
+    );
+  });
+
+  it("FAILs when Grok hooks file is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(
+      root,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    fs.rmSync(hooksPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-grok-hooks.json"), hooksPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /\.grok\/hooks\/autopilot-harness\.json unreadable|symlink/i,
+    );
+    expect(joined).not.toMatch(
+      /FAIL\s+\.grok\/hooks\/autopilot-harness\.json missing/i,
+    );
+    expect(joined).not.toMatch(/hooks-trust|--trust/i);
+  });
+
+  it("WARNs when Cursor-only project has both Grok and Claude leftover fingerprints", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [{ id: "cursor", surface: "ide" }]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    expect(
+      fs.existsSync(
+        path.join(root, ".grok", "hooks", "autopilot-harness.json"),
+      ),
+    ).toBe(true);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /Grok \+ Claude Autopilot fingerprints both present on disk/i,
+    );
+    expect(joined).toMatch(
+      /Grok Autopilot hooks present while Cursor is enabled/i,
+    );
+  });
 });
 
 describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", () => {
