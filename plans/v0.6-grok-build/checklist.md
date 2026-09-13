@@ -8,7 +8,7 @@
 - [x] doctor-upgrade-uninstall — FAIL：缺/残 Autopilot hooks；WARN：timeout **省略或**&lt;120、**Stop≤8/turn**（读 port constants /raise）、confirm 中段掐断 tip、**trust tip**、**Grok+Claude 和/或 Grok+Cursor** 多指纹、**reload/新开会话**；upgrade/uninstall 只动指纹（空则 unlink）
 - [x] tests-grok-contract — Vitest：I/O、Stop 单通道、UPS/needPick（inject 或 UPS-block）、busy、hooks merge（sibling + 空 unlink + 无 UPS/Stop matcher + command 路径）、ignore、doctor（含 omit timeout）、add-platform、六路+别名
 - [x] matrix-six-host — 扩展五宿主矩阵：Grok↔Cursor/Claude/Codex/Kimi/Copilot 错 stamp/错 payload → abort（副作用前）；既有宿主不红
-- [ ] smoke-repo — `pnpm test` + typecheck；失败先修再往下
+- [x] smoke-repo — `pnpm test` + typecheck；失败先修再往下
 - [ ] live-grok-smoke — 外部 disposable；≥1 Stop-continue + edit/dirty-arm + **证明 Autopilot hook command 确实跑到**；证据 **`plans/v0.6-grok-build/`**；无 CLI → 免活链；免活链 ≠ 发版同意
 - [ ] docs-grok-shipped — README(+zh-CN)/hosts/architecture/config/troubleshooting/quickstart/CHANGELOG；**five-way→six-way**；Shipped **degraded Stop ≤8/turn**（每 turn 重置；勿双通道；勿抄 consecutive）；**trust**；**compat.hooks tip**；needPick 重提 slug；pending/RESUME/nudge；多指纹 WARN；PUBLIC + port-grok-build；**docs-contract**：改 **`docs/hosts.md` 当前正文**（Grok=Shipped；**1 (next)=Gemini**；six-way）并同步测试断言；**勿改写** CHANGELOG `[0.5.0]` 历史句（当时 next=Grok / five-way，测试仍校验那段）；新开 `[0.6.0]`；不接 PreToolUse
 - [ ] changelog-bump-0-6-0 — `PACKAGE_VERSION`+公开包（含 port-grok-build）→0.6.0；CHANGELOG 0.6.0；core→i18n→ports→cli
