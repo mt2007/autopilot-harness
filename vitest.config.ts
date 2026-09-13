@@ -33,6 +33,10 @@ export default defineConfig({
         __dirname,
         "packages/ports/kimi-code/src/index.ts",
       ),
+      "@autopilot-harness/port-copilot-cli": path.resolve(
+        __dirname,
+        "packages/ports/copilot-cli/src/index.ts",
+      ),
       "@autopilot-harness/port-cursor": path.resolve(
         __dirname,
         "packages/ports/cursor/src/index.ts",
