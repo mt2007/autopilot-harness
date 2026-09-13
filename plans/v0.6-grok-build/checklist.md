@@ -16,5 +16,5 @@
 - [x] commit-local — conventional commit；**勿** push/tag/publish
 - [x] human-gate-confirm — 呈活链或 waive；**另等「同意发 0.6.0」**
 - [x] push-tag-release — 人闸后：push → tag `v0.6.0` → `gh release create`
-- [ ] npm-publish-pnpm — 仅 `pnpm publish` 按序 → `npm view` / `npx` 抽检
+- [x] npm-publish-pnpm — 仅 `pnpm publish` 按序 → `npm view` / `npx` 抽检
 - [ ] pin-upgrade-repo — pin→0.6.0；提醒 trust + Stop ≤8/turn /raise
