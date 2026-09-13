@@ -2,7 +2,7 @@
 
 CLI for **Autopilot** — a vibecoding harness that turns open-ended agent chat into **structured planning → checklist execution → multi-lens self-review**.
 
-Bin name: `autopilot-harness`. Requires **Node.js 22+**. **This build ships Cursor, Claude Code, Codex, and Kimi Code** (Kimi is **degraded Stop≤1/turn**).
+Bin name: `autopilot-harness`. Requires **Node.js 22+**. **This build ships Cursor, Claude Code, Codex, Kimi Code, and GitHub Copilot CLI** (Kimi is **degraded Stop≤1/turn**; Copilot is **degraded Stop consecutive ≤8**).
 
 Autopilot does **not** guarantee bug-free software. It raises confidence that work was planned, checklist-scoped, and pressure-tested under several review lenses.
 
@@ -12,7 +12,7 @@ From the app you want to instrument (`cwd` = that project):
 
 ```bash
 npx @autopilot-harness/cli init --platform cursor --yes
-# or: --platform claude-code | --platform codex | --platform kimi-code
+# or: --platform claude-code | --platform codex | --platform kimi-code | --platform copilot-cli
 # multi-host: init --yes --add-platform <id>
 ```
 
@@ -22,10 +22,10 @@ Interactive TUI (platform still defaults to cursor):
 npx @autopilot-harness/cli init
 ```
 
-Reload the host (Cursor: Reload Window; Claude Code / Codex / Kimi Code: restart / new session). Trust Codex hooks via `/hooks` when applicable, then:
+Reload the host (Cursor: Reload Window; Claude Code / Codex / Kimi Code / Copilot CLI: restart / new session). **Restart Copilot CLI** after install or upgrade so hooks reload. Trust Codex hooks via `/hooks` when applicable, then:
 
-1. Plan — Cursor/Claude: `/autopilot-on`; Codex / Kimi Code: line-start `triggers.on` (typed slash still parses)
-2. Execute — Cursor/Claude: `/autopilot-run`; Codex / Kimi Code: line-start `triggers.run`
+1. Plan — Cursor/Claude: `/autopilot-on`; Codex / Kimi Code / Copilot CLI: line-start `triggers.on` (typed slash still parses)
+2. Execute — Cursor/Claude: `/autopilot-run`; Codex / Kimi Code / Copilot CLI: line-start `triggers.run`
 
 ## Useful commands
 

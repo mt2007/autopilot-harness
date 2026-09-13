@@ -20,7 +20,7 @@ Vibe coding 很快，但范围漂移、验收含糊、「看起来做完了」�
 2. **按 checklist 执行**（`plans/<slug>/`）  
 3. **多角度自审通过后**再勾选完成  
 
-它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**本仓已接入 Cursor、Claude Code、Codex 与 Kimi Code**（CLI 与 App 共用同一 Codex port；**Kimi Code** 为 **Stop≤1/turn 降级** 自审）。Copilot CLI / Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner 等见 [宿主说明](./docs/hosts.md) 路线图。
+它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**本仓已接入 Cursor、Claude Code、Codex、Kimi Code 与 GitHub Copilot CLI**（CLI 与 App 共用同一 Codex port；**Kimi Code** 为 **Stop≤1/turn 降级**；**Copilot CLI** 为 **Stop consecutive ≤8 降级**）。Grok / Gemini / Factory / Hermes / Antigravity / OpenCode / Runner 等见 [宿主说明](./docs/hosts.md) 路线图。
 
 Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、落在 checklist 范围内、并在多种审查镜头下压测过，再宣称某一项完成。
 
@@ -58,7 +58,7 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 
 ### 多角度自审
 
-在 **产品代码** 编辑之后，Autopilot 驱动 **修复**，再 **确认** 轮。每轮镜头不同（不是同一清单复读）。Cursor / Claude Code / Codex 默认 `review.confirm_rounds: 5`；启用可安装的 **Kimi Code** 时用 **`confirm_rounds: 1`**（宿主 Stop-continue 硬顶 ≤1/turn，不要指望 confirm×5；init 写 `1`，hook 也会把**整个项目**钳到 `1`，同 `platforms` 里的其他宿主一并受影响）。`3` 为轻量（镜头 **1 → 2 → 5**，跳过并发与安全）。
+在 **产品代码** 编辑之后，Autopilot 驱动 **修复**，再 **确认** 轮。每轮镜头不同（不是同一清单复读）。Cursor / Claude Code / Codex / Copilot CLI 默认 `review.confirm_rounds: 5`；启用可安装的 **Kimi Code** 时用 **`confirm_rounds: 1`**（宿主 Stop-continue 硬顶 ≤1/turn，不要指望 confirm×5；init 写 `1`，hook 也会把**整个项目**钳到 `1`，同 `platforms` 里的其他宿主一并受影响）。**Copilot CLI** 不钳 `confirm_rounds`，但是 **Stop consecutive ≤8 降级**（中途掐断可能留下 pending，用 `/autopilot-resume` / nudge 恢复）。`3` 为轻量（镜头 **1 → 2 → 5**，跳过并发与安全）。
 
 产品代码路径：排除 `.autopilotignore`，以及**未跟踪且被 `.gitignore` 忽略**的路径。**暂停 / OFF** 会话在 resume 前不跑链。
 
@@ -108,10 +108,13 @@ npx @autopilot-harness/cli init --platform claude-code --yes
 npx @autopilot-harness/cli init --platform codex --yes
 # 或 Kimi Code（用户目录 `~/.kimi-code/config.toml`；Stop≤1/turn 降级；推荐 confirm_rounds: 1）
 npx @autopilot-harness/cli init --platform kimi-code --yes
+# 或 GitHub Copilot CLI（`.github/hooks/autopilot-harness.json`；Stop consecutive ≤8 降级；安装后重启 CLI）
+npx @autopilot-harness/cli init --platform copilot-cli --yes
 # 多宿主：第一个 init 之后再加（不必整仓重装）
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
 # npx @autopilot-harness/cli init --yes --add-platform kimi-code
+# npx @autopilot-harness/cli init --yes --add-platform copilot-cli
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```
@@ -120,21 +123,21 @@ npx @autopilot-harness/cli doctor
 
 从本仓库克隆开发或 dogfood：见 [Contributing](./CONTRIBUTING.md)。
 
-重载宿主窗口（Cursor：Reload Window；Claude Code / Codex / Kimi Code：重启 / 新开会话），然后：
+重载宿主窗口（Cursor：Reload Window；Claude Code / Codex / Kimi Code / Copilot CLI：重启 / 新开会话），然后：
 
-1. 规划 — Cursor/Claude：`/autopilot-on`；Codex：行首 `triggers.on`（如 `开启自动驾驶`；无 skills UI；手打 slash 仍可解析；需 `/hooks` trust）；Kimi Code：同行首路径（**Stop≤1/turn 降级**）→ grill → `plans/<slug>/`  
-2. 执行 — Cursor/Claude：`/autopilot-run`；Codex：行首 `triggers.run`（如 `开始执行`）；Kimi Code：同  
+1. 规划 — Cursor/Claude：`/autopilot-on`；Codex：行首 `triggers.on`（如 `开启自动驾驶`；无 skills UI；手打 slash 仍可解析；需 `/hooks` trust）；Kimi Code / Copilot CLI：同行首路径（Kimi **Stop≤1/turn**；Copilot **Stop consecutive ≤8**）→ grill → `plans/<slug>/`  
+2. 执行 — Cursor/Claude：`/autopilot-run`；Codex：行首 `triggers.run`（如 `开始执行`）；Kimi Code / Copilot CLI：同  
 
 更多命令：[docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md)（[English](./docs/autopilot/quickstart.md)）。
 
-`init` 会写入 `.autopilot/`、合并宿主 hooks，并在支持的宿主安装 skills/workflows。Claude Code 还会合并 `.claude/settings.json`（hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`）与 `.claude/skills/autopilot-*`。Codex 合并 `.codex/hooks.json`（省略 timeout；matcher `apply_patch|Edit|Write`）— 默认不写 `AGENTS.md`。**Kimi Code** 合并用户目录 `$KIMI_CODE_HOME/config.toml`（默认 `~/.kimi-code`；timeout ≥120s；**Stop≤1/turn 降级**自审；推荐 `confirm_rounds: 1`）— 不写 Autopilot skills / `AGENTS.md`。与自审相关的配置键包括 `locale`、`review.scope`（`executing_only` | `project`）、`review.confirm_rounds`，以及可选的 `review.verify.*`（见 [配置说明](./docs/config.md)、[Architecture](./docs/architecture.md)，以及上方 **何时跑自审**）。
+`init` 会写入 `.autopilot/`、合并宿主 hooks，并在支持的宿主安装 skills/workflows。Claude Code 还会合并 `.claude/settings.json`（hooks + `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`）与 `.claude/skills/autopilot-*`。Codex 合并 `.codex/hooks.json`（省略 timeout；matcher `apply_patch|Edit|Write`）— 默认不写 `AGENTS.md`。**Kimi Code** 合并用户目录 `$KIMI_CODE_HOME/config.toml`（默认 `~/.kimi-code`；timeout ≥120s；**Stop≤1/turn 降级**自审；推荐 `confirm_rounds: 1`）— 不写 Autopilot skills / `AGENTS.md`。**GitHub Copilot CLI** 写入 `.github/hooks/autopilot-harness.json`（bash+powershell；timeoutSec ≥120；`userPromptSubmitted`+`userPromptTransformed`+postToolUse+agentStop；**Stop consecutive ≤8 降级**；安装/升级后**重启 Copilot CLI**）— 不写 Autopilot skills / `AGENTS.md`；不接 `preToolUse`。与自审相关的配置键包括 `locale`、`review.scope`（`executing_only` | `project`）、`review.confirm_rounds`，以及可选的 `review.verify.*`（见 [配置说明](./docs/config.md)、[Architecture](./docs/architecture.md)，以及上方 **何时跑自审**）。
 
 ## 文档
 
 - [Architecture](./docs/architecture.md)  
 - [配置说明](./docs/config.md)  
-- [排障](./docs/troubleshooting.md)  
-- [宿主说明](./docs/hosts.md)（Cursor / Claude Code / Codex / Kimi Code 已支持；Kimi 为 **Stop≤1/turn 降级**；完整扩宿主路线图）  
+- [排障](./docs/troubleshooting.md) — doctor WARN、双重 hook、Claude `BLOCK_CAP`、Codex trust/timeout、Kimi Stop≤1/turn、Copilot Stop≤8 / 重启 / 双装  
+- [宿主说明](./docs/hosts.md)（Cursor / Claude Code / Codex / Kimi Code / Copilot CLI 已支持；Kimi 为 **Stop≤1/turn 降级**；Copilot 为 **Stop consecutive ≤8 降级**；完整扩宿主路线图）  
 - [宿主 Plan 桥接（设计）](./docs/host-plan-bridge.md)  
 - [快速开始（中文）](./docs/autopilot/quickstart.zh-CN.md)  
 - [Contributing](./CONTRIBUTING.md)  

@@ -9,6 +9,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **docs-copilot-shipped**: GitHub Copilot CLI marked **Shipped** (**degraded Stop consecutive ≤8**; no raise found) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/copilot-cli/package.json`; mid-cutoff recovery via **pending / RESUME / nudge**; **Restart Copilot CLI** after install/upgrade; doctor **FAIL** on missing/incomplete `.github/hooks`, **WARN** on ≤8 / Restart / **Claude+Copilot dual** (enabled or leftover); explicitly **no preToolUse**.
+
 ## [0.4.1] — 2026-09-12
 
 ### Changed

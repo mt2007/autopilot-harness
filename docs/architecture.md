@@ -4,19 +4,20 @@ Product front door: English [README.md](../README.md) is authoritative.
 
 Also: [CONTRIBUTING.md](../CONTRIBUTING.md) · [CHANGELOG.md](../CHANGELOG.md) · [Config](./config.md) · [Troubleshooting](./troubleshooting.md) · [Hosts](./hosts.md) · [Plan bridge](./host-plan-bridge.md).
 
-Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, Codex, Kimi Code, …).
+Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, …).
 
 Project config (`.autopilot/config.yml`) lists enabled hosts under `platforms:`
 (`id` + `surface`: `ide` | `cli` | `runner`). Primary host is the first
 installable binding in that list. Deprecated top-level `platform` / `surface`
 scalars are still read as a fallback when `platforms` is missing; `init` /
 `upgrade` stop writing them and strip them on refresh. Config may list multiple
-`platforms`; **this build installs Cursor, Claude Code, Codex, and/or Kimi Code** when those
-bindings are present (`cursor`/`ide`, `claude-code`/`cli`, `codex`/`cli`, `kimi-code`/`cli`). Other ids are
+`platforms`; **this build installs Cursor, Claude Code, Codex, Kimi Code, and/or Copilot CLI** when those
+bindings are present (`cursor`/`ide`, `claude-code`/`cli`, `codex`/`cli`, `kimi-code`/`cli`, `copilot-cli`/`cli`). Other ids are
 reserved for future ports. For Claude, `surface: cli` means official hooks are
 **shared across terminal + IDE** — not CLI-only. Codex also uses `surface: cli`
 (project `.codex/hooks.json`; trust via `/hooks`). Kimi Code uses `surface: cli`
 (user-home `config.toml` `[[hooks]]`; prefer `$KIMI_CODE_HOME` / `~/.kimi-code`; never `local.toml`).
+Copilot CLI uses `surface: cli` (project `.github/hooks/autopilot-harness.json`; **Restart Copilot CLI** after install/upgrade).
 
 ```
 packages/core               StateStore, ReviewEngine, project-config, checklist, triggers
@@ -24,6 +25,7 @@ packages/ports/cursor       beforeSubmitPrompt / afterFileEdit / stop adapters
 packages/ports/claude-code  UserPromptSubmit / PostToolUse / Stop / StopFailure adapters
 packages/ports/codex        UserPromptSubmit / PostToolUse / Stop adapters (aliased handleCodex*)
 packages/ports/kimi-code    UserPromptSubmit / PostToolUse / Stop adapters (aliased handleKimi*; Stop = exit 2 + stderr; degraded Stop≤1/turn)
+packages/ports/copilot-cli  userPromptSubmitted / userPromptTransformed / postToolUse / agentStop (aliased handleCopilot*; Stop = decision:block+reason; degraded consecutive ≤8; no preToolUse)
 packages/cli                @autopilot-harness/cli (bin: autopilot-harness; npm public)
 packages/i18n               en + zh-CN
 packages/templates          skills (*.tpl) + planning/executing workflows
@@ -40,7 +42,7 @@ The project Stop / submit / edit hooks load a **vendored** ESM bundle so consume
 repos do not need `@autopilot-harness/core` in `node_modules`:
 
 1. **Source of truth (CLI package):** `packages/cli/assets/vendor/`
-   - `runtime.mjs` — esbuild bundle of core + **Cursor, Claude Code, Codex, and Kimi Code** ports (`pnpm bundle-vendor`; Codex/Kimi handlers exported as `handleCodex*` / `handleKimi*`)
+   - `runtime.mjs` — esbuild bundle of core + **Cursor, Claude Code, Codex, Kimi Code, and Copilot CLI** ports (`pnpm bundle-vendor`; Codex/Kimi/Copilot handlers exported as `handleCodex*` / `handleKimi*` / `handleCopilot*`)
    - `migrations/001_initial.sql` — schema the runtime applies on first open
 2. **Installed into each project:** `.autopilot/bin/vendor/` (copied by `init` / `upgrade`)
 3. **Entry:** `.autopilot/bin/autopilot-harness-hook.mjs` imports `./vendor/runtime.mjs` and dispatches by **`--platform <id>`** (when present) + host event + payload conflict resolver (cross-fire)
@@ -63,9 +65,10 @@ Hostile-workspace I/O helpers live in `packages/cli/src/read-untrusted-file.ts`
 Autopilot’s fix + multi-angle confirm routinely needs **many consecutive**
 stop continuations in one streak. Each **host** enforces its own circuit
 breaker; ports must disable or raise it **when possible**. If the host
-**hard-caps** continuations (e.g. Kimi ≤1 / turn), ship **degraded**
+**hard-caps** continuations (e.g. Kimi ≤1 / turn, Copilot consecutive ≤8), ship **degraded**
 Autopilot (keep the stop streak short — for Kimi, recommend
-`confirm_rounds: 1`) — otherwise the chain stalls mid-confirm (pending
+`confirm_rounds: 1`; for Copilot, expect mid-chain cutoffs and recover via
+pending followup / `/autopilot-resume` / human nudge) — otherwise the chain stalls mid-confirm (pending
 followup left in DB).
 
 | Host | Mechanism | Default | Autopilot mitigation |
@@ -74,9 +77,11 @@ followup left in DB).
 | **Claude Code** (v0.2 shipped) | Stop `decision: "block"` consecutive **block cap** | **8**; `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` (`0` disables) | Init writes `.claude/settings.json` hooks + `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`; `doctor` WARNs when missing or not `0`. Workspace **trust** may gate project `env`. |
 | **Codex** (shipped) | Stop `decision: "block"` + `reason` as next user prompt; `stop_hook_active` | No documented numeric block cap (2026-09 research) | **Shipped** hook port: `.codex/hooks.json` (omit timeout or ≥120s); `/hooks` trust + re-trust; P0 line-start `triggers.on` / `triggers.run` (no default skills/`AGENTS.md`; typed `/autopilot-*` still parses). |
 | **Kimi Code** (shipped, degraded) | Blockable `Stop` → **≤1 continuation / turn** (host hard cap); continue via **exit 2 + stderr** | Hook timeout default often **30s** | **Shipped** `@autopilot-harness/port-kimi-code` as **degraded** Autopilot (prefer `confirm_rounds: 1`; hook clamps to `1`). Raise timeout ≥120s. Roadmap hosts: [hosts.md](./hosts.md#roadmap-not-shipped). |
+| **GitHub Copilot CLI** (shipped, degraded) | `agentStop` `decision:"block"` + `reason`; consecutive runaway guard | **8** consecutive blocks | **Shipped** `@autopilot-harness/port-copilot-cli` as **degraded** (no raise found). `userPromptSubmitted` stdout ignored — Transform carries needPick/busy. No `preToolUse`. Doctor WARN ≤8 + Restart CLI + Claude+Copilot dual (enabled or leftover). Mid-cutoff → pending / RESUME / nudge. |
 | **Runner** (later) | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. For hosts without stop continuation only. |
 
-`beforeSubmitPrompt` / `afterFileEdit` (and Claude/Codex/Kimi `UserPromptSubmit` analogues)
+`beforeSubmitPrompt` / `afterFileEdit` (and Claude/Codex/Kimi/Copilot submit analogues —
+`UserPromptSubmit` / `userPromptSubmitted`)
 are **not** subject to Cursor’s stop `loop_limit`; they do not emit Autopilot
 followup loops.
 

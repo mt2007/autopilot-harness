@@ -166,11 +166,26 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/Stop≤1\/turn|≤1\/turn/);
     expect(tips).toMatch(/~\/\.kimi-code|KIMI_CODE_HOME/);
     expect(tips).toMatch(/project-wide|whole project/i);
+    expect(tips).toMatch(
+      /Cursor \/ Claude \/ Codex \/ Copilot|including Cursor \/ Claude \/ Codex \/ Copilot/i,
+    );
     expect(tips).toMatch(/machine-wide|user-home/i);
     expect(tips).toMatch(/never[\s\S]*local\.toml|local\.toml/i);
     expect(tips).toMatch(/symlink/i);
     expect(tips).toMatch(/cwd-relative|project root/i);
     expect(tips).toMatch(/projects you trust|trusted/i);
+    expect(tips).toMatch(/### GitHub Copilot CLI/);
+    expect(tips).toMatch(/Stop consecutive ≤8/);
+    expect(tips).toMatch(/Restart Copilot CLI/i);
+    expect(tips).toMatch(/Claude Code \+ Copilot CLI|Claude\+Copilot|dual/i);
+    expect(tips).toMatch(/leftover hooks on disk|both enabled or leftover/i);
+    expect(tips).toMatch(
+      /\*\*FAIL\*\*s when[\s\S]*\.github\/hooks\/autopilot-harness\.json|FAIL[\s\S]*missing[\s\S]*incomplete/i,
+    );
+    expect(tips).toMatch(/pending|RESUME|nudge/i);
+    expect(tips).toMatch(/userPromptSubmitted/);
+    expect(tips).toMatch(/Does \*\*not\*\* wire `preToolUse`|no `preToolUse`|不接 `preToolUse`/i);
+    expect(tips).toMatch(/\.github\/hooks/);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -196,13 +211,24 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
     expect(config).toMatch(/project-wide|whole project/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, and\/or Kimi Code/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, and\/or Copilot CLI/i,
     );
-    expect(config).toMatch(/quaternary dispatch/i);
+    expect(config).toMatch(/five-way dispatch/i);
+    expect(config).not.toMatch(/\bquaternary dispatch\b/);
     expect(config).not.toMatch(/\bternary dispatch\b/);
-    expect(config).toMatch(/Cursor \+ Claude Code \+ Codex \+ Kimi Code build/);
+    expect(config).toMatch(
+      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI build/,
+    );
     expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
-    expect(config).toMatch(/Codex \/ Kimi Code P0|Kimi Code P0/);
+    expect(config).toMatch(/Stop consecutive ≤8|Copilot.*≤8/i);
+    expect(config).toMatch(/Codex \/ Kimi Code \/ Copilot CLI P0|Copilot CLI P0/);
+    expect(config).toMatch(/does \*\*not\*\* clamp `confirm_rounds`|does not clamp confirm_rounds/i);
+    expect(config).toMatch(
+      /missing\/incomplete \*\*FAIL\*\*|Copilot[\s\S]*FAIL[\s\S]*WARN/i,
+    );
+    expect(config).toMatch(
+      /dual WARN[\s\S]*leftover|leftover hooks on disk|both enabled \*\*or\*\* leftover|dual = both enabled \*\*or\*\* leftover/i,
+    );
   });
 
   it("config does not imply require_token is enforced", () => {
@@ -241,10 +267,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, and\/or Kimi Code/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, and\/or Copilot CLI/i,
     );
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
     expect(config).toMatch(/\.codex\/\*\*/);
+    expect(config).toMatch(/\.github\/hooks\/\*\*/);
     expect(config).toMatch(/`review\.scope` \| `project` \(fresh init YAML\)/);
     expect(config).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
   });
@@ -274,6 +301,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       expect(body).toMatch(/--platform kimi-code|platform kimi-code/);
       expect(body).toMatch(/Stop≤1\/turn|≤1\/turn/);
       expect(body).toMatch(/--add-platform kimi-code/);
+      expect(body).toMatch(/--platform copilot-cli|platform copilot-cli/);
+      expect(body).toMatch(/Stop consecutive ≤8/);
+      expect(body).toMatch(/--add-platform copilot-cli/);
+      expect(body).toMatch(
+        /Restart Copilot CLI|重启 Copilot CLI|重启 CLI|restart the CLI/i,
+      );
+      expect(body).toMatch(/no `preToolUse`|不接 `preToolUse`/i);
     }
   });
 
@@ -287,11 +321,14 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
-    expect(cliReadme).toMatch(/Cursor, Claude Code, Codex, and Kimi Code/);
+    expect(cliReadme).toMatch(/Cursor, Claude Code, Codex, Kimi Code, and GitHub Copilot CLI|Cursor, Claude Code, Codex, Kimi Code, and Copilot CLI/);
     expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
     expect(cliReadme).toMatch(/--platform codex|platform codex/);
     expect(cliReadme).toMatch(/kimi-code/);
+    expect(cliReadme).toMatch(/copilot-cli/);
     expect(cliReadme).toMatch(/Stop≤1\/turn|degraded Stop/i);
+    expect(cliReadme).toMatch(/Stop consecutive ≤8/);
+    expect(cliReadme).toMatch(/Restart Copilot CLI/i);
     expect(cliReadme).toMatch(/triggers\.on/);
     expect(cliReadme).toMatch(/triggers\.run/);
     expect(cliReadme).toMatch(/no bare npm package named `autopilot-harness`/i);
@@ -327,6 +364,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/Codex:[\s\S]*triggers\.run/);
     expect(body).toMatch(/--platform kimi-code|init --platform kimi-code/);
     expect(body).toMatch(/port-kimi-code/);
+    expect(body).toMatch(/--platform copilot-cli|init --platform copilot-cli/);
+    expect(body).toMatch(/port-copilot-cli/);
     expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
@@ -342,6 +381,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/do not expect confirm×5|clamps to `1`/i);
     expect(body).toMatch(/whole project|for the whole project/i);
+    expect(body).toMatch(
+      /Copilot CLI[\s\S]*degraded[\s\S]*≤8|Stop consecutive ≤8/i,
+    );
+    expect(body).toMatch(/Restart Copilot CLI|restart.*Copilot CLI/i);
+    expect(body).toMatch(/pending|RESUME|nudge/i);
+    expect(body).toMatch(/userPromptSubmitted/);
+    expect(body).toMatch(/no `preToolUse`/i);
   });
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
@@ -368,22 +414,39 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/不要指望 confirm×5|钳到 `1`/);
     expect(body).toMatch(/整个项目/);
+    expect(body).toMatch(/--platform copilot-cli|init --platform copilot-cli/);
+    expect(body).toMatch(/Stop consecutive ≤8|≤8 降级/);
+    expect(body).toMatch(/重启 Copilot CLI|Restart Copilot CLI/);
+    expect(body).toMatch(/userPromptSubmitted/);
+    expect(body).toMatch(/不接 `preToolUse`|no `preToolUse`/i);
+    expect(body).toMatch(/Copilot Stop≤8|Stop≤8 \/ 重启|双装/);
   });
 
-  it("hosts.md marks Codex, Claude, and Kimi as shipped", () => {
+  it("hosts.md marks Codex, Claude, Kimi, and Copilot as shipped", () => {
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
     expect(hosts).toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Claude Code\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Shipped\*\*/);
+    expect(hosts).toMatch(
+      /\|\s*\*\*GitHub Copilot CLI\*\*\s*\|\s*\*\*Shipped\*\*/,
+    );
     expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*v0\.3 \/ v0\.4 planned\*\*/);
     // Status column only (avoid Notes-column false positives/negatives).
     expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Planned\*\*/);
     expect(hosts).not.toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Next\*\*/);
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*GitHub Copilot CLI\*\*\s*\|\s*\*\*Next\*\*/,
+    );
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*GitHub Copilot CLI\*\*/,
+    );
     expect(hosts).toMatch(/handleCodexUserPromptSubmit/);
     expect(hosts).toMatch(/handleCodexPostToolUse/);
     expect(hosts).toMatch(/handleCodexStop/);
     expect(hosts).toMatch(/handleKimiUserPromptSubmit|handleKimi\*/);
     expect(hosts).toMatch(/handleKimiPostToolUse|handleKimiStop/);
+    expect(hosts).toMatch(/handleCopilotUserPromptSubmit|handleCopilot\*/);
+    expect(hosts).toMatch(/handleCopilotPostToolUse|handleCopilotStop/);
     expect(hosts).toMatch(/apply_patch/);
     expect(hosts).toMatch(/\/hooks/);
     expect(hosts).toMatch(/triggers\.on/);
@@ -394,10 +457,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/host-plan-bridge\.md/);
     expect(hosts).toMatch(/## Roadmap \(not shipped\)/);
     expect(hosts).toMatch(/GitHub Copilot CLI/);
+    expect(hosts).toMatch(/five-way/);
     expect(hosts).not.toMatch(
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Kimi Code\*\*/,
     );
+    expect(hosts).toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Grok Build CLI\*\*/,
+    );
     expect(hosts).toMatch(/Kimi Code \| \*\*Shipped\*\* \(degraded Stop≤1\/turn\)/);
+    expect(hosts).toMatch(
+      /GitHub Copilot CLI \| \*\*Shipped\*\* \(degraded Stop consecutive ≤8\)/,
+    );
     expect(hosts).toMatch(/Grok Build CLI/);
     expect(hosts).toMatch(/Gemini CLI/);
     expect(hosts).toMatch(/Factory Droid/);
@@ -411,15 +481,31 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /roadmap markers only[\s\S]*init[\s\S]*do \*\*not\*\* install them yet/i,
     );
     expect(hosts).toMatch(/Stop-continue hard-capped at 1|≤1 continue \/ turn|Stop continue ≤1|Stop≤1\/turn/i);
+    expect(hosts).toMatch(/Stop consecutive ≤8|consecutive ≤8/);
     expect(hosts).toMatch(/confirm_rounds:\s*1|confirm_rounds: 1/);
     expect(hosts).toMatch(/~\/\.kimi-code/);
     expect(hosts).toMatch(/legacy kimi-cli/);
     expect(hosts).toMatch(/~\/\.kimi\//);
     expect(hosts).toMatch(/degraded hook port/i);
     expect(hosts).toMatch(/clamps `review\.confirm_rounds` to 1 for the whole project|project-wide/i);
+    expect(hosts).toMatch(/Does \*\*not\*\* clamp `confirm_rounds`|does \*\*not\*\* clamp rounds/i);
     expect(hosts).toMatch(/user-home.*config\.toml|config\.toml.*user-home/i);
     expect(hosts).toMatch(/never[\s\S]*local\.toml|local\.toml/);
     expect(hosts).toMatch(/symlink|projects you trust/i);
+    expect(hosts).toMatch(/\.github\/hooks\/autopilot-harness\.json/);
+    expect(hosts).toMatch(/Restart Copilot CLI/i);
+    expect(hosts).toMatch(/pending followup|RESUME|nudge/i);
+    expect(hosts).toMatch(/userPromptSubmitted/);
+    expect(hosts).toMatch(/\*\*no\*\* `preToolUse`|no `preToolUse`/i);
+    expect(hosts).toMatch(
+      /dual fingerprints \(both enabled or leftover|leftover hooks on disk/i,
+    );
+    expect(hosts).toMatch(
+      /Future hosts with only a \*\*hard-capped\*\* stop-continue|hard-capped[\s\S]*degraded hook port/i,
+    );
+    expect(hosts).toMatch(
+      /UserPromptSubmit` \/ `userPromptSubmitted|userPromptSubmitted[\s\S]*loop_limit/i,
+    );
     expect(hosts).toMatch(
       /when possible[\s\S]*hard-caps[\s\S]*keep the stop streak short[\s\S]*confirm_rounds:\s*1/i,
     );
@@ -462,14 +548,18 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
     expect(body).toMatch(
-      /installs Cursor, Claude Code, Codex, and\/or Kimi Code/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, and\/or Copilot CLI/i,
     );
     expect(body).toMatch(/ports\/claude-code/);
     expect(body).toMatch(/ports\/codex/);
     expect(body).toMatch(/ports\/kimi-code/);
-    expect(body).toMatch(/Cursor, Claude Code, Codex, and Kimi Code/);
+    expect(body).toMatch(/ports\/copilot-cli/);
+    expect(body).toMatch(
+      /Cursor, Claude Code, Codex, Kimi Code, and Copilot CLI/,
+    );
     expect(body).toMatch(/handleCodex\*/);
     expect(body).toMatch(/handleKimi\*/);
+    expect(body).toMatch(/handleCopilot\*/);
     expect(body).toMatch(/never `local\.toml`|never local\.toml/i);
     expect(body).toMatch(/triggers\.on\s*\/\s*`?triggers\.run|triggers\.on`\s*\/\s*`triggers\.run/);
     expect(body).toMatch(/npm public/);
@@ -478,6 +568,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
     expect(body).toMatch(/Kimi Code[\s\S]*≤1 continuation \/ turn|Kimi Code[\s\S]*≤1 continue \/ turn|Stop≤1\/turn/i);
     expect(body).toMatch(/degraded[\s\S]*confirm_rounds:\s*1|confirm_rounds:\s*1[\s\S]*degraded/i);
+    expect(body).toMatch(/Copilot CLI[\s\S]*≤8|consecutive ≤8|Stop consecutive ≤8/i);
+    expect(body).toMatch(/userPromptSubmitted/);
+    expect(body).toMatch(/[Nn]o `preToolUse`/);
+    expect(body).toMatch(/pending|RESUME|nudge/i);
+    expect(body).toMatch(/Restart Copilot CLI/i);
+    expect(body).toMatch(
+      /UserPromptSubmit` \/ `userPromptSubmitted|userPromptSubmitted[\s\S]*loop_limit/i,
+    );
+    expect(body).toMatch(/enabled or leftover|leftover/i);
     expect(body).toMatch(
       /when possible[\s\S]*hard-caps[\s\S]*keep the stop streak short/i,
     );
@@ -611,6 +710,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section041).toMatch(/Start planning|开启规划/);
     expect(section041).toMatch(/upgrade|locale set/i);
     const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).toMatch(/docs-copilot-shipped/i);
+    expect(unreleased).toMatch(/port-copilot-cli|packages\/ports\/copilot-cli\/package\.json/i);
+    expect(unreleased).toMatch(/marked \*\*Shipped\*\*/);
+    expect(unreleased).toMatch(/Stop consecutive ≤8/);
+    expect(unreleased).toMatch(/pending|RESUME|nudge/i);
+    expect(unreleased).toMatch(/Restart Copilot CLI/i);
+    expect(unreleased).toMatch(/Claude\+Copilot|dual/i);
+    expect(unreleased).toMatch(
+      /FAIL[\s\S]*missing\/incomplete|FAIL on missing\/incomplete|missing\/incomplete `\.\.?github/i,
+    );
+    expect(unreleased).toMatch(/no preToolUse|explicitly \*\*no preToolUse\*\*/i);
     expect(unreleased).not.toMatch(/docs-kimi-shipped/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
