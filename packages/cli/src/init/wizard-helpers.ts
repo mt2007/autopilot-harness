@@ -537,6 +537,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Kimi Code";
     case "copilot-cli":
       return "GitHub Copilot CLI";
+    case "grok-build":
+      return "Grok Build";
     default: {
       const parts = id.split(/[-_]/).filter(Boolean);
       if (parts.length === 0) return "your agent host";
@@ -567,15 +569,19 @@ export function formatPostInstallOutro(
     if (id === "copilot-cli") {
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .github/hooks/autopilot-harness.json (timeout ≥120s). Restart Copilot CLI after install or upgrade.`;
     }
+    if (id === "grok-build") {
+      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .grok/hooks/autopilot-harness.json (timeout 120s). Trust via /hooks-trust or --trust after install or upgrade.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
   if (
     ids.includes("codex") ||
     ids.includes("kimi-code") ||
-    ids.includes("copilot-cli")
+    ids.includes("copilot-cli") ||
+    ids.includes("grok-build")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -610,6 +616,10 @@ export function formatHostActivationTips(
     } else if (id === "copilot-cli") {
       tips.push(
         `${host}: Autopilot writes .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120; UPS+Transform+postToolUse+agentStop). P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md). Restart Copilot CLI after install or upgrade.`,
+      );
+    } else if (id === "grok-build") {
+      tips.push(
+        `${host}: Autopilot writes .grok/hooks/autopilot-harness.json only (Codex-shaped; timeout 120; UPS+PostToolUse+Stop). Trust via /hooks-trust or --trust after install or upgrade. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
       );
     } else {
       tips.push(
@@ -678,6 +688,11 @@ function hostActivationPlainLines(
           `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
           `hooks 写入 .github/hooks/autopilot-harness.json（bash+powershell；timeoutSec ≥120）。安装/升级后请重启 Copilot CLI。`,
         );
+      } else if (id === "grok-build") {
+        lines.push(
+          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `hooks 仅写 .grok/hooks/autopilot-harness.json（timeout 120）。安装/升级后请用 /hooks-trust 或 --trust 信任。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -708,6 +723,11 @@ function hostActivationPlainLines(
       lines.push(
         `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
         `Hooks are written to .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120). Restart Copilot CLI after install or upgrade.`,
+      );
+    } else if (id === "grok-build") {
+      lines.push(
+        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `Hooks are written to .grok/hooks/autopilot-harness.json only (timeout 120). Trust via /hooks-trust or --trust after install or upgrade.`,
       );
     } else {
       lines.push(
@@ -741,8 +761,14 @@ function hostActivationDocLines(
         ".github/hooks/autopilot-harness.json",
         "`.github/hooks/autopilot-harness.json`",
       )
+      .replaceAll(
+        ".grok/hooks/autopilot-harness.json",
+        "`.grok/hooks/autopilot-harness.json`",
+      )
       // Trust tip `/hooks` only — do not split `.github/hooks/...` or `.codex/hooks.json`.
-      .replace(/\/hooks(?!\.json)(?!\/)/g, "`/hooks`")
+      .replace(/\/hooks(?!-trust)(?!\.json)(?!\/)/g, "`/hooks`")
+      .replaceAll("/hooks-trust", "`/hooks-trust`")
+      .replaceAll("--trust", "`--trust`")
       .replaceAll(".codex/hooks.json", "`.codex/hooks.json`"),
   );
 }
@@ -781,11 +807,12 @@ export function writeQuickstart(
   const platformId = sanitizePlatformId(platform) || "cursor";
   const host = formatHostDisplayName(platformId);
   const afterInstall = hostActivationDocLines(locale, platformId);
-  // Codex + Kimi Code + Copilot CLI: P0 is line-start triggers (no Autopilot skills path).
+  // Codex + Kimi + Copilot + Grok: P0 is line-start triggers (no Autopilot skills path).
   const isLineStartHost =
     platformId === "codex" ||
     platformId === "kimi-code" ||
-    platformId === "copilot-cli";
+    platformId === "copilot-cli" ||
+    platformId === "grok-build";
   const flowPlanYouZh = isLineStartHost
     ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
     : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
@@ -1034,13 +1061,19 @@ export function formatCheatSheet(
     ids.length > 0 &&
     ids.every(
       (id) =>
-        id === "codex" || id === "kimi-code" || id === "copilot-cli",
+        id === "codex" ||
+        id === "kimi-code" ||
+        id === "copilot-cli" ||
+        id === "grok-build",
     );
   const lineStartSideTips = lineStartOnly
     ? []
     : ids.filter(
         (id) =>
-          id === "codex" || id === "kimi-code" || id === "copilot-cli",
+          id === "codex" ||
+          id === "kimi-code" ||
+          id === "copilot-cli" ||
+          id === "grok-build",
       );
   if (locale === "zh-CN") {
     const planningBlock = lineStartOnly

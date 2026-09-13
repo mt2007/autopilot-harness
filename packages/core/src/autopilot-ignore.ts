@@ -25,6 +25,7 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .claude/**
 .codex/**
 .github/hooks/**
+.grok/hooks/**
 
 # Planning artifacts
 plans/**

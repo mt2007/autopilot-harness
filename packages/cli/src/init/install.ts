@@ -20,6 +20,11 @@ import {
   type CopilotHooksFile,
 } from "./copilot-hooks-merge.js";
 import {
+  mergeGrokHooks,
+  validateGrokHooksShape,
+  type GrokHooksFile,
+} from "./grok-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   mergeKimiConfigToml,
   readKimiConfigToml,
@@ -140,6 +145,27 @@ export type {
   CopilotHookHandler,
   CopilotAutopilotEvent,
 } from "./copilot-hooks-merge.js";
+export {
+  mergeGrokHooks,
+  validateGrokHooksShape,
+  hasCompleteGrokAutopilotHooks,
+  summarizeGrokAutopilotHooks,
+  stripAutopilotGrokHooks,
+  grokHooksContainAutopilot,
+  grokHooksHavePlatformStamp,
+  grokAutopilotHasOmittedOrSmallTimeout,
+  grokHooksFileIsVacant,
+  GROK_AUTOPILOT_EVENTS,
+  GROK_POST_TOOL_USE_MATCHER,
+  GROK_HOOK_TIMEOUT_SEC,
+  GROK_HOOKS_REL_PATH,
+} from "./grok-hooks-merge.js";
+export type {
+  GrokHooksFile,
+  GrokMatcherGroup,
+  GrokHookHandler,
+  GrokAutopilotEvent,
+} from "./grok-hooks-merge.js";
 export {
   mergeKimiConfigToml,
   stripAutopilotKimiHooks,
@@ -365,13 +391,17 @@ type CopilotHooksRead =
   | { ok: true; value: CopilotHooksFile | null }
   | { ok: false; error: string };
 
+type GrokHooksRead =
+  | { ok: true; value: GrokHooksFile | null }
+  | { ok: false; error: string };
+
 function platformsWantHost(
   platforms: readonly PlatformBinding[],
   hostId: string,
 ): boolean {
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
-  // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli` with the wrong
+  // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli`/`grok-build` with the wrong
   // surface must not force reads/writes (e.g. corrupt leftover settings
   // blocking --add-platform of another host).
   return platforms.some(
@@ -540,6 +570,45 @@ function readCopilotHooksFile(filePath: string): CopilotHooksRead {
     }
     const obj = parsed as CopilotHooksFile;
     const shapeError = validateCopilotHooksShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
+/** Read `.grok/hooks/autopilot-harness.json`; refuse to clobber unreadable. */
+function readGrokHooksFile(filePath: string): GrokHooksRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".grok/hooks/autopilot-harness.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as GrokHooksFile;
+    const shapeError = validateGrokHooksShape(obj);
     if (shapeError) {
       return { ok: false, error: `${filePath}: ${shapeError}` };
     }
@@ -1001,6 +1070,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     githubHooksDir,
     "autopilot-harness.json",
   );
+  const grokDir = path.join(projectRoot, ".grok");
+  const grokHooksDir = path.join(grokDir, "hooks");
+  const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
   const mergePlatforms = Boolean(opts.mergePlatforms);
   // Adding hosts into an existing config requires the force/refresh path.
   const force = Boolean(opts.force) || mergePlatforms;
@@ -1166,17 +1238,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantCodex = platformsWantHost(effectivePlatforms, "codex");
     const wantKimi = platformsWantHost(effectivePlatforms, "kimi-code");
     const wantCopilot = platformsWantHost(effectivePlatforms, "copilot-cli");
+    const wantGrok = platformsWantHost(effectivePlatforms, "grok-build");
     if (
       !wantCursor &&
       !wantClaude &&
       !wantCodex &&
       !wantKimi &&
-      !wantCopilot
+      !wantCopilot &&
+      !wantGrok
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, and/or copilot-cli).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, and/or grok-build).",
       };
     }
 
@@ -1235,6 +1309,23 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const copilotPre = readCopilotHooksFile(copilotHooksPath);
       if (!copilotPre.ok) {
         return { ok: false, error: copilotPre.error };
+      }
+    }
+    if (wantGrok) {
+      try {
+        assertNotSymlink(grokDir, ".grok/");
+        assertNotSymlink(grokHooksDir, ".grok/hooks/");
+        assertNotSymlink(
+          grokHooksPath,
+          ".grok/hooks/autopilot-harness.json",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const grokPre = readGrokHooksFile(grokHooksPath);
+      if (!grokPre.ok) {
+        return { ok: false, error: grokPre.error };
       }
     }
     const kimiHome = resolveKimiCodeHome();
@@ -1413,6 +1504,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let claudeFresh: ClaudeSettingsRead | null = null;
     let codexFresh: CodexHooksRead | null = null;
     let copilotFresh: CopilotHooksRead | null = null;
+    let grokFresh: GrokHooksRead | null = null;
     let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
     if (wantCursor) {
       hooksFresh = readHooksFile(hooksPath);
@@ -1478,6 +1570,25 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantGrok) {
+      grokFresh = readGrokHooksFile(grokHooksPath);
+      if (!grokFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: grokFresh.error };
+      }
+      try {
+        assertNotSymlink(grokDir, ".grok/");
+        assertNotSymlink(grokHooksDir, ".grok/hooks/");
+        assertNotSymlink(
+          grokHooksPath,
+          ".grok/hooks/autopilot-harness.json",
+        );
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
     if (wantKimi) {
       kimiFresh = readKimiConfigToml(kimiTomlPath);
       if (!kimiFresh.ok) {
@@ -1510,6 +1621,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantCopilot && copilotFresh?.ok) {
         mergeCopilotHooks(copilotFresh.value);
       }
+      if (wantGrok && grokFresh?.ok) {
+        mergeGrokHooks(grokFresh.value);
+      }
       if (wantKimi && kimiFresh?.ok) {
         mergeKimiConfigToml(kimiFresh.value);
       }
@@ -1520,7 +1634,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex / Kimi Code / Copilot CLI have no Autopilot skills path — skip.
+    // Codex / Kimi Code / Copilot CLI / Grok Build have no Autopilot skills path — skip.
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1537,6 +1651,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedClaude: ReturnType<typeof mergeClaudeSettings> | null = null;
     let mergedCodex: ReturnType<typeof mergeCodexHooks> | null = null;
     let mergedCopilot: ReturnType<typeof mergeCopilotHooks> | null = null;
+    let mergedGrok: ReturnType<typeof mergeGrokHooks> | null = null;
     let mergedKimi: string | null = null;
     try {
       if (wantCursor) {
@@ -1582,6 +1697,20 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           ".github/hooks/autopilot-harness.json",
         );
         mergedCopilot = mergeCopilotHooks(copilotFinal.value);
+      }
+      if (wantGrok) {
+        const grokFinal = readGrokHooksFile(grokHooksPath);
+        if (!grokFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: grokFinal.error };
+        }
+        assertNotSymlink(grokDir, ".grok/");
+        assertNotSymlink(grokHooksDir, ".grok/hooks/");
+        assertNotSymlink(
+          grokHooksPath,
+          ".grok/hooks/autopilot-harness.json",
+        );
+        mergedGrok = mergeGrokHooks(grokFinal.value);
       }
       if (wantKimi) {
         const kimiFinal = readKimiConfigToml(kimiTomlPath);
@@ -1646,6 +1775,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".github/",
       );
       written.push(path.relative(projectRoot, copilotHooksPath));
+    }
+
+    if (mergedGrok) {
+      mkdirRealDirSync(grokDir, ".grok/", projectRoot);
+      mkdirRealDirSync(grokHooksDir, ".grok/hooks/", projectRoot);
+      assertRealpathInside(projectRoot, grokHooksDir, ".grok/hooks/");
+      writeFileAtomic(
+        grokHooksPath,
+        JSON.stringify(mergedGrok, null, 2) + "\n",
+        projectRoot,
+        ".grok/",
+      );
+      written.push(path.relative(projectRoot, grokHooksPath));
     }
 
     if (mergedKimi != null) {

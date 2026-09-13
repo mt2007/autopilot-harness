@@ -31,6 +31,11 @@ import {
   COPILOT_HOOKS_REL_PATH,
 } from "./init/copilot-hooks-merge.js";
 import {
+  validateGrokHooksShape,
+  type GrokHooksFile,
+  GROK_HOOKS_REL_PATH,
+} from "./init/grok-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   readKimiConfigToml,
   resolveKimiCodeHome,
@@ -65,6 +70,7 @@ function preflightHostSettings(
   wantCodex: boolean,
   wantKimi: boolean,
   wantCopilot: boolean,
+  wantGrok: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -214,6 +220,49 @@ function preflightHostSettings(
         };
       }
       const shape = validateCopilotHooksShape(parsed as CopilotHooksFile);
+      if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
+      }
+      // Missing hooks file is OK — force refresh will create it.
+    }
+  }
+
+  if (wantGrok) {
+    const hooksPath = path.join(
+      projectRoot,
+      ".grok",
+      "hooks",
+      "autopilot-harness.json",
+    );
+    try {
+      assertNotSymlink(path.join(projectRoot, ".grok"), ".grok/");
+      assertNotSymlink(
+        path.join(projectRoot, ".grok", "hooks"),
+        ".grok/hooks/",
+      );
+      assertNotSymlink(hooksPath, GROK_HOOKS_REL_PATH);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        GROK_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${hooksPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateGrokHooksShape(parsed as GrokHooksFile);
       if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
@@ -526,6 +575,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantCodex = configWantsInstallableHost(platforms, "codex");
     const wantKimi = configWantsInstallableHost(platforms, "kimi-code");
     const wantCopilot = configWantsInstallableHost(platforms, "copilot-cli");
+    const wantGrok = configWantsInstallableHost(platforms, "grok-build");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -549,6 +599,11 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         `merge ${COPILOT_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
       );
     }
+    if (wantGrok) {
+      actions.push(
+        `merge ${GROK_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
+      );
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -564,6 +619,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantCodex,
       wantKimi,
       wantCopilot,
+      wantGrok,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

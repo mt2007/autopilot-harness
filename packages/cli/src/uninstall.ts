@@ -24,6 +24,13 @@ import {
   type CopilotHooksFile,
 } from "./init/copilot-hooks-merge.js";
 import {
+  stripAutopilotGrokHooks,
+  grokHooksContainAutopilot,
+  grokHooksFileIsVacant,
+  validateGrokHooksShape,
+  type GrokHooksFile,
+} from "./init/grok-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   kimiTomlHasAutopilotHookTables,
   readKimiConfigToml,
@@ -345,6 +352,63 @@ function readCopilotHooksFile(
   }
 }
 
+function readGrokHooksFile(
+  hooksPath: string,
+):
+  | { ok: true; value: GrokHooksFile | null }
+  | { ok: false; error: string } {
+  const label = ".grok/hooks/autopilot-harness.json";
+  try {
+    assertNotSymlink(hooksPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(hooksPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: `${label} is a symlink; refusing to open`,
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: `${label} exists and is not a regular file; refusing to uninstall`,
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access ${label}: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      label,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${label} is not a JSON object; fix or remove it before uninstall.`,
+      };
+    }
+    const file = parsed as GrokHooksFile;
+    const shape = validateGrokHooksShape(file);
+    if (shape) return { ok: false, error: `${label}: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${label}: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -423,6 +487,7 @@ function projectWantsInstallableHosts(configPath: string): {
   codex: boolean;
   kimi: boolean;
   copilot: boolean;
+  grok: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -436,9 +501,16 @@ function projectWantsInstallableHosts(configPath: string): {
       codex: configWantsInstallableHost(platforms, "codex"),
       kimi: configWantsInstallableHost(platforms, "kimi-code"),
       copilot: configWantsInstallableHost(platforms, "copilot-cli"),
+      grok: configWantsInstallableHost(platforms, "grok-build"),
     };
   } catch {
-    return { claude: false, codex: false, kimi: false, copilot: false };
+    return {
+      claude: false,
+      codex: false,
+      kimi: false,
+      copilot: false,
+      grok: false,
+    };
   }
 }
 
@@ -511,6 +583,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       githubHooksDir,
       "autopilot-harness.json",
     );
+    const grokDir = path.join(projectRoot, ".grok");
+    const grokHooksDir = path.join(grokDir, "hooks");
+    const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
@@ -520,8 +595,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       codex: wantCodex,
       kimi: wantKimi,
       copilot: wantCopilot,
+      grok: wantGrok,
     } = projectWantsInstallableHosts(configPath);
-    // Only fail-closed on .claude/.codex/.github trees when config declares
+    // Only fail-closed on .claude/.codex/.github/.grok trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi uses user-home config.toml (outside project) —
     // strip separately.
@@ -549,6 +625,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
           [githubDir, ".github/"],
           [githubHooksDir, ".github/hooks/"],
         );
+      }
+      if (wantGrok) {
+        dirs.push([grokDir, ".grok/"], [grokHooksDir, ".grok/hooks/"]);
       }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
@@ -817,6 +896,83 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip ${copilotLabel} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Grok Build hooks (.grok/hooks/autopilot-harness.json) ---
+    // Fingerprint strip only; empty-after-strip → unlink file; leave siblings.
+    const grokLabel = ".grok/hooks/autopilot-harness.json";
+    const grokPre = readGrokHooksFile(grokHooksPath);
+    if (!grokPre.ok) {
+      if (wantGrok) {
+        return { ok: false, error: grokPre.error };
+      }
+      actions.push(
+        `skip ${grokLabel} (${formatUninstallSkipDetail(grokPre.error)})`,
+      );
+    } else if (grokHooksContainAutopilot(grokPre.value)) {
+      const stripGrokHooks = (): void => {
+        assertNotSymlink(grokDir, ".grok/");
+        assertNotSymlink(grokHooksDir, ".grok/hooks/");
+        assertNotSymlink(grokHooksPath, grokLabel);
+        if (dryRun) {
+          found = true;
+          const preview =
+            grokPre.value != null
+              ? stripAutopilotGrokHooks(grokPre.value)
+              : null;
+          if (grokHooksFileIsVacant(preview)) {
+            actions.push(`unlink empty ${grokLabel}`);
+          } else {
+            actions.push(`strip Autopilot entries from ${grokLabel}`);
+          }
+          return;
+        }
+        const grokFresh = readGrokHooksFile(grokHooksPath);
+        if (!grokFresh.ok) {
+          throw new Error(grokFresh.error);
+        }
+        const freshFile = grokFresh.value;
+        if (freshFile == null || !grokHooksContainAutopilot(freshFile)) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${grokLabel}`);
+          actions.push(
+            `${grokLabel} no longer has Autopilot entries (skipped write)`,
+          );
+          return;
+        }
+        const stripped = stripAutopilotGrokHooks(freshFile);
+        if (grokHooksFileIsVacant(stripped)) {
+          assertRealpathInside(projectRoot, grokHooksPath, grokLabel);
+          fs.unlinkSync(grokHooksPath);
+          found = true;
+          hooksStripped = true;
+          actions.push(`unlink empty ${grokLabel}`);
+          removed.push(path.relative(projectRoot, grokHooksPath));
+          return;
+        }
+        writeJsonAtomic(
+          grokHooksPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          grokLabel,
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push(`strip Autopilot entries from ${grokLabel}`);
+        removed.push(
+          path.relative(projectRoot, grokHooksPath) + " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripGrokHooks();
+      } catch (err) {
+        if (wantGrok) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip ${grokLabel} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

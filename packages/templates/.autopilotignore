@@ -21,6 +21,7 @@
 .claude/**
 .codex/**
 .github/hooks/**
+.grok/hooks/**
 
 # Planning artifacts
 plans/**

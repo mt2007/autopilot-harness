@@ -41,6 +41,19 @@ export {
   COPILOT_POST_TOOL_USE_MATCHER,
   COPILOT_HOOK_TIMEOUT_SEC,
   COPILOT_HOOKS_REL_PATH,
+  mergeGrokHooks,
+  validateGrokHooksShape,
+  hasCompleteGrokAutopilotHooks,
+  summarizeGrokAutopilotHooks,
+  stripAutopilotGrokHooks,
+  grokHooksContainAutopilot,
+  grokHooksHavePlatformStamp,
+  grokAutopilotHasOmittedOrSmallTimeout,
+  grokHooksFileIsVacant,
+  GROK_AUTOPILOT_EVENTS,
+  GROK_POST_TOOL_USE_MATCHER,
+  GROK_HOOK_TIMEOUT_SEC,
+  GROK_HOOKS_REL_PATH,
   mergeKimiConfigToml,
   stripAutopilotKimiHooks,
   removeAutopilotKimiHooks,
@@ -74,6 +87,12 @@ export type {
   CopilotHookHandler,
   CopilotAutopilotEvent,
 } from "./init/copilot-hooks-merge.js";
+export type {
+  GrokHooksFile,
+  GrokMatcherGroup,
+  GrokHookHandler,
+  GrokAutopilotEvent,
+} from "./init/grok-hooks-merge.js";
 export type {
   KimiHookEntry,
   KimiAutopilotEvent,
