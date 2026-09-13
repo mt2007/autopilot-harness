@@ -32,6 +32,9 @@ importers:
       '@autopilot-harness/port-codex':
         specifier: workspace:*
         version: link:../ports/codex
+      '@autopilot-harness/port-copilot-cli':
+        specifier: workspace:*
+        version: link:../ports/copilot-cli
       '@autopilot-harness/port-cursor':
         specifier: workspace:*
         version: link:../ports/cursor

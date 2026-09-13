@@ -11,10 +11,12 @@
  *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure
  *   Codex: UserPromptSubmit | PostToolUse | Stop (no StopFailure)
  *   Kimi Code: UserPromptSubmit | PostToolUse | Stop (exit 0/2 + stdio; no StopFailure)
+ *   Copilot CLI: userPromptSubmitted | userPromptTransformed | postToolUse | agentStop
  *
- * Dispatch is explicit quaternary via --platform
- * (cursor | claude-code | codex | kimi-code). Shared PascalCase event names
- * must NOT imply Claude when platform is codex or kimi-code.
+ * Dispatch is explicit five-way via --platform
+ * (cursor | claude-code | codex | kimi-code | copilot-cli). Shared PascalCase
+ * event names must NOT imply Claude when platform is codex, kimi-code, or
+ * copilot-cli. Copilot camelCase events are routed by stamp + event only.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -45,11 +47,19 @@ const CLAUDE_EVENTS = new Set([
 /** Codex/Kimi share submit/edit/stop names with Claude; routed by --platform only. */
 const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const KIMI_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
+/** Copilot CLI camelCase events (Transform is Copilot-only). */
+const COPILOT_EVENTS = new Set([
+  "userPromptSubmitted",
+  "userPromptTransformed",
+  "postToolUse",
+  "agentStop",
+]);
 const KNOWN_PLATFORMS = new Set([
   "cursor",
   "claude-code",
   "codex",
   "kimi-code",
+  "copilot-cli",
 ]);
 
 function parseArgs(argv) {
@@ -58,6 +68,7 @@ function parseArgs(argv) {
     ...CLAUDE_EVENTS,
     ...CODEX_EVENTS,
     ...KIMI_EVENTS,
+    ...COPILOT_EVENTS,
   ]);
   const out = { event: "beforeSubmitPrompt", platform: null };
   for (let i = 0; i < argv.length; i++) {
@@ -85,17 +96,20 @@ function isClaudeEvent(event) {
 /**
  * Resolve host id: stamped --platform wins; legacy installs fall back to
  * event-name heuristics (Claude-shaped events → claude-code, else cursor).
- * Never map PascalCase events to Claude when --platform is codex or kimi-code.
+ * Never map PascalCase events to Claude when --platform is codex, kimi-code,
+ * or copilot-cli. Copilot camelCase events without a stamp still need a host.
  */
 function resolveHostId(declaredPlatform, event) {
   if (
     declaredPlatform === "cursor" ||
     declaredPlatform === "claude-code" ||
     declaredPlatform === "codex" ||
-    declaredPlatform === "kimi-code"
+    declaredPlatform === "kimi-code" ||
+    declaredPlatform === "copilot-cli"
   ) {
     return declaredPlatform;
   }
+  if (COPILOT_EVENTS.has(event)) return "copilot-cli";
   if (isClaudeEvent(event)) return "claude-code";
   return "cursor";
 }
@@ -202,6 +216,9 @@ async function loadHostPortPackage(hostId) {
   }
   if (hostId === "kimi-code") {
     return loadPortPackage("@autopilot-harness/port-kimi-code");
+  }
+  if (hostId === "copilot-cli") {
+    return loadPortPackage("@autopilot-harness/port-copilot-cli");
   }
   return loadPortPackage("@autopilot-harness/port-cursor");
 }
@@ -360,7 +377,9 @@ function codexStopHandler(port) {
     typeof port.handleStopFailure !== "function" &&
     typeof port.handleClaudeStop !== "function" &&
     typeof port.handleKimiStop !== "function" &&
-    port.KIMI_PLATFORM !== "kimi-code"
+    typeof port.handleCopilotStop !== "function" &&
+    port.KIMI_PLATFORM !== "kimi-code" &&
+    port.COPILOT_PLATFORM !== "copilot-cli"
   ) {
     return port.handleStop;
   }
@@ -381,7 +400,30 @@ function kimiStopHandler(port) {
     typeof port.handleBeforeSubmitPrompt !== "function" &&
     typeof port.handleStopFailure !== "function" &&
     typeof port.handleClaudeStop !== "function" &&
-    typeof port.handleCodexStop !== "function"
+    typeof port.handleCodexStop !== "function" &&
+    typeof port.handleCopilotStop !== "function"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+/**
+ * Copilot agentStop: prefer aliased vendor export; package-only uses handleStop
+ * when COPILOT_PLATFORM is stamped (never Claude StopFailure / Codex / Kimi).
+ */
+function copilotStopHandler(port) {
+  if (typeof port.handleCopilotStop === "function") {
+    return port.handleCopilotStop;
+  }
+  if (
+    port.COPILOT_PLATFORM === "copilot-cli" &&
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure !== "function" &&
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleCodexStop !== "function" &&
+    typeof port.handleKimiStop !== "function"
   ) {
     return port.handleStop;
   }
@@ -400,13 +442,23 @@ function hostPortReady(hostId, port) {
       typeof port.handleUserPromptSubmit === "function"
     );
   }
+  if (hostId === "copilot-cli") {
+    if (typeof port.handleCopilotUserPromptSubmit === "function") return true;
+    return (
+      port.COPILOT_PLATFORM === "copilot-cli" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function"
+    );
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexUserPromptSubmit === "function") return true;
     return (
       typeof port.handleUserPromptSubmit === "function" &&
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleClaudeStop !== "function" &&
-      port.KIMI_PLATFORM !== "kimi-code"
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli"
     );
   }
   // Claude: vendor alias or package-only (StopFailure fingerprint).
@@ -429,6 +481,23 @@ function resolveUserPromptSubmit(hostId, port) {
     }
     return undefined;
   }
+  if (hostId === "copilot-cli") {
+    if (typeof port.handleCopilotUserPromptSubmit === "function") {
+      return port.handleCopilotUserPromptSubmit;
+    }
+    // Package-only Copilot — never Claude bare submit on multi-port vendor.
+    if (
+      port.COPILOT_PLATFORM === "copilot-cli" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function"
+    ) {
+      return port.handleUserPromptSubmit;
+    }
+    return undefined;
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexUserPromptSubmit === "function") {
       return port.handleCodexUserPromptSubmit;
@@ -438,7 +507,8 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleUserPromptSubmit === "function" &&
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleClaudeStop !== "function" &&
-      port.KIMI_PLATFORM !== "kimi-code"
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -463,6 +533,22 @@ function resolvePostToolUse(hostId, port) {
     }
     return undefined;
   }
+  if (hostId === "copilot-cli") {
+    if (typeof port.handleCopilotPostToolUse === "function") {
+      return port.handleCopilotPostToolUse;
+    }
+    if (
+      port.COPILOT_PLATFORM === "copilot-cli" &&
+      typeof port.handlePostToolUse === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function"
+    ) {
+      return port.handlePostToolUse;
+    }
+    return undefined;
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexPostToolUse === "function") {
       return port.handleCodexPostToolUse;
@@ -471,7 +557,8 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handlePostToolUse === "function" &&
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleClaudeStop !== "function" &&
-      port.KIMI_PLATFORM !== "kimi-code"
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli"
     ) {
       return port.handlePostToolUse;
     }
@@ -479,6 +566,22 @@ function resolvePostToolUse(hostId, port) {
   }
   if (hostId === "claude-code") {
     return port.handlePostToolUse;
+  }
+  return undefined;
+}
+
+/** Copilot-only userPromptTransformed (aliased on vendor; bare on package). */
+function resolveUserPromptTransformed(port) {
+  if (typeof port.handleCopilotUserPromptTransformed === "function") {
+    return port.handleCopilotUserPromptTransformed;
+  }
+  if (
+    port.COPILOT_PLATFORM === "copilot-cli" &&
+    typeof port.handleUserPromptTransformed === "function" &&
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleStopFailure !== "function"
+  ) {
+    return port.handleUserPromptTransformed;
   }
   return undefined;
 }
@@ -504,6 +607,7 @@ function isCursorShapedStopPayload(payload) {
     payload.hook_event_name ?? payload.hookEventName ?? "",
   ).trim();
   if (hookName === "Stop" || /^stopfailure$/i.test(hookName)) return false;
+  if (hookName === "agentStop") return false;
   if (hookName === "stop") return true;
 
   // Claude/Codex Stop threads stop_hook_active (bool); Cursor uses loop_count.
@@ -547,18 +651,33 @@ function isCursorShapedStopPayload(payload) {
 
 /**
  * Pick Stop host after Cursor-shaped check.
- * --platform codex / kimi-code must win over PascalStop shape (shared with Claude).
- * Preserve dual-host cross-fire: Cursor stamp + Claude/Codex-shaped payload
- * still routes to Claude (historical Layer C), unless stamp is explicitly
- * codex or kimi-code.
+ * --platform codex / kimi-code / copilot-cli must win over PascalStop shape
+ * (shared stop_hook_active with Claude). Preserve dual-host cross-fire: Cursor
+ * stamp + Claude/Codex-shaped payload still routes to Claude (historical
+ * Layer C), unless stamp is explicitly codex, kimi-code, or copilot-cli.
+ *
+ * Unstamped `agentStop` (argv or hookEventName) must not fall through to Claude
+ * just because the payload also carries stop_hook_active — but a non-Copilot
+ * `--platform` stamp must still beat a hostile `hookEventName: agentStop`.
  */
-function resolveStopHostId(declaredPlatform, payload) {
+function resolveStopHostId(declaredPlatform, payload, event) {
   if (isCursorShapedStopPayload(payload)) return "cursor";
   if (declaredPlatform === "codex") return "codex";
   if (declaredPlatform === "kimi-code") return "kimi-code";
+  if (declaredPlatform === "copilot-cli") return "copilot-cli";
   if (declaredPlatform === "claude-code") return "claude-code";
+  const hookName = String(
+    payload?.hook_event_name ?? payload?.hookEventName ?? "",
+  ).trim();
+  // Only when argv stamp is absent (or already Copilot): agentStop → Copilot.
+  if (
+    (declaredPlatform == null || declaredPlatform === "copilot-cli") &&
+    (event === "agentStop" || hookName === "agentStop")
+  ) {
+    return "copilot-cli";
+  }
   // Shared Pascal Stop / stop_hook_active shape → Claude unless stamp was
-  // codex / kimi-code.
+  // codex / kimi-code / copilot-cli / unstamped agentStop above.
   if (isPascalStopShapedPayload(payload)) return "claude-code";
   if (declaredPlatform === "cursor") return "cursor";
   return "claude-code";
@@ -623,7 +742,53 @@ async function main() {
           writeKimiReply(result);
           return;
         }
+        // Copilot UPS stdout is dropped / must not leak gate mirrors (_stashedGate).
+        if (hostId === "copilot-cli") {
+          writeReply("{}");
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
+        return;
+      }
+      if (event === "userPromptSubmitted") {
+        if (hostId !== "copilot-cli") {
+          failOpen(event, hostId);
+          return;
+        }
+        const submitFn = resolveUserPromptSubmit(hostId, port);
+        if (typeof submitFn !== "function") {
+          failOpen(event, hostId);
+          return;
+        }
+        // Copilot command UPS drops stdout — run FSM/triggers only; reply {}.
+        submitFn(store, payload, projectRoot);
+        writeReply("{}");
+        return;
+      }
+      if (event === "userPromptTransformed") {
+        if (hostId !== "copilot-cli") {
+          failOpen(event, hostId);
+          return;
+        }
+        const transformFn = resolveUserPromptTransformed(port);
+        if (typeof transformFn !== "function") {
+          failOpen(event, hostId);
+          return;
+        }
+        const result = transformFn(store, payload, projectRoot);
+        // Copilot Transform contract: only non-empty modifiedTransformedPrompt.
+        const promptRaw =
+          result &&
+          typeof result === "object" &&
+          typeof result.modifiedTransformedPrompt === "string"
+            ? result.modifiedTransformedPrompt
+            : "";
+        const prompt = promptRaw.trim();
+        writeReply(
+          prompt.length > 0
+            ? JSON.stringify({ modifiedTransformedPrompt: prompt })
+            : "{}",
+        );
         return;
       }
       if (event === "PostToolUse") {
@@ -638,9 +803,21 @@ async function main() {
         writeReply("{}");
         return;
       }
-      if (event === "Stop") {
+      if (event === "postToolUse") {
+        if (hostId !== "copilot-cli") {
+          failOpen(event, hostId);
+          return;
+        }
+        const editFn = resolvePostToolUse(hostId, port);
+        if (typeof editFn === "function") {
+          editFn(store, payload, projectRoot);
+        }
+        writeReply("{}");
+        return;
+      }
+      if (event === "Stop" || event === "agentStop") {
         // Layer C: payload shape vs declared --platform (cross-fire / lying argv).
-        const stopHost = resolveStopHostId(declaredPlatform, payload);
+        const stopHost = resolveStopHostId(declaredPlatform, payload, event);
         let stopFn;
         if (stopHost === "cursor") {
           stopFn = cursorStopHandler(port);
@@ -665,6 +842,14 @@ async function main() {
               "@autopilot-harness/port-kimi-code",
             );
             if (kimiPort) stopFn = kimiStopHandler(kimiPort);
+          }
+        } else if (stopHost === "copilot-cli") {
+          stopFn = copilotStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const copilotPort = await loadPortPackage(
+              "@autopilot-harness/port-copilot-cli",
+            );
+            if (copilotPort) stopFn = copilotStopHandler(copilotPort);
           }
         } else {
           stopFn = claudeStopHandler(port);
@@ -696,12 +881,32 @@ async function main() {
           }
           return;
         }
+        // Copilot agentStop: allow only decision:block + reason (no Claude fields).
+        if (stopHost === "copilot-cli") {
+          const reason =
+            result &&
+            typeof result === "object" &&
+            result.decision === "block" &&
+            typeof result.reason === "string"
+              ? result.reason.trim()
+              : "";
+          if (reason.length > 0) {
+            writeReply(JSON.stringify({ decision: "block", reason }));
+          } else {
+            writeReply("{}");
+          }
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
       if (event === "StopFailure") {
-        // Codex/Kimi have no StopFailure — fail-open if somehow invoked.
-        if (hostId === "codex" || hostId === "kimi-code") {
+        // Codex/Kimi/Copilot have no StopFailure — fail-open if somehow invoked.
+        if (
+          hostId === "codex" ||
+          hostId === "kimi-code" ||
+          hostId === "copilot-cli"
+        ) {
           failOpen(event, hostId);
           return;
         }

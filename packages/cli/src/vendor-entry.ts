@@ -1,7 +1,7 @@
 /**
  * Single ESM entry bundled into assets/vendor/runtime.mjs for project hooks.
  * Consumers get core + port-cursor + port-claude-code + port-codex +
- * port-kimi-code + i18n without installing workspace packages.
+ * port-kimi-code + port-copilot-cli + i18n without installing workspace packages.
  */
 import { loadLocale } from "@autopilot-harness/i18n";
 import {
@@ -45,6 +45,14 @@ export {
   handlePostToolUse as handleKimiPostToolUse,
   handleStop as handleKimiStop,
 } from "@autopilot-harness/port-kimi-code";
+
+export {
+  COPILOT_PLATFORM,
+  handleUserPromptSubmit as handleCopilotUserPromptSubmit,
+  handleUserPromptTransformed as handleCopilotUserPromptTransformed,
+  handlePostToolUse as handleCopilotPostToolUse,
+  handleStop as handleCopilotStop,
+} from "@autopilot-harness/port-copilot-cli";
 
 /** @deprecated Prefer handleCursorStop — kept for older hook.mjs copies. */
 export { handleStop } from "@autopilot-harness/port-cursor";

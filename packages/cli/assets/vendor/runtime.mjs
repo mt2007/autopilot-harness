@@ -3649,10 +3649,10 @@ var ReviewEngine = class {
    * salvage again — the prior tip does not cover the new failure.
    */
   classifyCompletedOrphan(transcriptPath) {
-    const path11 = transcriptPath?.trim();
-    if (!path11) return "none";
+    const path12 = transcriptPath?.trim();
+    if (!path12) return "none";
     try {
-      const events = readTranscriptTail(path11);
+      const events = readTranscriptTail(path12);
       const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
       if (errIdx < 0) return "none";
       for (let i = events.length - 1; i > errIdx; i--) {
@@ -4734,8 +4734,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let targets = null;
-      const path11 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path11.length > 0;
+      const path12 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path12.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed?.checklist) {
@@ -7619,6 +7619,591 @@ function handleStopInner(engine, payload, opts) {
   return blockResult(reason);
 }
 
+// ../ports/copilot-cli/src/index.ts
+import { createHash } from "node:crypto";
+import fs11 from "node:fs";
+import path11 from "node:path";
+var COPILOT_PLATFORM = "copilot-cli";
+var MAX_NEED_PICK_SLUGS3 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS3 = 2e3;
+var MAX_HOOK_STDIO_CHARS2 = 8192;
+var MAX_TOOL_ARGS_JSON_CHARS = 1048576;
+var MAX_GATE_FILE_BYTES = MAX_HOOK_STDIO_CHARS2 * 2 + 512;
+var COPILOT_GATE_DIR = path11.join(".autopilot", "copilot-gate");
+function sid4(p) {
+  return (p.session_id ?? p.sessionId ?? p.conversation_id ?? p.conversationId ?? "").trim();
+}
+function clipText(text, max = MAX_HOOK_STDIO_CHARS2) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function blockReason4(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function loopCountFromStopHookActive4(payload) {
+  const active = payload.stop_hook_active ?? payload.stopHookActive;
+  return active === true ? 1 : 0;
+}
+function collectCopilotStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const o = value;
+        for (const key of ["message", "error", "name", "stack", "detail"]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.reason);
+  } catch {
+    return "";
+  }
+  return clipText(parts.join("\n"));
+}
+function normalizeCopilotStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "").toLowerCase().trim();
+  const errText = collectCopilotStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
+}
+function buildNeedPickContext(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS3);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS3) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS3 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function toolInputObject3(payload) {
+  const input = payload.tool_input ?? payload.toolInput ?? payload.toolArgs;
+  if (!input) return null;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    return input;
+  }
+  if (typeof input === "string") {
+    if (input.length > MAX_TOOL_ARGS_JSON_CHARS) return null;
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function sanitizeEditPath(raw) {
+  const p = raw.trim();
+  if (!p || /[\0\r\n]/.test(p)) return null;
+  return p;
+}
+function filePathsFromCopilotEdit(payload) {
+  const input = toolInputObject3(payload);
+  if (!input) return [];
+  const candidates = [
+    input.path,
+    input.file_path,
+    input.filePath,
+    input.target_file,
+    input.targetFile,
+    input.notebook_path,
+    input.notebookPath
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const p = sanitizeEditPath(c);
+      if (p) return [p];
+    }
+  }
+  return [];
+}
+function isCopilotEditTool(toolName) {
+  const n = toolName.trim().toLowerCase();
+  return n === "edit" || n === "create";
+}
+function stampCopilotPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === COPILOT_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: COPILOT_PLATFORM
+  });
+}
+function safeGateFileId(conversationId) {
+  return createHash("sha256").update(conversationId, "utf8").digest("hex").slice(0, 32);
+}
+function submitGateFilePath(projectRoot, conversationId) {
+  if (typeof projectRoot !== "string" || !projectRoot.trim()) {
+    throw new Error("copilot gate requires a non-empty projectRoot");
+  }
+  const root = path11.resolve(projectRoot.trim());
+  const dir = path11.resolve(root, COPILOT_GATE_DIR);
+  const file = path11.resolve(dir, `${safeGateFileId(conversationId)}.txt`);
+  const relToRoot = path11.relative(root, file);
+  if (!relToRoot || relToRoot.startsWith("..") || path11.isAbsolute(relToRoot)) {
+    throw new Error("copilot gate path escaped project root");
+  }
+  return file;
+}
+function stashSubmitGate(projectRoot, conversationId, message, kind = "block") {
+  const raw = typeof message === "string" ? message.trim() : "";
+  const text = clipText(raw || "Autopilot rejected this prompt.");
+  const gateKind = kind === "needPick" || kind === "block" ? kind : "block";
+  try {
+    const file = submitGateFilePath(projectRoot, conversationId);
+    fs11.mkdirSync(path11.dirname(file), { recursive: true });
+    const record = { kind: gateKind, text };
+    const body = JSON.stringify(record);
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      fs11.writeFileSync(tmp, body, "utf8");
+      try {
+        fs11.renameSync(tmp, file);
+      } catch {
+        try {
+          fs11.unlinkSync(file);
+        } catch {
+        }
+        fs11.renameSync(tmp, file);
+      }
+    } catch (err) {
+      try {
+        fs11.unlinkSync(tmp);
+      } catch {
+      }
+      throw err;
+    }
+  } catch {
+  }
+  return text;
+}
+function parseGateRecord(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_HOOK_STDIO_CHARS2 * 2) {
+    return {
+      kind: "block",
+      text: clipText(trimmed.slice(0, MAX_HOOK_STDIO_CHARS2))
+    };
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed === null || typeof parsed !== "object") {
+      return { kind: "block", text: clipText(trimmed) };
+    }
+    if (Array.isArray(parsed)) return null;
+    const kind = parsed.kind;
+    const textRaw = parsed.text;
+    if ((kind === "needPick" || kind === "block") && typeof textRaw === "string" && textRaw.trim()) {
+      return { kind, text: clipText(textRaw.trim()) };
+    }
+    return null;
+  } catch {
+    return { kind: "block", text: clipText(trimmed) };
+  }
+}
+function takeSubmitGate(projectRoot, conversationId) {
+  try {
+    const file = submitGateFilePath(projectRoot, conversationId);
+    if (!fs11.existsSync(file)) return null;
+    const st = fs11.statSync(file);
+    if (!st.isFile() || st.size <= 0) {
+      try {
+        fs11.unlinkSync(file);
+      } catch {
+      }
+      return null;
+    }
+    if (st.size > MAX_GATE_FILE_BYTES) {
+      try {
+        fs11.unlinkSync(file);
+      } catch {
+      }
+      return null;
+    }
+    const msg = fs11.readFileSync(file, "utf8");
+    try {
+      fs11.unlinkSync(file);
+    } catch {
+    }
+    return parseGateRecord(msg);
+  } catch {
+    return null;
+  }
+}
+function clearSubmitGate(projectRoot, conversationId) {
+  try {
+    const file = submitGateFilePath(projectRoot, conversationId);
+    if (fs11.existsSync(file)) fs11.unlinkSync(file);
+  } catch {
+  }
+}
+function gateFail(store, conversationId, projectRoot, userMessage, kind) {
+  stampCopilotPlatform(store, conversationId, projectRoot);
+  const stashed = stashSubmitGate(
+    projectRoot,
+    conversationId,
+    blockReason4(userMessage, "Autopilot rejected this prompt."),
+    kind
+  );
+  return { _sideEffectsOnly: true, _stashedGate: stashed };
+}
+function handleUserPromptSubmit4(store, payload, projectRoot, portConfig) {
+  try {
+    return handleUserPromptSubmitInner2(
+      store,
+      payload,
+      projectRoot,
+      portConfig
+    );
+  } catch {
+    return { _sideEffectsOnly: true };
+  }
+}
+function handleUserPromptSubmitInner2(store, payload, projectRoot, portConfig) {
+  const conversationId = sid4(payload);
+  if (!conversationId) return { _sideEffectsOnly: true };
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: COPILOT_PLATFORM
+      });
+      if (!result.ok) {
+        return gateFail(
+          store,
+          conversationId,
+          projectRoot,
+          result.userMessage,
+          "block"
+        );
+      }
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        return gateFail(
+          store,
+          conversationId,
+          projectRoot,
+          result.userMessage,
+          "block"
+        );
+      }
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: COPILOT_PLATFORM
+      });
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          const ctx = buildNeedPickContext(
+            result.userMessage,
+            result.candidates
+          );
+          return gateFail(store, conversationId, projectRoot, ctx, "needPick");
+        }
+        return gateFail(
+          store,
+          conversationId,
+          projectRoot,
+          result.userMessage,
+          "block"
+        );
+      }
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: COPILOT_PLATFORM
+      });
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          const ctx = buildNeedPickContext(
+            result.userMessage,
+            result.candidates
+          );
+          return gateFail(store, conversationId, projectRoot, ctx, "needPick");
+        }
+        return gateFail(
+          store,
+          conversationId,
+          projectRoot,
+          result.userMessage,
+          "block"
+        );
+      }
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: COPILOT_PLATFORM }
+      );
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          const ctx = buildNeedPickContext(
+            result.userMessage,
+            result.candidates
+          );
+          return gateFail(store, conversationId, projectRoot, ctx, "needPick");
+        }
+        return gateFail(
+          store,
+          conversationId,
+          projectRoot,
+          result.userMessage,
+          "block"
+        );
+      }
+      stampCopilotPlatform(store, conversationId, projectRoot);
+      clearSubmitGate(projectRoot, conversationId);
+      return { _sideEffectsOnly: true };
+    }
+    clearSubmitGate(projectRoot, conversationId);
+    return { _sideEffectsOnly: true };
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampCopilotPlatform(store, conversationId, projectRoot);
+  clearSubmitGate(projectRoot, conversationId);
+  return { _sideEffectsOnly: true };
+}
+function handleUserPromptTransformed(store, payload, projectRoot) {
+  try {
+    return handleUserPromptTransformedInner(store, payload, projectRoot);
+  } catch {
+    return {};
+  }
+}
+function handleUserPromptTransformedInner(store, payload, projectRoot) {
+  const conversationId = sid4(payload);
+  if (!conversationId) return {};
+  const gate = takeSubmitGate(projectRoot, conversationId);
+  if (!gate) {
+    stampCopilotPlatform(store, conversationId, projectRoot);
+    return {};
+  }
+  stampCopilotPlatform(store, conversationId, projectRoot);
+  if (gate.kind === "block") {
+    return {
+      modifiedTransformedPrompt: clipText(
+        `[Autopilot]
+${gate.text}`,
+        MAX_NEED_PICK_CONTEXT_CHARS3 + MAX_HOOK_STDIO_CHARS2
+      )
+    };
+  }
+  const baseRaw = typeof payload.transformedPrompt === "string" ? payload.transformedPrompt : typeof payload.prompt === "string" ? payload.prompt : "";
+  const notice = clipText(
+    `[Autopilot]
+${gate.text}
+
+---
+
+${baseRaw}`,
+    MAX_NEED_PICK_CONTEXT_CHARS3 + MAX_HOOK_STDIO_CHARS2
+  );
+  return { modifiedTransformedPrompt: notice };
+}
+function armCodeEdited3(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      COPILOT_PLATFORM
+    );
+  }
+  stampCopilotPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handlePostToolUse4(store, payload, projectRoot) {
+  try {
+    handlePostToolUseInner2(store, payload, projectRoot);
+  } catch {
+  }
+}
+function handlePostToolUseInner2(store, payload, projectRoot) {
+  const conversationId = sid4(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isCopilotEditTool(toolName)) return;
+  const filePaths = filePathsFromCopilotEdit(payload);
+  if (filePaths.length === 0) {
+    stampCopilotPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited3(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampCopilotPlatform(store, conversationId, projectRoot);
+  }
+}
+function handleStop5(engine, payload, opts) {
+  try {
+    return handleStopInner2(engine, payload, opts);
+  } catch {
+    return {};
+  }
+}
+function handleStopInner2(engine, payload, opts) {
+  const conversationId = sid4(payload);
+  if (!conversationId) return {};
+  const status = normalizeCopilotStopStatus(payload, opts);
+  const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
+  const transcriptPath = typeof transcriptRaw === "string" && transcriptRaw.trim() ? transcriptRaw.trim() : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromStopHookActive4(payload),
+    transcriptPath,
+    platform: COPILOT_PLATFORM
+  });
+  if (!action?.message) return {};
+  const reason = blockReason4(action.message, "Autopilot followup");
+  if (!action.loop) {
+    return {};
+  }
+  return {
+    decision: "block",
+    reason
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -7626,6 +8211,7 @@ function createConfiguredReviewEngine2(store, projectRoot) {
   return createConfiguredReviewEngine(store, projectRoot, bundle, cfg);
 }
 export {
+  COPILOT_PLATFORM,
   KIMI_PLATFORM,
   ReviewEngine,
   StateStore,
@@ -7637,6 +8223,10 @@ export {
   handlePostToolUse2 as handleCodexPostToolUse,
   handleStop3 as handleCodexStop,
   handleUserPromptSubmit2 as handleCodexUserPromptSubmit,
+  handlePostToolUse4 as handleCopilotPostToolUse,
+  handleStop5 as handleCopilotStop,
+  handleUserPromptSubmit4 as handleCopilotUserPromptSubmit,
+  handleUserPromptTransformed as handleCopilotUserPromptTransformed,
   handleStop as handleCursorStop,
   handlePostToolUse3 as handleKimiPostToolUse,
   handleStop4 as handleKimiStop,

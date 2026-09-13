@@ -604,6 +604,347 @@ describe("hook vendor runtime", () => {
     verifyEdit.close();
   });
 
+  it("five-way --platform copilot-cli routes UPS→Transform needPick (not Claude bare)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    for (const slug of ["copilot-alpha", "copilot-beta"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const cid = "hook-copilot-aaaa-bbbb-cccc-ddddeeee0001";
+    const onProc = spawnSync(
+      process.execPath,
+      [
+        hook,
+        "--event",
+        "userPromptSubmitted",
+        "--platform",
+        "copilot-cli",
+      ],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(onProc.stdout.trim()).toBe("{}");
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("copilot-cli");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    const runProc = spawnSync(
+      process.execPath,
+      [
+        hook,
+        "--event",
+        "userPromptSubmitted",
+        "--platform",
+        "copilot-cli",
+      ],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot RUN",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(runProc.status).toBe(0);
+    expect(runProc.stdout.trim()).toBe("{}");
+
+    const transformProc = spawnSync(
+      process.execPath,
+      [
+        hook,
+        "--event",
+        "userPromptTransformed",
+        "--platform",
+        "copilot-cli",
+      ],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot RUN",
+          transformedPrompt: "Autopilot RUN",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(transformProc.status).toBe(0);
+    const tr = JSON.parse(transformProc.stdout.trim() || "{}") as {
+      modifiedTransformedPrompt?: string;
+    };
+    expect(tr.modifiedTransformedPrompt).toMatch(/\[Autopilot\]/);
+    expect(tr.modifiedTransformedPrompt).toMatch(/Select a plan|copilot-alpha/i);
+    expect(tr.modifiedTransformedPrompt).toMatch(/Autopilot RUN/);
+
+    // agentStop continue shape: decision:block + reason (JSON, not Kimi exit 2).
+    const armed = new StateStore(root);
+    armed.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "copilot-cli",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "copilot-alpha",
+      checklist_path: path.join(root, "plans", "copilot-alpha", "checklist.md"),
+    });
+    armed.updateReviewChain(cid, { code_edited: 1 });
+    armed.close();
+
+    const stopProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "agentStop", "--platform", "copilot-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          hookEventName: "agentStop",
+          stopHookActive: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopProc.status).toBe(0);
+    const stopOut = JSON.parse(stopProc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      continue?: boolean;
+    };
+    expect(stopOut.decision).toBe("block");
+    expect(stopOut.reason).toBeTruthy();
+    expect(stopOut.continue).toBeUndefined();
+    expect(Object.keys(stopOut).sort()).toEqual(["decision", "reason"]);
+  });
+
+  it("unstamped agentStop + stopHookActive routes Copilot (not Claude Layer C)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const planDir = path.join(root, "plans", "copilot-unstamped");
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, "plan.md"), "# copilot-unstamped\n");
+    fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+
+    const cid = "hook-copilot-aaaa-bbbb-cccc-ddddeeee0002";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "copilot-cli",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "copilot-unstamped",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    store.updateReviewChain(cid, { code_edited: 1 });
+    store.close();
+
+    // No --platform: event name must beat stopHookActive→Claude heuristic.
+    const stopProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "agentStop"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          hookEventName: "agentStop",
+          stopHookActive: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopProc.status).toBe(0);
+    const stopOut = JSON.parse(stopProc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      continue?: boolean;
+      stopReason?: string;
+    };
+    expect(stopOut.decision).toBe("block");
+    expect(stopOut.reason).toBeTruthy();
+    // Copilot hard contract: no Claude continue:false / stopReason fields.
+    expect(stopOut.continue).toBeUndefined();
+    expect(stopOut.stopReason).toBeUndefined();
+
+    const verify = new StateStore(root);
+    expect(verify.getSession(cid)?.platform).toBe("copilot-cli");
+    verify.close();
+  });
+
+  it("cursor stamp + hostile hookEventName agentStop still Layer-C Claude (not Copilot)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const planDir = path.join(root, "plans", "demo-hostile");
+    fs.mkdirSync(planDir, { recursive: true });
+    fs.writeFileSync(path.join(planDir, "plan.md"), "# demo-hostile\n");
+    fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const cid = "hook-xf-aaaa-bbbb-cccc-ddddeeee00aa";
+    const store = new StateStore(root);
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "demo-hostile",
+      checklist_path: path.join(planDir, "checklist.md"),
+    });
+    store.updateReviewChain(cid, { code_edited: 1 });
+    store.close();
+
+    const proc = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "cursor"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          // Hostile Copilot-looking name must not beat cursor stamp → Claude Layer C.
+          hook_event_name: "agentStop",
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(proc.status).toBe(0);
+    const out = JSON.parse(proc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+    };
+    expect(out.decision).toBe("block");
+    expect(out.reason).toBeTruthy();
+  });
+
+  it("copilot-cli stamp + PascalCase UserPromptSubmit still replies {} (no _stashedGate leak)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    for (const slug of ["copilot-leak-a", "copilot-leak-b"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const cid = "hook-copilot-aaaa-bbbb-cccc-ddddeeee00bb";
+    spawnSync(
+      process.execPath,
+      [
+        hook,
+        "--event",
+        "userPromptSubmitted",
+        "--platform",
+        "copilot-cli",
+      ],
+      {
+        cwd: root,
+        input: JSON.stringify({ sessionId: cid, prompt: "Autopilot ON" }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+
+    const runProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "UserPromptSubmit", "--platform", "copilot-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          prompt: "Autopilot RUN",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(runProc.status).toBe(0);
+    expect(runProc.stdout.trim()).toBe("{}");
+    expect(runProc.stdout).not.toMatch(/_stashedGate|Select a plan/);
+  });
+
   it("Stop Layer C: cursor stamp + Pascal Stop shape still routes Claude (no regression)", () => {
     root = tmpProject();
     expect(
