@@ -646,16 +646,22 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, and Kimi Code/,
+      /Cursor, Claude Code, Codex, Kimi Code, and Copilot CLI/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, and Kimi Code/,
+      /Cursor, Claude Code, Codex, Kimi Code, and Copilot CLI/,
     );
     expect(cliPkg.keywords).toEqual(
-      expect.arrayContaining(["cursor", "claude-code", "codex", "kimi-code"]),
+      expect.arrayContaining([
+        "cursor",
+        "claude-code",
+        "codex",
+        "kimi-code",
+        "copilot-cli",
+      ]),
     );
     const kimiPkg = JSON.parse(
       fs.readFileSync(
@@ -667,6 +673,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(kimiPkg.description).toMatch(/Kimi Code|degraded Stop/i);
     expect(kimiPkg.description).not.toMatch(/Coming v0\.3\b/);
     expect(kimiPkg.description).not.toMatch(/Coming v0\.4/);
+    const copilotPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/copilot-cli/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string; private?: boolean };
+    expect(copilotPkg.private).not.toBe(true);
+    expect(copilotPkg.description).toMatch(/Copilot CLI/i);
+    expect(copilotPkg.description).toMatch(/degraded Stop/i);
+    expect(copilotPkg.description).not.toMatch(/Coming v0\.5\b/);
     const runnerPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/runner/package.json"),

@@ -5,7 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PACKAGE_VERSION } from "../src/init/types.js";
-import { PUBLIC_PACKAGE_DIRS } from "./public-npm-packages.js";
+import {
+  PUBLIC_PACKAGE_DIRS,
+  PUBLIC_PACKAGE_JSON_PATHS,
+} from "./public-npm-packages.js";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -18,6 +21,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/claude-code",
   "packages/ports/codex",
   "packages/ports/kimi-code",
+  "packages/ports/copilot-cli",
 ] as const;
 
 function workspaceHarnessDeps(
@@ -77,6 +81,34 @@ describe("pnpm pack rewrites workspace:* for publish", () => {
         `${rel} declares workspace:* but is missing from PACKAGES_WITH_WORKSPACE_DEPS`,
       ).toContain(rel);
     }
+  });
+
+  it("PUBLIC_PACKAGE_JSON_PATHS lists every publishable workspace package.json", () => {
+    const candidates: string[] = [];
+    for (const name of fs.readdirSync(path.join(repoRoot, "packages"))) {
+      if (name === "ports") continue;
+      const rel = `packages/${name}/package.json`;
+      if (fs.existsSync(path.join(repoRoot, rel))) candidates.push(rel);
+    }
+    for (const name of fs.readdirSync(path.join(repoRoot, "packages/ports"))) {
+      const rel = `packages/ports/${name}/package.json`;
+      if (fs.existsSync(path.join(repoRoot, rel))) candidates.push(rel);
+    }
+    const publishable: string[] = [];
+    for (const rel of candidates) {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, rel), "utf8"),
+      ) as {
+        private?: boolean;
+        publishConfig?: { access?: string };
+      };
+      if (pkg.private === true) continue;
+      if (pkg.publishConfig?.access !== "public") continue;
+      publishable.push(rel);
+    }
+    expect(publishable.sort()).toEqual(
+      [...PUBLIC_PACKAGE_JSON_PATHS].sort(),
+    );
   });
 
   for (const rel of PACKAGES_WITH_WORKSPACE_DEPS) {

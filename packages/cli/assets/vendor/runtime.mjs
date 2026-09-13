@@ -2429,6 +2429,7 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 .cursor/**
 .claude/**
 .codex/**
+.github/hooks/**
 
 # Planning artifacts
 plans/**

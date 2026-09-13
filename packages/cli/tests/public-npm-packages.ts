@@ -10,6 +10,7 @@ export const PUBLIC_PACKAGE_JSON_PATHS = [
   "packages/ports/claude-code/package.json",
   "packages/ports/codex/package.json",
   "packages/ports/kimi-code/package.json",
+  "packages/ports/copilot-cli/package.json",
 ] as const;
 
 export const PUBLIC_PACKAGE_DIRS = PUBLIC_PACKAGE_JSON_PATHS.map((rel) =>
