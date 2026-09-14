@@ -31,6 +31,14 @@ import {
   type GrokHooksFile,
 } from "./init/grok-hooks-merge.js";
 import {
+  stripAutopilotGeminiSettings,
+  geminiSettingsContainAutopilot,
+  geminiSettingsFileIsVacant,
+  validateGeminiSettingsShape,
+  type GeminiSettingsFile,
+  GEMINI_SETTINGS_REL_PATH,
+} from "./init/gemini-settings-merge.js";
+import {
   kimiConfigTomlPath,
   kimiTomlHasAutopilotHookTables,
   readKimiConfigToml,
@@ -409,6 +417,63 @@ function readGrokHooksFile(
   }
 }
 
+function readGeminiSettingsFile(
+  settingsPath: string,
+):
+  | { ok: true; value: GeminiSettingsFile | null }
+  | { ok: false; error: string } {
+  const label = GEMINI_SETTINGS_REL_PATH;
+  try {
+    assertNotSymlink(settingsPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(settingsPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: `${label} is a symlink; refusing to open`,
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: `${label} exists and is not a regular file; refusing to uninstall`,
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access ${label}: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      settingsPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      label,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${label} is not a JSON object; fix or remove it before uninstall.`,
+      };
+    }
+    const file = parsed as GeminiSettingsFile;
+    const shape = validateGeminiSettingsShape(file);
+    if (shape) return { ok: false, error: `${label}: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${label}: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -488,6 +553,7 @@ function projectWantsInstallableHosts(configPath: string): {
   kimi: boolean;
   copilot: boolean;
   grok: boolean;
+  gemini: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -502,6 +568,7 @@ function projectWantsInstallableHosts(configPath: string): {
       kimi: configWantsInstallableHost(platforms, "kimi-code"),
       copilot: configWantsInstallableHost(platforms, "copilot-cli"),
       grok: configWantsInstallableHost(platforms, "grok-build"),
+      gemini: configWantsInstallableHost(platforms, "gemini-cli"),
     };
   } catch {
     return {
@@ -510,6 +577,7 @@ function projectWantsInstallableHosts(configPath: string): {
       kimi: false,
       copilot: false,
       grok: false,
+      gemini: false,
     };
   }
 }
@@ -586,6 +654,8 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const grokDir = path.join(projectRoot, ".grok");
     const grokHooksDir = path.join(grokDir, "hooks");
     const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
+    const geminiDir = path.join(projectRoot, ".gemini");
+    const geminiSettingsPath = path.join(geminiDir, "settings.json");
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
@@ -596,8 +666,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       kimi: wantKimi,
       copilot: wantCopilot,
       grok: wantGrok,
+      gemini: wantGemini,
     } = projectWantsInstallableHosts(configPath);
-    // Only fail-closed on .claude/.codex/.github/.grok trees when config declares
+    // Only fail-closed on .claude/.codex/.github/.grok/.gemini trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi uses user-home config.toml (outside project) —
     // strip separately.
@@ -628,6 +699,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
       if (wantGrok) {
         dirs.push([grokDir, ".grok/"], [grokHooksDir, ".grok/hooks/"]);
+      }
+      if (wantGemini) {
+        dirs.push([geminiDir, ".gemini/"]);
       }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
@@ -973,6 +1047,87 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip ${grokLabel} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Gemini CLI settings (.gemini/settings.json) ---
+    // Fingerprint strip only; keep file when foreign keys remain (hooksConfig /
+    // general / MCP / foreign hooks). Vacant after strip → unlink.
+    const geminiLabel = GEMINI_SETTINGS_REL_PATH;
+    const geminiPre = readGeminiSettingsFile(geminiSettingsPath);
+    if (!geminiPre.ok) {
+      if (wantGemini) {
+        return { ok: false, error: geminiPre.error };
+      }
+      actions.push(
+        `skip ${geminiLabel} (${formatUninstallSkipDetail(geminiPre.error)})`,
+      );
+    } else if (geminiSettingsContainAutopilot(geminiPre.value)) {
+      const stripGeminiSettings = (): void => {
+        assertNotSymlink(geminiDir, ".gemini/");
+        assertNotSymlink(geminiSettingsPath, geminiLabel);
+        if (dryRun) {
+          found = true;
+          const preview =
+            geminiPre.value != null
+              ? stripAutopilotGeminiSettings(geminiPre.value)
+              : null;
+          if (geminiSettingsFileIsVacant(preview)) {
+            actions.push(`unlink empty ${geminiLabel}`);
+          } else {
+            actions.push(`strip Autopilot entries from ${geminiLabel}`);
+          }
+          return;
+        }
+        const geminiFresh = readGeminiSettingsFile(geminiSettingsPath);
+        if (!geminiFresh.ok) {
+          throw new Error(geminiFresh.error);
+        }
+        const freshSettings = geminiFresh.value;
+        if (
+          freshSettings == null ||
+          !geminiSettingsContainAutopilot(freshSettings)
+        ) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${geminiLabel}`);
+          actions.push(
+            `${geminiLabel} no longer has Autopilot entries (skipped write)`,
+          );
+          return;
+        }
+        const stripped = stripAutopilotGeminiSettings(freshSettings);
+        if (geminiSettingsFileIsVacant(stripped)) {
+          assertRealpathInside(projectRoot, geminiSettingsPath, geminiLabel);
+          fs.unlinkSync(geminiSettingsPath);
+          found = true;
+          hooksStripped = true;
+          actions.push(`unlink empty ${geminiLabel}`);
+          removed.push(path.relative(projectRoot, geminiSettingsPath));
+          return;
+        }
+        writeJsonAtomic(
+          geminiSettingsPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          geminiLabel,
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push(`strip Autopilot entries from ${geminiLabel}`);
+        removed.push(
+          path.relative(projectRoot, geminiSettingsPath) +
+            " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripGeminiSettings();
+      } catch (err) {
+        if (wantGemini) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip ${geminiLabel} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

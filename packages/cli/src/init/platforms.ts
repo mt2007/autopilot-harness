@@ -20,6 +20,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "kimi-code", surface: "cli" },
   { id: "copilot-cli", surface: "cli" },
   { id: "grok-build", surface: "cli" },
+  { id: "gemini-cli", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -32,6 +33,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "kimi-code": "cli",
   "copilot-cli": "cli",
   "grok-build": "cli",
+  "gemini-cli": "cli",
   runner: "runner",
 });
 
@@ -148,6 +150,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "grok-build") {
     return "Grok Build CLI (.grok/hooks)";
+  }
+  if (id === "gemini-cli") {
+    return "Gemini CLI (.gemini/settings.json)";
   }
   const host =
     id === "cursor"

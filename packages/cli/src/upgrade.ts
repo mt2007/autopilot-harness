@@ -36,6 +36,11 @@ import {
   GROK_HOOKS_REL_PATH,
 } from "./init/grok-hooks-merge.js";
 import {
+  validateGeminiSettingsShape,
+  type GeminiSettingsFile,
+  GEMINI_SETTINGS_REL_PATH,
+} from "./init/gemini-settings-merge.js";
+import {
   kimiConfigTomlPath,
   readKimiConfigToml,
   resolveKimiCodeHome,
@@ -71,6 +76,7 @@ function preflightHostSettings(
   wantKimi: boolean,
   wantCopilot: boolean,
   wantGrok: boolean,
+  wantGemini: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -271,6 +277,40 @@ function preflightHostSettings(
         return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
       }
       // Missing hooks file is OK — force refresh will create it.
+    }
+  }
+
+  if (wantGemini) {
+    const settingsPath = path.join(projectRoot, ".gemini", "settings.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".gemini"), ".gemini/");
+      assertNotSymlink(settingsPath, GEMINI_SETTINGS_REL_PATH);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        settingsPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        GEMINI_SETTINGS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${settingsPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateGeminiSettingsShape(parsed as GeminiSettingsFile);
+      if (shape) return { ok: false, error: `${settingsPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${settingsPath}: ${msg}` };
+      }
+      // Missing settings.json is OK — force refresh will create it.
     }
   }
 
@@ -576,6 +616,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantKimi = configWantsInstallableHost(platforms, "kimi-code");
     const wantCopilot = configWantsInstallableHost(platforms, "copilot-cli");
     const wantGrok = configWantsInstallableHost(platforms, "grok-build");
+    const wantGemini = configWantsInstallableHost(platforms, "gemini-cli");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -604,6 +645,11 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         `merge ${GROK_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
       );
     }
+    if (wantGemini) {
+      actions.push(
+        `merge ${GEMINI_SETTINGS_REL_PATH} (Autopilot hooks; no skills)`,
+      );
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -620,6 +666,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantKimi,
       wantCopilot,
       wantGrok,
+      wantGemini,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

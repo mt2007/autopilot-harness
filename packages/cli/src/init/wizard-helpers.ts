@@ -539,6 +539,8 @@ export function formatHostDisplayName(platform: string): string {
       return "GitHub Copilot CLI";
     case "grok-build":
       return "Grok Build";
+    case "gemini-cli":
+      return "Gemini CLI";
     default: {
       const parts = id.split(/[-_]/).filter(Boolean);
       if (parts.length === 0) return "your agent host";
@@ -572,6 +574,9 @@ export function formatPostInstallOutro(
     if (id === "grok-build") {
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .grok/hooks/autopilot-harness.json (timeout 120s). Trust via /hooks-trust or --trust after install or upgrade.`;
     }
+    if (id === "gemini-cli") {
+      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .gemini/settings.json (timeout 120000ms). After install/upgrade: re-trust hooks, check /hooks panel, and ensure folder trust.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
@@ -579,9 +584,10 @@ export function formatPostInstallOutro(
     ids.includes("codex") ||
     ids.includes("kimi-code") ||
     ids.includes("copilot-cli") ||
-    ids.includes("grok-build")
+    ids.includes("grok-build") ||
+    ids.includes("gemini-cli")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok/Gemini: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -620,6 +626,10 @@ export function formatHostActivationTips(
     } else if (id === "grok-build") {
       tips.push(
         `${host}: Autopilot writes .grok/hooks/autopilot-harness.json only (Codex-shaped; timeout 120; UPS+PostToolUse+Stop). Trust via /hooks-trust or --trust after install or upgrade. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
+      );
+    } else if (id === "gemini-cli") {
+      tips.push(
+        `${host}: Autopilot writes .gemini/settings.json only (nested matcher groups; timeout 120000ms; BeforeAgent+AfterTool+AfterAgent). After install/upgrade: re-trust hooks, open /hooks panel, and ensure folder trust. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; does not rewrite hooksConfig).`,
       );
     } else {
       tips.push(
@@ -693,6 +703,11 @@ function hostActivationPlainLines(
           `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
           `hooks 仅写 .grok/hooks/autopilot-harness.json（timeout 120）。安装/升级后请用 /hooks-trust 或 --trust 信任。`,
         );
+      } else if (id === "gemini-cli") {
+        lines.push(
+          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `hooks 仅写 .gemini/settings.json（nested；timeout 120000ms）。安装/升级后请重新信任 hooks、查看 /hooks panel，并确认 folder trust。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -728,6 +743,11 @@ function hostActivationPlainLines(
       lines.push(
         `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
         `Hooks are written to .grok/hooks/autopilot-harness.json only (timeout 120). Trust via /hooks-trust or --trust after install or upgrade.`,
+      );
+    } else if (id === "gemini-cli") {
+      lines.push(
+        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `Hooks are written to .gemini/settings.json only (nested; timeout 120000ms). After install/upgrade: re-trust hooks, check /hooks panel, and ensure folder trust.`,
       );
     } else {
       lines.push(
@@ -765,9 +785,13 @@ function hostActivationDocLines(
         ".grok/hooks/autopilot-harness.json",
         "`.grok/hooks/autopilot-harness.json`",
       )
-      // Trust tip `/hooks` only — do not split `.github/hooks/...` or `.codex/hooks.json`.
-      .replace(/\/hooks(?!-trust)(?!\.json)(?!\/)/g, "`/hooks`")
+      .replaceAll(".gemini/settings.json", "`.gemini/settings.json`")
+      // Longer /hooks* tips before generic `/hooks` wrap.
+      .replaceAll("/hooks panel", "`/hooks panel`")
       .replaceAll("/hooks-trust", "`/hooks-trust`")
+      // Trust tip `/hooks` only — do not split `.github/hooks/...`,
+      // `.codex/hooks.json`, or already-wrapped `/hooks panel`.
+      .replace(/\/hooks(?!-trust)(?!\.json)(?!\/)(?! panel)/g, "`/hooks`")
       .replaceAll("--trust", "`--trust`")
       .replaceAll(".codex/hooks.json", "`.codex/hooks.json`"),
   );
@@ -807,12 +831,13 @@ export function writeQuickstart(
   const platformId = sanitizePlatformId(platform) || "cursor";
   const host = formatHostDisplayName(platformId);
   const afterInstall = hostActivationDocLines(locale, platformId);
-  // Codex + Kimi + Copilot + Grok: P0 is line-start triggers (no Autopilot skills path).
+  // Codex + Kimi + Copilot + Grok + Gemini: P0 is line-start triggers (no Autopilot skills path).
   const isLineStartHost =
     platformId === "codex" ||
     platformId === "kimi-code" ||
     platformId === "copilot-cli" ||
-    platformId === "grok-build";
+    platformId === "grok-build" ||
+    platformId === "gemini-cli";
   const flowPlanYouZh = isLineStartHost
     ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
     : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
@@ -1064,7 +1089,8 @@ export function formatCheatSheet(
         id === "codex" ||
         id === "kimi-code" ||
         id === "copilot-cli" ||
-        id === "grok-build",
+        id === "grok-build" ||
+        id === "gemini-cli",
     );
   const lineStartSideTips = lineStartOnly
     ? []
@@ -1073,7 +1099,8 @@ export function formatCheatSheet(
           id === "codex" ||
           id === "kimi-code" ||
           id === "copilot-cli" ||
-          id === "grok-build",
+          id === "grok-build" ||
+          id === "gemini-cli",
       );
   if (locale === "zh-CN") {
     const planningBlock = lineStartOnly

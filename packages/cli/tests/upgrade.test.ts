@@ -1309,4 +1309,145 @@ review:
     expect(autopilotStop?.command).toMatch(/--platform grok-build/);
     expect(JSON.stringify(stopGroups)).toMatch(/foreign-grok-keep/);
   });
+
+  it("dry-run lists Gemini settings action when gemini-cli is enabled (no skills)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.gemini\/settings\.json/i.test(a))).toBe(
+      true,
+    );
+    expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+    expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
+  });
+
+  it("Gemini-enabled upgrade fails closed on corrupt settings JSON", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".gemini", "settings.json"),
+      "{not-json",
+      "utf8",
+    );
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) {
+      expect(dry.error).toMatch(/settings\.json|valid JSON|JSON|Unexpected/i);
+    }
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/settings\.json|valid JSON|JSON|Unexpected/i);
+    }
+  });
+
+  it("Cursor-only upgrade ignores corrupt leftover .gemini/settings.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const leftover = path.join(root, ".gemini", "settings.json");
+    fs.mkdirSync(path.dirname(leftover), { recursive: true });
+    const corrupt = "{not-json";
+    fs.writeFileSync(leftover, corrupt, "utf8");
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(true);
+    if (!dry.ok) return;
+    expect(dry.actions.some((a) => /\.gemini\/settings\.json/i.test(a))).toBe(
+      false,
+    );
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    expect(fs.readFileSync(leftover, "utf8")).toBe(corrupt);
+  });
+
+  it("upgrade refreshes Gemini settings and restores timeout 120000", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooksConfig?: unknown;
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ timeout?: number; command?: string }> }>
+      >;
+    };
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (
+            typeof h.command === "string" &&
+            h.command.includes("autopilot-harness-hook")
+          ) {
+            h.timeout = 1000;
+          }
+        }
+      }
+    }
+    file.hooksConfig = { enabled: true, disabled: ["keep-me"] };
+    file.hooks ??= {};
+    file.hooks.SessionStart = [
+      {
+        matcher: "*",
+        hooks: [{ type: "command", command: "echo foreign-gemini-keep" }],
+      },
+    ];
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooksConfig?: { enabled?: boolean; disabled?: string[] };
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ timeout?: number; command?: string }> }>
+      >;
+    };
+    expect(after.hooksConfig).toEqual({ enabled: true, disabled: ["keep-me"] });
+    expect(JSON.stringify(after.hooks?.SessionStart)).toMatch(
+      /foreign-gemini-keep/,
+    );
+    const afterAgent = (after.hooks?.AfterAgent ?? [])
+      .flatMap((g) => g.hooks ?? [])
+      .find(
+        (h) =>
+          typeof h.command === "string" &&
+          h.command.includes("autopilot-harness-hook"),
+      );
+    expect(afterAgent?.timeout).toBe(120_000);
+    expect(afterAgent?.command).toMatch(/--platform gemini-cli/);
+  });
 });
