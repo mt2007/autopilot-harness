@@ -33,6 +33,12 @@ export const GEMINI_WILDCARD_MATCHER = "*";
 /** Stable name prefix — strip/detect Autopilot handlers. */
 export const GEMINI_HOOK_NAME_PREFIX = "autopilot-harness";
 
+/**
+ * Legacy per-name disable list lived under `hooks.disabled` (pre-hooksConfig).
+ * Not an event key — must not be validated/merged as matcher groups.
+ */
+export const GEMINI_HOOKS_DISABLED_META_KEY = "disabled";
+
 export const GEMINI_SETTINGS_REL_PATH = [".gemini", "settings.json"].join("/");
 
 export interface GeminiHookHandler {
@@ -67,6 +73,61 @@ function safeKeyLabel(key: string): string {
 
 function isUnsafeKey(key: string): boolean {
   return key === "__proto__" || key === "prototype" || key === "constructor";
+}
+
+/** True when `hooks.<key>` is the legacy disabled meta list (not an event). */
+function isGeminiHooksDisabledMetaKey(key: string): boolean {
+  return key === GEMINI_HOOKS_DISABLED_META_KEY;
+}
+
+/**
+ * Validate hooks.disabled / hooksConfig.disabled payload.
+ * Accepts string[] or legacy object map `{ name: truthy }`.
+ */
+function validateGeminiDisabledList(
+  disabled: unknown,
+  label: string,
+): string | null {
+  if (disabled == null) return null;
+  if (Array.isArray(disabled)) {
+    for (const d of disabled) {
+      if (typeof d !== "string") {
+        return `${label} must be an array of strings (or a name→boolean map).`;
+      }
+    }
+    return null;
+  }
+  if (typeof disabled === "object") {
+    for (const key of Object.keys(disabled as object)) {
+      if (isUnsafeKey(key)) {
+        return `${label} key "${safeKeyLabel(key)}" is not allowed.`;
+      }
+    }
+    return null;
+  }
+  return `${label} must be an array of strings (or a name→boolean map).`;
+}
+
+/** Collect known Autopilot install names from a disabled list payload. */
+function collectKnownAutopilotDisabledNames(disabled: unknown): string[] {
+  const known = new Set<string>(
+    GEMINI_AUTOPILOT_EVENTS.map((event) => autopilotGeminiHookName(event)),
+  );
+  const out = new Set<string>();
+  const consider = (name: string): void => {
+    if (known.has(name)) out.add(name);
+  };
+  if (Array.isArray(disabled)) {
+    for (const d of disabled) {
+      if (typeof d === "string") consider(d);
+    }
+  } else if (disabled && typeof disabled === "object") {
+    for (const [key, value] of Object.entries(disabled)) {
+      if (isUnsafeKey(key)) continue;
+      if (value) consider(key);
+    }
+  }
+  return [...out].sort();
 }
 
 /** Stable Autopilot handler name for one Gemini event. */
@@ -145,6 +206,15 @@ export function validateGeminiSettingsShape(
       return `settings.json hooks key "${label}" is not allowed.`;
     }
     if (value == null) continue;
+    // Legacy `hooks.disabled` is a name list, not matcher groups.
+    if (isGeminiHooksDisabledMetaKey(key)) {
+      const err = validateGeminiDisabledList(
+        value,
+        `settings.json hooks.${label}`,
+      );
+      if (err) return err;
+      continue;
+    }
     if (!Array.isArray(value)) {
       return `settings.json hooks.${label} must be an array of matcher groups.`;
     }
@@ -224,6 +294,17 @@ function stripAutopilotFromGroups(
   return out;
 }
 
+/** Copy legacy `hooks.disabled` without aliasing the caller's value. */
+function cloneGeminiHooksDisabledMeta(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.slice();
+  }
+  if (value && typeof value === "object") {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return value;
+}
+
 /**
  * Merge Autopilot Gemini hooks into existing or empty settings.
  * Preserves hooksConfig / general / MCP and all other top-level keys as-is.
@@ -248,10 +329,16 @@ export function mergeGeminiSettings(
     }
   }
 
-  const nextHooks: Record<string, GeminiMatcherGroup[]> = Object.create(null);
+  const nextHooks: Record<string, GeminiMatcherGroup[] | unknown> =
+    Object.create(null);
   if (base.hooks && typeof base.hooks === "object" && !Array.isArray(base.hooks)) {
     for (const [key, value] of Object.entries(base.hooks)) {
       if (isUnsafeKey(key)) continue;
+      // Preserve legacy hooks.disabled as-is (not matcher groups).
+      if (isGeminiHooksDisabledMetaKey(key)) {
+        nextHooks[key] = cloneGeminiHooksDisabledMeta(value);
+        continue;
+      }
       if (!Array.isArray(value)) continue;
       nextHooks[key] = stripAutopilotFromGroups(value as GeminiMatcherGroup[]);
     }
@@ -259,7 +346,7 @@ export function mergeGeminiSettings(
 
   for (const event of GEMINI_AUTOPILOT_EVENTS) {
     const current = Array.isArray(nextHooks[event])
-      ? [...nextHooks[event]!]
+      ? [...(nextHooks[event] as GeminiMatcherGroup[])]
       : [];
     const stripped = stripAutopilotFromGroups(current);
     stripped.push(autopilotGeminiMatcherGroup(event));
@@ -291,9 +378,14 @@ export function stripAutopilotGeminiSettings(
 
   const prevHooks = base.hooks;
   if (prevHooks && typeof prevHooks === "object" && !Array.isArray(prevHooks)) {
-    const nextHooks: Record<string, GeminiMatcherGroup[]> = Object.create(null);
+    const nextHooks: Record<string, GeminiMatcherGroup[] | unknown> =
+      Object.create(null);
     for (const [key, value] of Object.entries(prevHooks)) {
       if (isUnsafeKey(key)) continue;
+      if (isGeminiHooksDisabledMetaKey(key)) {
+        nextHooks[key] = cloneGeminiHooksDisabledMeta(value);
+        continue;
+      }
       if (!Array.isArray(value)) continue;
       const kept = stripAutopilotFromGroups(value as GeminiMatcherGroup[]);
       if (kept.length > 0) nextHooks[key] = kept;
@@ -321,7 +413,8 @@ export function geminiSettingsContainAutopilot(
     !Array.isArray(settings.hooks)
       ? settings.hooks
       : {};
-  for (const value of Object.values(bag)) {
+  for (const [key, value] of Object.entries(bag)) {
+    if (key === GEMINI_HOOKS_DISABLED_META_KEY) continue;
     if (!Array.isArray(value)) continue;
     for (const g of value as GeminiMatcherGroup[]) {
       const hooks = Array.isArray(g?.hooks) ? g.hooks : [];
@@ -471,4 +564,44 @@ export function geminiAutopilotHasSmallTimeout(
     }
   }
   return false;
+}
+
+/**
+ * True when `hooksConfig.enabled === false` (strict boolean).
+ * Doctor WARN — Autopilot hooks registered but host may skip them.
+ */
+export function geminiHooksConfigEnabledIsFalse(
+  settings: GeminiSettingsFile,
+): boolean {
+  const hc = settings.hooksConfig;
+  if (!hc || typeof hc !== "object" || Array.isArray(hc)) return false;
+  return (hc as { enabled?: unknown }).enabled === false;
+}
+
+/**
+ * Autopilot handler names listed in `hooksConfig.disabled` and/or legacy
+ * `hooks.disabled`. Only the three stable install names count.
+ * Supports array form and legacy object map `{ "name": true }`.
+ */
+export function geminiAutopilotNamesInHooksConfigDisabled(
+  settings: GeminiSettingsFile,
+): string[] {
+  const out = new Set<string>();
+  const hc = settings.hooksConfig;
+  if (hc && typeof hc === "object" && !Array.isArray(hc)) {
+    for (const name of collectKnownAutopilotDisabledNames(
+      (hc as { disabled?: unknown }).disabled,
+    )) {
+      out.add(name);
+    }
+  }
+  const hooks = settings.hooks;
+  if (hooks && typeof hooks === "object" && !Array.isArray(hooks)) {
+    for (const name of collectKnownAutopilotDisabledNames(
+      (hooks as { disabled?: unknown }).disabled,
+    )) {
+      out.add(name);
+    }
+  }
+  return [...out].sort();
 }

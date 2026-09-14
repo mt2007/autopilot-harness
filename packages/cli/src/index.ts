@@ -64,6 +64,8 @@ export {
   geminiSettingsFileIsVacant,
   geminiHooksHavePlatformStamp,
   geminiAutopilotHasSmallTimeout,
+  geminiHooksConfigEnabledIsFalse,
+  geminiAutopilotNamesInHooksConfigDisabled,
   GEMINI_AUTOPILOT_EVENTS,
   GEMINI_AFTER_TOOL_MATCHER,
   GEMINI_HOOK_TIMEOUT_MS,

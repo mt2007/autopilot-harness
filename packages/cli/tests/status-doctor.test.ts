@@ -3308,6 +3308,461 @@ describe("runDoctor", () => {
       /Grok Autopilot hooks present while Cursor is enabled/i,
     );
   });
+
+  it("OKs Gemini Autopilot entries and WARNs cap + min-CLI + trust + reload", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /OK\s+\.gemini\/settings\.json Autopilot entries/,
+    );
+    expect(joined).toMatch(/AfterAgent turn cap ≤100/i);
+    expect(joined).toMatch(/Prefer Gemini CLI ≥0\.31\.0/i);
+    expect(joined).toMatch(/re-trust|\/hooks panel|folder trust/i);
+    expect(joined).toMatch(/Reload Gemini CLI|new session/i);
+    expect(joined).not.toMatch(/FAIL\s+\.gemini\/settings\.json missing/i);
+  });
+
+  it("FAILs when Gemini settings.json is missing on a Gemini-enabled project", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".gemini", "settings.json"), { force: true });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/\.gemini\/settings\.json missing/i);
+    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
+    expect(joined).not.toMatch(/Reload Gemini CLI|new session/i);
+  });
+
+  it("FAILs flat (non-nested) Gemini hooks without trust/reload tips", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.writeFileSync(
+      path.join(root, ".gemini", "settings.json"),
+      JSON.stringify({
+        hooks: {
+          BeforeAgent: [{ type: "command", command: "echo flat" }],
+        },
+      }) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/FAIL\s+\.gemini\/settings\.json/i);
+    expect(joined).toMatch(/nested matcher groups|invalid shape/i);
+    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
+  });
+
+  it("FAILs incomplete Gemini Autopilot events without trust/reload tips", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    delete file.hooks!.AfterAgent;
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing Autopilot for:.*AfterAgent/i);
+    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
+  });
+
+  it("WARNs when Autopilot Gemini hook timeout is omitted or below 120000", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ timeout?: number; command?: string }> }>
+      >;
+    };
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (
+            typeof h.command === "string" &&
+            h.command.includes("autopilot-harness-hook")
+          ) {
+            delete h.timeout;
+          }
+        }
+      }
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const omit = runDoctor(root);
+    expect(omit.ok).toBe(true);
+    expect(omit.lines.join("\n")).toMatch(/timeout below 120000/i);
+    expect(omit.lines.join("\n")).not.toMatch(
+      /OK\s+\.gemini\/settings\.json Autopilot entries/,
+    );
+
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (
+            typeof h.command === "string" &&
+            h.command.includes("autopilot-harness-hook")
+          ) {
+            h.timeout = 1000;
+          }
+        }
+      }
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const small = runDoctor(root);
+    expect(small.ok).toBe(true);
+    expect(small.lines.join("\n")).toMatch(/timeout below 120000/i);
+  });
+
+  it("WARNs when hooksConfig.enabled===false or Autopilot names are disabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooksConfig?: unknown;
+    };
+    file.hooksConfig = {
+      enabled: false,
+      disabled: ["autopilot-harness-AfterAgent", "other"],
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/hooksConfig\.enabled===false/i);
+    expect(joined).toMatch(
+      /disabled lists Autopilot name\(s\):.*autopilot-harness-AfterAgent/i,
+    );
+    expect(joined).not.toMatch(
+      /OK\s+\.gemini\/settings\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when only hooksConfig.disabled lists Autopilot names (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooksConfig?: unknown;
+    };
+    file.hooksConfig = {
+      enabled: true,
+      disabled: ["autopilot-harness-AfterAgent"],
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).not.toMatch(/hooksConfig\.enabled===false/i);
+    expect(joined).toMatch(
+      /disabled lists Autopilot name\(s\):.*autopilot-harness-AfterAgent/i,
+    );
+    expect(joined).not.toMatch(
+      /OK\s+\.gemini\/settings\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when legacy hooks.disabled lists Autopilot names (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    file.hooks = {
+      ...(file.hooks ?? {}),
+      disabled: ["autopilot-harness-BeforeAgent", "other"],
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /disabled lists Autopilot name\(s\):.*autopilot-harness-BeforeAgent/i,
+    );
+    expect(joined).toMatch(/hooksConfig\.disabled or legacy hooks\.disabled/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.gemini\/settings\.json Autopilot entries/,
+    );
+  });
+
+  it("WARNs when Autopilot Gemini hooks omit --platform stamp (no OK)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooks?: Record<
+        string,
+        Array<{ hooks?: Array<{ command?: string }> }>
+      >;
+    };
+    for (const groups of Object.values(file.hooks ?? {})) {
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (
+            typeof h.command === "string" &&
+            h.command.includes("autopilot-harness-hook")
+          ) {
+            h.command = h.command.replace(
+              /\s+--platform\s+gemini-cli\b/g,
+              "",
+            );
+          }
+        }
+      }
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing --platform gemini-cli/i);
+    expect(joined).not.toMatch(
+      /OK\s+\.gemini\/settings\.json Autopilot entries/,
+    );
+  });
+
+  it("FAILs when Gemini settings.json is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    fs.rmSync(settingsPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-gemini-settings.json"), settingsPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /\.gemini\/settings\.json unreadable|symlink/i,
+    );
+    expect(joined).not.toMatch(/FAIL\s+\.gemini\/settings\.json missing/i);
+    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
+  });
+
+  it("WARNs when Gemini CLI + Claude Code are both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "gemini-cli", surface: "cli" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Gemini CLI \+ Claude Code both enabled/i,
+    );
+  });
+
+  it("WARNs when Claude-only project has leftover Gemini Autopilot settings", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    // Drop gemini-cli from config but leave settings on disk.
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(configPath, "utf8");
+    const next = applyPlatformsToConfigYaml(yaml, [
+      { id: "claude-code", surface: "cli" },
+    ]);
+    fs.writeFileSync(configPath, next);
+    expect(fs.existsSync(path.join(root, ".gemini", "settings.json"))).toBe(
+      true,
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Gemini Autopilot hooks present while Claude Code is enabled/i,
+    );
+  });
+
+  it("WARNs when Gemini-only project has leftover Claude Autopilot settings", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "gemini-cli", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".claude", "settings.json"))).toBe(
+      true,
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Claude Autopilot hooks present while Gemini CLI is enabled/i,
+    );
+  });
+
+  it("does not WARN/withhold OK for unrelated autopilot-harness-* in hooksConfig.disabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".gemini", "settings.json");
+    const file = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooksConfig?: unknown;
+    };
+    file.hooksConfig = {
+      enabled: true,
+      disabled: ["autopilot-harness-custom", "other"],
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).not.toMatch(/hooksConfig\.disabled lists Autopilot name/i);
+    expect(joined).not.toMatch(/disabled lists Autopilot name\(s\)/i);
+    expect(joined).toMatch(/OK\s+\.gemini\/settings\.json Autopilot entries/);
+  });
 });
 
 describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", () => {
@@ -3352,4 +3807,5 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     expect(ok).toBe(true);
     expect(lines.join("\n")).toMatch(/OK\s+plans \(work\/plans\/\)/);
   });
+
 });

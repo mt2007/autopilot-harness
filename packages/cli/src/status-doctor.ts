@@ -69,6 +69,19 @@ import {
   type GrokHooksFile,
 } from "./init/grok-hooks-merge.js";
 import {
+  GEMINI_SETTINGS_REL_PATH,
+  GEMINI_HOOK_TIMEOUT_MS,
+  geminiAutopilotHasSmallTimeout,
+  geminiAutopilotNamesInHooksConfigDisabled,
+  geminiHooksConfigEnabledIsFalse,
+  geminiHooksHavePlatformStamp,
+  geminiSettingsContainAutopilot,
+  hasCompleteGeminiAutopilotHooks,
+  summarizeGeminiAutopilotHooks,
+  validateGeminiSettingsShape,
+  type GeminiSettingsFile,
+} from "./init/gemini-settings-merge.js";
+import {
   COPILOT_STOP_CAP_RAISE_FOUND,
   COPILOT_STOP_CONSECUTIVE_BLOCK_CAP,
 } from "@autopilot-harness/port-copilot-cli";
@@ -76,6 +89,11 @@ import {
   GROK_STOP_CAP_RAISE_FOUND,
   GROK_STOP_PER_TURN_BLOCK_CAP,
 } from "@autopilot-harness/port-grok-build";
+import {
+  GEMINI_AFTER_AGENT_TURN_CAP,
+  GEMINI_MIN_CLI_VERSION_HINT,
+  GEMINI_STOP_CAP_RAISE_FOUND,
+} from "@autopilot-harness/port-gemini-cli";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -330,6 +348,27 @@ function projectHasGrokAutopilotFingerprint(projectRoot: string): boolean {
       return false;
     }
     return grokHooksContainAutopilot(parsed as GrokHooksFile);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Best-effort: leftover Gemini Autopilot fingerprint on disk.
+ * Missing/unreadable/non-object → false (dual-fingerprint WARN only).
+ */
+function projectHasGeminiAutopilotFingerprint(projectRoot: string): boolean {
+  try {
+    const raw = readUntrustedUtf8File(
+      path.join(projectRoot, ".gemini", "settings.json"),
+      MAX_CONFIG_BYTES,
+      GEMINI_SETTINGS_REL_PATH,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    return geminiSettingsContainAutopilot(parsed as GeminiSettingsFile);
   } catch {
     return false;
   }
@@ -1308,6 +1347,116 @@ export function runDoctor(
     }
   }
 
+  const wantGemini = configWantsInstallableHost(cfg.platforms, "gemini-cli");
+  if (wantGemini) {
+    const geminiSettingsPath = path.join(root, ".gemini", "settings.json");
+    // Host hard-cap: always surface when this installable host is enabled.
+    if (!GEMINI_STOP_CAP_RAISE_FOUND) {
+      lines.push(
+        `WARN  Gemini CLI AfterAgent turn cap ≤${GEMINI_AFTER_AGENT_TURN_CAP} (MAX_TURNS; no raise found) — expect mid-chain cutoffs on long review`,
+      );
+    }
+    lines.push(
+      `WARN  Prefer Gemini CLI ≥${GEMINI_MIN_CLI_VERSION_HINT} so AfterAgent retry still fires with stop_hook_active`,
+    );
+    try {
+      const raw = readUntrustedUtf8File(
+        geminiSettingsPath,
+        MAX_CONFIG_BYTES,
+        GEMINI_SETTINGS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push(`FAIL  ${GEMINI_SETTINGS_REL_PATH} is not a JSON object`);
+        ok = false;
+      } else {
+        const file = parsed as GeminiSettingsFile;
+        const shapeError = validateGeminiSettingsShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${GEMINI_SETTINGS_REL_PATH}: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeGeminiAutopilotHooks(file);
+          const badTimeout = geminiAutopilotHasSmallTimeout(file);
+          const hasStamp = geminiHooksHavePlatformStamp(file);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  ${GEMINI_SETTINGS_REL_PATH} missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  ${GEMINI_SETTINGS_REL_PATH} has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (badTimeout) {
+            lines.push(
+              `WARN  Autopilot Gemini hook timeout below ${GEMINI_HOOK_TIMEOUT_MS}ms (or omitted) — run upgrade`,
+            );
+          }
+          if (missingEvents.length === 0 && !hasStamp) {
+            lines.push(
+              "WARN  Autopilot Gemini hooks missing --platform gemini-cli — run upgrade",
+            );
+          }
+          const hooksConfigDisabled =
+            geminiHooksConfigEnabledIsFalse(file);
+          if (hooksConfigDisabled) {
+            lines.push(
+              `WARN  ${GEMINI_SETTINGS_REL_PATH} hooksConfig.enabled===false — Autopilot hooks may not run; enable hooks or remove the disable`,
+            );
+          }
+          const disabledNames = geminiAutopilotNamesInHooksConfigDisabled(file);
+          if (disabledNames.length > 0) {
+            const shown = disabledNames
+              .map((n) => safeDisplayToken(n, "name"))
+              .join(", ");
+            lines.push(
+              `WARN  ${GEMINI_SETTINGS_REL_PATH} disabled lists Autopilot name(s): ${shown} — remove from hooksConfig.disabled or legacy hooks.disabled`,
+            );
+          }
+          // Trust/reload tips only after Autopilot event coverage is present.
+          if (missingEvents.length === 0) {
+            lines.push(
+              "WARN  Gemini CLI: re-trust hooks, check /hooks panel, and ensure folder trust after install or upgrade",
+            );
+            lines.push(
+              "WARN  Reload Gemini CLI or open a new session after install or upgrade so Autopilot hooks reload",
+            );
+          }
+          // Withhold OK when hooksConfig would skip Autopilot (same bar as stamp/timeout).
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !badTimeout &&
+            hasStamp &&
+            !hooksConfigDisabled &&
+            disabledNames.length === 0 &&
+            hasCompleteGeminiAutopilotHooks(file)
+          ) {
+            lines.push(`OK    ${GEMINI_SETTINGS_REL_PATH} Autopilot entries`);
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(`FAIL  ${GEMINI_SETTINGS_REL_PATH} missing`);
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  ${GEMINI_SETTINGS_REL_PATH} unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
+    }
+  }
+
   // Dual Claude + Copilot Autopilot fingerprints (config and/or on-disk residue).
   if (wantClaude && wantCopilot) {
     lines.push(
@@ -1449,6 +1598,50 @@ export function runDoctor(
     if (!wantGrok && !wantCursor && grokLeftoverFp && cursorFpVsGrok) {
       lines.push(
         "WARN  Grok + Cursor Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
+  // Dual Gemini + Claude Autopilot fingerprints (config and/or on-disk residue).
+  const geminiLeftoverFp = wantGemini
+    ? false
+    : projectHasGeminiAutopilotFingerprint(root);
+  if (wantGemini && wantClaude) {
+    lines.push(
+      "WARN  Gemini CLI + Claude Code both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFpVsGemini = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFpVsGemini = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantGemini && claudeFpVsGemini) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Gemini CLI is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (wantClaude && geminiLeftoverFp) {
+      lines.push(
+        "WARN  Gemini Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Gemini or expect Stop routing care",
+      );
+    }
+    if (!wantGemini && !wantClaude && geminiLeftoverFp && claudeFpVsGemini) {
+      lines.push(
+        "WARN  Gemini + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
       );
     }
   }

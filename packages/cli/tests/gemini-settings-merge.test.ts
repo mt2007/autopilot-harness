@@ -19,6 +19,8 @@ import {
   stripAutopilotGeminiSettings,
   summarizeGeminiAutopilotHooks,
   validateGeminiSettingsShape,
+  geminiHooksConfigEnabledIsFalse,
+  geminiAutopilotNamesInHooksConfigDisabled,
 } from "../src/init/gemini-settings-merge.js";
 import { installInitYes } from "../src/init/install.js";
 import { uninstallProject } from "../src/uninstall.js";
@@ -371,5 +373,87 @@ describe("gemini settings merge", () => {
     const un = uninstallProject({ projectRoot: root, dryRun: false });
     expect(un.ok).toBe(true);
     expect(fs.existsSync(settingsPath)).toBe(false);
+  });
+
+  it("detects hooksConfig.enabled===false and Autopilot names in disabled", () => {
+    const base = mergeGeminiSettings(null);
+    expect(geminiHooksConfigEnabledIsFalse(base)).toBe(false);
+    expect(geminiAutopilotNamesInHooksConfigDisabled(base)).toEqual([]);
+
+    const disabledFalse = {
+      ...base,
+      hooksConfig: { enabled: false, disabled: ["other"] },
+    };
+    expect(geminiHooksConfigEnabledIsFalse(disabledFalse)).toBe(true);
+    expect(geminiAutopilotNamesInHooksConfigDisabled(disabledFalse)).toEqual(
+      [],
+    );
+
+    const named = {
+      ...base,
+      hooksConfig: {
+        enabled: true,
+        disabled: [
+          "autopilot-harness-AfterAgent",
+          "keep-me",
+          "autopilot-harness-custom",
+        ],
+      },
+    };
+    expect(geminiAutopilotNamesInHooksConfigDisabled(named)).toEqual([
+      "autopilot-harness-AfterAgent",
+    ]);
+
+    const legacyMap = {
+      ...base,
+      hooksConfig: {
+        disabled: {
+          "autopilot-harness-BeforeAgent": true,
+          "foreign-hook": true,
+          "autopilot-harness-AfterTool": false,
+          "autopilot-harness-legacy-Stop": true,
+        },
+      },
+    };
+    expect(geminiAutopilotNamesInHooksConfigDisabled(legacyMap)).toEqual([
+      "autopilot-harness-BeforeAgent",
+    ]);
+
+    const legacyHooksDisabled = {
+      ...base,
+      hooks: {
+        ...(base.hooks as object),
+        disabled: ["autopilot-harness-AfterTool", "keep-me"],
+      },
+    };
+    expect(
+      geminiAutopilotNamesInHooksConfigDisabled(legacyHooksDisabled),
+    ).toEqual(["autopilot-harness-AfterTool"]);
+    expect(validateGeminiSettingsShape(legacyHooksDisabled)).toBeNull();
+
+    const mergedLegacy = mergeGeminiSettings(legacyHooksDisabled);
+    expect(mergedLegacy.hooks?.disabled).toEqual([
+      "autopilot-harness-AfterTool",
+      "keep-me",
+    ]);
+    // Merge must not alias the caller's disabled list.
+    (legacyHooksDisabled.hooks as { disabled: string[] }).disabled.push("mut");
+    expect(mergedLegacy.hooks?.disabled).toEqual([
+      "autopilot-harness-AfterTool",
+      "keep-me",
+    ]);
+
+    const strippedLegacy = stripAutopilotGeminiSettings(mergedLegacy);
+    expect(geminiSettingsContainAutopilot(strippedLegacy)).toBe(false);
+    expect(strippedLegacy.hooks?.disabled).toEqual([
+      "autopilot-harness-AfterTool",
+      "keep-me",
+    ]);
+    expect(geminiSettingsFileIsVacant(strippedLegacy)).toBe(false);
+    (mergedLegacy.hooks as { disabled: string[] }).disabled.push("mut2");
+    expect(strippedLegacy.hooks?.disabled).toEqual([
+      "autopilot-harness-AfterTool",
+      "keep-me",
+    ]);
   });
 });

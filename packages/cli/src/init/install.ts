@@ -182,6 +182,8 @@ export {
   geminiSettingsFileIsVacant,
   geminiHooksHavePlatformStamp,
   geminiAutopilotHasSmallTimeout,
+  geminiHooksConfigEnabledIsFalse,
+  geminiAutopilotNamesInHooksConfigDisabled,
   isAutopilotGeminiHandler,
   autopilotGeminiHookHandler,
   autopilotGeminiMatcherGroup,
