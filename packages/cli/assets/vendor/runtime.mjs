@@ -8626,6 +8626,421 @@ function handleStopInner3(engine, payload, opts) {
   };
 }
 
+// ../ports/gemini-cli/src/index.ts
+var GEMINI_PLATFORM = "gemini-cli";
+var MAX_NEED_PICK_SLUGS5 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS5 = 2e3;
+var MAX_HOOK_STDIO_CHARS4 = 8192;
+var MAX_TOOL_ARGS_JSON_CHARS3 = 1048576;
+function sid6(p) {
+  for (const v of [
+    p.session_id,
+    p.sessionId,
+    p.conversation_id,
+    p.conversationId
+  ]) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t && !/[\u0000-\u001f\u007f]/.test(t)) return t;
+    }
+  }
+  return "";
+}
+function clipText3(text, max = MAX_HOOK_STDIO_CHARS4) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function denyReason(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function loopCountFromStopHookActive6(payload) {
+  const active = payload.stop_hook_active ?? payload.stopHookActive;
+  return active === true ? 1 : 0;
+}
+function collectGeminiStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const o = value;
+        for (const key of ["message", "error", "name", "stack", "detail"]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.reason);
+  } catch {
+    return "";
+  }
+  return clipText3(parts.join("\n"));
+}
+function normalizeGeminiStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "").toLowerCase().trim();
+  const errText = collectGeminiStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
+}
+function buildNeedPickContext3(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS5);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS5) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS5 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function injectNeedPickContext(userMessage, candidates) {
+  const ctx = buildNeedPickContext3(userMessage, candidates);
+  return {
+    hookSpecificOutput: {
+      hookEventName: "BeforeAgent",
+      additionalContext: ctx
+    }
+  };
+}
+function denySubmit(userMessage, fallback) {
+  return {
+    decision: "deny",
+    reason: clipText3(
+      denyReason(
+        typeof userMessage === "string" ? userMessage : void 0,
+        fallback
+      ),
+      MAX_NEED_PICK_CONTEXT_CHARS5 + 256
+    )
+  };
+}
+function toolInputObject5(payload) {
+  const input = payload.tool_input ?? payload.toolInput;
+  if (!input) return null;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    return input;
+  }
+  if (typeof input === "string") {
+    if (input.length > MAX_TOOL_ARGS_JSON_CHARS3) return null;
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function filePathsFromGeminiEdit(payload) {
+  const input = toolInputObject5(payload);
+  if (!input) return [];
+  const candidates = [
+    input.file_path,
+    input.filePath,
+    input.path,
+    input.target_file,
+    input.targetFile
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim() && !/[\0\r\n]/.test(c)) {
+      return [c.trim()];
+    }
+  }
+  return [];
+}
+function isGeminiEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "write_file" || n === "replace";
+}
+function stampGeminiPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === GEMINI_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: GEMINI_PLATFORM
+  });
+}
+function handleUserPromptSubmit6(store, payload, projectRoot, portConfig) {
+  try {
+    return handleUserPromptSubmitInner4(
+      store,
+      payload,
+      projectRoot,
+      portConfig
+    );
+  } catch {
+    return {};
+  }
+}
+function handleUserPromptSubmitInner4(store, payload, projectRoot, portConfig) {
+  const conversationId = sid6(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: GEMINI_PLATFORM
+      });
+      if (!result.ok) {
+        stampGeminiPlatform(store, conversationId, projectRoot);
+        return denySubmit(result.userMessage, gateFallback);
+      }
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        stampGeminiPlatform(store, conversationId, projectRoot);
+        return denySubmit(result.userMessage, gateFallback);
+      }
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: GEMINI_PLATFORM
+      });
+      if (!result.ok) {
+        stampGeminiPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        return denySubmit(result.userMessage, gateFallback);
+      }
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: GEMINI_PLATFORM
+      });
+      if (!result.ok) {
+        stampGeminiPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        return denySubmit(result.userMessage, gateFallback);
+      }
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: GEMINI_PLATFORM }
+      );
+      if (!result.ok) {
+        stampGeminiPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        return denySubmit(result.userMessage, gateFallback);
+      }
+      stampGeminiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampGeminiPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited5(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      GEMINI_PLATFORM
+    );
+  }
+  stampGeminiPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handlePostToolUse6(store, payload, projectRoot) {
+  try {
+    handlePostToolUseInner4(store, payload, projectRoot);
+  } catch {
+  }
+}
+function handlePostToolUseInner4(store, payload, projectRoot) {
+  const conversationId = sid6(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isGeminiEditTool(toolName)) return;
+  const filePaths = filePathsFromGeminiEdit(payload);
+  if (filePaths.length === 0) {
+    stampGeminiPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited5(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampGeminiPlatform(store, conversationId, projectRoot);
+  }
+}
+function handleStop7(engine, payload, opts) {
+  try {
+    return handleStopInner4(engine, payload, opts);
+  } catch {
+    return {};
+  }
+}
+function handleStopInner4(engine, payload, opts) {
+  const conversationId = sid6(payload);
+  if (!conversationId) return {};
+  const status = normalizeGeminiStopStatus(payload, opts);
+  const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
+  const transcriptPath = typeof transcriptRaw === "string" && transcriptRaw.trim() ? transcriptRaw.trim() : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromStopHookActive6(payload),
+    transcriptPath,
+    platform: GEMINI_PLATFORM
+  });
+  if (!action?.message) return {};
+  const reason = clipText3(
+    denyReason(action.message, "Autopilot followup"),
+    MAX_HOOK_STDIO_CHARS4
+  );
+  if (!action.loop) {
+    return { continue: false, stopReason: reason };
+  }
+  return {
+    decision: "deny",
+    reason
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -8634,6 +9049,7 @@ function createConfiguredReviewEngine2(store, projectRoot) {
 }
 export {
   COPILOT_PLATFORM,
+  GEMINI_PLATFORM,
   GROK_PLATFORM,
   KIMI_PLATFORM,
   ReviewEngine,
@@ -8651,6 +9067,9 @@ export {
   handleUserPromptSubmit4 as handleCopilotUserPromptSubmit,
   handleUserPromptTransformed as handleCopilotUserPromptTransformed,
   handleStop as handleCursorStop,
+  handlePostToolUse6 as handleGeminiPostToolUse,
+  handleStop7 as handleGeminiStop,
+  handleUserPromptSubmit6 as handleGeminiUserPromptSubmit,
   handlePostToolUse5 as handleGrokPostToolUse,
   handleStop6 as handleGrokStop,
   handleUserPromptSubmit5 as handleGrokUserPromptSubmit,

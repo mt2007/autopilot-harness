@@ -1005,6 +1005,298 @@ describe("hook vendor runtime", () => {
     after.close();
   });
 
+  it("seven-way --platform gemini-cli routes BeforeAgent/AfterTool/AfterAgent (deny needPick; wrong stamp abort; StopFailure fail-open)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    for (const slug of ["gem-alpha", "gem-beta"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const cid = "hook-gemini-aaaa-bbbb-cccc-ddddeeee0001";
+    const onProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "BeforeAgent", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(JSON.parse(onProc.stdout.trim() || "{}")).toEqual({});
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("gemini-cli");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    // Unstamped BeforeAgent still routes to gemini-cli (unique event name).
+    const unstampedOn = spawnSync(
+      process.execPath,
+      [hook, "--event", "BeforeAgent"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: "hook-gemini-aaaa-bbbb-cccc-ddddeeee0099",
+          prompt: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(unstampedOn.status).toBe(0);
+    expect(JSON.parse(unstampedOn.stdout.trim() || "{}")).toEqual({});
+    const unstampedStore = new StateStore(root);
+    expect(
+      unstampedStore.getSession("hook-gemini-aaaa-bbbb-cccc-ddddeeee0099")
+        ?.platform,
+    ).toBe("gemini-cli");
+    unstampedStore.close();
+
+    // Gemini BeforeAgent needPick → inject (hookEventName), not deny.
+    const runProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "BeforeAgent", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          prompt: "Autopilot RUN",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(runProc.status).toBe(0);
+    const runOut = JSON.parse(runProc.stdout.trim() || "{}") as {
+      decision?: string;
+      hookSpecificOutput?: { hookEventName?: string; additionalContext?: string };
+    };
+    expect(runOut.decision).toBeUndefined();
+    expect(runOut.hookSpecificOutput?.hookEventName).toBe("BeforeAgent");
+    expect(runOut.hookSpecificOutput?.additionalContext).toMatch(
+      /Select a plan|gem-alpha|gem-beta/i,
+    );
+
+    // Wrong stamp + Gemini event → fail-open before FSM (no new session).
+    // Must still emit JSON {} even when stamp is kimi-code (Kimi fail-open
+    // writes no stdout; Gemini host requires a JSON object).
+    const wrongStamp = spawnSync(
+      process.execPath,
+      [hook, "--event", "BeforeAgent", "--platform", "claude-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: "hook-gemini-wrong-stamp-0001",
+          prompt: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(wrongStamp.status).toBe(0);
+    expect(JSON.parse(wrongStamp.stdout.trim() || "{}")).toEqual({});
+    const wrongStore = new StateStore(root);
+    expect(wrongStore.getSession("hook-gemini-wrong-stamp-0001")).toBeNull();
+    wrongStore.close();
+
+    const wrongKimi = spawnSync(
+      process.execPath,
+      [hook, "--event", "BeforeAgent", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: "hook-gemini-wrong-stamp-kimi-0001",
+          prompt: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(wrongKimi.status).toBe(0);
+    expect(wrongKimi.stdout.trim()).toBe("{}");
+    const wrongKimiStore = new StateStore(root);
+    expect(
+      wrongKimiStore.getSession("hook-gemini-wrong-stamp-kimi-0001"),
+    ).toBeNull();
+    wrongKimiStore.close();
+
+    // AfterAgent continue = deny+reason (multi-deny capable).
+    const armed = new StateStore(root);
+    armed.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "gemini-cli",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "gem-alpha",
+      checklist_path: path.join(root, "plans", "gem-alpha", "checklist.md"),
+    });
+    armed.updateReviewChain(cid, { code_edited: 1 });
+    armed.close();
+
+    const afterAgent = spawnSync(
+      process.execPath,
+      [hook, "--event", "AfterAgent", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          hook_event_name: "AfterAgent",
+          prompt: "original user",
+          prompt_response: "assistant done",
+          stop_hook_active: false,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(afterAgent.status).toBe(0);
+    const stopOut = JSON.parse(afterAgent.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+      continue?: boolean;
+    };
+    expect(stopOut.decision).toBe("deny");
+    expect(stopOut.reason).toBeTruthy();
+    expect(stopOut.continue).toBeUndefined();
+    expect(JSON.stringify(stopOut)).not.toMatch(/clearContext|"block"/);
+
+    // Gemini multi-deny: stop_hook_active must NOT silence deny (unlike Claude).
+    const rearm = new StateStore(root);
+    rearm.updateReviewChain(cid, { code_edited: 1 });
+    rearm.close();
+    const multiDeny = spawnSync(
+      process.execPath,
+      [hook, "--event", "AfterAgent", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: cid,
+          hook_event_name: "AfterAgent",
+          prompt: "original user",
+          prompt_response: "assistant done again",
+          stop_hook_active: true,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(multiDeny.status).toBe(0);
+    const multiOut = JSON.parse(multiDeny.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+    };
+    expect(multiOut.decision).toBe("deny");
+    expect(multiOut.reason).toBeTruthy();
+    expect(JSON.stringify(multiOut)).not.toMatch(/clearContext|"block"/);
+
+    // AfterTool arms product edit.
+    const file = path.join(root, "src", "gem.ts");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "export const g = 1;\n");
+    const editCid = "hook-gemini-aaaa-bbbb-cccc-ddddeeee0002";
+    const editStore = new StateStore(root);
+    editStore.upsertSession({
+      conversation_id: editCid,
+      project_root: root,
+      code_root: root,
+      platform: "gemini-cli",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "gem-alpha",
+      checklist_path: path.join(root, "plans", "gem-alpha", "checklist.md"),
+    });
+    editStore.close();
+    const editProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "AfterTool", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          sessionId: editCid,
+          tool_name: "write_file",
+          tool_input: { file_path: file },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(editProc.status).toBe(0);
+    expect(JSON.parse(editProc.stdout.trim() || "{}")).toEqual({});
+    const verifyEdit = new StateStore(root);
+    expect(verifyEdit.getReviewChain(editCid)?.code_edited).toBe(1);
+    verifyEdit.close();
+
+    // Universal abort: Gemini stamp + Cursor-shaped aborted → halt {}
+    // (must not fail-open continue on AfterAgent).
+    const midGem = new StateStore(root);
+    const beforeAbortGem =
+      midGem.getReviewChain(cid)?.pending_followup ?? null;
+    midGem.close();
+    const abortAfter = spawnSync(
+      process.execPath,
+      [hook, "--event", "AfterAgent", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          status: "aborted",
+          hook_event_name: "stop",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(abortAfter.status).toBe(0);
+    expect(JSON.parse(abortAfter.stdout.trim() || "{}")).toEqual({});
+    const afterGem = new StateStore(root);
+    expect(afterGem.getSession(cid)?.platform).toBe("gemini-cli");
+    expect(afterGem.getReviewChain(cid)?.pending_followup ?? null).toBe(
+      beforeAbortGem,
+    );
+    afterGem.close();
+
+    // StopFailure is not a Gemini event — fail-open.
+    const stopFail = spawnSync(
+      process.execPath,
+      [hook, "--event", "StopFailure", "--platform", "gemini-cli"],
+      {
+        cwd: root,
+        input: JSON.stringify({ sessionId: cid }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopFail.status).toBe(0);
+    expect(JSON.parse(stopFail.stdout.trim() || "{}")).toEqual({});
+  });
+
   it("unstamped agentStop + stopHookActive routes Copilot (not Claude Layer C)", () => {
     root = tmpProject();
     expect(

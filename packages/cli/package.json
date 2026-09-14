@@ -1,7 +1,7 @@
 {
   "name": "@autopilot-harness/cli",
   "version": "0.6.0",
-  "description": "Autopilot harness CLI — structured planning, checklist execution, and multi-lens self-review for Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, and Grok Build (bin: autopilot-harness)",
+  "description": "Autopilot harness CLI — structured planning, checklist execution, and multi-lens self-review for Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, and Gemini CLI (bin: autopilot-harness)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -43,6 +43,7 @@
     "@autopilot-harness/port-kimi-code": "workspace:*",
     "@autopilot-harness/port-copilot-cli": "workspace:*",
     "@autopilot-harness/port-grok-build": "workspace:*",
+    "@autopilot-harness/port-gemini-cli": "workspace:*",
     "@clack/prompts": "^0.10.0",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"
@@ -72,6 +73,8 @@
     "github-copilot",
     "grok-build",
     "grok",
+    "gemini",
+    "gemini-cli",
     "checklist",
     "code-review",
     "cli",

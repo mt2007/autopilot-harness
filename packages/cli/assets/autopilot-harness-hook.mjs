@@ -13,12 +13,13 @@
  *   Kimi Code: UserPromptSubmit | PostToolUse | Stop (exit 0/2 + stdio; no StopFailure)
  *   Copilot CLI: userPromptSubmitted | userPromptTransformed | postToolUse | agentStop
  *   Grok Build: UserPromptSubmit | PostToolUse | Stop (Codex-shaped; no StopFailure)
+ *   Gemini CLI: BeforeAgent | AfterTool | AfterAgent (deny continue; no StopFailure)
  *
- * Dispatch is explicit six-way via --platform
- * (cursor | claude-code | codex | kimi-code | copilot-cli | grok-build). Shared
+ * Dispatch is explicit seven-way via --platform
+ * (cursor | claude-code | codex | kimi-code | copilot-cli | grok-build | gemini-cli). Shared
  * PascalCase event names must NOT imply Claude when platform is codex,
- * kimi-code, copilot-cli, or grok-build. Copilot camelCase events are routed
- * by stamp + event only.
+ * kimi-code, copilot-cli, grok-build, or gemini-cli. Copilot camelCase and
+ * Gemini BeforeAgent/AfterTool/AfterAgent events are routed by stamp + event only.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -50,6 +51,8 @@ const CLAUDE_EVENTS = new Set([
 const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const KIMI_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const GROK_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
+/** Gemini CLI host event names (distinct from Claude PascalCase). */
+const GEMINI_EVENTS = new Set(["BeforeAgent", "AfterTool", "AfterAgent"]);
 /** Copilot CLI camelCase events (Transform is Copilot-only). */
 const COPILOT_EVENTS = new Set([
   "userPromptSubmitted",
@@ -64,6 +67,7 @@ const KNOWN_PLATFORMS = new Set([
   "kimi-code",
   "copilot-cli",
   "grok-build",
+  "gemini-cli",
 ]);
 
 function parseArgs(argv) {
@@ -73,6 +77,7 @@ function parseArgs(argv) {
     ...CODEX_EVENTS,
     ...KIMI_EVENTS,
     ...GROK_EVENTS,
+    ...GEMINI_EVENTS,
     ...COPILOT_EVENTS,
   ]);
   const out = { event: "beforeSubmitPrompt", platform: null };
@@ -102,8 +107,8 @@ function isClaudeEvent(event) {
  * Resolve host id: stamped --platform wins; legacy installs fall back to
  * event-name heuristics (Claude-shaped events → claude-code, else cursor).
  * Never map PascalCase events to Claude when --platform is codex, kimi-code,
- * copilot-cli, or grok-build. Copilot camelCase events without a stamp still
- * need a host.
+ * copilot-cli, grok-build, or gemini-cli. Copilot camelCase / Gemini
+ * BeforeAgent/AfterTool/AfterAgent events without a stamp still need a host.
  */
 function resolveHostId(declaredPlatform, event) {
   if (
@@ -112,10 +117,12 @@ function resolveHostId(declaredPlatform, event) {
     declaredPlatform === "codex" ||
     declaredPlatform === "kimi-code" ||
     declaredPlatform === "copilot-cli" ||
-    declaredPlatform === "grok-build"
+    declaredPlatform === "grok-build" ||
+    declaredPlatform === "gemini-cli"
   ) {
     return declaredPlatform;
   }
+  if (GEMINI_EVENTS.has(event)) return "gemini-cli";
   if (COPILOT_EVENTS.has(event)) return "copilot-cli";
   if (isClaudeEvent(event)) return "claude-code";
   return "cursor";
@@ -229,6 +236,9 @@ async function loadHostPortPackage(hostId) {
   }
   if (hostId === "grok-build") {
     return loadPortPackage("@autopilot-harness/port-grok-build");
+  }
+  if (hostId === "gemini-cli") {
+    return loadPortPackage("@autopilot-harness/port-gemini-cli");
   }
   return loadPortPackage("@autopilot-harness/port-cursor");
 }
@@ -389,9 +399,11 @@ function codexStopHandler(port) {
     typeof port.handleKimiStop !== "function" &&
     typeof port.handleCopilotStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
+    typeof port.handleGeminiStop !== "function" &&
     port.KIMI_PLATFORM !== "kimi-code" &&
     port.COPILOT_PLATFORM !== "copilot-cli" &&
-    port.GROK_PLATFORM !== "grok-build"
+    port.GROK_PLATFORM !== "grok-build" &&
+    port.GEMINI_PLATFORM !== "gemini-cli"
   ) {
     return port.handleStop;
   }
@@ -415,7 +427,9 @@ function kimiStopHandler(port) {
     typeof port.handleCodexStop !== "function" &&
     typeof port.handleCopilotStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
-    port.GROK_PLATFORM !== "grok-build"
+    typeof port.handleGeminiStop !== "function" &&
+    port.GROK_PLATFORM !== "grok-build" &&
+    port.GEMINI_PLATFORM !== "gemini-cli"
   ) {
     return port.handleStop;
   }
@@ -424,7 +438,7 @@ function kimiStopHandler(port) {
 
 /**
  * Copilot agentStop: prefer aliased vendor export; package-only uses handleStop
- * when COPILOT_PLATFORM is stamped (never Claude StopFailure / Codex / Kimi / Grok).
+ * when COPILOT_PLATFORM is stamped (never Claude StopFailure / Codex / Kimi / Grok / Gemini).
  */
 function copilotStopHandler(port) {
   if (typeof port.handleCopilotStop === "function") {
@@ -439,7 +453,9 @@ function copilotStopHandler(port) {
     typeof port.handleCodexStop !== "function" &&
     typeof port.handleKimiStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
-    port.GROK_PLATFORM !== "grok-build"
+    typeof port.handleGeminiStop !== "function" &&
+    port.GROK_PLATFORM !== "grok-build" &&
+    port.GEMINI_PLATFORM !== "gemini-cli"
   ) {
     return port.handleStop;
   }
@@ -448,7 +464,7 @@ function copilotStopHandler(port) {
 
 /**
  * Grok Build Stop: prefer aliased vendor export; package-only uses handleStop when
- * GROK_PLATFORM is stamped (never Claude StopFailure / Codex / Kimi / Copilot).
+ * GROK_PLATFORM is stamped (never Claude StopFailure / Codex / Kimi / Copilot / Gemini).
  */
 function grokStopHandler(port) {
   if (typeof port.handleGrokStop === "function") {
@@ -463,8 +479,37 @@ function grokStopHandler(port) {
     typeof port.handleCodexStop !== "function" &&
     typeof port.handleKimiStop !== "function" &&
     typeof port.handleCopilotStop !== "function" &&
+    typeof port.handleGeminiStop !== "function" &&
     port.KIMI_PLATFORM !== "kimi-code" &&
-    port.COPILOT_PLATFORM !== "copilot-cli"
+    port.COPILOT_PLATFORM !== "copilot-cli" &&
+    port.GEMINI_PLATFORM !== "gemini-cli"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+/**
+ * Gemini AfterAgent: prefer aliased vendor export; package-only uses handleStop when
+ * GEMINI_PLATFORM is stamped (never Claude StopFailure / Codex / Kimi / Copilot / Grok).
+ */
+function geminiStopHandler(port) {
+  if (typeof port.handleGeminiStop === "function") {
+    return port.handleGeminiStop;
+  }
+  if (
+    port.GEMINI_PLATFORM === "gemini-cli" &&
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure !== "function" &&
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleCodexStop !== "function" &&
+    typeof port.handleKimiStop !== "function" &&
+    typeof port.handleCopilotStop !== "function" &&
+    typeof port.handleGrokStop !== "function" &&
+    port.KIMI_PLATFORM !== "kimi-code" &&
+    port.COPILOT_PLATFORM !== "copilot-cli" &&
+    port.GROK_PLATFORM !== "grok-build"
   ) {
     return port.handleStop;
   }
@@ -502,8 +547,26 @@ function hostPortReady(hostId, port) {
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
-      port.COPILOT_PLATFORM !== "copilot-cli"
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
+    );
+  }
+  if (hostId === "gemini-cli") {
+    if (typeof port.handleGeminiUserPromptSubmit === "function") return true;
+    return (
+      port.GEMINI_PLATFORM === "gemini-cli" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build"
     );
   }
   if (hostId === "codex") {
@@ -514,7 +577,8 @@ function hostPortReady(hostId, port) {
       typeof port.handleClaudeStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GROK_PLATFORM !== "grok-build"
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
     );
   }
   // Claude: vendor alias or package-only (StopFailure fingerprint).
@@ -549,7 +613,8 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
-      typeof port.handleGrokStop !== "function"
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -567,8 +632,31 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
-      port.COPILOT_PLATFORM !== "copilot-cli"
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
+    ) {
+      return port.handleUserPromptSubmit;
+    }
+    return undefined;
+  }
+  if (hostId === "gemini-cli") {
+    if (typeof port.handleGeminiUserPromptSubmit === "function") {
+      return port.handleGeminiUserPromptSubmit;
+    }
+    if (
+      port.GEMINI_PLATFORM === "gemini-cli" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -585,7 +673,8 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleClaudeStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GROK_PLATFORM !== "grok-build"
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -621,7 +710,8 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
-      typeof port.handleGrokStop !== "function"
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function"
     ) {
       return port.handlePostToolUse;
     }
@@ -639,8 +729,31 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
-      port.COPILOT_PLATFORM !== "copilot-cli"
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
+    ) {
+      return port.handlePostToolUse;
+    }
+    return undefined;
+  }
+  if (hostId === "gemini-cli") {
+    if (typeof port.handleGeminiPostToolUse === "function") {
+      return port.handleGeminiPostToolUse;
+    }
+    if (
+      port.GEMINI_PLATFORM === "gemini-cli" &&
+      typeof port.handlePostToolUse === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build"
     ) {
       return port.handlePostToolUse;
     }
@@ -656,7 +769,8 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handleClaudeStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GROK_PLATFORM !== "grok-build"
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
     ) {
       return port.handlePostToolUse;
     }
@@ -706,6 +820,7 @@ function isCursorShapedStopPayload(payload) {
   ).trim();
   if (hookName === "Stop" || /^stopfailure$/i.test(hookName)) return false;
   if (hookName === "agentStop") return false;
+  if (hookName === "AfterAgent") return false;
   if (hookName === "stop") return true;
 
   // Claude/Codex Stop threads stop_hook_active (bool); Cursor uses loop_count.
@@ -748,16 +863,17 @@ function isCursorShapedStopPayload(payload) {
 }
 
 /**
- * Pick Stop host after Cursor-shaped check.
- * --platform codex / kimi-code / copilot-cli / grok-build must win over PascalStop
- * shape (shared stop_hook_active with Claude). Preserve dual-host cross-fire:
- * Cursor stamp + Claude/Codex-shaped payload still routes to Claude (historical
- * Layer C), unless stamp is explicitly codex, kimi-code, copilot-cli, or
- * grok-build.
+ * Pick Stop / AfterAgent host after Cursor-shaped check.
+ * --platform codex / kimi-code / copilot-cli / grok-build / gemini-cli must win
+ * over PascalStop shape (shared stop_hook_active with Claude). Preserve dual-host
+ * cross-fire: Cursor stamp + Claude/Codex-shaped payload still routes to Claude
+ * (historical Layer C), unless stamp is explicitly codex, kimi-code, copilot-cli,
+ * grok-build, or gemini-cli.
  *
  * Unstamped `agentStop` (argv or hookEventName) must not fall through to Claude
  * just because the payload also carries stop_hook_active — but a non-Copilot
  * `--platform` stamp must still beat a hostile `hookEventName: agentStop`.
+ * Unstamped `AfterAgent` (argv or hookEventName) routes to gemini-cli.
  */
 function resolveStopHostId(declaredPlatform, payload, event) {
   if (isCursorShapedStopPayload(payload)) return "cursor";
@@ -765,6 +881,7 @@ function resolveStopHostId(declaredPlatform, payload, event) {
   if (declaredPlatform === "kimi-code") return "kimi-code";
   if (declaredPlatform === "copilot-cli") return "copilot-cli";
   if (declaredPlatform === "grok-build") return "grok-build";
+  if (declaredPlatform === "gemini-cli") return "gemini-cli";
   if (declaredPlatform === "claude-code") return "claude-code";
   const hookName = String(
     payload?.hook_event_name ?? payload?.hookEventName ?? "",
@@ -776,11 +893,97 @@ function resolveStopHostId(declaredPlatform, payload, event) {
   ) {
     return "copilot-cli";
   }
+  // Gemini AfterAgent (unique host event) — stamp absent or already gemini.
+  if (
+    (declaredPlatform == null || declaredPlatform === "gemini-cli") &&
+    (event === "AfterAgent" || hookName === "AfterAgent")
+  ) {
+    return "gemini-cli";
+  }
   // Shared Pascal Stop / stop_hook_active shape → Claude unless stamp was
-  // codex / kimi-code / copilot-cli / grok-build / unstamped agentStop above.
+  // codex / kimi-code / copilot-cli / grok-build / gemini-cli / unstamped
+  // agentStop / AfterAgent above.
   if (isPascalStopShapedPayload(payload)) return "claude-code";
   if (declaredPlatform === "cursor") return "cursor";
   return "claude-code";
+}
+
+/**
+ * BeforeAgent stdout: inject hookSpecificOutput, or deny+reason.
+ * Never leak clearContext / primary block / Claude extras.
+ * Optional systemMessage (checklist) may accompany inject or stand alone.
+ */
+function writeGeminiBeforeAgentReply(result) {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    const sysRaw =
+      typeof result.systemMessage === "string"
+        ? result.systemMessage.trim()
+        : "";
+    const hso = result.hookSpecificOutput;
+    if (hso && typeof hso === "object" && !Array.isArray(hso)) {
+      const ctx =
+        typeof hso.additionalContext === "string"
+          ? hso.additionalContext.trim()
+          : "";
+      if (ctx.length > 0) {
+        const out = {
+          hookSpecificOutput: {
+            hookEventName: "BeforeAgent",
+            additionalContext: ctx,
+          },
+        };
+        if (sysRaw.length > 0) out.systemMessage = sysRaw;
+        writeReply(JSON.stringify(out));
+        return;
+      }
+    }
+    const decision = result.decision;
+    const reason =
+      (decision === "deny" || decision === "block") &&
+      typeof result.reason === "string"
+        ? result.reason.trim()
+        : "";
+    if (reason.length > 0) {
+      writeReply(JSON.stringify({ decision: "deny", reason }));
+      return;
+    }
+    if (sysRaw.length > 0) {
+      writeReply(JSON.stringify({ systemMessage: sysRaw }));
+      return;
+    }
+  }
+  writeReply("{}");
+}
+
+/** AfterAgent stdout: deny+reason continue, or continue:false hard-stop. */
+function writeGeminiAfterAgentReply(result) {
+  if (result && typeof result === "object" && !Array.isArray(result)) {
+    if (result.continue === false) {
+      const stopReason =
+        typeof result.stopReason === "string" ? result.stopReason.trim() : "";
+      writeReply(
+        JSON.stringify(
+          stopReason.length > 0
+            ? { continue: false, stopReason }
+            : { continue: false },
+        ),
+      );
+      return;
+    }
+    // Prefer deny; accept host alias "block" only when scrubbing inbound shape
+    // (Autopilot port emits deny — never primary block).
+    const decision = result.decision;
+    const reason =
+      (decision === "deny" || decision === "block") &&
+      typeof result.reason === "string"
+        ? result.reason.trim()
+        : "";
+    if (reason.length > 0) {
+      writeReply(JSON.stringify({ decision: "deny", reason }));
+      return;
+    }
+  }
+  writeReply("{}");
 }
 
 let bootEvent = "beforeSubmitPrompt";
@@ -795,6 +998,15 @@ async function main() {
   try {
     const payload = await readStdin();
     const hostId = resolveHostId(declaredPlatform, event);
+
+    // Gemini unique events: wrong --platform must abort before vendor FSM /
+    // state.db open (checklist: 错 stamp abort 在副作用前).
+    // Always emit Gemini JSON silence — do not use stamp-shaped failOpen
+    // (kimi-code writes no stdout; Gemini host requires a JSON object).
+    if (GEMINI_EVENTS.has(event) && hostId !== "gemini-cli") {
+      writeReply("{}");
+      return;
+    }
 
     const vendor = await loadVendorRuntime();
     const port = vendor ? vendor : await loadHostPortPackage(hostId);
@@ -845,6 +1057,11 @@ async function main() {
         // Copilot UPS stdout is dropped / must not leak gate mirrors (_stashedGate).
         if (hostId === "copilot-cli") {
           writeReply("{}");
+          return;
+        }
+        // Gemini stamp on shared UserPromptSubmit name → same scrub as BeforeAgent.
+        if (hostId === "gemini-cli") {
+          writeGeminiBeforeAgentReply(result);
           return;
         }
         writeReply(JSON.stringify(result ?? {}));
@@ -915,6 +1132,79 @@ async function main() {
         writeReply("{}");
         return;
       }
+      // Gemini CLI: unique host events (wrong stamp → fail-open before FSM).
+      if (event === "BeforeAgent") {
+        if (hostId !== "gemini-cli") {
+          writeReply("{}");
+          return;
+        }
+        const submitFn = resolveUserPromptSubmit(hostId, port);
+        if (typeof submitFn !== "function") {
+          failOpen(event, hostId);
+          return;
+        }
+        const result = submitFn(store, payload, projectRoot);
+        writeGeminiBeforeAgentReply(result);
+        return;
+      }
+      if (event === "AfterTool") {
+        if (hostId !== "gemini-cli") {
+          writeReply("{}");
+          return;
+        }
+        const editFn = resolvePostToolUse(hostId, port);
+        if (typeof editFn === "function") {
+          editFn(store, payload, projectRoot);
+        }
+        writeReply("{}");
+        return;
+      }
+      if (event === "AfterAgent") {
+        if (hostId !== "gemini-cli") {
+          writeReply("{}");
+          return;
+        }
+        const stopHost = resolveStopHostId(declaredPlatform, payload, event);
+        // Universal abort: Cursor-shaped payload under Gemini stamp → Cursor
+        // halt (same Layer C as Stop for other hosts). Must not fail-open
+        // continue when the user aborted.
+        if (stopHost === "cursor") {
+          let stopFn = cursorStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const cursorPort = await loadPortPackage(
+              "@autopilot-harness/port-cursor",
+            );
+            if (cursorPort) stopFn = cursorStopHandler(cursorPort);
+          }
+          if (typeof stopFn !== "function") {
+            failOpen(event, hostId);
+            return;
+          }
+          // Run Cursor halt for FSM side effects; AfterAgent stdout must stay
+          // Gemini-safe silence (never leak followup_message / Claude fields).
+          stopFn(createEngine(coreMod, store), payload);
+          writeReply("{}");
+          return;
+        }
+        if (stopHost !== "gemini-cli") {
+          failOpen(event, hostId);
+          return;
+        }
+        let stopFn = geminiStopHandler(port);
+        if (typeof stopFn !== "function") {
+          const geminiPort = await loadPortPackage(
+            "@autopilot-harness/port-gemini-cli",
+          );
+          if (geminiPort) stopFn = geminiStopHandler(geminiPort);
+        }
+        if (typeof stopFn !== "function") {
+          failOpen(event, hostId);
+          return;
+        }
+        const result = stopFn(createEngine(coreMod, store), payload);
+        writeGeminiAfterAgentReply(result);
+        return;
+      }
       if (event === "Stop" || event === "agentStop") {
         // Layer C: payload shape vs declared --platform (cross-fire / lying argv).
         const stopHost = resolveStopHostId(declaredPlatform, payload, event);
@@ -958,6 +1248,14 @@ async function main() {
               "@autopilot-harness/port-grok-build",
             );
             if (grokPort) stopFn = grokStopHandler(grokPort);
+          }
+        } else if (stopHost === "gemini-cli") {
+          stopFn = geminiStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const geminiPort = await loadPortPackage(
+              "@autopilot-harness/port-gemini-cli",
+            );
+            if (geminiPort) stopFn = geminiStopHandler(geminiPort);
           }
         } else {
           stopFn = claudeStopHandler(port);
@@ -1036,16 +1334,22 @@ async function main() {
           writeReply("{}");
           return;
         }
+        // Gemini AfterAgent-shaped Stop stamp: deny+reason (never prefer block).
+        if (stopHost === "gemini-cli") {
+          writeGeminiAfterAgentReply(result);
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
       if (event === "StopFailure") {
-        // Codex/Kimi/Copilot/Grok have no StopFailure — fail-open if somehow invoked.
+        // Codex/Kimi/Copilot/Grok/Gemini have no StopFailure — fail-open if somehow invoked.
         if (
           hostId === "codex" ||
           hostId === "kimi-code" ||
           hostId === "copilot-cli" ||
-          hostId === "grok-build"
+          hostId === "grok-build" ||
+          hostId === "gemini-cli"
         ) {
           failOpen(event, hostId);
           return;

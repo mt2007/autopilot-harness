@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Bundle core + port-cursor + port-claude-code + port-codex + port-kimi-code +
- * port-copilot-cli + port-grok-build into assets/vendor/runtime.mjs for project
- * hooks. Also copies migration SQL beside the bundle (migrate.ts resolves
+ * port-copilot-cli + port-grok-build + port-gemini-cli into assets/vendor/runtime.mjs
+ * for project hooks. Also copies migration SQL beside the bundle (migrate.ts resolves
  * relative paths).
  */
 import esbuild from "esbuild";
@@ -82,6 +82,14 @@ await esbuild.build({
       "packages",
       "ports",
       "grok-build",
+      "src",
+      "index.ts",
+    ),
+    "@autopilot-harness/port-gemini-cli": path.join(
+      repoRoot,
+      "packages",
+      "ports",
+      "gemini-cli",
       "src",
       "index.ts",
     ),

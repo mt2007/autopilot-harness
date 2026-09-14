@@ -1,8 +1,8 @@
 /**
  * Single ESM entry bundled into assets/vendor/runtime.mjs for project hooks.
  * Consumers get core + port-cursor + port-claude-code + port-codex +
- * port-kimi-code + port-copilot-cli + port-grok-build + i18n without installing
- * workspace packages.
+ * port-kimi-code + port-copilot-cli + port-grok-build + port-gemini-cli + i18n
+ * without installing workspace packages.
  */
 import { loadLocale } from "@autopilot-harness/i18n";
 import {
@@ -61,6 +61,13 @@ export {
   handlePostToolUse as handleGrokPostToolUse,
   handleStop as handleGrokStop,
 } from "@autopilot-harness/port-grok-build";
+
+export {
+  GEMINI_PLATFORM,
+  handleUserPromptSubmit as handleGeminiUserPromptSubmit,
+  handlePostToolUse as handleGeminiPostToolUse,
+  handleStop as handleGeminiStop,
+} from "@autopilot-harness/port-gemini-cli";
 
 /** @deprecated Prefer handleCursorStop — kept for older hook.mjs copies. */
 export { handleStop } from "@autopilot-harness/port-cursor";

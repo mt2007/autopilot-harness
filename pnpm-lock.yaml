@@ -38,6 +38,9 @@ importers:
       '@autopilot-harness/port-cursor':
         specifier: workspace:*
         version: link:../ports/cursor
+      '@autopilot-harness/port-gemini-cli':
+        specifier: workspace:*
+        version: link:../ports/gemini-cli
       '@autopilot-harness/port-grok-build':
         specifier: workspace:*
         version: link:../ports/grok-build

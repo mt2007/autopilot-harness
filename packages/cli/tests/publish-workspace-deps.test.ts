@@ -23,6 +23,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/kimi-code",
   "packages/ports/copilot-cli",
   "packages/ports/grok-build",
+  "packages/ports/gemini-cli",
 ] as const;
 
 function workspaceHarnessDeps(

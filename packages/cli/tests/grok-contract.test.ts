@@ -98,17 +98,21 @@ describe("grok contract matrix", () => {
     expect(handleGrokStop).not.toBe(handleCopilotStop);
   });
 
-  it("shipped hook asset keeps six-way dispatch + Grok Stop single-channel scrub", () => {
+  it("shipped hook asset keeps seven-way dispatch + Grok Stop single-channel scrub", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,?\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(/declaredPlatform === "grok-build"/);
     expect(src).toMatch(/hostId === "grok-build"/);
     expect(src).toMatch(/handleGrokUserPromptSubmit/);
     expect(src).toMatch(/handleGrokPostToolUse/);
     expect(src).toMatch(/handleGrokStop/);
+    expect(src).toMatch(/GEMINI_EVENTS/);
+    expect(src).toMatch(/handleGeminiUserPromptSubmit/);
+    expect(src).toMatch(/handleGeminiPostToolUse/);
+    expect(src).toMatch(/handleGeminiStop/);
     // Continue uses decision:block only; hard-stop may use continue:false first.
     expect(src).toMatch(
       /stopHost === "grok-build"[\s\S]*?result\.continue === false[\s\S]*?decision === "block"/,

@@ -12,6 +12,7 @@ export const PUBLIC_PACKAGE_JSON_PATHS = [
   "packages/ports/kimi-code/package.json",
   "packages/ports/copilot-cli/package.json",
   "packages/ports/grok-build/package.json",
+  "packages/ports/gemini-cli/package.json",
 ] as const;
 
 export const PUBLIC_PACKAGE_DIRS = PUBLIC_PACKAGE_JSON_PATHS.map((rel) =>
