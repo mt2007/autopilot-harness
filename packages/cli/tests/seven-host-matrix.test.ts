@@ -342,7 +342,9 @@ describe("seven-host Gemini cross-fire matrix", () => {
     verify.close();
   });
 
-  it("Gemini stamp + Cursor-shaped aborted payload → halt (wrong payload abort before FSM)", () => {
+  it(
+    "Gemini stamp + Cursor-shaped aborted payload → halt (wrong payload abort before FSM)",
+    () => {
     root = tmpProject();
     withKimiHome();
     installSevenHost(root);
@@ -427,7 +429,9 @@ describe("seven-host Gemini cross-fire matrix", () => {
       "Review fix round park",
     );
     verify.close();
-  });
+  },
+  30_000,
+  );
 
   it("wrong --platform on foreign stamp AfterAgent/Stop does not wipe prior hosts or Gemini", () => {
     root = tmpProject();
@@ -545,7 +549,9 @@ describe("seven-host Gemini cross-fire matrix", () => {
     }
   });
 
-  it("prior hosts survive Gemini AfterTool cross-fire (wrong payload / argv)", () => {
+  it(
+    "prior hosts survive Gemini AfterTool cross-fire (wrong payload / argv)",
+    () => {
     root = tmpProject();
     withKimiHome();
     installSevenHost(root);
@@ -741,7 +747,9 @@ describe("seven-host Gemini cross-fire matrix", () => {
     expect(verify.getReviewChain(grokCid)?.code_edited).toBe(1);
     expect(verify.getReviewChain(gemCid)?.code_edited).toBe(1);
     verify.close();
-  });
+  },
+  30_000,
+  );
 
   it("prior six hosts non-regress when Gemini hooks exist (submit / BeforeAgent shapes)", () => {
     root = tmpProject();

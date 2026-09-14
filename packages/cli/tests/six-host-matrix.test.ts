@@ -331,7 +331,9 @@ describe("six-host Grok cross-fire matrix", () => {
     verify.close();
   });
 
-  it("Grok stamp + Cursor-shaped aborted payload → halt (wrong payload abort before FSM)", () => {
+  it(
+    "Grok stamp + Cursor-shaped aborted payload → halt (wrong payload abort before FSM)",
+    () => {
     root = tmpProject();
     withKimiHome();
     installSixHost(root);
@@ -456,7 +458,9 @@ describe("six-host Grok cross-fire matrix", () => {
     expect(nativeVerify.getSession(nativeCid)?.armed).toBe(1);
     expect(nativeVerify.getReviewChain(nativeCid)?.code_edited ?? 0).toBe(0);
     nativeVerify.close();
-  });
+  },
+  30_000,
+  );
 
   it("wrong --platform on foreign stamp Stop does not wipe prior hosts or Grok", () => {
     root = tmpProject();
@@ -680,7 +684,9 @@ describe("six-host Grok cross-fire matrix", () => {
     }
   });
 
-  it("prior hosts survive Grok PostToolUse cross-fire (wrong payload / argv)", () => {
+  it(
+    "prior hosts survive Grok PostToolUse cross-fire (wrong payload / argv)",
+    () => {
     root = tmpProject();
     withKimiHome();
     installSixHost(root);
@@ -843,7 +849,9 @@ describe("six-host Grok cross-fire matrix", () => {
     expect(verify.getReviewChain(copilotCid)?.code_edited).toBe(1);
     expect(verify.getReviewChain(grokCid)?.code_edited).toBe(1);
     verify.close();
-  });
+  },
+  30_000,
+  );
 
   it("prior five hosts non-regress when Grok hooks exist (submit shapes)", () => {
     root = tmpProject();

@@ -887,7 +887,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, and Grok Build/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, and Gemini CLI/,
     );
     expect(cliPkg.keywords).toEqual(
       expect.arrayContaining([
@@ -897,6 +897,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "kimi-code",
         "copilot-cli",
         "grok-build",
+        "gemini-cli",
       ]),
     );
     const kimiPkg = JSON.parse(
@@ -929,6 +930,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(grokPkg.description).toMatch(/Grok Build/i);
     expect(grokPkg.description).toMatch(/degraded Stop/i);
     expect(grokPkg.description).not.toMatch(/Coming v0\.6\b/);
+    const geminiPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/gemini-cli/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string; private?: boolean };
+    expect(geminiPkg.private).not.toBe(true);
+    expect(geminiPkg.description).toMatch(/Gemini CLI/i);
+    expect(geminiPkg.description).toMatch(/MAX_TURNS|turn cap/i);
+    expect(geminiPkg.description).not.toMatch(/Coming v0\.7\b/);
     const runnerPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/runner/package.json"),

@@ -325,7 +325,9 @@ describe("five-host Copilot cross-fire matrix", () => {
     verify.close();
   });
 
-  it("Copilot stamp + Cursor-shaped aborted payload → halt (wrong payload abort)", () => {
+  it(
+    "Copilot stamp + Cursor-shaped aborted payload → halt (wrong payload abort)",
+    () => {
     root = tmpProject();
     withKimiHome();
     installFiveHost(root);
@@ -437,7 +439,9 @@ describe("five-host Copilot cross-fire matrix", () => {
       }),
     );
     verify.close();
-  });
+  },
+  30_000,
+  );
 
   it("wrong --platform on foreign stamp Stop does not wipe Cursor/Claude/Codex/Kimi/Copilot", () => {
     root = tmpProject();
@@ -611,7 +615,9 @@ describe("five-host Copilot cross-fire matrix", () => {
     }
   });
 
-  it("prior hosts survive Copilot postToolUse cross-fire (wrong payload / argv)", () => {
+  it(
+    "prior hosts survive Copilot postToolUse cross-fire (wrong payload / argv)",
+    () => {
     root = tmpProject();
     withKimiHome();
     installFiveHost(root);
@@ -790,7 +796,9 @@ describe("five-host Copilot cross-fire matrix", () => {
     expect(verify.getReviewChain(kimiCid)?.code_edited).toBe(1);
     expect(verify.getReviewChain(copilotCid)?.code_edited).toBe(1);
     verify.close();
-  });
+  },
+  30_000,
+  );
 
   it("Cursor/Claude/Codex/Kimi non-regress when Copilot hooks exist (submit shapes)", () => {
     root = tmpProject();

@@ -2431,6 +2431,7 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 .codex/**
 .github/hooks/**
 .grok/hooks/**
+.gemini/settings.json
 
 # Planning artifacts
 plans/**
