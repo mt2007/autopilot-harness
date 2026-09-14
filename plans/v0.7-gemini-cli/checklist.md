@@ -12,7 +12,7 @@
 - [x] live-gemini-smoke — min-CLI disposable；**≥2** AfterAgent-continue + edit/dirty-arm + hook 确跑（相对路径失败则改 `$GEMINI_PROJECT_DIR` 并留证）；证据 `plans/v0.7-gemini-cli/`；waive ≠ 发版同意
 - [x] docs-gemini-shipped — README(+zh-CN)/hosts/architecture/config/troubleshooting/quickstart/CHANGELOG；**seven-way**；Shipped/degraded；诚实 **MAX_TURNS/cap + min-CLI**；hook re-trust/`/hooks panel`/**folder trust**；needPick；hooksConfig tip；`GEMINI_PLANS_DIR` 勿与 Autopilot plans 混淆（troubleshooting 一句即可）；PUBLIC + port-gemini-cli；docs-contract 改 hosts 当前正文（Gemini=Shipped；**1(next)=Factory**；seven-way）；**勿改** CHANGELOG 历史 next 句；新开 `[0.7.0]`
 - [x] changelog-bump-0-7-0 — 公开包 →0.7.0；core→i18n→ports→cli
-- [ ] local-npm-pack-assert — pack；无 `workspace:*`
+- [x] local-npm-pack-assert — pack；无 `workspace:*`
 - [ ] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 活链或 waive；另等「同意发 0.7.0」
 - [ ] push-tag-release — 人闸后 push/tag/GH Release
