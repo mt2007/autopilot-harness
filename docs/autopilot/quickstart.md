@@ -87,12 +87,15 @@ npx @autopilot-harness/cli init --platform kimi-code --yes
 npx @autopilot-harness/cli init --platform copilot-cli --yes
 # or Grok Build CLI (`.grok/hooks/autopilot-harness.json`; degraded Stop ≤8/turn; trust `/hooks-trust` or `--trust`)
 npx @autopilot-harness/cli init --platform grok-build --yes
+# or Gemini CLI (`.gemini/settings.json`; AfterAgent cap ≤100 / MAX_TURNS; prefer CLI ≥0.31.0; re-trust / `/hooks panel` / folder trust)
+npx @autopilot-harness/cli init --platform gemini-cli --yes
 # multi-host after the first install:
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
 # npx @autopilot-harness/cli init --yes --add-platform kimi-code
 # npx @autopilot-harness/cli init --yes --add-platform copilot-cli
 # npx @autopilot-harness/cli init --yes --add-platform grok-build
+# npx @autopilot-harness/cli init --yes --add-platform gemini-cli
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 npx @autopilot-harness/cli upgrade --dry-run
@@ -102,14 +105,15 @@ Developing or dogfooding from a clone of this repo: see [Contributing](../../CON
 
 ## After install
 
-- Try `/autopilot-on` in Cursor or Claude Code (Codex / Kimi Code / Copilot CLI / Grok Build: line-start `triggers.on` / `triggers.run` — no Autopilot skills path; typed slash still parses).
-- If skills / hooks do not appear: reload the host (Cursor: `Developer: Reload Window`; Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build: restart / new session), or start a new Agent chat. Codex: run `/hooks` trust (re-trust after upgrade). **Copilot CLI: restart the CLI** after install or upgrade. **Grok Build: trust** via `/hooks-trust` or `--trust`.
+- Try `/autopilot-on` in Cursor or Claude Code (Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI: line-start `triggers.on` / `triggers.run` — no Autopilot skills path; typed slash still parses).
+- If skills / hooks do not appear: reload the host (Cursor: `Developer: Reload Window`; Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI: restart / new session), or start a new Agent chat. Codex: run `/hooks` trust (re-trust after upgrade). **Copilot CLI: restart the CLI** after install or upgrade. **Grok Build: trust** via `/hooks-trust` or `--trust`. **Gemini CLI: re-trust** hooks, check `/hooks panel`, and ensure folder trust.
 - Review stops mid-chain (Cursor): ensure Autopilot stop has `loop_limit: null` (run `upgrade` / see [Troubleshooting](../troubleshooting.md)).
 - Review stops mid-chain (Claude Code): ensure `.claude/settings.json` has `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`. If the cap env never applies, accept the project **trust** dialog (project `env` may be gated until trusted).
 - Review stalls / hooks ignored (Codex): ensure `.codex/hooks.json` Autopilot entries exist, timeout omitted or ≥120s, and `/hooks` is trusted.
 - Kimi Code is **degraded Stop≤1/turn** — prefer `confirm_rounds: 1`; ensure `~/.kimi-code/config.toml` Autopilot entries exist with timeout ≥120s (see [Troubleshooting](../troubleshooting.md)).
 - Copilot CLI is **degraded Stop consecutive ≤8** — expect mid-chain cutoffs; recover via pending / `/autopilot-resume` / nudge; doctor WARNs Claude+Copilot dual; no `preToolUse` (see [Troubleshooting](../troubleshooting.md)).
 - Grok Build is **degraded Stop ≤8/turn** (per-turn reset; not consecutive) — mid-cutoff → pending / RESUME / nudge; needPick re-submit with slug; doctor WARNs ≤8/turn + trust + Grok+Claude/Cursor dual (enabled or leftover); no PreToolUse (see [Troubleshooting](../troubleshooting.md)).
+- Gemini CLI is **Shipped** with honest **AfterAgent turn cap ≤100** (`MAX_TURNS`; no raise; prefer CLI **≥0.31.0**) — re-trust / `/hooks panel` / folder trust after install; needPick deny+reason (re-submit with slug); doctor WARNs cap + min-CLI + `hooksConfig`; do not confuse `GEMINI_PLANS_DIR` with Autopilot `plans/` (see [Troubleshooting](../troubleshooting.md)).
 - More failure modes: [Troubleshooting](../troubleshooting.md).
 
 ## Self-review scope (`review.scope`)

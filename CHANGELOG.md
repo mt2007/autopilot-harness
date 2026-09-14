@@ -9,6 +9,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-14
+
+### Added
+
+- **Gemini CLI hook port** (`@autopilot-harness/port-gemini-cli`): BeforeAgent / AfterTool / AfterAgent adapters; fail-open on errors; AfterAgent continue = `{ decision:"deny", reason }` (multi-deny across `stop_hook_active`; hard-stop `continue:false` + optional `stopReason`; **never** `clearContext`); BeforeAgent inject uses nested `hookSpecificOutput` (ON/RUN success `{}`); continue path is harness-owned via **BeforeAgent.prompt + session** (not AfterAgent.prompt); needPick / busy / hard errors via BeforeAgent **deny+reason** (re-submit with slug); AfterTool matcher `write_file|replace` + dirty-arm; no BeforeTool / BeforeModel / AfterModel / Session* / Notification / PreCompress.
+- **Seven-way vendor dispatch**: `--platform gemini-cli` + aliased exports `handleGeminiUserPromptSubmit` / `handleGeminiPostToolUse` / `handleGeminiStop` (no clash with Claude/Codex/Kimi/Copilot/Grok bare names); cross-stamp / cross-payload abort + conflict resolver across Cursor / Claude / Codex / Kimi / Copilot / Grok / Gemini.
+- **Init / upgrade / uninstall / doctor** for Gemini CLI: installable `surface:cli`; project `.gemini/settings.json` (Claude-settings-merge style; **nested** matcher groups; timeout **120000** ms; BeforeAgent+AfterTool+AfterAgent); fingerprint uninstall; `--add-platform gemini-cli`; no default Autopilot skills / `AGENTS.md`; P0 line-start `triggers.on` / `triggers.run`; does **not** clamp `confirm_rounds`; default `.autopilotignore` includes `.gemini/settings.json`; doctor **FAIL**s on missing/incomplete hooks; WARNs for timeout omitted or &lt; 120000, **AfterAgent turn cap ≤100** (`MAX_TURNS`; no raise found), prefer CLI **≥0.31.0**, missing `--platform` stamp, **re-trust** / `/hooks panel` / **folder trust**, reload/new session, `hooksConfig.enabled===false` / Autopilot names in `hooksConfig.disabled`, and **Gemini+Claude** dual fingerprints (both enabled or leftover). Autopilot does **not** rewrite `hooksConfig`.
+- **docs-gemini-shipped**: Gemini CLI marked **Shipped** (honest **AfterAgent turn cap ≤100** / `MAX_TURNS`; prefer CLI **≥0.31.0**) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/gemini-cli/package.json`; **re-trust** / `/hooks panel` / folder trust after install/upgrade; needPick re-type slug; doctor multi-FP WARN; explicitly **no BeforeTool** / Session*; do **not** confuse host env `GEMINI_PLANS_DIR` with Autopilot `plans/`.
+- Contract / seven-host matrix tests for Gemini I/O, AfterAgent deny, BeforeAgent harness-owned continue, hooks merge, doctor, add-platform, aliases, and Cursor/Claude/Codex/Kimi/Copilot/Grok cross-fire.
+
+### Changed
+
+- **docs**: host roadmap — **1 (next)** = Factory Droid after Gemini shipped; Hermes / Antigravity / OpenCode / Runner / Pi / Devin listed ([hosts.md](./docs/hosts.md)).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.7.0 public packages.
+
 ## [0.6.0] — 2026-09-13
 
 ### Added

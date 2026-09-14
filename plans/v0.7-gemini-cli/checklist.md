@@ -1,0 +1,20 @@
+# Checklist — v0.7 Gemini CLI
+
+> `/autopilot-run v0.7-gemini-cli`。流水线：实现（**先 ≤60m 挖 raise/`MAX_TURNS`/min-CLI** → `research-stop-cap.md`）→ 契约/七宿主矩阵 → **全仓测绿** → 活链 **≥2× AfterAgent-continue**（证 multi-deny；或免活链）→ docs（诚实上限 + min-CLI + trust + **six→seven-way** + next=Factory）→ 升版 → pack → commit → **发版人闸** → push/tag → **仅 pnpm publish** → pin；**测红先修；测绿才发**。
+
+- [x] port-gemini-package — `@autopilot-harness/port-gemini-cli`：**先** timebox≤60m 写 `research-stop-cap.md`（raise？**`MAX_TURNS`/硬顶**？**min CLI** 使 retry 仍触发 AfterAgent + `stop_hook_active`）→ 导出 `GEMINI_STOP_CAP_RAISE_FOUND` + cap constant + min-version；**BeforeAgent**（triggers/FSM；inject **`hookSpecificOutput.{hookEventName:"BeforeAgent", additionalContext}`**；fallback **`deny`+reason**；ON/RUN 成功 **`{}`**；**续跑=harness-owned 看 BeforeAgent.prompt+session（勿用 AfterAgent.prompt）：不当 ON/RUN、不清 pending、不 busy-deny**；可选 `systemMessage`）+ **AfterTool**（matcher `write_file\|replace`；`tool_input.file_path` arm；core ignore；**禁止 deny/hide / tailToolCall**）+ **AfterAgent**（主路径 **`decision:"deny"`+`reason`**；multi-deny 跨 `stop_hook_active`；hard-stop `continue:false`+可选 `stopReason`；**禁止 clearContext**；**dirty-arm 兜底**（shell 等）；勿主发 block；exit 2 兼容非主）；stdin：base `session_id`/`cwd`/`hook_event_name`/… + event fields（camel/snake）；root：install-root/`GEMINI_PROJECT_DIR`/`GEMINI_CWD`/stdin cwd；**stdout 仅最终 JSON**（Silence 金律）；不接 BeforeTool/BeforeModel/AfterModel/Session*/Notification/PreCompress；fail-open
+- [x] vendor-hook-dispatch — **七路**；**`GEMINI_EVENTS`** = BeforeAgent|AfterTool|AfterAgent；别名 `handleGeminiUserPromptSubmit`/`PostToolUse`/`Stop`；Gemini payload → conflict resolver；错 stamp abort 在副作用前；bundle + PUBLIC + `workspace:*`
+- [x] init-gemini-hooks-merge — `INSTALLABLE`+`gemini-cli`；**claude-settings-merge 风格**写 **`.gemini/settings.json`**（fail-closed；**仅 nested** matcher groups；只动 Autopilot 指纹；保留 general/hooksConfig/MCP…）；timeout **120000**；三事件；matcher `*` / `write_file\|replace`；稳定 **`name: autopilot-harness-…`** + optional `description`；command 默认 stock 相对路径（活链证伪 → `$GEMINI_PROJECT_DIR`）；symlink fail-closed；**不改** hooksConfig；uninstall 只剥指纹 — **有外键则保留文件**；`--add-platform`；wizard：hook re-trust、`/hooks panel`、**folder trust**、P0、timeout、CLI；无 skills/AGENTS.md；不钳 rounds；ignore += **`.gemini/settings.json`**
+- [x] doctor-upgrade-uninstall — FAIL 缺/残/非 nested Autopilot hooks；WARN timeout omit|&lt;120000、cap/min-CLI、trust/re-trust、Gemini+Claude、reload、**hooksConfig.enabled===false**、**Autopilot name ∈ hooksConfig.disabled**（及可检测 legacy disabled）；upgrade/uninstall 只动指纹
+- [x] tests-gemini-contract — I/O（deny 主路径；inject 含 **hookEventName**；成功 **`{}`**；Silence）；AfterAgent multi-deny + 禁 clearContext + dirty-arm 兜底；BeforeAgent harness-owned（**非 AfterAgent.prompt**）不清 pending；AfterTool 不 deny；merge（外键保留 + nested + name 指纹 + timeout ms）；ignore；doctor（omit timeout + hooksConfig + disabled names）；add-platform；`GEMINI_EVENTS`+别名；symlink fail-closed；uninstall 保留非空 settings
+- [x] matrix-seven-host — Gemini↔五+Grok 错 stamp/payload → abort；既有不红
+- [x] smoke-repo — `pnpm test` + typecheck
+- [x] live-gemini-smoke — min-CLI disposable；**≥2** AfterAgent-continue + edit/dirty-arm + hook 确跑（相对路径失败则改 `$GEMINI_PROJECT_DIR` 并留证）；证据 `plans/v0.7-gemini-cli/`；waive ≠ 发版同意
+- [x] docs-gemini-shipped — README(+zh-CN)/hosts/architecture/config/troubleshooting/quickstart/CHANGELOG；**seven-way**；Shipped/degraded；诚实 **MAX_TURNS/cap + min-CLI**；hook re-trust/`/hooks panel`/**folder trust**；needPick；hooksConfig tip；`GEMINI_PLANS_DIR` 勿与 Autopilot plans 混淆（troubleshooting 一句即可）；PUBLIC + port-gemini-cli；docs-contract 改 hosts 当前正文（Gemini=Shipped；**1(next)=Factory**；seven-way）；**勿改** CHANGELOG 历史 next 句；新开 `[0.7.0]`
+- [ ] changelog-bump-0-7-0 — 公开包 →0.7.0；core→i18n→ports→cli
+- [ ] local-npm-pack-assert — pack；无 `workspace:*`
+- [ ] commit-local — conventional；勿 push/tag/publish
+- [ ] human-gate-confirm — 活链或 waive；另等「同意发 0.7.0」
+- [ ] push-tag-release — 人闸后 push/tag/GH Release
+- [ ] npm-publish-pnpm — 仅 `pnpm publish` 按序
+- [ ] pin-upgrade-repo — pin→0.7.0；提醒 trust + cap/min-CLI

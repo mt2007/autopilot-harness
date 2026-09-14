@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, or **Grok Build CLI**) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, or Grok `.grok/hooks/autopilot-harness.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI have no Autopilot skills path).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, or **Gemini CLI**) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, or Gemini `.gemini/settings.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI / Gemini CLI have no Autopilot skills path).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -82,6 +82,19 @@ Grok Build CLI **hard-caps Stop-continue at ≤8/turn** (counter **resets each u
 - Optional tip: if Grok also loads Claude/Cursor hooks via `compat.*.hooks`, set those to `false` in user config (Autopilot does **not** auto-edit `~/.grok/config.toml`).
 - `doctor` **FAIL**s when `.grok/hooks/autopilot-harness.json` is missing / unreadable / invalid / incomplete; WARNs for timeout omitted or &lt; 120, **Stop ≤8/turn**, missing `--platform grok-build`, **trust**, reload/new session, and **Grok+Claude and/or Grok+Cursor** multi-fingerprints (both enabled or leftover hooks on disk).
 - Multi-host: `npx @autopilot-harness/cli init --yes --add-platform grok-build`.
+- P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
+
+### Gemini CLI
+
+Gemini CLI **hard-caps agent turns at host `MAX_TURNS` ≤100** (AfterAgent deny→retry shares that budget; no raise found) — Autopilot ships Gemini CLI with that honest ceiling (**Shipped**; not unlimited; prefer CLI **≥0.31.0** so retry still fires with `stop_hook_active`):
+
+- AfterAgent continue = `{ decision:"deny", reason }` (multi-deny across `stop_hook_active`; hard-stop `continue:false` + optional `stopReason`; **never** `clearContext`). needPick / busy / hard errors use BeforeAgent **deny+reason** (re-submit with slug).
+- Autopilot writes project **`.gemini/settings.json`** only (Claude-settings-merge style; **nested** matcher groups; timeout **120000** ms; BeforeAgent + AfterTool `write_file|replace` + AfterAgent). Default `.autopilotignore` includes **`.gemini/settings.json`**. Autopilot does **not** rewrite `hooksConfig`.
+- **Does not** clamp `confirm_rounds`. Does **not** install Autopilot skills / `AGENTS.md`. Does **not** wire BeforeTool / BeforeModel / AfterModel / Session* / Notification / PreCompress.
+- After `init` / `upgrade`: **re-trust** hooks, check **`/hooks panel`**, and ensure **folder trust**; **reload / new session**.
+- `doctor` **FAIL**s when `.gemini/settings.json` is missing / unreadable / invalid / incomplete; WARNs for timeout omitted or &lt; 120000, AfterAgent cap ≤100, min-CLI ≥0.31.0, missing `--platform gemini-cli`, re-trust / `/hooks panel` / folder trust, reload/new session, `hooksConfig.enabled===false`, Autopilot names in `hooksConfig.disabled`, and **Gemini+Claude** dual fingerprints (both enabled or leftover on disk).
+- Do **not** confuse host env **`GEMINI_PLANS_DIR`** with Autopilot `artifacts.plans_dir` / `plans/`.
+- Multi-host: `npx @autopilot-harness/cli init --yes --add-platform gemini-cli`.
 - P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).
