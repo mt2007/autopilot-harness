@@ -14,7 +14,7 @@
 - [x] changelog-bump-0-7-0 — 公开包 →0.7.0；core→i18n→ports→cli
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
 - [x] commit-local — conventional；勿 push/tag/publish
-- [ ] human-gate-confirm — 活链或 waive；另等「同意发 0.7.0」
+- [x] human-gate-confirm — 活链或 waive；另等「同意发 0.7.0」
 - [ ] push-tag-release — 人闸后 push/tag/GH Release
 - [ ] npm-publish-pnpm — 仅 `pnpm publish` 按序
 - [ ] pin-upgrade-repo — pin→0.7.0；提醒 trust + cap/min-CLI
