@@ -543,6 +543,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Gemini CLI";
     case "factory-droid":
       return "Factory Droid";
+    case "hermes-agent":
+      return "Hermes Agent";
     default: {
       const parts = id.split(/[-_]/).filter(Boolean);
       if (parts.length === 0) return "your agent host";
@@ -582,6 +584,9 @@ export function formatPostInstallOutro(
     if (id === "factory-droid") {
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .factory/hooks.json (timeout 120; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes.`;
     }
+    if (id === "hermes-agent") {
+      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; timeout 120; relative command; agent.max_verify_nudges ≥32). pre_verify is edit-only (no product edit → pending/RESUME). Consent/non-TTY: approve hooks or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept). After install: reload Hermes and run hermes hooks doctor.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
@@ -591,9 +596,10 @@ export function formatPostInstallOutro(
     ids.includes("copilot-cli") ||
     ids.includes("grok-build") ||
     ids.includes("gemini-cli") ||
-    ids.includes("factory-droid")
+    ids.includes("factory-droid") ||
+    ids.includes("hermes-agent")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok/Gemini/Factory: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -640,6 +646,10 @@ export function formatHostActivationTips(
     } else if (id === "factory-droid") {
       tips.push(
         `${host}: Autopilot writes .factory/hooks.json only (top-level events; timeout 120; UPS+PostToolUse+Stop; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
+      );
+    } else if (id === "hermes-agent") {
+      tips.push(
+        `${host}: Autopilot merges hooks: into $HERMES_HOME/config.yaml only (default ~/.hermes; never cli-config.yaml). Timeout 120; post_tool_call matcher write_file|patch; relative node .autopilot/bin/… --platform hermes-agent; raises agent.max_verify_nudges to ≥32 (does not lower higher values; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only — no product edit that turn → pending/RESUME. Consent/non-TTY: approve at TTY or --accept-hooks / HERMES_ACCEPT_HOOKS. After install: reload Hermes and run hermes hooks doctor. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
       );
     } else {
       tips.push(
@@ -723,6 +733,11 @@ function hostActivationPlainLines(
           `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
           `hooks 仅写 .factory/hooks.json（顶层 event；timeout 120；命令用 $FACTORY_PROJECT_DIR）。安装/升级后请查看 /hooks，并 reload 或新开会话以刷新 hooks 快照。`,
         );
+      } else if (id === "hermes-agent") {
+        lines.push(
+          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `hooks 仅合并进 $HERMES_HOME/config.yaml（默认 ~/.hermes；永不写 cli-config.yaml；timeout 120；相对 command；agent.max_verify_nudges ≥32；不写 hooks_auto_accept / verify_guidance）。pre_verify 仅在有产品编辑时触发（无编辑 → pending/RESUME）。安装后请 reload Hermes，并运行 hermes hooks doctor；consent/non-TTY 需批准或 --accept-hooks / HERMES_ACCEPT_HOOKS。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -769,6 +784,11 @@ function hostActivationPlainLines(
         `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
         `Hooks are written to .factory/hooks.json only (top-level events; timeout 120; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes.`,
       );
+    } else if (id === "hermes-agent") {
+      lines.push(
+        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `Hooks merge into $HERMES_HOME/config.yaml only (default ~/.hermes; never cli-config.yaml; timeout 120; relative command; agent.max_verify_nudges ≥32; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only (no product edit → pending/RESUME). After install: reload Hermes and run hermes hooks doctor; consent/non-TTY needs approval or --accept-hooks / HERMES_ACCEPT_HOOKS.`,
+      );
     } else {
       lines.push(
         `Try /autopilot-on in ${host}.`,
@@ -808,6 +828,20 @@ function hostActivationDocLines(
       .replaceAll(".gemini/settings.json", "`.gemini/settings.json`")
       .replaceAll(".factory/hooks.json", "`.factory/hooks.json`")
       .replaceAll("$FACTORY_PROJECT_DIR", "`$FACTORY_PROJECT_DIR`")
+      // Hermes: wrap longest tokens first — never bare `config.yaml` / `$HERMES_HOME`
+      // after wrapping (would split `cli-config.yaml` or `$HERMES_HOME/config.yaml`).
+      .replaceAll(
+        "$HERMES_HOME/config.yaml",
+        "`$HERMES_HOME/config.yaml`",
+      )
+      .replaceAll("cli-config.yaml", "`cli-config.yaml`")
+      .replaceAll("~/.hermes", "`~/.hermes`")
+      .replaceAll("hermes hooks doctor", "`hermes hooks doctor`")
+      .replaceAll("hooks_auto_accept", "`hooks_auto_accept`")
+      .replaceAll("verify_guidance", "`verify_guidance`")
+      .replaceAll("agent.max_verify_nudges", "`agent.max_verify_nudges`")
+      .replaceAll("HERMES_ACCEPT_HOOKS", "`HERMES_ACCEPT_HOOKS`")
+      .replaceAll("--accept-hooks", "`--accept-hooks`")
       // Longer /hooks* tips before generic `/hooks` wrap.
       .replaceAll("/hooks panel", "`/hooks panel`")
       .replaceAll("/hooks-trust", "`/hooks-trust`")
@@ -853,14 +887,15 @@ export function writeQuickstart(
   const platformId = sanitizePlatformId(platform) || "cursor";
   const host = formatHostDisplayName(platformId);
   const afterInstall = hostActivationDocLines(locale, platformId);
-  // Codex + Kimi + Copilot + Grok + Gemini + Factory: P0 is line-start triggers (no Autopilot skills path).
+  // Codex + Kimi + Copilot + Grok + Gemini + Factory + Hermes: P0 is line-start triggers (no Autopilot skills path).
   const isLineStartHost =
     platformId === "codex" ||
     platformId === "kimi-code" ||
     platformId === "copilot-cli" ||
     platformId === "grok-build" ||
     platformId === "gemini-cli" ||
-    platformId === "factory-droid";
+    platformId === "factory-droid" ||
+    platformId === "hermes-agent";
   const flowPlanYouZh = isLineStartHost
     ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
     : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
@@ -1103,7 +1138,7 @@ export function formatCheatSheet(
     ids.length <= 1
       ? formatHostDisplayName(ids[0] ?? "cursor")
       : ids.map((id) => formatHostDisplayName(id)).join(" / ");
-  // All selected hosts are line-start P0 (Codex/Kimi/Copilot/Grok/Gemini/Factory) — prefer triggers
+  // All selected hosts are line-start P0 (Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes) — prefer triggers
   // over slash, including multi line-start-only host mixes.
   const lineStartOnly =
     ids.length > 0 &&
@@ -1114,7 +1149,8 @@ export function formatCheatSheet(
         id === "copilot-cli" ||
         id === "grok-build" ||
         id === "gemini-cli" ||
-        id === "factory-droid",
+        id === "factory-droid" ||
+        id === "hermes-agent",
     );
   const lineStartSideTips = lineStartOnly
     ? []
@@ -1125,7 +1161,8 @@ export function formatCheatSheet(
           id === "copilot-cli" ||
           id === "grok-build" ||
           id === "gemini-cli" ||
-          id === "factory-droid",
+          id === "factory-droid" ||
+          id === "hermes-agent",
       );
   if (locale === "zh-CN") {
     const planningBlock = lineStartOnly

@@ -88,6 +88,30 @@ export {
   KIMI_AUTOPILOT_EVENTS,
   KIMI_POST_TOOL_USE_MATCHER,
   KIMI_HOOK_TIMEOUT_SEC,
+  mergeHermesConfig,
+  mergeHermesConfigYaml,
+  stripAutopilotHermesHooks,
+  stripAutopilotHermesConfigYaml,
+  hermesHooksContainAutopilot,
+  hermesConfigYamlContainsAutopilot,
+  hermesHooksHavePlatformStamp,
+  hermesAutopilotHasOmittedOrSmallTimeout,
+  hasCompleteHermesAutopilotHooks,
+  summarizeHermesAutopilotHooks,
+  hermesHooksBlockIsVacant,
+  hermesConfigHasVerifyNudgeFloor,
+  ensureHermesMaxVerifyNudges,
+  resolveHermesHome,
+  hermesConfigYamlPath,
+  readHermesConfigYaml,
+  parseHermesConfigYaml,
+  formatHermesConfigYaml,
+  autopilotHermesHookEntry,
+  HERMES_AUTOPILOT_EVENTS,
+  HERMES_POST_TOOL_MATCHER,
+  HERMES_HOOK_TIMEOUT_SEC,
+  HERMES_MAX_VERIFY_NUDGES,
+  HERMES_CONFIG_REL_PATH,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
 export type {
@@ -121,6 +145,11 @@ export type {
   KimiHookEntry,
   KimiAutopilotEvent,
 } from "./init/kimi-hooks-merge.js";
+export type {
+  HermesHookEntry,
+  HermesAutopilotEvent,
+  HermesConfigFile,
+} from "./init/hermes-hooks-merge.js";
 export type { PreflightResult } from "./init/install.js";
 export { PACKAGE_VERSION } from "./init/types.js";
 export { formatStatus, runDoctor, readPinVersion, readStaleAfterHours, hasGlobalSelfReviewHooks } from "./status-doctor.js";

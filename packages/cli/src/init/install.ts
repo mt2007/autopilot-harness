@@ -40,6 +40,12 @@ import {
   readKimiConfigToml,
   resolveKimiCodeHome,
 } from "./kimi-hooks-merge.js";
+import {
+  hermesConfigYamlPath,
+  mergeHermesConfigYaml,
+  readHermesConfigYaml,
+  resolveHermesHome,
+} from "./hermes-hooks-merge.js";
 import type {
   HooksFile,
   InitLocale,
@@ -249,6 +255,37 @@ export {
   KIMI_HOOK_TIMEOUT_SEC,
 } from "./kimi-hooks-merge.js";
 export type { KimiHookEntry, KimiAutopilotEvent } from "./kimi-hooks-merge.js";
+export {
+  mergeHermesConfig,
+  mergeHermesConfigYaml,
+  stripAutopilotHermesHooks,
+  stripAutopilotHermesConfigYaml,
+  hermesHooksContainAutopilot,
+  hermesConfigYamlContainsAutopilot,
+  hermesHooksHavePlatformStamp,
+  hermesAutopilotHasOmittedOrSmallTimeout,
+  hasCompleteHermesAutopilotHooks,
+  summarizeHermesAutopilotHooks,
+  hermesHooksBlockIsVacant,
+  hermesConfigHasVerifyNudgeFloor,
+  ensureHermesMaxVerifyNudges,
+  resolveHermesHome,
+  hermesConfigYamlPath,
+  readHermesConfigYaml,
+  parseHermesConfigYaml,
+  formatHermesConfigYaml,
+  autopilotHermesHookEntry,
+  HERMES_AUTOPILOT_EVENTS,
+  HERMES_POST_TOOL_MATCHER,
+  HERMES_HOOK_TIMEOUT_SEC,
+  HERMES_MAX_VERIFY_NUDGES,
+  HERMES_CONFIG_REL_PATH,
+} from "./hermes-hooks-merge.js";
+export type {
+  HermesHookEntry,
+  HermesAutopilotEvent,
+  HermesConfigFile,
+} from "./hermes-hooks-merge.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -474,7 +511,7 @@ function platformsWantHost(
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
   // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli`/`grok-build`/
-  // `gemini-cli`/`factory-droid` with the wrong surface must not force
+  // `gemini-cli`/`factory-droid`/`hermes-agent` with the wrong surface must not force
   // reads/writes (e.g. corrupt leftover settings blocking --add-platform
   // of another host).
   return platforms.some(
@@ -1399,6 +1436,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantGrok = platformsWantHost(effectivePlatforms, "grok-build");
     const wantGemini = platformsWantHost(effectivePlatforms, "gemini-cli");
     const wantFactory = platformsWantHost(effectivePlatforms, "factory-droid");
+    const wantHermes = platformsWantHost(effectivePlatforms, "hermes-agent");
     if (
       !wantCursor &&
       !wantClaude &&
@@ -1407,12 +1445,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       !wantCopilot &&
       !wantGrok &&
       !wantGemini &&
-      !wantFactory
+      !wantFactory &&
+      !wantHermes
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, and/or factory-droid).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, and/or hermes-agent).",
       };
     }
 
@@ -1541,6 +1580,33 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const kimiPre = readKimiConfigToml(kimiTomlPath);
       if (!kimiPre.ok) {
         return { ok: false, error: kimiPre.error };
+      }
+    }
+    const hermesHome = resolveHermesHome();
+    const hermesYamlPath = hermesConfigYamlPath(hermesHome);
+    if (wantHermes) {
+      try {
+        assertNotSymlink(hermesHome, "Hermes home/");
+        assertNotSymlink(hermesYamlPath, "config.yaml");
+        try {
+          const homeSt = fs.lstatSync(hermesHome);
+          if (!homeSt.isDirectory()) {
+            return {
+              ok: false,
+              error: "Hermes home/ exists and is not a directory",
+            };
+          }
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException)?.code;
+          if (code !== "ENOENT") throw err;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const hermesPre = readHermesConfigYaml(hermesYamlPath);
+      if (!hermesPre.ok) {
+        return { ok: false, error: hermesPre.error };
       }
     }
 
@@ -1696,6 +1762,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let geminiFresh: GeminiSettingsRead | null = null;
     let factoryFresh: FactoryHooksRead | null = null;
     let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
+    let hermesFresh: ReturnType<typeof readHermesConfigYaml> | null = null;
     if (wantCursor) {
       hooksFresh = readHooksFile(hooksPath);
       if (!hooksFresh.ok) {
@@ -1824,6 +1891,21 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantHermes) {
+      hermesFresh = readHermesConfigYaml(hermesYamlPath);
+      if (!hermesFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: hermesFresh.error };
+      }
+      try {
+        assertNotSymlink(hermesHome, "Hermes home/");
+        assertNotSymlink(hermesYamlPath, "config.yaml");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
 
     // Fail-fast: merge the pre-skills snapshot in memory so shape errors cannot
     // leave orphan host skills. Final re-read+merge happens immediately before
@@ -1853,6 +1935,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantKimi && kimiFresh?.ok) {
         mergeKimiConfigToml(kimiFresh.value);
       }
+      if (wantHermes && hermesFresh?.ok) {
+        mergeHermesConfigYaml(hermesFresh.value);
+      }
     } catch (err) {
       rollbackFreshConfig();
       const msg = err instanceof Error ? err.message : String(err);
@@ -1860,7 +1945,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex / Kimi / Copilot / Grok / Gemini / Factory have no Autopilot skills path — skip.
+    // Codex / Kimi / Copilot / Grok / Gemini / Factory / Hermes have no Autopilot skills path — skip.
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1881,6 +1966,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedGemini: ReturnType<typeof mergeGeminiSettings> | null = null;
     let mergedFactory: ReturnType<typeof mergeFactoryHooks> | null = null;
     let mergedKimi: string | null = null;
+    let mergedHermes: string | null = null;
     try {
       if (wantCursor) {
         const hooksFinal = readHooksFile(hooksPath);
@@ -1969,6 +2055,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(kimiHome, "Kimi Code home/");
         assertNotSymlink(kimiTomlPath, "config.toml");
         mergedKimi = mergeKimiConfigToml(kimiFinal.value);
+      }
+      if (wantHermes) {
+        const hermesFinal = readHermesConfigYaml(hermesYamlPath);
+        if (!hermesFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: hermesFinal.error };
+        }
+        assertNotSymlink(hermesHome, "Hermes home/");
+        assertNotSymlink(hermesYamlPath, "config.yaml");
+        mergedHermes = mergeHermesConfigYaml(hermesFinal.value);
       }
     } catch (err) {
       rollbackFreshConfig();
@@ -2076,6 +2172,26 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         rollbackFreshConfig();
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, error: `Cannot write Kimi Code config.toml: ${msg}` };
+      }
+    }
+
+    if (mergedHermes != null) {
+      try {
+        fs.mkdirSync(hermesHome, { recursive: true });
+        assertNotSymlink(hermesHome, "Hermes home/");
+        if (!isRealDirectory(hermesHome)) {
+          throw new Error("Hermes home/ is not a real directory");
+        }
+        assertNotSymlink(hermesYamlPath, "config.yaml");
+        writeFileReplaceSync(hermesYamlPath, mergedHermes);
+        written.push(hermesYamlPath);
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          error: `Cannot write Hermes config.yaml: ${msg}`,
+        };
       }
     }
 

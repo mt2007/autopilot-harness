@@ -22,6 +22,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "grok-build", surface: "cli" },
   { id: "gemini-cli", surface: "cli" },
   { id: "factory-droid", surface: "cli" },
+  { id: "hermes-agent", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -36,6 +37,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "grok-build": "cli",
   "gemini-cli": "cli",
   "factory-droid": "cli",
+  "hermes-agent": "cli",
   runner: "runner",
 });
 
@@ -158,6 +160,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "factory-droid") {
     return "Factory Droid (.factory/hooks.json)";
+  }
+  if (id === "hermes-agent") {
+    return "Hermes Agent ($HERMES_HOME/config.yaml hooks)";
   }
   const host =
     id === "cursor"
