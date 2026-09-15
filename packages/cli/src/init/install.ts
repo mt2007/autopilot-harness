@@ -30,6 +30,11 @@ import {
   type GeminiSettingsFile,
 } from "./gemini-settings-merge.js";
 import {
+  mergeFactoryHooks,
+  validateFactoryHooksShape,
+  type FactoryHooksFile,
+} from "./factory-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   mergeKimiConfigToml,
   readKimiConfigToml,
@@ -200,6 +205,31 @@ export type {
   GeminiHookHandler,
   GeminiAutopilotEvent,
 } from "./gemini-settings-merge.js";
+export {
+  mergeFactoryHooks,
+  validateFactoryHooksShape,
+  hasCompleteFactoryAutopilotHooks,
+  summarizeFactoryAutopilotHooks,
+  stripAutopilotFactoryHooks,
+  factoryHooksContainAutopilot,
+  factoryHooksHavePlatformStamp,
+  factoryAutopilotHasOmittedOrSmallTimeout,
+  factoryHooksFileIsVacant,
+  factoryHooksUseProjectDirEnv,
+  autopilotFactoryHookCommandLine,
+  autopilotFactoryHookHandler,
+  autopilotFactoryMatcherGroup,
+  FACTORY_AUTOPILOT_EVENTS,
+  FACTORY_POST_TOOL_USE_MATCHER,
+  FACTORY_HOOK_TIMEOUT_SEC,
+  FACTORY_HOOKS_REL_PATH,
+} from "./factory-hooks-merge.js";
+export type {
+  FactoryHooksFile,
+  FactoryMatcherGroup,
+  FactoryHookHandler,
+  FactoryAutopilotEvent,
+} from "./factory-hooks-merge.js";
 export {
   mergeKimiConfigToml,
   stripAutopilotKimiHooks,
@@ -433,15 +463,20 @@ type GeminiSettingsRead =
   | { ok: true; value: GeminiSettingsFile | null }
   | { ok: false; error: string };
 
+type FactoryHooksRead =
+  | { ok: true; value: FactoryHooksFile | null }
+  | { ok: false; error: string };
+
 function platformsWantHost(
   platforms: readonly PlatformBinding[],
   hostId: string,
 ): boolean {
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
-  // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli`/`grok-build`/`gemini-cli` with the wrong
-  // surface must not force reads/writes (e.g. corrupt leftover settings
-  // blocking --add-platform of another host).
+  // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli`/`grok-build`/
+  // `gemini-cli`/`factory-droid` with the wrong surface must not force
+  // reads/writes (e.g. corrupt leftover settings blocking --add-platform
+  // of another host).
   return platforms.some(
     (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
   );
@@ -686,6 +721,45 @@ function readGeminiSettingsFile(filePath: string): GeminiSettingsRead {
     }
     const obj = parsed as GeminiSettingsFile;
     const shapeError = validateGeminiSettingsShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
+/** Read `.factory/hooks.json`; refuse to clobber an existing unreadable file. */
+function readFactoryHooksFile(filePath: string): FactoryHooksRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".factory/hooks.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as FactoryHooksFile;
+    const shapeError = validateFactoryHooksShape(obj);
     if (shapeError) {
       return { ok: false, error: `${filePath}: ${shapeError}` };
     }
@@ -1101,7 +1175,8 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
   }
   // Host settings (`.cursor/hooks.json` / `.claude/settings.json` /
   // `.codex/hooks.json` / `.github/hooks/autopilot-harness.json` /
-  // `.grok/hooks/autopilot-harness.json` / `.gemini/settings.json`) are
+  // `.grok/hooks/autopilot-harness.json` / `.gemini/settings.json` /
+  // `.factory/hooks.json`) are
   // validated only for platforms that will be wired — see installInitYes.
   return { ok: true };
 }
@@ -1111,7 +1186,7 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
  * (`.cursor/hooks.json` and/or `.claude/settings.json` and/or `.codex/hooks.json`
  * and/or Kimi `$KIMI_CODE_HOME/config.toml` and/or
  * `.github/hooks/autopilot-harness.json` and/or `.grok/hooks/autopilot-harness.json`
- * and/or `.gemini/settings.json` per platforms). Does not write Codex
+ * and/or `.gemini/settings.json` and/or `.factory/hooks.json` per platforms). Does not write Codex
  * `config.toml` hooks, Kimi `local.toml`, or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
@@ -1154,6 +1229,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
   const geminiDir = path.join(projectRoot, ".gemini");
   const geminiSettingsPath = path.join(geminiDir, "settings.json");
+  const factoryDir = path.join(projectRoot, ".factory");
+  const factoryHooksPath = path.join(factoryDir, "hooks.json");
   const mergePlatforms = Boolean(opts.mergePlatforms);
   // Adding hosts into an existing config requires the force/refresh path.
   const force = Boolean(opts.force) || mergePlatforms;
@@ -1321,6 +1398,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantCopilot = platformsWantHost(effectivePlatforms, "copilot-cli");
     const wantGrok = platformsWantHost(effectivePlatforms, "grok-build");
     const wantGemini = platformsWantHost(effectivePlatforms, "gemini-cli");
+    const wantFactory = platformsWantHost(effectivePlatforms, "factory-droid");
     if (
       !wantCursor &&
       !wantClaude &&
@@ -1328,12 +1406,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       !wantKimi &&
       !wantCopilot &&
       !wantGrok &&
-      !wantGemini
+      !wantGemini &&
+      !wantFactory
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, and/or gemini-cli).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, and/or factory-droid).",
       };
     }
 
@@ -1422,6 +1501,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const geminiPre = readGeminiSettingsFile(geminiSettingsPath);
       if (!geminiPre.ok) {
         return { ok: false, error: geminiPre.error };
+      }
+    }
+    if (wantFactory) {
+      try {
+        assertNotSymlink(factoryDir, ".factory/");
+        assertNotSymlink(factoryHooksPath, ".factory/hooks.json");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const factoryPre = readFactoryHooksFile(factoryHooksPath);
+      if (!factoryPre.ok) {
+        return { ok: false, error: factoryPre.error };
       }
     }
     const kimiHome = resolveKimiCodeHome();
@@ -1602,6 +1694,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let copilotFresh: CopilotHooksRead | null = null;
     let grokFresh: GrokHooksRead | null = null;
     let geminiFresh: GeminiSettingsRead | null = null;
+    let factoryFresh: FactoryHooksRead | null = null;
     let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
     if (wantCursor) {
       hooksFresh = readHooksFile(hooksPath);
@@ -1701,6 +1794,21 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantFactory) {
+      factoryFresh = readFactoryHooksFile(factoryHooksPath);
+      if (!factoryFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: factoryFresh.error };
+      }
+      try {
+        assertNotSymlink(factoryDir, ".factory/");
+        assertNotSymlink(factoryHooksPath, ".factory/hooks.json");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
     if (wantKimi) {
       kimiFresh = readKimiConfigToml(kimiTomlPath);
       if (!kimiFresh.ok) {
@@ -1739,6 +1847,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantGemini && geminiFresh?.ok) {
         mergeGeminiSettings(geminiFresh.value);
       }
+      if (wantFactory && factoryFresh?.ok) {
+        mergeFactoryHooks(factoryFresh.value);
+      }
       if (wantKimi && kimiFresh?.ok) {
         mergeKimiConfigToml(kimiFresh.value);
       }
@@ -1749,7 +1860,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI have no Autopilot skills path — skip.
+    // Codex / Kimi / Copilot / Grok / Gemini / Factory have no Autopilot skills path — skip.
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1768,6 +1879,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedCopilot: ReturnType<typeof mergeCopilotHooks> | null = null;
     let mergedGrok: ReturnType<typeof mergeGrokHooks> | null = null;
     let mergedGemini: ReturnType<typeof mergeGeminiSettings> | null = null;
+    let mergedFactory: ReturnType<typeof mergeFactoryHooks> | null = null;
     let mergedKimi: string | null = null;
     try {
       if (wantCursor) {
@@ -1837,6 +1949,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(geminiDir, ".gemini/");
         assertNotSymlink(geminiSettingsPath, ".gemini/settings.json");
         mergedGemini = mergeGeminiSettings(geminiFinal.value);
+      }
+      if (wantFactory) {
+        const factoryFinal = readFactoryHooksFile(factoryHooksPath);
+        if (!factoryFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: factoryFinal.error };
+        }
+        assertNotSymlink(factoryDir, ".factory/");
+        assertNotSymlink(factoryHooksPath, ".factory/hooks.json");
+        mergedFactory = mergeFactoryHooks(factoryFinal.value);
       }
       if (wantKimi) {
         const kimiFinal = readKimiConfigToml(kimiTomlPath);
@@ -1926,6 +2048,18 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".gemini/",
       );
       written.push(path.relative(projectRoot, geminiSettingsPath));
+    }
+
+    if (mergedFactory) {
+      mkdirRealDirSync(factoryDir, ".factory/", projectRoot);
+      assertRealpathInside(projectRoot, factoryDir, ".factory/");
+      writeFileAtomic(
+        factoryHooksPath,
+        JSON.stringify(mergedFactory, null, 2) + "\n",
+        projectRoot,
+        ".factory/",
+      );
+      written.push(path.relative(projectRoot, factoryHooksPath));
     }
 
     if (mergedKimi != null) {

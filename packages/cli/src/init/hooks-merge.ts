@@ -9,6 +9,7 @@ export const HOOK_PLATFORM_KIMI_CODE = "kimi-code";
 export const HOOK_PLATFORM_COPILOT_CLI = "copilot-cli";
 export const HOOK_PLATFORM_GROK_BUILD = "grok-build";
 export const HOOK_PLATFORM_GEMINI_CLI = "gemini-cli";
+export const HOOK_PLATFORM_FACTORY_DROID = "factory-droid";
 
 /** Canonical Autopilot hook command line (platform + event). */
 export function autopilotHookCommandLine(

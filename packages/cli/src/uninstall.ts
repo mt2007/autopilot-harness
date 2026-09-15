@@ -39,6 +39,14 @@ import {
   GEMINI_SETTINGS_REL_PATH,
 } from "./init/gemini-settings-merge.js";
 import {
+  stripAutopilotFactoryHooks,
+  factoryHooksContainAutopilot,
+  factoryHooksFileIsVacant,
+  validateFactoryHooksShape,
+  type FactoryHooksFile,
+  FACTORY_HOOKS_REL_PATH,
+} from "./init/factory-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   kimiTomlHasAutopilotHookTables,
   readKimiConfigToml,
@@ -474,6 +482,63 @@ function readGeminiSettingsFile(
   }
 }
 
+function readFactoryHooksFile(
+  hooksPath: string,
+):
+  | { ok: true; value: FactoryHooksFile | null }
+  | { ok: false; error: string } {
+  const label = FACTORY_HOOKS_REL_PATH;
+  try {
+    assertNotSymlink(hooksPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(hooksPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: `${label} is a symlink; refusing to open`,
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: `${label} exists and is not a regular file; refusing to uninstall`,
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access ${label}: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      label,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${label} is not a JSON object; fix or remove it before uninstall.`,
+      };
+    }
+    const file = parsed as FactoryHooksFile;
+    const shape = validateFactoryHooksShape(file);
+    if (shape) return { ok: false, error: `${label}: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${label}: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -554,6 +619,7 @@ function projectWantsInstallableHosts(configPath: string): {
   copilot: boolean;
   grok: boolean;
   gemini: boolean;
+  factory: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -569,6 +635,7 @@ function projectWantsInstallableHosts(configPath: string): {
       copilot: configWantsInstallableHost(platforms, "copilot-cli"),
       grok: configWantsInstallableHost(platforms, "grok-build"),
       gemini: configWantsInstallableHost(platforms, "gemini-cli"),
+      factory: configWantsInstallableHost(platforms, "factory-droid"),
     };
   } catch {
     return {
@@ -578,6 +645,7 @@ function projectWantsInstallableHosts(configPath: string): {
       copilot: false,
       grok: false,
       gemini: false,
+      factory: false,
     };
   }
 }
@@ -656,6 +724,8 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
     const geminiDir = path.join(projectRoot, ".gemini");
     const geminiSettingsPath = path.join(geminiDir, "settings.json");
+    const factoryDir = path.join(projectRoot, ".factory");
+    const factoryHooksPath = path.join(factoryDir, "hooks.json");
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
@@ -667,8 +737,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       copilot: wantCopilot,
       grok: wantGrok,
       gemini: wantGemini,
+      factory: wantFactory,
     } = projectWantsInstallableHosts(configPath);
-    // Only fail-closed on .claude/.codex/.github/.grok/.gemini trees when config declares
+    // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi uses user-home config.toml (outside project) —
     // strip separately.
@@ -702,6 +773,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
       if (wantGemini) {
         dirs.push([geminiDir, ".gemini/"]);
+      }
+      if (wantFactory) {
+        dirs.push([factoryDir, ".factory/"]);
       }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
@@ -1128,6 +1202,86 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip ${geminiLabel} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Factory Droid hooks (.factory/hooks.json) ---
+    // Top-level events; fingerprint strip only; keep siblings under .factory/.
+    // Vacant after strip → unlink hooks.json only.
+    const factoryLabel = FACTORY_HOOKS_REL_PATH;
+    const factoryPre = readFactoryHooksFile(factoryHooksPath);
+    if (!factoryPre.ok) {
+      if (wantFactory) {
+        return { ok: false, error: factoryPre.error };
+      }
+      actions.push(
+        `skip ${factoryLabel} (${formatUninstallSkipDetail(factoryPre.error)})`,
+      );
+    } else if (factoryHooksContainAutopilot(factoryPre.value)) {
+      const stripFactoryHooks = (): void => {
+        assertNotSymlink(factoryDir, ".factory/");
+        assertNotSymlink(factoryHooksPath, factoryLabel);
+        if (dryRun) {
+          found = true;
+          const preview =
+            factoryPre.value != null
+              ? stripAutopilotFactoryHooks(factoryPre.value)
+              : null;
+          if (factoryHooksFileIsVacant(preview)) {
+            actions.push(`unlink empty ${factoryLabel}`);
+          } else {
+            actions.push(`strip Autopilot entries from ${factoryLabel}`);
+          }
+          return;
+        }
+        const factoryFresh = readFactoryHooksFile(factoryHooksPath);
+        if (!factoryFresh.ok) {
+          throw new Error(factoryFresh.error);
+        }
+        const freshFile = factoryFresh.value;
+        if (
+          freshFile == null ||
+          !factoryHooksContainAutopilot(freshFile)
+        ) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${factoryLabel}`);
+          actions.push(
+            `${factoryLabel} no longer has Autopilot entries (skipped write)`,
+          );
+          return;
+        }
+        const stripped = stripAutopilotFactoryHooks(freshFile);
+        if (factoryHooksFileIsVacant(stripped)) {
+          assertRealpathInside(projectRoot, factoryHooksPath, factoryLabel);
+          fs.unlinkSync(factoryHooksPath);
+          found = true;
+          hooksStripped = true;
+          actions.push(`unlink empty ${factoryLabel}`);
+          removed.push(path.relative(projectRoot, factoryHooksPath));
+          return;
+        }
+        writeJsonAtomic(
+          factoryHooksPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          factoryLabel,
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push(`strip Autopilot entries from ${factoryLabel}`);
+        removed.push(
+          path.relative(projectRoot, factoryHooksPath) + " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripFactoryHooks();
+      } catch (err) {
+        if (wantFactory) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip ${factoryLabel} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

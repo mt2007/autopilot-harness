@@ -21,6 +21,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "copilot-cli", surface: "cli" },
   { id: "grok-build", surface: "cli" },
   { id: "gemini-cli", surface: "cli" },
+  { id: "factory-droid", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -34,6 +35,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "copilot-cli": "cli",
   "grok-build": "cli",
   "gemini-cli": "cli",
+  "factory-droid": "cli",
   runner: "runner",
 });
 
@@ -153,6 +155,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "gemini-cli") {
     return "Gemini CLI (.gemini/settings.json)";
+  }
+  if (id === "factory-droid") {
+    return "Factory Droid (.factory/hooks.json)";
   }
   const host =
     id === "cursor"
