@@ -16,5 +16,5 @@
 - [x] commit-local — conventional；勿 push/tag/publish
 - [x] human-gate-confirm — 活链或 waive；「同意发 0.8.0」；0.7 pin 或允许叠发；**waive 时确认 degraded≤1 或签字 multi 风险**
 - [x] push-tag-release — push/tag/GH Release
-- [ ] npm-publish-pnpm — 仅 `pnpm publish`
+- [x] npm-publish-pnpm — 仅 `pnpm publish`
 - [ ] pin-upgrade-repo — pin→0.8.0
