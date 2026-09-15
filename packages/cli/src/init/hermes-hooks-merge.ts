@@ -230,7 +230,9 @@ export function validateHermesConfigShape(
         if (matcher != null && typeof matcher !== "string") {
           return `Hermes hooks.${safeKeyLabel(key)} has a non-string matcher.`;
         }
-        const timeout = (entry as HermesHookEntry).timeout;
+        // Untrusted YAML may carry timeout as number | string; do not narrow via
+        // HermesHookEntry.timeout?: number or the string branch becomes `never`.
+        const timeout: unknown = (entry as Record<string, unknown>).timeout;
         if (
           timeout != null &&
           typeof timeout !== "number" &&
