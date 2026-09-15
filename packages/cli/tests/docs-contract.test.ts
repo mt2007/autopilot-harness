@@ -980,13 +980,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, and Gemini CLI/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, and Gemini CLI/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
     );
     expect(cliPkg.keywords).toEqual(
       expect.arrayContaining([
@@ -997,6 +997,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "copilot-cli",
         "grok-build",
         "gemini-cli",
+        "factory-droid",
       ]),
     );
     const kimiPkg = JSON.parse(
@@ -1039,6 +1040,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(geminiPkg.description).toMatch(/Gemini CLI/i);
     expect(geminiPkg.description).toMatch(/MAX_TURNS|turn cap/i);
     expect(geminiPkg.description).not.toMatch(/Coming v0\.7\b/);
+    const factoryPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/factory-droid/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string; private?: boolean };
+    expect(factoryPkg.private).not.toBe(true);
+    expect(factoryPkg.description).toMatch(/Factory Droid/i);
+    expect(factoryPkg.description).toMatch(/multi-block/i);
+    expect(factoryPkg.description).toMatch(/degraded/i);
+    expect(factoryPkg.description).not.toMatch(/Coming v0\.8\b/);
     const runnerPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/runner/package.json"),
