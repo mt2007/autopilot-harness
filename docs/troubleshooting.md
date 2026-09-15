@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, or **Gemini CLI**) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, or Gemini `.gemini/settings.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI / Gemini CLI have no Autopilot skills path).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, or **Factory Droid**) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, or Factory `.factory/hooks.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI / Gemini CLI / Factory Droid have no Autopilot skills path).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -95,6 +95,18 @@ Gemini CLI **hard-caps agent turns at host `MAX_TURNS` ≤100** (AfterAgent deny
 - `doctor` **FAIL**s when `.gemini/settings.json` is missing / unreadable / invalid / incomplete; WARNs for timeout omitted or &lt; 120000, AfterAgent cap ≤100, min-CLI ≥0.31.0, missing `--platform gemini-cli`, re-trust / `/hooks panel` / folder trust, reload/new session, `hooksConfig.enabled===false`, Autopilot names in `hooksConfig.disabled`, and **Gemini+Claude** dual fingerprints (both enabled or leftover on disk).
 - Do **not** confuse host env **`GEMINI_PLANS_DIR`** with Autopilot `artifacts.plans_dir` / `plans/`.
 - Multi-host: `npx @autopilot-harness/cli init --yes --add-platform gemini-cli`.
+- P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
+
+### Factory Droid
+
+Factory Droid has **no documented numeric Stop-continue cap / raise knob** (2026-09 research). Autopilot ships Factory with **multi-block under `stop_hook_active` live-proved** (**Shipped**). If live is **waived** or multi fails, flip to **degraded≤1** (ALLOW=false) and prefer short confirm chains:
+
+- Stop continue = `{ decision:"block", reason }` (multi across `stop_hook_active`; hard-stop `continue:false` + `stopReason`; allow path **zero-byte stdout** — never `{}`).
+- Autopilot writes project **`.factory/hooks.json` only** (**top-level** events; timeout **120**; UPS + PostToolUse `Create|Edit|ApplyPatch` + Stop). Commands use **`node "$FACTORY_PROJECT_DIR"/.autopilot/bin/…`**. **`$FACTORY_PROJECT_DIR` must be the instrumented project root** (host cwd ≠ repo root) — a wrong or hostile value runs another tree’s vendor binary; treat it as **trusted** project wiring. Default `.autopilotignore` includes **`.factory/hooks.json`**.
+- **Does not** clamp `confirm_rounds` (when degraded≤1, docs recommend `confirm_rounds: 1`). Does **not** install Autopilot skills / `AGENTS.md`. Does **not** wire PreToolUse / SubagentStop / Session* / Notification.
+- After `init` / `upgrade`: check **`/hooks`**, then **reload / new session** so the hooks **snapshot** refreshes.
+- `init` / `upgrade` **refuse symlink** `.factory/` or `.factory/hooks.json` (**fail-closed**). `doctor` **FAIL**s when `.factory/hooks.json` is missing / incomplete / unreadable (incl. symlink); WARNs for no raise/hard-cap (live-proved multi-block), `/hooks`+snapshot/reload, missing `--platform factory-droid` or **`$FACTORY_PROJECT_DIR`** in commands, timeout omit/&lt;120, Factory+Claude dual fingerprints, `~/.factory` residual / `settings.json` hooks leftover, and `hooksDisabled` / `allowManagedHooksOnly`.
+- Multi-host: `npx @autopilot-harness/cli init --yes --add-platform factory-droid`.
 - P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).

@@ -23,6 +23,7 @@
 .github/hooks/**
 .grok/hooks/**
 .gemini/settings.json
+.factory/hooks.json
 
 # Planning artifacts
 plans/**

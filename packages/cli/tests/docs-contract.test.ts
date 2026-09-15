@@ -167,7 +167,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/~\/\.kimi-code|KIMI_CODE_HOME/);
     expect(tips).toMatch(/project-wide|whole project/i);
     expect(tips).toMatch(
-      /Cursor \/ Claude \/ Codex \/ Copilot|including Cursor \/ Claude \/ Codex \/ Copilot/i,
+      /Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory|including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory/i,
     );
     expect(tips).toMatch(/machine-wide|user-home/i);
     expect(tips).toMatch(/never[\s\S]*local\.toml|local\.toml/i);
@@ -213,6 +213,18 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(
       /\*\*FAIL\*\*s when[\s\S]*\.gemini\/settings\.json|FAIL[\s\S]*missing[\s\S]*incomplete/i,
     );
+    expect(tips).toMatch(/### Factory Droid/);
+    expect(tips).toMatch(/FACTORY_PROJECT_DIR/);
+    expect(tips).toMatch(/multi-block|stop_hook_active/);
+    expect(tips).toMatch(/live-proved|waive[\s\S]*degraded/i);
+    expect(tips).toMatch(/\.factory\/hooks\.json/);
+    expect(tips).toMatch(/Factory\+Claude|Factory Droid \+ Claude/i);
+    expect(tips).toMatch(/snapshot|Reload Factory|\/hooks/);
+    expect(tips).toMatch(/symlink|fail-closed/i);
+    expect(tips).toMatch(
+      /instrumented project root|trusted[\s\S]*FACTORY_PROJECT_DIR|FACTORY_PROJECT_DIR[\s\S]*trusted|wrong or hostile/i,
+    );
+    expect(tips).toMatch(/hooksDisabled|allowManagedHooksOnly/);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -238,29 +250,56 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
     expect(config).toMatch(/project-wide|whole project/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, and\/or Gemini CLI/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, and\/or Factory Droid/i,
     );
-    expect(config).toMatch(/seven-way dispatch/i);
+    expect(config).toMatch(/eight-way dispatch/i);
+    expect(config).not.toMatch(/\bseven-way dispatch\b/i);
     expect(config).not.toMatch(/\bsix-way dispatch\b/i);
     expect(config).not.toMatch(/\bfive-way dispatch\b/i);
     expect(config).not.toMatch(/\bquaternary dispatch\b/);
     expect(config).not.toMatch(/\bternary dispatch\b/);
     expect(config).toMatch(
-      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI build/,
+      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid build/,
     );
     expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
     expect(config).toMatch(/Stop consecutive ≤8|Copilot.*≤8/i);
     expect(config).toMatch(/Stop ≤8\/turn|Grok.*≤8\/turn/i);
     expect(config).toMatch(
-      /Codex \/ Kimi Code \/ Copilot CLI \/ Grok Build CLI \/ Gemini CLI P0|Gemini CLI P0/,
+      /Codex \/ Kimi Code \/ Copilot CLI \/ Grok Build CLI \/ Gemini CLI \/ Factory Droid P0|Factory Droid P0/,
     );
     expect(config).toMatch(/does \*\*not\*\* clamp `confirm_rounds`|does not clamp confirm_rounds/i);
+    expect(config).toMatch(
+      /Gemini \/ Factory sessions|Grok \/ Gemini \/ Factory sessions|Copilot \/ Grok \/ Gemini \/ Factory/i,
+    );
+    expect(config).toMatch(
+      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, or \*\*Factory Droid\*\*/,
+    );
     expect(config).toMatch(
       /missing\/incomplete \*\*FAIL\*\*|Copilot[\s\S]*FAIL[\s\S]*WARN/i,
     );
     expect(config).toMatch(
       /dual WARN[\s\S]*leftover|leftover hooks on disk|both enabled \*\*or\*\* leftover|dual = both enabled \*\*or\*\* leftover/i,
     );
+    expect(config).toMatch(/Factory[\s\S]*\.factory\/hooks\.json|\.factory\/hooks\.json[\s\S]*Factory/i);
+    expect(config).toMatch(/FACTORY_PROJECT_DIR/);
+    expect(config).toMatch(
+      /Factory[\s\S]*missing\/incomplete\/unreadable|\.factory\/hooks\.json[\s\S]*unreadable/i,
+    );
+    expect(config).toMatch(
+      /Factory[\s\S]*hooksDisabled|allowManagedHooksOnly[\s\S]*WARN|hooksDisabled[\s\S]*allowManagedHooksOnly/i,
+    );
+    expect(config).toMatch(
+      /## Related[\s\S]*Factory Droid|## Related[\s\S]*multi-block live-proved/i,
+    );
+  });
+
+  it("dogfood .autopilotignore covers Factory hooks path", () => {
+    const ignore = fs.readFileSync(
+      path.join(repoRoot, ".autopilotignore"),
+      "utf8",
+    );
+    expect(ignore).toMatch(/\.factory\/hooks\.json/);
+    expect(ignore).toMatch(/\.gemini\/settings\.json/);
   });
 
   it("config does not imply require_token is enforced", () => {
@@ -299,13 +338,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, and\/or Gemini CLI/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, and\/or Factory Droid/i,
     );
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
     expect(config).toMatch(/\.codex\/\*\*/);
     expect(config).toMatch(/\.github\/hooks\/\*\*/);
     expect(config).toMatch(/\.grok\/hooks\/\*\*/);
     expect(config).toMatch(/\.gemini\/settings\.json/);
+    expect(config).toMatch(/\.factory\/hooks\.json/);
+    expect(config).toMatch(/FACTORY_PROJECT_DIR/);
     expect(config).toMatch(/`review\.scope` \| `project` \(fresh init YAML\)/);
     expect(config).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
   });
@@ -355,6 +396,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       expect(body).toMatch(/MAX_TURNS|≤100|0\.31\.0/);
       expect(body).toMatch(/re-trust|\/hooks panel|folder trust/);
       expect(body).toMatch(/GEMINI_PLANS_DIR/);
+      expect(body).toMatch(/--platform factory-droid|platform factory-droid/);
+      expect(body).toMatch(/--add-platform factory-droid/);
+      expect(body).toMatch(/FACTORY_PROJECT_DIR/);
+      expect(body).toMatch(/multi-block|stop_hook_active|live-proved/i);
     }
   });
 
@@ -369,7 +414,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
     expect(cliReadme).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, and Gemini CLI|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, and Gemini CLI/,
+      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, and Factory Droid|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
     );
     expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
     expect(cliReadme).toMatch(/--platform codex|platform codex/);
@@ -377,6 +422,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toMatch(/copilot-cli/);
     expect(cliReadme).toMatch(/grok-build/);
     expect(cliReadme).toMatch(/gemini-cli/);
+    expect(cliReadme).toMatch(/factory-droid/);
+    expect(cliReadme).toMatch(/FACTORY_PROJECT_DIR/);
     expect(cliReadme).toMatch(/MAX_TURNS|AfterAgent turn cap ≤100|≤100/);
     expect(cliReadme).toMatch(/0\.31\.0/);
     expect(cliReadme).toMatch(/Stop≤1\/turn|degraded Stop/i);
@@ -425,6 +472,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/port-grok-build/);
     expect(body).toMatch(/--platform gemini-cli|init --platform gemini-cli/);
     expect(body).toMatch(/port-gemini-cli/);
+    expect(body).toMatch(/--platform factory-droid|init --platform factory-droid/);
+    expect(body).toMatch(/port-factory-droid/);
+    expect(body).toMatch(/FACTORY_PROJECT_DIR/);
     expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
@@ -496,6 +546,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/不接 `preToolUse`|no `preToolUse`|不接 PreToolUse/i);
     expect(body).toMatch(/Copilot Stop≤8|Stop≤8 \/ 重启|双装/);
     expect(body).toMatch(/Grok Stop≤8|多指纹/);
+    expect(body).toMatch(/--platform factory-droid|init --platform factory-droid/);
+    expect(body).toMatch(/FACTORY_PROJECT_DIR/);
+    expect(body).toMatch(/multi-block|stop_hook_active|活链已证/i);
+    expect(body).toMatch(/免活链|degraded≤1/);
   });
 
   it("hosts.md marks Codex, Claude, Kimi, Copilot, and Grok as shipped", () => {
@@ -511,6 +565,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(hosts).toMatch(
       /\|\s*\*\*Gemini CLI\*\*\s*\|\s*\*\*Shipped\*\*/,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Factory Droid\*\*\s*\|\s*\*\*Shipped\*\*/,
     );
     expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*v0\.3 \/ v0\.4 planned\*\*/);
     // Status column only (avoid Notes-column false positives/negatives).
@@ -534,6 +591,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).not.toMatch(
       /\|\s*\*\*Gemini CLI\*\*\s*\|\s*\*\*Next\*\*/,
     );
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Factory Droid\*\*/,
+    );
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*Factory Droid\*\*\s*\|\s*\*\*Next\*\*/,
+    );
     expect(hosts).toMatch(/handleCodexUserPromptSubmit/);
     expect(hosts).toMatch(/handleCodexPostToolUse/);
     expect(hosts).toMatch(/handleCodexStop/);
@@ -545,6 +608,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/handleGrokPostToolUse|handleGrokStop/);
     expect(hosts).toMatch(/handleGeminiUserPromptSubmit|handleGemini\*/);
     expect(hosts).toMatch(/handleGeminiPostToolUse|handleGeminiStop/);
+    expect(hosts).toMatch(/handleFactoryUserPromptSubmit|handleFactory\*/);
+    expect(hosts).toMatch(/handleFactoryPostToolUse|handleFactoryStop/);
     expect(hosts).toMatch(/apply_patch/);
     expect(hosts).toMatch(/\/hooks/);
     expect(hosts).toMatch(/triggers\.on/);
@@ -555,14 +620,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/host-plan-bridge\.md/);
     expect(hosts).toMatch(/## Roadmap \(not shipped\)/);
     expect(hosts).toMatch(/GitHub Copilot CLI/);
-    expect(hosts).toMatch(/seven-way/);
+    expect(hosts).toMatch(/eight-way/);
+    expect(hosts).not.toMatch(/\bseven-way\b/);
     expect(hosts).not.toMatch(/\bsix-way\b/);
     expect(hosts).not.toMatch(/\bfive-way\b/);
     expect(hosts).not.toMatch(
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Kimi Code\*\*/,
     );
     expect(hosts).toMatch(
-      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Factory Droid\*\*/,
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Hermes Agent\*\*/,
     );
     expect(hosts).toMatch(/Kimi Code \| \*\*Shipped\*\* \(degraded Stop≤1\/turn\)/);
     expect(hosts).toMatch(
@@ -574,10 +640,20 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /Gemini CLI \| \*\*Shipped\*\* \(AfterAgent turn cap ≤100/,
     );
+    expect(hosts).toMatch(
+      /Factory Droid \| \*\*Shipped\*\* \(multi-block under `stop_hook_active` live-proved/,
+    );
     expect(hosts).toMatch(/Grok Build CLI/);
     expect(hosts).toMatch(/Gemini CLI/);
     expect(hosts).toMatch(/Factory Droid/);
     expect(hosts).toMatch(/Hermes Agent/);
+    expect(hosts).toMatch(/FACTORY_PROJECT_DIR/);
+    expect(hosts).toMatch(/\.factory\/hooks\.json/);
+    expect(hosts).toMatch(/waive[\s\S]*degraded≤1|waive live → default \*\*degraded≤1/i);
+    expect(hosts).toMatch(/symlink|fail-closed/i);
+    expect(hosts).toMatch(
+      /instrumented project root|wrong\/hostile|hostile env/i,
+    );
     expect(hosts).toMatch(/Antigravity/);
     expect(hosts).toMatch(/OpenCode/);
     expect(hosts).toMatch(/\bPi\b/);
@@ -676,7 +752,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
     expect(body).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, and\/or Gemini CLI/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, and\/or Factory Droid/i,
     );
     expect(body).toMatch(/ports\/claude-code/);
     expect(body).toMatch(/ports\/codex/);
@@ -684,15 +760,18 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/ports\/copilot-cli/);
     expect(body).toMatch(/ports\/grok-build/);
     expect(body).toMatch(/ports\/gemini-cli/);
+    expect(body).toMatch(/ports\/factory-droid/);
     expect(body).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, and Gemini CLI/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
     );
     expect(body).toMatch(/handleCodex\*/);
     expect(body).toMatch(/handleKimi\*/);
     expect(body).toMatch(/handleCopilot\*/);
     expect(body).toMatch(/handleGrok\*/);
     expect(body).toMatch(/handleGemini\*/);
-    expect(body).toMatch(/seven-way/);
+    expect(body).toMatch(/handleFactory\*/);
+    expect(body).toMatch(/eight-way/);
+    expect(body).not.toMatch(/\bseven-way\b/);
     expect(body).not.toMatch(/\bsix-way\b/);
     expect(body).toMatch(/never `local\.toml`|never local\.toml/i);
     expect(body).toMatch(/triggers\.on\s*\/\s*`?triggers\.run|triggers\.on`\s*\/\s*`triggers\.run/);
@@ -706,6 +785,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/Grok Build[\s\S]*≤8\/turn|Stop ≤8\/turn/i);
     expect(body).toMatch(/Gemini CLI[\s\S]*MAX_TURNS|AfterAgent[\s\S]*≤100/i);
     expect(body).toMatch(/0\.31\.0/);
+    expect(body).toMatch(/Factory Droid[\s\S]*live-proved|Factory Droid[\s\S]*FACTORY_PROJECT_DIR/i);
+    expect(body).toMatch(/FACTORY_PROJECT_DIR/);
+    expect(body).toMatch(/waive[\s\S]*degraded≤1|Waive live → degraded≤1/i);
     expect(body).toMatch(/per-turn reset|not consecutive/i);
     expect(body).toMatch(/hooks-trust|--trust/);
     expect(body).toMatch(/userPromptSubmitted/);
@@ -729,7 +811,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 / 0.6.0 / 0.7.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 / 0.6.0 / 0.7.0 / 0.8.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -754,6 +836,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.5\.0\]/);
     expect(log).toMatch(/## \[0\.6\.0\]/);
     expect(log).toMatch(/## \[0\.7\.0\]/);
+    expect(log).toMatch(/## \[0\.8\.0\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -938,6 +1021,33 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(section070).toMatch(/pnpm publish|pnpm pack/i);
     expect(section070).toMatch(/1 \(next\)[\s\S]{0,80}Factory/);
+    const section080 = changelogSection(log, "0.8.0");
+    expect(section080).toMatch(/port-factory-droid|@autopilot-harness\/port-factory-droid/i);
+    expect(section080).toMatch(/handleFactoryUserPromptSubmit/);
+    expect(section080).toMatch(/handleFactoryPostToolUse/);
+    expect(section080).toMatch(/handleFactoryStop/);
+    expect(section080).toMatch(/docs-factory-shipped/i);
+    expect(section080).toMatch(/marked \*\*Shipped\*\*/);
+    expect(section080).toMatch(/packages\/ports\/factory-droid\/package\.json/);
+    expect(section080).toMatch(/FACTORY_PROJECT_DIR/);
+    expect(section080).toMatch(/multi-block|stop_hook_active|live-proved/i);
+    expect(section080).toMatch(/waive[\s\S]*degraded/i);
+    expect(section080).toMatch(/Factory\+Claude|Factory Droid \+ Claude/i);
+    expect(section080).toMatch(/no PreToolUse|explicitly \*\*no PreToolUse/i);
+    expect(section080).toMatch(/\.factory\/hooks\.json/);
+    expect(section080).toMatch(/symlink|fail-closed/i);
+    expect(section080).toMatch(/fail-open/i);
+    expect(section080).toMatch(
+      /\*\*FAIL\*\*s on missing\/incomplete\/unreadable|\*\*FAIL\*\*s on missing\/incomplete/,
+    );
+    expect(section080).toMatch(/Gemini\/Factory cross-fire|Grok\/Gemini\/Factory cross-fire/i);
+    expect(section080).toMatch(/eight-way|Eight-way/i);
+    expect(section080).toMatch(/factory-droid/);
+    expect(section080).toMatch(
+      /core\s*→\s*i18n\s*→\s*ports[\s\S]*factory-droid[\s\S]*→\s*cli|ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid\)/i,
+    );
+    expect(section080).toMatch(/pnpm publish|pnpm pack/i);
+    expect(section080).toMatch(/1 \(next\)[\s\S]{0,80}Hermes/);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
     expect(unreleased).not.toMatch(/handleCopilot/i);
@@ -946,6 +1056,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/handleGrok/i);
     expect(unreleased).not.toMatch(/docs-gemini-shipped/i);
     expect(unreleased).not.toMatch(/handleGemini/i);
+    expect(unreleased).not.toMatch(/docs-factory-shipped/i);
+    expect(unreleased).not.toMatch(/handleFactory/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);

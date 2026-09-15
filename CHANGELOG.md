@@ -9,6 +9,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-15
+
+### Added
+
+- **Factory Droid hook port** (`@autopilot-harness/port-factory-droid`): UserPromptSubmit / PostToolUse / Stop adapters; fail-open on errors; Stop continue = `{ decision:"block", reason }` (**multi-block under `stop_hook_active` live-proved**; hard-stop `continue:false` + `stopReason`; allow path **zero-byte stdout** — never `{}`); UPS inject via `hookSpecificOutput` (ON/RUN success empty body); PostToolUse matcher `Create|Edit|ApplyPatch` + dirty-arm; no PreToolUse / SubagentStop / Session* / Notification.
+- **Eight-way vendor dispatch**: `--platform factory-droid` + aliased exports `handleFactoryUserPromptSubmit` / `handleFactoryPostToolUse` / `handleFactoryStop` (no clash with Claude/Codex/Kimi/Copilot/Grok/Gemini bare names); cross-stamp / cross-payload abort + conflict resolver across Cursor / Claude / Codex / Kimi / Copilot / Grok / Gemini / Factory.
+- **Init / upgrade / uninstall / doctor** for Factory Droid: installable `surface:cli`; project `.factory/hooks.json` (**top-level** events; timeout **120**; UPS+PostToolUse+Stop; commands use **`$FACTORY_PROJECT_DIR`** — must be the instrumented project root); fingerprint uninstall; `--add-platform factory-droid`; no default Autopilot skills / `AGENTS.md`; P0 line-start `triggers.on` / `triggers.run`; does **not** clamp `confirm_rounds`; default `.autopilotignore` includes `.factory/hooks.json`; **symlink** `.factory/` / hooks.json **fail-closed** on init/upgrade; doctor **FAIL**s on missing/incomplete/unreadable hooks; WARNs for no raise/hard-cap (**live-proved** multi-block), missing `--platform` stamp / `$FACTORY_PROJECT_DIR`, **`/hooks` + snapshot/reload**, Factory+Claude dual fingerprints, `~/.factory` residual / `settings.json` hooks leftover, `hooksDisabled` / `allowManagedHooksOnly`.
+- **docs-factory-shipped**: Factory Droid marked **Shipped** (**multi-block under `stop_hook_active` live-proved**; **waive live → default degraded≤1**) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart; docs-contract Next→Shipped; public package matrix includes `packages/ports/factory-droid/package.json`; **`$FACTORY_PROJECT_DIR`**; **`/hooks` + snapshot/reload** after install/upgrade; explicitly **no PreToolUse**.
+- Contract / eight-host matrix tests for Factory I/O, empty allow stdout, Stop multi-block, hooks merge, doctor, add-platform, aliases, and Cursor/Claude/Codex/Kimi/Copilot/Grok/Gemini/Factory cross-fire.
+
+### Changed
+
+- **docs**: host roadmap — **1 (next)** = Hermes Agent after Factory shipped; Antigravity / OpenCode / Runner / Pi / Devin listed ([hosts.md](./docs/hosts.md)).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.8.0 public packages.
+
 ## [0.7.0] — 2026-09-14
 
 ### Added

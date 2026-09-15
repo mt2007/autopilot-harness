@@ -89,6 +89,8 @@ npx @autopilot-harness/cli init --platform copilot-cli --yes
 npx @autopilot-harness/cli init --platform grok-build --yes
 # 或 Gemini CLI（`.gemini/settings.json`；AfterAgent cap ≤100 / MAX_TURNS；建议 CLI ≥0.31.0；需 re-trust / `/hooks panel` / folder trust）
 npx @autopilot-harness/cli init --platform gemini-cli --yes
+# 或 Factory Droid（`.factory/hooks.json`；multi-block 活链已证；`$FACTORY_PROJECT_DIR`；`/hooks`+快照/reload）
+npx @autopilot-harness/cli init --platform factory-droid --yes
 # 第一个宿主装好后再加：
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
@@ -96,6 +98,7 @@ npx @autopilot-harness/cli init --platform gemini-cli --yes
 # npx @autopilot-harness/cli init --yes --add-platform copilot-cli
 # npx @autopilot-harness/cli init --yes --add-platform grok-build
 # npx @autopilot-harness/cli init --yes --add-platform gemini-cli
+# npx @autopilot-harness/cli init --yes --add-platform factory-droid
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 npx @autopilot-harness/cli upgrade --dry-run
@@ -105,8 +108,8 @@ npx @autopilot-harness/cli upgrade --dry-run
 
 ## 安装后
 
-- 在 Cursor 或 Claude Code 中试用 `/autopilot-on`（Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI：行首 `triggers.on` / `triggers.run` — 无 Autopilot skills 路径；手打 slash 仍可解析）。
-- 若 skills / hooks 未出现：重载宿主（Cursor：`Developer: Reload Window`；Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI：重启 / 新开会话），或新开一条 Agent 对话。Codex：执行 `/hooks` trust（upgrade 后需 re-trust）。**Copilot CLI：安装/升级后重启 CLI**。**Grok Build：trust** `/hooks-trust` 或 `--trust`。**Gemini CLI：re-trust** hooks，查看 `/hooks panel`，并确认 folder trust。
+- 在 Cursor 或 Claude Code 中试用 `/autopilot-on`（Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid：行首 `triggers.on` / `triggers.run` — 无 Autopilot skills 路径；手打 slash 仍可解析）。
+- 若 skills / hooks 未出现：重载宿主（Cursor：`Developer: Reload Window`；Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid：重启 / 新开会话），或新开一条 Agent 对话。Codex：执行 `/hooks` trust（upgrade 后需 re-trust）。**Copilot CLI：安装/升级后重启 CLI**。**Grok Build：trust** `/hooks-trust` 或 `--trust`。**Gemini CLI：re-trust** hooks，查看 `/hooks panel`，并确认 folder trust。**Factory Droid：查 `/hooks` 后 reload/新开会话刷新快照**；命令依赖 **`$FACTORY_PROJECT_DIR`**。
 - 自审中途停住（Cursor）：确认 Autopilot stop 带 `loop_limit: null`（可 `upgrade`；详见 [排障](../troubleshooting.md)）。
 - 自审中途停住（Claude Code）：确认 `.claude/settings.json` 有 `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`。若 cap 环境变量不生效，接受项目 **trust** 对话框（项目 `env` 可能在信任前被拦住）。
 - Codex hooks 无效 / 中途卡住：确认 `.codex/hooks.json` 有 Autopilot 条目、省略 timeout 或 ≥120s，且 `/hooks` 已信任。
@@ -114,6 +117,7 @@ npx @autopilot-harness/cli upgrade --dry-run
 - Copilot CLI 为 **Stop consecutive ≤8 降级** — 中途掐断用 pending / `/autopilot-resume` / nudge 恢复；doctor 会 WARN Claude+Copilot 双装；不接 `preToolUse`（见 [排障](../troubleshooting.md)）。
 - Grok Build 为 **Stop ≤8/turn 降级**（每 turn 重置；非 consecutive）— 中途掐断 → pending / RESUME / nudge；needPick 须重提 slug；doctor 会 WARN ≤8/turn + trust + Grok+Claude/Cursor 多指纹（已启用或磁盘残留）；不接 PreToolUse（见 [排障](../troubleshooting.md)）。
 - Gemini CLI 已 **Shipped**，诚实上限 **AfterAgent turn cap ≤100**（`MAX_TURNS`；无 raise；建议 CLI **≥0.31.0**）— 安装后需 re-trust / `/hooks panel` / folder trust；needPick 用 deny+reason（须重提 slug）；doctor 会 WARN cap + min-CLI + `hooksConfig`；勿把 `GEMINI_PLANS_DIR` 当成 Autopilot `plans/`（见 [排障](../troubleshooting.md)）。
+- Factory Droid 已 **Shipped**（**`stop_hook_active` 下 multi-block 活链已证**；无 raise）— 命令用 **`$FACTORY_PROJECT_DIR`**；查 **`/hooks`** 后 reload/新开会话刷新快照；**免活链 → degraded≤1**；doctor 会 WARN raise/hard-cap + Factory+Claude 双装（见 [排障](../troubleshooting.md)）。
 - 更多故障模式见 [排障](../troubleshooting.md)。
 
 ## 自审范围（`review.scope`）
