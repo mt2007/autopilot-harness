@@ -1,0 +1,55 @@
+{
+  "name": "@autopilot-harness/port-hermes-agent",
+  "version": "0.8.0",
+  "description": "Autopilot harness host port for Hermes Agent shell hooks (pre_llm_call context inject; post_tool_call dirty-arm; pre_verify decision:block+reason; soft min Hermes ≥0.21.3)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mt2007/autopilot-harness.git",
+    "directory": "packages/ports/hermes-agent"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness#readme",
+  "bugs": {
+    "url": "https://github.com/mt2007/autopilot-harness/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@autopilot-harness/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "mt2007 (https://github.com/mt2007)",
+  "keywords": [
+    "autopilot",
+    "harness",
+    "agent",
+    "ai",
+    "vibecoding",
+    "hermes",
+    "hermes-agent",
+    "checklist",
+    "code-review"
+  ]
+}
