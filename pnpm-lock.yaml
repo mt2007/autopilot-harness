@@ -116,6 +116,16 @@ importers:
         specifier: ^5.8.2
         version: 5.9.3
 
+  packages/ports/factory-droid:
+    dependencies:
+      '@autopilot-harness/core':
+        specifier: workspace:*
+        version: link:../../core
+    devDependencies:
+      typescript:
+        specifier: ^5.8.2
+        version: 5.9.3
+
   packages/ports/gemini-cli:
     dependencies:
       '@autopilot-harness/core':
