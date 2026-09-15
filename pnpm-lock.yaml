@@ -38,6 +38,9 @@ importers:
       '@autopilot-harness/port-cursor':
         specifier: workspace:*
         version: link:../ports/cursor
+      '@autopilot-harness/port-factory-droid':
+        specifier: workspace:*
+        version: link:../ports/factory-droid
       '@autopilot-harness/port-gemini-cli':
         specifier: workspace:*
         version: link:../ports/gemini-cli

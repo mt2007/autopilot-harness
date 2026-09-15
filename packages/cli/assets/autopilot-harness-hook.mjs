@@ -14,12 +14,14 @@
  *   Copilot CLI: userPromptSubmitted | userPromptTransformed | postToolUse | agentStop
  *   Grok Build: UserPromptSubmit | PostToolUse | Stop (Codex-shaped; no StopFailure)
  *   Gemini CLI: BeforeAgent | AfterTool | AfterAgent (deny continue; no StopFailure)
+ *   Factory Droid: UserPromptSubmit | PostToolUse | Stop (Claude-shaped; empty allow stdout)
  *
- * Dispatch is explicit seven-way via --platform
- * (cursor | claude-code | codex | kimi-code | copilot-cli | grok-build | gemini-cli). Shared
- * PascalCase event names must NOT imply Claude when platform is codex,
- * kimi-code, copilot-cli, grok-build, or gemini-cli. Copilot camelCase and
- * Gemini BeforeAgent/AfterTool/AfterAgent events are routed by stamp + event only.
+ * Dispatch is explicit eight-way via --platform
+ * (cursor | claude-code | codex | kimi-code | copilot-cli | grok-build | gemini-cli |
+ * factory-droid). Shared PascalCase event names must NOT imply Claude when
+ * platform is codex, kimi-code, copilot-cli, grok-build, gemini-cli, or
+ * factory-droid. Copilot camelCase and Gemini BeforeAgent/AfterTool/AfterAgent
+ * events are routed by stamp + event only.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -47,10 +49,11 @@ const CLAUDE_EVENTS = new Set([
   "Stop",
   "StopFailure",
 ]);
-/** Codex/Kimi/Grok share submit/edit/stop names with Claude; routed by --platform only. */
+/** Codex/Kimi/Grok/Factory share submit/edit/stop names with Claude; routed by --platform only. */
 const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const KIMI_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const GROK_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
+const FACTORY_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 /** Gemini CLI host event names (distinct from Claude PascalCase). */
 const GEMINI_EVENTS = new Set(["BeforeAgent", "AfterTool", "AfterAgent"]);
 /** Copilot CLI camelCase events (Transform is Copilot-only). */
@@ -68,6 +71,7 @@ const KNOWN_PLATFORMS = new Set([
   "copilot-cli",
   "grok-build",
   "gemini-cli",
+  "factory-droid",
 ]);
 
 function parseArgs(argv) {
@@ -77,6 +81,7 @@ function parseArgs(argv) {
     ...CODEX_EVENTS,
     ...KIMI_EVENTS,
     ...GROK_EVENTS,
+    ...FACTORY_EVENTS,
     ...GEMINI_EVENTS,
     ...COPILOT_EVENTS,
   ]);
@@ -107,8 +112,8 @@ function isClaudeEvent(event) {
  * Resolve host id: stamped --platform wins; legacy installs fall back to
  * event-name heuristics (Claude-shaped events → claude-code, else cursor).
  * Never map PascalCase events to Claude when --platform is codex, kimi-code,
- * copilot-cli, grok-build, or gemini-cli. Copilot camelCase / Gemini
- * BeforeAgent/AfterTool/AfterAgent events without a stamp still need a host.
+ * copilot-cli, grok-build, gemini-cli, or factory-droid. Copilot camelCase /
+ * Gemini BeforeAgent/AfterTool/AfterAgent events without a stamp still need a host.
  */
 function resolveHostId(declaredPlatform, event) {
   if (
@@ -118,7 +123,8 @@ function resolveHostId(declaredPlatform, event) {
     declaredPlatform === "kimi-code" ||
     declaredPlatform === "copilot-cli" ||
     declaredPlatform === "grok-build" ||
-    declaredPlatform === "gemini-cli"
+    declaredPlatform === "gemini-cli" ||
+    declaredPlatform === "factory-droid"
   ) {
     return declaredPlatform;
   }
@@ -240,6 +246,9 @@ async function loadHostPortPackage(hostId) {
   if (hostId === "gemini-cli") {
     return loadPortPackage("@autopilot-harness/port-gemini-cli");
   }
+  if (hostId === "factory-droid") {
+    return loadPortPackage("@autopilot-harness/port-factory-droid");
+  }
   return loadPortPackage("@autopilot-harness/port-cursor");
 }
 
@@ -248,6 +257,7 @@ async function loadHostPortPackage(hostId) {
  * - Cursor submit → { continue: true }
  * - Claude/Codex UserPromptSubmit → {} (allow; no decision:block)
  * - Kimi Code → bare exit 0 (no stdout; avoid appending `{}` to context)
+ * - Factory Droid → zero-byte stdout (never stringify `{}`)
  * - other events → {}
  */
 function failOpen(event, platform = bootPlatform) {
@@ -257,6 +267,10 @@ function failOpen(event, platform = bootPlatform) {
     if (replied) return;
     process.exitCode = 0;
     replied = true;
+    return;
+  }
+  if (platform === "factory-droid") {
+    writeReply("");
     return;
   }
   if (event === "beforeSubmitPrompt") {
@@ -273,6 +287,94 @@ function writeReply(text) {
   process.stdout.write(text);
   // Set only after a successful write so failOpen can still retry on throw.
   replied = true;
+}
+
+/** Factory allow / Silence → zero-byte stdout (never JSON.stringify({})). */
+function isFactoryEmptyStdoutResult(result) {
+  if (result == null) return true;
+  if (typeof result !== "object" || Array.isArray(result)) return false;
+  for (const value of Object.values(result)) {
+    if (value !== undefined && value !== null) return false;
+  }
+  return true;
+}
+
+/** Bound + scrub NUL before Factory stdout (host may append to model context). */
+const FACTORY_MAX_STDIO_CHARS = 8_192;
+
+function clipFactoryStdio(text) {
+  if (typeof text !== "string" || text.length === 0) return "";
+  const truncated = text.length > FACTORY_MAX_STDIO_CHARS;
+  const bounded = truncated ? text.slice(0, FACTORY_MAX_STDIO_CHARS) : text;
+  const cleaned = bounded.includes("\0")
+    ? bounded.replaceAll("\0", "")
+    : bounded;
+  if (cleaned.length === 0) return "";
+  if (!truncated) return cleaned;
+  return `${cleaned.slice(0, FACTORY_MAX_STDIO_CHARS - 1)}…`;
+}
+
+/**
+ * Factory stdout: empty allow/Silence; hard-stop continue:false (+stopReason);
+ * UPS/Stop block+reason; UPS inject. Control-plane outcomes must beat inject
+ * so a Stop (or malformed) result never emits UserPromptSubmit-shaped stdout.
+ * Strip foreign host fields (Layer C / Claude extras) — never bare `{}`.
+ */
+function writeFactoryReply(result) {
+  if (isFactoryEmptyStdoutResult(result)) {
+    writeReply("");
+    return;
+  }
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    writeReply("");
+    return;
+  }
+  // Hard-stop (deliver-once) — must win over block and over inject.
+  if (result.continue === false) {
+    const stopReason = clipFactoryStdio(
+      typeof result.stopReason === "string" ? result.stopReason.trim() : "",
+    );
+    writeReply(
+      JSON.stringify(
+        stopReason.length > 0
+          ? { continue: false, stopReason }
+          : { continue: false },
+      ),
+    );
+    return;
+  }
+  // Continue / UPS gate
+  if (result.decision === "block") {
+    const reason = clipFactoryStdio(
+      typeof result.reason === "string" ? result.reason.trim() : "",
+    );
+    if (reason.length > 0) {
+      writeReply(JSON.stringify({ decision: "block", reason }));
+      return;
+    }
+  }
+  // UPS inject only when no control-plane decision is present.
+  const hso = result.hookSpecificOutput;
+  if (hso && typeof hso === "object" && !Array.isArray(hso)) {
+    const ctx = clipFactoryStdio(
+      typeof hso.additionalContext === "string"
+        ? hso.additionalContext.trim()
+        : "",
+    );
+    if (ctx.length > 0) {
+      writeReply(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "UserPromptSubmit",
+            additionalContext: ctx,
+          },
+        }),
+      );
+      return;
+    }
+  }
+  // Unknown non-empty shape → Silence (zero-byte), never stringify `{}`.
+  writeReply("");
 }
 
 /**
@@ -400,10 +502,12 @@ function codexStopHandler(port) {
     typeof port.handleCopilotStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
     typeof port.handleGeminiStop !== "function" &&
+    typeof port.handleFactoryStop !== "function" &&
     port.KIMI_PLATFORM !== "kimi-code" &&
     port.COPILOT_PLATFORM !== "copilot-cli" &&
     port.GROK_PLATFORM !== "grok-build" &&
-    port.GEMINI_PLATFORM !== "gemini-cli"
+    port.GEMINI_PLATFORM !== "gemini-cli" &&
+    port.FACTORY_PLATFORM !== "factory-droid"
   ) {
     return port.handleStop;
   }
@@ -428,8 +532,10 @@ function kimiStopHandler(port) {
     typeof port.handleCopilotStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
     typeof port.handleGeminiStop !== "function" &&
+    typeof port.handleFactoryStop !== "function" &&
     port.GROK_PLATFORM !== "grok-build" &&
-    port.GEMINI_PLATFORM !== "gemini-cli"
+    port.GEMINI_PLATFORM !== "gemini-cli" &&
+    port.FACTORY_PLATFORM !== "factory-droid"
   ) {
     return port.handleStop;
   }
@@ -454,8 +560,10 @@ function copilotStopHandler(port) {
     typeof port.handleKimiStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
     typeof port.handleGeminiStop !== "function" &&
+    typeof port.handleFactoryStop !== "function" &&
     port.GROK_PLATFORM !== "grok-build" &&
-    port.GEMINI_PLATFORM !== "gemini-cli"
+    port.GEMINI_PLATFORM !== "gemini-cli" &&
+    port.FACTORY_PLATFORM !== "factory-droid"
   ) {
     return port.handleStop;
   }
@@ -480,9 +588,11 @@ function grokStopHandler(port) {
     typeof port.handleKimiStop !== "function" &&
     typeof port.handleCopilotStop !== "function" &&
     typeof port.handleGeminiStop !== "function" &&
+    typeof port.handleFactoryStop !== "function" &&
     port.KIMI_PLATFORM !== "kimi-code" &&
     port.COPILOT_PLATFORM !== "copilot-cli" &&
-    port.GEMINI_PLATFORM !== "gemini-cli"
+    port.GEMINI_PLATFORM !== "gemini-cli" &&
+    port.FACTORY_PLATFORM !== "factory-droid"
   ) {
     return port.handleStop;
   }
@@ -507,9 +617,40 @@ function geminiStopHandler(port) {
     typeof port.handleKimiStop !== "function" &&
     typeof port.handleCopilotStop !== "function" &&
     typeof port.handleGrokStop !== "function" &&
+    typeof port.handleFactoryStop !== "function" &&
     port.KIMI_PLATFORM !== "kimi-code" &&
     port.COPILOT_PLATFORM !== "copilot-cli" &&
-    port.GROK_PLATFORM !== "grok-build"
+    port.GROK_PLATFORM !== "grok-build" &&
+    port.FACTORY_PLATFORM !== "factory-droid"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+/**
+ * Factory Droid Stop: prefer aliased vendor export; package-only uses handleStop when
+ * FACTORY_PLATFORM is stamped (never Claude StopFailure / other host stamps).
+ */
+function factoryStopHandler(port) {
+  if (typeof port.handleFactoryStop === "function") {
+    return port.handleFactoryStop;
+  }
+  if (
+    port.FACTORY_PLATFORM === "factory-droid" &&
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure !== "function" &&
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleCodexStop !== "function" &&
+    typeof port.handleKimiStop !== "function" &&
+    typeof port.handleCopilotStop !== "function" &&
+    typeof port.handleGrokStop !== "function" &&
+    typeof port.handleGeminiStop !== "function" &&
+    port.KIMI_PLATFORM !== "kimi-code" &&
+    port.COPILOT_PLATFORM !== "copilot-cli" &&
+    port.GROK_PLATFORM !== "grok-build" &&
+    port.GEMINI_PLATFORM !== "gemini-cli"
   ) {
     return port.handleStop;
   }
@@ -548,9 +689,11 @@ function hostPortReady(hostId, port) {
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
       typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GEMINI_PLATFORM !== "gemini-cli"
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     );
   }
   if (hostId === "gemini-cli") {
@@ -564,9 +707,29 @@ function hostPortReady(hostId, port) {
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
       typeof port.handleGrokStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GROK_PLATFORM !== "grok-build"
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
+    );
+  }
+  if (hostId === "factory-droid") {
+    if (typeof port.handleFactoryUserPromptSubmit === "function") return true;
+    return (
+      port.FACTORY_PLATFORM === "factory-droid" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
     );
   }
   if (hostId === "codex") {
@@ -578,7 +741,8 @@ function hostPortReady(hostId, port) {
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
       port.GROK_PLATFORM !== "grok-build" &&
-      port.GEMINI_PLATFORM !== "gemini-cli"
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     );
   }
   // Claude: vendor alias or package-only (StopFailure fingerprint).
@@ -614,7 +778,9 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleGrokStop !== "function" &&
-      typeof port.handleGeminiStop !== "function"
+      typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -633,9 +799,11 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
       typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GEMINI_PLATFORM !== "gemini-cli"
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -654,9 +822,34 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
       typeof port.handleGrokStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GROK_PLATFORM !== "grok-build"
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
+    ) {
+      return port.handleUserPromptSubmit;
+    }
+    return undefined;
+  }
+  if (hostId === "factory-droid") {
+    if (typeof port.handleFactoryUserPromptSubmit === "function") {
+      return port.handleFactoryUserPromptSubmit;
+    }
+    if (
+      port.FACTORY_PLATFORM === "factory-droid" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -674,7 +867,8 @@ function resolveUserPromptSubmit(hostId, port) {
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
       port.GROK_PLATFORM !== "grok-build" &&
-      port.GEMINI_PLATFORM !== "gemini-cli"
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -711,7 +905,9 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handleCodexStop !== "function" &&
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleGrokStop !== "function" &&
-      typeof port.handleGeminiStop !== "function"
+      typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     ) {
       return port.handlePostToolUse;
     }
@@ -730,9 +926,11 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
       typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GEMINI_PLATFORM !== "gemini-cli"
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     ) {
       return port.handlePostToolUse;
     }
@@ -751,9 +949,34 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handleKimiStop !== "function" &&
       typeof port.handleCopilotStop !== "function" &&
       typeof port.handleGrokStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
-      port.GROK_PLATFORM !== "grok-build"
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
+    ) {
+      return port.handlePostToolUse;
+    }
+    return undefined;
+  }
+  if (hostId === "factory-droid") {
+    if (typeof port.handleFactoryPostToolUse === "function") {
+      return port.handleFactoryPostToolUse;
+    }
+    if (
+      port.FACTORY_PLATFORM === "factory-droid" &&
+      typeof port.handlePostToolUse === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli"
     ) {
       return port.handlePostToolUse;
     }
@@ -770,7 +993,8 @@ function resolvePostToolUse(hostId, port) {
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
       port.GROK_PLATFORM !== "grok-build" &&
-      port.GEMINI_PLATFORM !== "gemini-cli"
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid"
     ) {
       return port.handlePostToolUse;
     }
@@ -864,11 +1088,12 @@ function isCursorShapedStopPayload(payload) {
 
 /**
  * Pick Stop / AfterAgent host after Cursor-shaped check.
- * --platform codex / kimi-code / copilot-cli / grok-build / gemini-cli must win
- * over PascalStop shape (shared stop_hook_active with Claude). Preserve dual-host
- * cross-fire: Cursor stamp + Claude/Codex-shaped payload still routes to Claude
- * (historical Layer C), unless stamp is explicitly codex, kimi-code, copilot-cli,
- * grok-build, or gemini-cli.
+ * --platform codex / kimi-code / copilot-cli / grok-build / gemini-cli /
+ * factory-droid must win over PascalStop shape (shared stop_hook_active with
+ * Claude). Preserve dual-host cross-fire: Cursor stamp + Claude/Codex-shaped
+ * payload still routes to Claude (historical Layer C), unless stamp is
+ * explicitly codex, kimi-code, copilot-cli, grok-build, gemini-cli, or
+ * factory-droid.
  *
  * Unstamped `agentStop` (argv or hookEventName) must not fall through to Claude
  * just because the payload also carries stop_hook_active — but a non-Copilot
@@ -882,6 +1107,7 @@ function resolveStopHostId(declaredPlatform, payload, event) {
   if (declaredPlatform === "copilot-cli") return "copilot-cli";
   if (declaredPlatform === "grok-build") return "grok-build";
   if (declaredPlatform === "gemini-cli") return "gemini-cli";
+  if (declaredPlatform === "factory-droid") return "factory-droid";
   if (declaredPlatform === "claude-code") return "claude-code";
   const hookName = String(
     payload?.hook_event_name ?? payload?.hookEventName ?? "",
@@ -901,8 +1127,8 @@ function resolveStopHostId(declaredPlatform, payload, event) {
     return "gemini-cli";
   }
   // Shared Pascal Stop / stop_hook_active shape → Claude unless stamp was
-  // codex / kimi-code / copilot-cli / grok-build / gemini-cli / unstamped
-  // agentStop / AfterAgent above.
+  // codex / kimi-code / copilot-cli / grok-build / gemini-cli / factory-droid /
+  // unstamped agentStop / AfterAgent above.
   if (isPascalStopShapedPayload(payload)) return "claude-code";
   if (declaredPlatform === "cursor") return "cursor";
   return "claude-code";
@@ -1008,6 +1234,29 @@ async function main() {
       return;
     }
 
+    // Cursor-only events under a non-Cursor stamp (missing/illegal --event
+    // remaps to beforeSubmitPrompt): abort before FSM. Otherwise vendor would
+    // run Cursor handlers and stringify `{}` / continue JSON — fatal for
+    // Factory (and Kimi) allow paths that must stay zero-byte / non-JSON.
+    if (CURSOR_EVENTS.has(event) && hostId !== "cursor") {
+      failOpen(event, hostId);
+      return;
+    }
+
+    // Copilot command/edit camelCase under a non-Copilot stamp: abort before
+    // state.db. Do **not** early-abort `agentStop` — that event shares the
+    // Stop|agentStop branch and resolveStopHostId (stamp may still be Cursor /
+    // Claude / Factory / etc.).
+    if (
+      hostId !== "copilot-cli" &&
+      (event === "userPromptSubmitted" ||
+        event === "userPromptTransformed" ||
+        event === "postToolUse")
+    ) {
+      failOpen(event, hostId);
+      return;
+    }
+
     const vendor = await loadVendorRuntime();
     const port = vendor ? vendor : await loadHostPortPackage(hostId);
     const coreMod = vendor ?? (await loadCoreFromNodeModules());
@@ -1064,6 +1313,11 @@ async function main() {
           writeGeminiBeforeAgentReply(result);
           return;
         }
+        // Factory allow / Silence → zero-byte (never stringify {}).
+        if (hostId === "factory-droid") {
+          writeFactoryReply(result);
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
@@ -1115,6 +1369,10 @@ async function main() {
         }
         if (hostId === "kimi-code") {
           writeKimiReply({ exitCode: 0 });
+          return;
+        }
+        if (hostId === "factory-droid") {
+          writeReply("");
           return;
         }
         writeReply("{}");
@@ -1257,6 +1515,14 @@ async function main() {
             );
             if (geminiPort) stopFn = geminiStopHandler(geminiPort);
           }
+        } else if (stopHost === "factory-droid") {
+          stopFn = factoryStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const factoryPort = await loadPortPackage(
+              "@autopilot-harness/port-factory-droid",
+            );
+            if (factoryPort) stopFn = factoryStopHandler(factoryPort);
+          }
         } else {
           stopFn = claudeStopHandler(port);
           if (typeof stopFn !== "function") {
@@ -1339,17 +1605,23 @@ async function main() {
           writeGeminiAfterAgentReply(result);
           return;
         }
+        // Factory Stop: empty allow / Silence; JSON for block or continue:false.
+        if (stopHost === "factory-droid" || declaredPlatform === "factory-droid") {
+          writeFactoryReply(result);
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
       if (event === "StopFailure") {
-        // Codex/Kimi/Copilot/Grok/Gemini have no StopFailure — fail-open if somehow invoked.
+        // Codex/Kimi/Copilot/Grok/Gemini/Factory have no StopFailure — fail-open.
         if (
           hostId === "codex" ||
           hostId === "kimi-code" ||
           hostId === "copilot-cli" ||
           hostId === "grok-build" ||
-          hostId === "gemini-cli"
+          hostId === "gemini-cli" ||
+          hostId === "factory-droid"
         ) {
           failOpen(event, hostId);
           return;

@@ -1297,6 +1297,62 @@ describe("hook vendor runtime", () => {
     expect(JSON.parse(stopFail.stdout.trim() || "{}")).toEqual({});
   });
 
+  it("factory-droid stamp + Cursor-only event fail-opens zero-byte before FSM", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const before = spawnSync(
+      process.execPath,
+      [hook, "--platform", "factory-droid", "--event", "beforeSubmitPrompt"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: "hook-factory-cursor-event-0001",
+          prompt: "hello",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(before.status).toBe(0);
+    expect(before.stdout).toBe("");
+    expect(before.stderr.trim()).toBe("");
+    // Early abort must not open state.db (Cursor handler would).
+    expect(fs.existsSync(path.join(root, ".autopilot", "state.db"))).toBe(
+      false,
+    );
+
+    const noEvent = spawnSync(
+      process.execPath,
+      [hook, "--platform", "factory-droid"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: "hook-factory-missing-event-0001",
+          prompt: "hello",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(noEvent.status).toBe(0);
+    expect(noEvent.stdout).toBe("");
+  });
+
   it("unstamped agentStop + stopHookActive routes Copilot (not Claude Layer C)", () => {
     root = tmpProject();
     expect(

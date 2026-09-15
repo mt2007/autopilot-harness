@@ -24,6 +24,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/copilot-cli",
   "packages/ports/grok-build",
   "packages/ports/gemini-cli",
+  "packages/ports/factory-droid",
 ] as const;
 
 function workspaceHarnessDeps(

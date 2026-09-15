@@ -9042,6 +9042,515 @@ function handleStopInner4(engine, payload, opts) {
   };
 }
 
+// ../ports/factory-droid/src/index.ts
+var FACTORY_PLATFORM = "factory-droid";
+var FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE = true;
+var MAX_NEED_PICK_SLUGS6 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS6 = 2e3;
+var MAX_HOOK_STDIO_CHARS5 = 8192;
+var MAX_TOOL_ARGS_JSON_CHARS4 = 1048576;
+var MAX_APPLY_PATCH_COMMAND_CHARS3 = 1048576;
+var MAX_APPLY_PATCH_PATHS3 = 256;
+function isFactoryEmptyStdout(result) {
+  if (result == null || typeof result !== "object" || Array.isArray(result)) {
+    return false;
+  }
+  for (const value of Object.values(result)) {
+    if (value !== void 0 && value !== null) return false;
+  }
+  return true;
+}
+function isFactoryStopHookActive(payload) {
+  return payload.stop_hook_active === true || payload.stopHookActive === true;
+}
+function shouldYieldFactoryStopWhenActive(payload, allowMultiBlock = FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE) {
+  if (allowMultiBlock) return false;
+  return isFactoryStopHookActive(payload);
+}
+function sid7(p) {
+  for (const v of [
+    p.session_id,
+    p.sessionId,
+    p.conversation_id,
+    p.conversationId
+  ]) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t) return t;
+    }
+  }
+  return "";
+}
+function clipText4(text, max = MAX_HOOK_STDIO_CHARS5) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function blockReason6(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function loopCountFromStopHookActive7(payload) {
+  return isFactoryStopHookActive(payload) ? 1 : 0;
+}
+function collectFactoryStopErrorText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const parts = [];
+  try {
+    const push = (value) => {
+      if (typeof value === "string" && value.trim()) {
+        parts.push(value);
+        return;
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const o = value;
+        for (const key of ["message", "error", "name", "stack", "detail"]) {
+          const nested = o[key];
+          if (typeof nested === "string" && nested.trim()) parts.push(nested);
+        }
+      }
+    };
+    push(payload.error);
+    push(payload.message);
+    push(payload.reason);
+  } catch {
+    return "";
+  }
+  return clipText4(parts.join("\n"));
+}
+function normalizeFactoryStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const statusRaw = String(payload.status ?? "").toLowerCase().trim();
+  const errText = collectFactoryStopErrorText(payload);
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (statusRaw === "error" || statusRaw === "failed") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isUserAbortText(errText)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "completed") return "completed";
+  if (!statusRaw && isUserAbortText(errText)) return "aborted";
+  return "completed";
+}
+function isFactoryStopCompletionReason(payload) {
+  const raw = payload?.reason;
+  if (raw == null) return true;
+  if (typeof raw !== "string") return false;
+  const r = raw.trim().toLowerCase();
+  if (!r) return true;
+  if (r === "end_turn" || r === "endturn" || r === "completed") return true;
+  return false;
+}
+function buildNeedPickContext4(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS6);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS6) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS6 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function injectNeedPickContext2(userMessage, candidates) {
+  const ctx = buildNeedPickContext4(userMessage, candidates);
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: ctx
+    }
+  };
+}
+function blockSubmit3(userMessage, fallback) {
+  return {
+    decision: "block",
+    reason: clipText4(
+      blockReason6(
+        typeof userMessage === "string" ? userMessage : void 0,
+        fallback
+      ),
+      MAX_NEED_PICK_CONTEXT_CHARS6 + 256
+    )
+  };
+}
+function pathsFromApplyPatchCommand3(command) {
+  if (typeof command !== "string" || !command.trim()) return [];
+  const text = command.length > MAX_APPLY_PATCH_COMMAND_CHARS3 ? command.slice(0, MAX_APPLY_PATCH_COMMAND_CHARS3) : command;
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (raw) => {
+    if (found.length >= MAX_APPLY_PATCH_PATHS3) return;
+    let p = raw.trim();
+    if (!p || p === "/dev/null") return;
+    if (/[\0\r\n]/.test(p)) return;
+    p = p.replace(/^[ab]\//, "");
+    if (!p || seen.has(p)) return;
+    seen.add(p);
+    found.push(p);
+  };
+  for (const line of text.split(/\r?\n/)) {
+    if (found.length >= MAX_APPLY_PATCH_PATHS3) break;
+    const rename = line.match(
+      /^\*\*\*\s+Rename\s+File:\s*(.+?)\s*->\s*(.+?)\s*$/i
+    );
+    if (rename?.[1] && rename[2]) {
+      push(rename[1]);
+      push(rename[2]);
+      continue;
+    }
+    const header = line.match(
+      /^\*\*\*\s+(?:Add|Update|Delete)\s+File:\s*(.+?)\s*$/i
+    );
+    if (header?.[1]) {
+      push(header[1]);
+      continue;
+    }
+    const plus = line.match(/^\+\+\+\s+(?:[ab]\/)?(.+?)\s*$/);
+    if (plus?.[1] && plus[1] !== "/dev/null") {
+      push(plus[1]);
+    }
+  }
+  return found;
+}
+function toolInputObject6(payload) {
+  const input = payload.tool_input ?? payload.toolInput;
+  if (!input) return null;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    return input;
+  }
+  if (typeof input === "string") {
+    if (input.length > MAX_TOOL_ARGS_JSON_CHARS4) return null;
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function filePathsFromFactoryEdit(payload) {
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  const rawInput = payload.tool_input ?? payload.toolInput;
+  if (toolName === "ApplyPatch" || toolName === "apply_patch") {
+    if (typeof rawInput === "string") {
+      const fromBody = pathsFromApplyPatchCommand3(rawInput);
+      if (fromBody.length > 0) return fromBody;
+    }
+    const input2 = toolInputObject6(payload);
+    if (input2) {
+      for (const key of ["command", "patch", "input"]) {
+        const v = input2[key];
+        if (typeof v === "string") {
+          const fromCmd = pathsFromApplyPatchCommand3(v);
+          if (fromCmd.length > 0) return fromCmd;
+        }
+      }
+    }
+  }
+  const input = toolInputObject6(payload);
+  if (!input) return [];
+  const candidates = [
+    input.file_path,
+    input.filePath,
+    input.path,
+    input.target_file,
+    input.targetFile
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim() && !/[\0\r\n]/.test(c)) {
+      return [c.trim()];
+    }
+  }
+  return [];
+}
+function isFactoryEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "Create" || n === "Edit" || n === "ApplyPatch" || n === "apply_patch";
+}
+function stampFactoryPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === FACTORY_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: FACTORY_PLATFORM
+  });
+}
+function handleUserPromptSubmit7(store, payload, projectRoot, portConfig) {
+  try {
+    return handleUserPromptSubmitInner5(
+      store,
+      payload,
+      projectRoot,
+      portConfig
+    );
+  } catch {
+    return {};
+  }
+}
+function handleUserPromptSubmitInner5(store, payload, projectRoot, portConfig) {
+  const conversationId = sid7(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: FACTORY_PLATFORM
+      });
+      if (!result.ok) {
+        stampFactoryPlatform(store, conversationId, projectRoot);
+        return blockSubmit3(result.userMessage, gateFallback);
+      }
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        stampFactoryPlatform(store, conversationId, projectRoot);
+        return blockSubmit3(result.userMessage, gateFallback);
+      }
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: FACTORY_PLATFORM
+      });
+      if (!result.ok) {
+        stampFactoryPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext2(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        return blockSubmit3(result.userMessage, gateFallback);
+      }
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: FACTORY_PLATFORM
+      });
+      if (!result.ok) {
+        stampFactoryPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext2(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        return blockSubmit3(result.userMessage, gateFallback);
+      }
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: FACTORY_PLATFORM }
+      );
+      if (!result.ok) {
+        stampFactoryPlatform(store, conversationId, projectRoot);
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext2(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        return blockSubmit3(result.userMessage, gateFallback);
+      }
+      stampFactoryPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampFactoryPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited6(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      FACTORY_PLATFORM
+    );
+  }
+  stampFactoryPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handlePostToolUse7(store, payload, projectRoot) {
+  try {
+    handlePostToolUseInner5(store, payload, projectRoot);
+  } catch {
+  }
+}
+function handlePostToolUseInner5(store, payload, projectRoot) {
+  const conversationId = sid7(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isFactoryEditTool(toolName)) return;
+  const filePaths = filePathsFromFactoryEdit(payload);
+  if (filePaths.length === 0) {
+    stampFactoryPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited6(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampFactoryPlatform(store, conversationId, projectRoot);
+  }
+}
+function handleStop8(engine, payload, opts) {
+  try {
+    return handleStopInner5(engine, payload, opts);
+  } catch {
+    return {};
+  }
+}
+function handleStopInner5(engine, payload, opts) {
+  const conversationId = sid7(payload);
+  if (!conversationId) return {};
+  if (!isFactoryStopCompletionReason(payload)) {
+    return {};
+  }
+  if (shouldYieldFactoryStopWhenActive(payload)) {
+    return {};
+  }
+  const status = normalizeFactoryStopStatus(payload, opts);
+  const transcriptRaw = payload.transcript_path ?? payload.transcriptPath;
+  const transcriptTrimmed = typeof transcriptRaw === "string" ? transcriptRaw.trim() : "";
+  const transcriptPath = transcriptTrimmed && !/[\0\r\n]/.test(transcriptTrimmed) ? transcriptTrimmed : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromStopHookActive7(payload),
+    transcriptPath,
+    platform: FACTORY_PLATFORM
+  });
+  if (!action?.message) return {};
+  const reason = clipText4(
+    blockReason6(action.message, "Autopilot followup"),
+    MAX_HOOK_STDIO_CHARS5
+  );
+  if (!action.loop) {
+    return {
+      continue: false,
+      stopReason: reason
+    };
+  }
+  return {
+    decision: "block",
+    reason
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -9050,6 +9559,7 @@ function createConfiguredReviewEngine2(store, projectRoot) {
 }
 export {
   COPILOT_PLATFORM,
+  FACTORY_PLATFORM,
   GEMINI_PLATFORM,
   GROK_PLATFORM,
   KIMI_PLATFORM,
@@ -9068,6 +9578,9 @@ export {
   handleUserPromptSubmit4 as handleCopilotUserPromptSubmit,
   handleUserPromptTransformed as handleCopilotUserPromptTransformed,
   handleStop as handleCursorStop,
+  handlePostToolUse7 as handleFactoryPostToolUse,
+  handleStop8 as handleFactoryStop,
+  handleUserPromptSubmit7 as handleFactoryUserPromptSubmit,
   handlePostToolUse6 as handleGeminiPostToolUse,
   handleStop7 as handleGeminiStop,
   handleUserPromptSubmit6 as handleGeminiUserPromptSubmit,
@@ -9081,5 +9594,6 @@ export {
   handleStop,
   handleStopFailure,
   handleUserPromptSubmit,
+  isFactoryEmptyStdout,
   loadProjectReviewConfig
 };

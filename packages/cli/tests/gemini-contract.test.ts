@@ -131,11 +131,11 @@ describe("gemini contract matrix", () => {
     expect(handleGeminiStop).not.toBe(handleGrokStop);
   });
 
-  it("shipped hook asset keeps seven-way dispatch + GEMINI_EVENTS allowlist", () => {
+  it("shipped hook asset keeps eight-way dispatch + GEMINI_EVENTS allowlist", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,?\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(
       /GEMINI_EVENTS\s*=\s*new Set\(\[\s*"BeforeAgent"\s*,\s*"AfterTool"\s*,\s*"AfterAgent"\s*,?\s*\]\)/,
@@ -143,8 +143,28 @@ describe("gemini contract matrix", () => {
     expect(src).toMatch(/handleGeminiUserPromptSubmit/);
     expect(src).toMatch(/handleGeminiPostToolUse/);
     expect(src).toMatch(/handleGeminiStop/);
+    expect(src).toMatch(/handleFactoryUserPromptSubmit/);
+    expect(src).toMatch(/handleFactoryPostToolUse/);
+    expect(src).toMatch(/handleFactoryStop/);
+    expect(src).toMatch(/writeFactoryReply|isFactoryEmptyStdoutResult/);
+    expect(src).toMatch(/clipFactoryStdio|FACTORY_MAX_STDIO_CHARS/);
     expect(src).toMatch(/declaredPlatform === "gemini-cli"/);
     expect(src).toMatch(/hostId === "gemini-cli"/);
+    expect(src).toMatch(/declaredPlatform === "factory-droid"/);
+    expect(src).toMatch(/hostId === "factory-droid"/);
+    // Missing/illegal --event remaps to beforeSubmitPrompt; non-Cursor stamps
+    // must fail-open before Cursor handlers (Factory zero-byte allow).
+    expect(src).toMatch(
+      /CURSOR_EVENTS\.has\(event\)\s*&&\s*hostId\s*!==\s*"cursor"/,
+    );
+    // Copilot early abort must list command/edit events — not agentStop
+    // (shared Stop|agentStop + resolveStopHostId).
+    expect(src).toMatch(
+      /hostId\s*!==\s*"copilot-cli"[\s\S]*?userPromptSubmitted[\s\S]*?userPromptTransformed[\s\S]*?postToolUse/,
+    );
+    expect(src).not.toMatch(
+      /COPILOT_EVENTS\.has\(event\)\s*&&\s*hostId\s*!==\s*"copilot-cli"/,
+    );
   });
 
   it("I/O: ON success {}; needPick inject has hookEventName; deny fallback; Silence keys", () => {
