@@ -50,6 +50,12 @@ import {
   readKimiConfigToml,
   resolveKimiCodeHome,
 } from "./init/kimi-hooks-merge.js";
+import {
+  hermesConfigYamlPath,
+  parseHermesConfigYaml,
+  readHermesConfigYaml,
+  resolveHermesHome,
+} from "./init/hermes-hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import type { InitLocale } from "./init/types.js";
 import {
@@ -83,6 +89,7 @@ function preflightHostSettings(
   wantGrok: boolean,
   wantGemini: boolean,
   wantFactory: boolean,
+  wantHermes: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -383,6 +390,44 @@ function preflightHostSettings(
     // Missing config.toml is OK — force refresh will create it.
   }
 
+  if (wantHermes) {
+    const hermesHome = resolveHermesHome();
+    const hermesYamlPath = hermesConfigYamlPath(hermesHome);
+    try {
+      assertNotSymlink(hermesHome, "Hermes home/");
+      assertNotSymlink(hermesYamlPath, "config.yaml");
+      try {
+        const homeSt = fs.lstatSync(hermesHome);
+        if (!homeSt.isDirectory()) {
+          return {
+            ok: false,
+            error: "Hermes home/ exists and is not a directory",
+          };
+        }
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") throw err;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    const hermesPre = readHermesConfigYaml(hermesYamlPath);
+    if (!hermesPre.ok) {
+      return { ok: false, error: hermesPre.error };
+    }
+    // Missing/empty config.yaml is OK — force refresh will create it.
+    // Non-empty must parse (dry-run honesty; match Factory corrupt fail-closed).
+    if (hermesPre.value.trim() !== "") {
+      try {
+        parseHermesConfigYaml(hermesPre.value);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
+  }
+
   return { ok: true };
 }
 
@@ -658,6 +703,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantGrok = configWantsInstallableHost(platforms, "grok-build");
     const wantGemini = configWantsInstallableHost(platforms, "gemini-cli");
     const wantFactory = configWantsInstallableHost(platforms, "factory-droid");
+    const wantHermes = configWantsInstallableHost(platforms, "hermes-agent");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -696,6 +742,11 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         `merge ${FACTORY_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
       );
     }
+    if (wantHermes) {
+      actions.push(
+        "merge $HERMES_HOME/config.yaml Autopilot hooks (no skills)",
+      );
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -714,6 +765,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantGrok,
       wantGemini,
       wantFactory,
+      wantHermes,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

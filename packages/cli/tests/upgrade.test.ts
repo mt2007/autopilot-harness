@@ -8,6 +8,11 @@ import {
   mergeConfigYamlMissingKeys,
   mergeMissingKeys,
 } from "../src/init/config-merge.js";
+import {
+  formatHermesConfigYaml,
+  hermesConfigYamlPath,
+  parseHermesConfigYaml,
+} from "../src/init/hermes-hooks-merge.js";
 import { upgradeProject } from "../src/upgrade.js";
 import { StateStore, getLatestSchemaVersion } from "@autopilot-harness/core";
 
@@ -1578,5 +1583,138 @@ review:
     expect(stop?.timeout).toBe(120);
     expect(stop?.command).toMatch(/--platform factory-droid/);
     expect(stop?.command).toMatch(/\$FACTORY_PROJECT_DIR/);
+  });
+
+  it("dry-run lists Hermes config.yaml action when hermes-agent is enabled (no skills)", () => {
+    root = tmpProject();
+    const hermesHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-hermes-up-dry-"));
+    const prev = process.env.HERMES_HOME;
+    process.env.HERMES_HOME = hermesHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "hermes-agent",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const r = upgradeProject({ projectRoot: root, dryRun: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(
+        r.actions.some((a) => /HERMES_HOME\/config\.yaml/i.test(a)),
+      ).toBe(true);
+      expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+      expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_HOME;
+      else process.env.HERMES_HOME = prev;
+      fs.rmSync(hermesHome, { recursive: true, force: true });
+    }
+  });
+
+  it("Hermes-enabled upgrade fails closed on corrupt config.yaml", () => {
+    root = tmpProject();
+    const hermesHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-hermes-up-bad-"));
+    const prev = process.env.HERMES_HOME;
+    process.env.HERMES_HOME = hermesHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "hermes-agent",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      fs.writeFileSync(
+        hermesConfigYamlPath(hermesHome),
+        "hooks: [\nnot-yaml",
+        "utf8",
+      );
+      const dry = upgradeProject({ projectRoot: root, dryRun: true });
+      expect(dry.ok).toBe(false);
+      if (!dry.ok) {
+        expect(dry.error).toMatch(/Hermes config\.yaml|valid YAML|YAML/i);
+      }
+      const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error).toMatch(/Hermes config\.yaml|valid YAML|YAML/i);
+      }
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_HOME;
+      else process.env.HERMES_HOME = prev;
+      fs.rmSync(hermesHome, { recursive: true, force: true });
+    }
+  });
+
+  it("Hermes-enabled upgrade refreshes timeout and max_verify_nudges; keeps foreign", () => {
+    root = tmpProject();
+    const hermesHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-hermes-up-"));
+    const prev = process.env.HERMES_HOME;
+    process.env.HERMES_HOME = hermesHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "hermes-agent",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const yamlPath = hermesConfigYamlPath(hermesHome);
+      const before = parseHermesConfigYaml(fs.readFileSync(yamlPath, "utf8"));
+      const hooks = before.hooks as Record<
+        string,
+        Array<Record<string, unknown>>
+      >;
+      for (const event of Object.keys(hooks)) {
+        for (const h of hooks[event] ?? []) {
+          if (
+            typeof h.command === "string" &&
+            h.command.includes("autopilot-harness-hook")
+          ) {
+            h.timeout = 30;
+          }
+        }
+      }
+      hooks.pre_llm_call = [
+        ...(hooks.pre_llm_call ?? []),
+        { command: "echo foreign-hermes-keep", timeout: 5 },
+      ];
+      before.agent = { ...(before.agent as object), max_verify_nudges: 3 };
+      fs.writeFileSync(yamlPath, formatHermesConfigYaml(before), "utf8");
+
+      const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+      expect(r.ok).toBe(true);
+      const after = parseHermesConfigYaml(fs.readFileSync(yamlPath, "utf8"));
+      const pre = (
+        after.hooks as Record<
+          string,
+          Array<{ command?: string; timeout?: number }>
+        >
+      ).pre_llm_call;
+      expect(pre.some((e) => e.command === "echo foreign-hermes-keep")).toBe(
+        true,
+      );
+      const ap = pre.find(
+        (e) =>
+          typeof e.command === "string" &&
+          e.command.includes("autopilot-harness-hook"),
+      );
+      expect(ap?.timeout).toBe(120);
+      expect(
+        (after.agent as { max_verify_nudges?: number }).max_verify_nudges,
+      ).toBe(32);
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_HOME;
+      else process.env.HERMES_HOME = prev;
+      fs.rmSync(hermesHome, { recursive: true, force: true });
+    }
   });
 });

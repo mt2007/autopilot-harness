@@ -264,6 +264,7 @@ export {
   hermesConfigYamlContainsAutopilot,
   hermesHooksHavePlatformStamp,
   hermesAutopilotHasOmittedOrSmallTimeout,
+  hermesAutopilotHasExpectedPostMatcher,
   hasCompleteHermesAutopilotHooks,
   summarizeHermesAutopilotHooks,
   hermesHooksBlockIsVacant,

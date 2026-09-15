@@ -47,6 +47,22 @@ import {
   resolveKimiCodeHome,
 } from "./init/kimi-hooks-merge.js";
 import {
+  HERMES_HOOK_TIMEOUT_SEC,
+  HERMES_MAX_VERIFY_NUDGES,
+  hermesAutopilotHasExpectedPostMatcher,
+  hermesAutopilotHasOmittedOrSmallTimeout,
+  hermesConfigHasVerifyNudgeFloor,
+  hermesConfigYamlContainsAutopilot,
+  hermesConfigYamlPath,
+  hermesHooksHavePlatformStamp,
+  hasCompleteHermesAutopilotHooks,
+  parseHermesConfigYaml,
+  readHermesConfigYaml,
+  readHermesMaxVerifyNudges,
+  resolveHermesHome,
+  summarizeHermesAutopilotHooks,
+} from "./init/hermes-hooks-merge.js";
+import {
   COPILOT_HOOKS_REL_PATH,
   COPILOT_HOOK_TIMEOUT_SEC,
   copilotAutopilotHasSmallTimeout,
@@ -304,6 +320,11 @@ export type DoctorOptions = {
    * `$KIMI_CODE_HOME` / `~/.kimi-code` via {@link resolveKimiCodeHome}.
    */
   kimiCodeHome?: string;
+  /**
+   * Injectable Hermes Agent data home (absolute). Tests only — production uses
+   * `$HERMES_HOME` / `~/.hermes` via {@link resolveHermesHome}.
+   */
+  hermesHome?: string;
 };
 
 export type DoctorResult = {
@@ -1756,6 +1777,116 @@ export function runDoctor(
     }
   }
 
+  const wantHermes = configWantsInstallableHost(cfg.platforms, "hermes-agent");
+  if (wantHermes) {
+    const injectHermesHome = opts.hermesHome;
+    const hermesHome =
+      typeof injectHermesHome === "string" &&
+      injectHermesHome &&
+      path.isAbsolute(injectHermesHome)
+        ? injectHermesHome
+        : resolveHermesHome();
+    const hermesYamlPath = hermesConfigYamlPath(hermesHome);
+    // Always-on tips when this installable host is enabled (consent / multi-repo /
+    // edit-only / plugin order / host doctor CLI).
+    lines.push(
+      "WARN  Hermes Agent hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; shared across repos) — keep relative node .autopilot/bin/… commands",
+    );
+    lines.push(
+      "WARN  Hermes consent/non-TTY: approve hooks at TTY or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept)",
+    );
+    lines.push(
+      "WARN  Hermes pre_verify is edit-only — no product edit that turn → pending/RESUME (not a Stop continue)",
+    );
+    lines.push(
+      "WARN  Hermes plugins run before shell hooks (first continue wins) — disable conflicting plugins or expect routing care",
+    );
+    const hermesRead = readHermesConfigYaml(hermesYamlPath);
+    if (!hermesRead.ok) {
+      lines.push(
+        `FAIL  Hermes config.yaml unreadable (${safeDisplayToken(hermesRead.error, "error")})`,
+      );
+      ok = false;
+    } else {
+      try {
+        const file = parseHermesConfigYaml(hermesRead.value);
+        const { missingEvents, duplicates } =
+          summarizeHermesAutopilotHooks(file);
+        const complete = hasCompleteHermesAutopilotHooks(file);
+        const hasStamp = hermesHooksHavePlatformStamp(file);
+        const hasPostMatcher = hermesAutopilotHasExpectedPostMatcher(file);
+        const badTimeout = hermesAutopilotHasOmittedOrSmallTimeout(file);
+        const nudge = readHermesMaxVerifyNudges(file);
+        const nudgeFloor = hermesConfigHasVerifyNudgeFloor(file);
+        // FAIL 缺指纹 (missing events). Duplicates alone stay WARN — same as
+        // Factory/Gemini/Grok (hasComplete folds duplicates but must not FAIL).
+        if (missingEvents.length > 0) {
+          lines.push(
+            `FAIL  Hermes config.yaml missing/incomplete Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+          );
+          ok = false;
+        } else if (!hasStamp || !hasPostMatcher) {
+          // FAIL 残指纹 (stamp/matcher/leftover) — checklist; not a soft WARN.
+          lines.push(
+            "FAIL  Hermes config.yaml Autopilot fingerprint incomplete (stamp/matcher/leftover) — run init --force",
+          );
+          ok = false;
+        }
+        if (duplicates > 0) {
+          lines.push(
+            `WARN  Hermes config.yaml has ${duplicates} duplicate Autopilot entr(y/ies)`,
+          );
+        }
+        if (badTimeout) {
+          lines.push(
+            `WARN  Autopilot Hermes hook timeout below ${HERMES_HOOK_TIMEOUT_SEC} (or omitted; host default 60s) — run upgrade`,
+          );
+        }
+        if (!nudgeFloor) {
+          if (nudge === 3) {
+            lines.push(
+              `WARN  agent.max_verify_nudges is still ${nudge} (stock default) — Autopilot init raises to ≥${HERMES_MAX_VERIFY_NUDGES}; run upgrade`,
+            );
+          } else if (nudge == null) {
+            lines.push(
+              `WARN  agent.max_verify_nudges missing — Autopilot init raises to ≥${HERMES_MAX_VERIFY_NUDGES}; run upgrade`,
+            );
+          } else {
+            lines.push(
+              `WARN  agent.max_verify_nudges is ${nudge} (<${HERMES_MAX_VERIFY_NUDGES}) — run upgrade`,
+            );
+          }
+        }
+        if (missingEvents.length === 0) {
+          lines.push(
+            "WARN  After Hermes install/upgrade: reload Hermes and run hermes hooks doctor",
+          );
+        }
+        if (
+          complete &&
+          hasStamp &&
+          !badTimeout &&
+          nudgeFloor &&
+          duplicates === 0
+        ) {
+          lines.push("OK    Hermes config.yaml Autopilot entries");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (hermesConfigYamlContainsAutopilot(hermesRead.value)) {
+          lines.push(
+            `FAIL  Hermes config.yaml has Autopilot fingerprint but invalid shape (${safeDisplayToken(msg, "invalid")}) — run init --force`,
+          );
+        } else {
+          lines.push(
+            `FAIL  Hermes config.yaml invalid (${safeDisplayToken(msg, "invalid")})`,
+          );
+        }
+        ok = false;
+      }
+    }
+  }
+
   // Dual Claude + Copilot Autopilot fingerprints (config and/or on-disk residue).
   if (wantClaude && wantCopilot) {
     lines.push(
@@ -1985,6 +2116,66 @@ export function runDoctor(
     if (!wantFactory && !wantClaude && factoryLeftoverFp && claudeFpVsFactory) {
       lines.push(
         "WARN  Factory + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
+  // Dual Hermes + Claude Autopilot fingerprints (config and/or on-disk residue).
+  const hermesInjectHome = opts.hermesHome;
+  const hermesProbeHome =
+    typeof hermesInjectHome === "string" &&
+    hermesInjectHome &&
+    path.isAbsolute(hermesInjectHome)
+      ? hermesInjectHome
+      : resolveHermesHome();
+  const hermesLeftoverFp = wantHermes
+    ? false
+    : (() => {
+        try {
+          const read = readHermesConfigYaml(
+            hermesConfigYamlPath(hermesProbeHome),
+          );
+          return read.ok && hermesConfigYamlContainsAutopilot(read.value);
+        } catch {
+          return false;
+        }
+      })();
+  if (wantHermes && wantClaude) {
+    lines.push(
+      "WARN  Hermes Agent + Claude Code both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFpVsHermes = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFpVsHermes = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantHermes && claudeFpVsHermes) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Hermes Agent is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (wantClaude && hermesLeftoverFp) {
+      lines.push(
+        "WARN  Hermes Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Hermes or expect Stop routing care",
+      );
+    }
+    if (!wantHermes && !wantClaude && hermesLeftoverFp && claudeFpVsHermes) {
+      lines.push(
+        "WARN  Hermes + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
       );
     }
   }

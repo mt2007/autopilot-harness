@@ -518,6 +518,31 @@ export function summarizeHermesAutopilotHooks(file: HermesConfigFile): {
   return { missingEvents, duplicates };
 }
 
+/**
+ * True when every Autopilot `post_tool_call` entry carries
+ * {@link HERMES_POST_TOOL_MATCHER} (omit → host runs on all tools).
+ * Requires at least one event-aligned Autopilot post entry.
+ */
+export function hermesAutopilotHasExpectedPostMatcher(
+  file: HermesConfigFile,
+): boolean {
+  const hooks = file.hooks;
+  if (!hooks || !isPlainObject(hooks)) return false;
+  const posts = Array.isArray((hooks as Record<string, unknown>).post_tool_call)
+    ? ((hooks as Record<string, unknown>).post_tool_call as unknown[])
+    : [];
+  let seen = 0;
+  for (const raw of posts) {
+    if (!entryAutopilotForEvent(raw, "post_tool_call")) continue;
+    seen += 1;
+    if (!isPlainObject(raw)) return false;
+    if ((raw as HermesHookEntry).matcher !== HERMES_POST_TOOL_MATCHER) {
+      return false;
+    }
+  }
+  return seen > 0;
+}
+
 export function hasCompleteHermesAutopilotHooks(
   file: HermesConfigFile,
 ): boolean {
@@ -526,15 +551,7 @@ export function hasCompleteHermesAutopilotHooks(
   // Wrong-platform / desynced leftovers under event keys do not affect
   // summarize counts (they are not event-aligned) — still incomplete.
   if (!hermesHooksHavePlatformStamp(file)) return false;
-  // post_tool_call must carry the Autopilot matcher (omit → runs on all tools).
-  const hooks = file.hooks;
-  if (!hooks || !isPlainObject(hooks)) return false;
-  const posts = Array.isArray((hooks as Record<string, unknown>).post_tool_call)
-    ? ((hooks as Record<string, unknown>).post_tool_call as unknown[])
-    : [];
-  const postAp = posts.find((e) => entryAutopilotForEvent(e, "post_tool_call"));
-  if (!postAp || !isPlainObject(postAp)) return false;
-  return (postAp as HermesHookEntry).matcher === HERMES_POST_TOOL_MATCHER;
+  return hermesAutopilotHasExpectedPostMatcher(file);
 }
 
 /**

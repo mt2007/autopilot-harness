@@ -53,6 +53,13 @@ import {
   removeAutopilotKimiHooks,
   resolveKimiCodeHome,
 } from "./init/kimi-hooks-merge.js";
+import {
+  hermesConfigYamlContainsAutopilot,
+  hermesConfigYamlPath,
+  readHermesConfigYaml,
+  resolveHermesHome,
+  stripAutopilotHermesConfigYaml,
+} from "./init/hermes-hooks-merge.js";
 import { readConfigInstallHints } from "./init/config-merge.js";
 import { configWantsInstallableHost } from "./init/platforms.js";
 import {
@@ -620,6 +627,7 @@ function projectWantsInstallableHosts(configPath: string): {
   grok: boolean;
   gemini: boolean;
   factory: boolean;
+  hermes: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -636,6 +644,7 @@ function projectWantsInstallableHosts(configPath: string): {
       grok: configWantsInstallableHost(platforms, "grok-build"),
       gemini: configWantsInstallableHost(platforms, "gemini-cli"),
       factory: configWantsInstallableHost(platforms, "factory-droid"),
+      hermes: configWantsInstallableHost(platforms, "hermes-agent"),
     };
   } catch {
     return {
@@ -646,6 +655,7 @@ function projectWantsInstallableHosts(configPath: string): {
       grok: false,
       gemini: false,
       factory: false,
+      hermes: false,
     };
   }
 }
@@ -738,10 +748,11 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       grok: wantGrok,
       gemini: wantGemini,
       factory: wantFactory,
+      hermes: wantHermes,
     } = projectWantsInstallableHosts(configPath);
     // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
-    // soft-skip below. Kimi uses user-home config.toml (outside project) —
+    // soft-skip below. Kimi/Hermes use user-home config (outside project) —
     // strip separately.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
@@ -1353,6 +1364,78 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip Kimi Code config.toml (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Hermes Agent user-home config.yaml (fingerprint only; never cli-config.yaml) ---
+    const hermesHome = resolveHermesHome();
+    const hermesYamlPath = hermesConfigYamlPath(hermesHome);
+    const hermesPre = readHermesConfigYaml(hermesYamlPath);
+    if (!hermesPre.ok) {
+      if (wantHermes) {
+        return { ok: false, error: hermesPre.error };
+      }
+      actions.push(
+        `skip Hermes config.yaml (${formatUninstallSkipDetail(hermesPre.error)})`,
+      );
+    } else if (hermesConfigYamlContainsAutopilot(hermesPre.value)) {
+      const stripHermesHooks = (): void => {
+        assertNotSymlink(hermesHome, "Hermes home/");
+        if (!isRealDirectory(hermesHome)) {
+          throw new Error("Hermes home/ is not a real directory");
+        }
+        assertNotSymlink(hermesYamlPath, "config.yaml");
+        // Prove strip-shaped before dry-run claims work: regex fingerprint can
+        // match unparseable YAML, but stripAutopilotHermesConfigYaml needs parse.
+        const preview = stripAutopilotHermesConfigYaml(hermesPre.value);
+        if (hermesConfigYamlContainsAutopilot(preview)) {
+          throw new Error(
+            "Hermes config.yaml still has Autopilot fingerprint after strip",
+          );
+        }
+        if (dryRun) {
+          found = true;
+          actions.push("strip Autopilot entries from $HERMES_HOME/config.yaml");
+          return;
+        }
+        const hermesFresh = readHermesConfigYaml(hermesYamlPath);
+        if (!hermesFresh.ok) {
+          throw new Error(hermesFresh.error);
+        }
+        if (!hermesConfigYamlContainsAutopilot(hermesFresh.value)) {
+          found = true;
+          actions.push("strip Autopilot entries from $HERMES_HOME/config.yaml");
+          actions.push(
+            "Hermes config.yaml no longer has Autopilot entries (skipped write)",
+          );
+          return;
+        }
+        const stripped = stripAutopilotHermesConfigYaml(hermesFresh.value);
+        if (hermesConfigYamlContainsAutopilot(stripped)) {
+          throw new Error(
+            "Hermes config.yaml still has Autopilot fingerprint after strip",
+          );
+        }
+        assertNotSymlink(hermesHome, "Hermes home/");
+        if (!isRealDirectory(hermesHome)) {
+          throw new Error("Hermes home/ is not a real directory");
+        }
+        assertNotSymlink(hermesYamlPath, "config.yaml");
+        writeFileReplaceSync(hermesYamlPath, stripped);
+        found = true;
+        hooksStripped = true;
+        actions.push("strip Autopilot entries from $HERMES_HOME/config.yaml");
+        removed.push("Hermes config.yaml (Autopilot entries)");
+      };
+
+      try {
+        stripHermesHooks();
+      } catch (err) {
+        if (wantHermes) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip Hermes config.yaml (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }
