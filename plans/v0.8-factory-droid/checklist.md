@@ -17,4 +17,4 @@
 - [x] human-gate-confirm — 活链或 waive；「同意发 0.8.0」；0.7 pin 或允许叠发；**waive 时确认 degraded≤1 或签字 multi 风险**
 - [x] push-tag-release — push/tag/GH Release
 - [x] npm-publish-pnpm — 仅 `pnpm publish`
-- [ ] pin-upgrade-repo — pin→0.8.0
+- [x] pin-upgrade-repo — pin→0.8.0
