@@ -11,7 +11,7 @@
 - [x] smoke-repo — `pnpm test` + typecheck
 - [x] live-factory-smoke — **≥2** Stop-continue 且 **≥1× `stop_hook_active=true` 仍 block 成功**（否则改 degraded 叙事并留证）+ edit/dirty-arm + hook 确跑 + `$FACTORY_PROJECT_DIR` + hooks.json shape；**无 CLI waive → 发版默认 degraded≤1**（人闸另签 multi 风险才 full）；证据本 slug
 - [x] docs-factory-shipped — eight-way；Shipped(/degraded)+诚实 multi-block/**waive→degraded** 结论；`$FACTORY_PROJECT_DIR`；`/hooks`+快照；next=Hermes；docs-contract；勿改 `[0.7.0]` 历史；新开 `[0.8.0]`
-- [ ] changelog-bump-0-8-0 — 公开包 →0.8.0
+- [x] changelog-bump-0-8-0 — 公开包 →0.8.0
 - [ ] local-npm-pack-assert — pack；无 `workspace:*`
 - [ ] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 活链或 waive；「同意发 0.8.0」；0.7 pin 或允许叠发；**waive 时确认 degraded≤1 或签字 multi 风险**
