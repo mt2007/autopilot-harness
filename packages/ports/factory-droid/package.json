@@ -1,7 +1,7 @@
 {
   "name": "@autopilot-harness/port-factory-droid",
   "version": "0.7.0",
-  "description": "Autopilot harness host port for Factory Droid hooks (Stop block+reason; multi-block until live-proved otherwise degraded ≤1)",
+  "description": "Autopilot harness host port for Factory Droid hooks (Stop block+reason; multi-block under stop_hook_active live-proved; degraded ≤1 if multi-block disabled)",
   "license": "MIT",
   "repository": {
     "type": "git",

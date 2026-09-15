@@ -52,7 +52,7 @@ function writeChecklist(root: string, slug: string, body: string): string {
 describe("port-factory-droid adapters", () => {
   it("documents Stop-cap constants; matcher; helpers; aliases", () => {
     expect(FACTORY_DROID_STOP_CAP_RAISE_FOUND).toBe(false);
-    expect(FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN).toBe(false);
+    expect(FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN).toBe(true);
     expect(FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE).toBe(true);
     expect(FACTORY_DROID_DEGRADED_STOP_CONTINUE_CAP).toBe(1);
     expect(FACTORY_POST_TOOL_USE_MATCHER).toBe("Create|Edit|ApplyPatch");

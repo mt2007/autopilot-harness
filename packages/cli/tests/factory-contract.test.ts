@@ -212,7 +212,7 @@ describe("factory contract matrix", () => {
 
   it("I/O: ON empty allow; needPick inject has hookEventName; block fallback; Silence", () => {
     expect(FACTORY_DROID_STOP_CAP_RAISE_FOUND).toBe(false);
-    expect(FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN).toBe(false);
+    expect(FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN).toBe(true);
     expect(FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE).toBe(true);
     expect(FACTORY_DROID_DEGRADED_STOP_CONTINUE_CAP).toBe(1);
     expect(FACTORY_PLATFORM).toBe("factory-droid");

@@ -387,6 +387,9 @@ describe("eight-host Factory cross-fire matrix", () => {
       /Factory Droid Stop-continue: no documented raise\/hard-cap/i,
     );
     expect(joined).toMatch(
+      /multi-block under stop_hook_active live-proved/i,
+    );
+    expect(joined).not.toMatch(
       /Factory Droid multi-block under stop_hook_active is unproven/i,
     );
     expect(FACTORY_DROID_DEGRADED_STOP_CONTINUE_CAP).toBe(1);

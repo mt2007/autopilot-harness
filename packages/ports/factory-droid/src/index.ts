@@ -100,16 +100,16 @@ export const FACTORY_PLATFORM = "factory-droid";
 export const FACTORY_DROID_PLATFORM = FACTORY_PLATFORM;
 
 /**
- * Public research (2026-09): no documented numeric Stop cap; no raise knob;
- * multi-block under stop_hook_active unproven until live.
- * See plans/v0.8-factory-droid/research-stop-cap.md.
+ * Public research (2026-09): no documented numeric Stop cap; no raise knob.
+ * Live smoke (2026-09-15) proved multi-block under stop_hook_active.
+ * See plans/v0.8-factory-droid/research-stop-cap.md + live-smoke-evidence.
  */
 export const FACTORY_DROID_STOP_CAP_RAISE_FOUND = false;
-/** Live has not yet proved multi-block under stop_hook_active. */
-export const FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN = false;
+/** Live proved multi-block under stop_hook_active (live-factory-smoke). */
+export const FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN = true;
 /**
- * Default attempt: multi-block when true (plan default).
- * Live fail or waive → flip to false (degraded ≤1 / natural Stop).
+ * Multi-block when true (live-proved default; keep true).
+ * Flip to false only for degraded ≤1 / natural Stop (policy or host regress).
  */
 export const FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE = true;
 /** Doctor / docs ceiling when ALLOW is false (degraded). */

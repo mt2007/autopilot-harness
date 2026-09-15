@@ -3781,6 +3781,10 @@ describe("runDoctor", () => {
     const joined = lines.join("\n");
     expect(joined).toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
     expect(joined).toMatch(/no documented raise\/hard-cap/i);
+    expect(joined).toMatch(/multi-block under stop_hook_active live-proved/i);
+    expect(joined).not.toMatch(
+      /Factory Droid multi-block under stop_hook_active is unproven/i,
+    );
     expect(joined).toMatch(/\/hooks/);
     expect(joined).toMatch(/snapshot|new session|Reload Factory/i);
     expect(joined).not.toMatch(/FAIL\s+\.factory\/hooks\.json missing/i);

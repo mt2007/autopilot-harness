@@ -1562,7 +1562,9 @@ export function runDoctor(
     // Cap / multi-continue research tip (always when this installable host is enabled).
     if (!FACTORY_DROID_STOP_CAP_RAISE_FOUND) {
       lines.push(
-        "WARN  Factory Droid Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs or degraded≤1 until live proves multi under stop_hook_active",
+        FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN
+          ? "WARN  Factory Droid Stop-continue: no documented raise/hard-cap (research) — multi-block under stop_hook_active live-proved; still no raise knob"
+          : "WARN  Factory Droid Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs or degraded≤1 until live proves multi under stop_hook_active",
       );
     }
     if (
