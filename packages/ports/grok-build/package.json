@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-grok-build",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Autopilot harness host port for Grok Build CLI hooks (degraded Stop ≤8/turn unless raise found)",
   "license": "MIT",
   "repository": {
