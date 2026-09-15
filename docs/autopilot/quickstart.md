@@ -91,6 +91,8 @@ npx @autopilot-harness/cli init --platform grok-build --yes
 npx @autopilot-harness/cli init --platform gemini-cli --yes
 # or Factory Droid (`.factory/hooks.json`; multi-block live-proved; `$FACTORY_PROJECT_DIR`; `/hooks` + snapshot/reload)
 npx @autopilot-harness/cli init --platform factory-droid --yes
+# or Hermes Agent (`$HERMES_HOME/config.yaml`; pre_verify continue live-proved; relative command; consent / `hermes hooks doctor`)
+npx @autopilot-harness/cli init --platform hermes-agent --yes
 # multi-host after the first install:
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
@@ -99,6 +101,7 @@ npx @autopilot-harness/cli init --platform factory-droid --yes
 # npx @autopilot-harness/cli init --yes --add-platform grok-build
 # npx @autopilot-harness/cli init --yes --add-platform gemini-cli
 # npx @autopilot-harness/cli init --yes --add-platform factory-droid
+# npx @autopilot-harness/cli init --yes --add-platform hermes-agent
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 npx @autopilot-harness/cli upgrade --dry-run
@@ -108,8 +111,8 @@ Developing or dogfooding from a clone of this repo: see [Contributing](../../CON
 
 ## After install
 
-- Try `/autopilot-on` in Cursor or Claude Code (Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid: line-start `triggers.on` / `triggers.run` — no Autopilot skills path; typed slash still parses).
-- If skills / hooks do not appear: reload the host (Cursor: `Developer: Reload Window`; Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid: restart / new session), or start a new Agent chat. Codex: run `/hooks` trust (re-trust after upgrade). **Copilot CLI: restart the CLI** after install or upgrade. **Grok Build: trust** via `/hooks-trust` or `--trust`. **Gemini CLI: re-trust** hooks, check `/hooks panel`, and ensure folder trust. **Factory Droid: check `/hooks` then reload/new session for snapshot**; commands need **`$FACTORY_PROJECT_DIR`**.
+- Try `/autopilot-on` in Cursor or Claude Code (Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid / Hermes Agent: line-start `triggers.on` / `triggers.run` — no Autopilot skills path; typed slash still parses).
+- If skills / hooks do not appear: reload the host (Cursor: `Developer: Reload Window`; Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid / Hermes Agent: restart / new session), or start a new Agent chat. Codex: run `/hooks` trust (re-trust after upgrade). **Copilot CLI: restart the CLI** after install or upgrade. **Grok Build: trust** via `/hooks-trust` or `--trust`. **Gemini CLI: re-trust** hooks, check `/hooks panel`, and ensure folder trust. **Factory Droid: check `/hooks` then reload/new session for snapshot**; commands need **`$FACTORY_PROJECT_DIR`**. **Hermes Agent: consent** (`--accept-hooks` / `HERMES_ACCEPT_HOOKS` or TTY approve), reload, run **`hermes hooks doctor`**; hooks live in **`$HERMES_HOME/config.yaml`** with a **relative** command.
 - Review stops mid-chain (Cursor): ensure Autopilot stop has `loop_limit: null` (run `upgrade` / see [Troubleshooting](../troubleshooting.md)).
 - Review stops mid-chain (Claude Code): ensure `.claude/settings.json` has `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0`. If the cap env never applies, accept the project **trust** dialog (project `env` may be gated until trusted).
 - Review stalls / hooks ignored (Codex): ensure `.codex/hooks.json` Autopilot entries exist, timeout omitted or ≥120s, and `/hooks` is trusted.
@@ -118,6 +121,7 @@ Developing or dogfooding from a clone of this repo: see [Contributing](../../CON
 - Grok Build is **degraded Stop ≤8/turn** (per-turn reset; not consecutive) — mid-cutoff → pending / RESUME / nudge; needPick re-submit with slug; doctor WARNs ≤8/turn + trust + Grok+Claude/Cursor dual (enabled or leftover); no PreToolUse (see [Troubleshooting](../troubleshooting.md)).
 - Gemini CLI is **Shipped** with honest **AfterAgent turn cap ≤100** (`MAX_TURNS`; no raise; prefer CLI **≥0.31.0**) — re-trust / `/hooks panel` / folder trust after install; needPick deny+reason (re-submit with slug); doctor WARNs cap + min-CLI + `hooksConfig`; do not confuse `GEMINI_PLANS_DIR` with Autopilot `plans/` (see [Troubleshooting](../troubleshooting.md)).
 - Factory Droid is **Shipped** (**multi-block under `stop_hook_active` live-proved**; no raise) — commands use **`$FACTORY_PROJECT_DIR`**; check **`/hooks`** then reload/new session for snapshot; **waive live → degraded≤1**; doctor WARNs raise/hard-cap + Factory+Claude dual (see [Troubleshooting](../troubleshooting.md)).
+- Hermes Agent is **Shipped** (**shell `pre_verify` continue live-proved**; soft min **≥0.21.3**) — **`$HERMES_HOME/config.yaml`**; relative command; nudge ≥32; edit-only; consent/non-TTY; **`hermes hooks doctor`**; **waive live → degraded + human R1 ack** (see [Troubleshooting](../troubleshooting.md)).
 - More failure modes: [Troubleshooting](../troubleshooting.md).
 
 ## Self-review scope (`review.scope`)

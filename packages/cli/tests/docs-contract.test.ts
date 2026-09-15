@@ -167,7 +167,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/~\/\.kimi-code|KIMI_CODE_HOME/);
     expect(tips).toMatch(/project-wide|whole project/i);
     expect(tips).toMatch(
-      /Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory|including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory/i,
+      /Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes|including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes/i,
     );
     expect(tips).toMatch(/machine-wide|user-home/i);
     expect(tips).toMatch(/never[\s\S]*local\.toml|local\.toml/i);
@@ -225,6 +225,38 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /instrumented project root|trusted[\s\S]*FACTORY_PROJECT_DIR|FACTORY_PROJECT_DIR[\s\S]*trusted|wrong or hostile/i,
     );
     expect(tips).toMatch(/hooksDisabled|allowManagedHooksOnly/);
+    expect(tips).toMatch(/### Hermes Agent/);
+    expect(tips).toMatch(/HERMES_HOME/);
+    expect(tips).toMatch(/pre_verify|max_verify_nudges|0\.21\.3/);
+    expect(tips).toMatch(/relative command|相对/);
+    expect(tips).toMatch(/accept-hooks|HERMES_ACCEPT_HOOKS|consent/i);
+    expect(tips).toMatch(/hermes hooks doctor/i);
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*?timeout omit\/&lt;120 \(host default 60s\)/i,
+    );
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*?(?:not\*\* Codex-style|not Codex-style)[\s\S]{0,40}omit/i,
+    );
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*?(?:nudge missing\/still \*\*3\*\*\/&lt;32|nudge missing\/still 3\/&lt;32)/i,
+    );
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*?(?:waive[\s\S]{0,80}degraded|R1 unproven|acknowledge R1)/i,
+    );
+    expect(tips).toMatch(/Hermes\+Claude|Hermes Agent \+ Claude/i);
+    expect(tips).toMatch(/edit-only|changed_paths/i);
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*?(?:nudge[\s\S]{0,160}pending|exhausted[\s\S]{0,100}pending|plugin-first[\s\S]{0,100}pending)/i,
+    );
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*?(?:machine-wide|shared across projects|Treat `\$HERMES_HOME` as a \*\*trusted\*\*)/i,
+    );
+    expect(tips).toMatch(
+      /### Hermes Agent[\s\S]*Allow \/ hard-stop = \*\*`\{\}`\*\*/i,
+    );
+    expect(tips).toMatch(
+      /including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes/i,
+    );
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -250,29 +282,30 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
     expect(config).toMatch(/project-wide|whole project/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, and\/or Factory Droid/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, and\/or Hermes Agent/i,
     );
-    expect(config).toMatch(/eight-way dispatch/i);
+    expect(config).toMatch(/nine-way dispatch/i);
+    expect(config).not.toMatch(/\beight-way dispatch\b/i);
     expect(config).not.toMatch(/\bseven-way dispatch\b/i);
     expect(config).not.toMatch(/\bsix-way dispatch\b/i);
     expect(config).not.toMatch(/\bfive-way dispatch\b/i);
     expect(config).not.toMatch(/\bquaternary dispatch\b/);
     expect(config).not.toMatch(/\bternary dispatch\b/);
     expect(config).toMatch(
-      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid build/,
+      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid \+ Hermes Agent build/,
     );
     expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
     expect(config).toMatch(/Stop consecutive ≤8|Copilot.*≤8/i);
     expect(config).toMatch(/Stop ≤8\/turn|Grok.*≤8\/turn/i);
     expect(config).toMatch(
-      /Codex \/ Kimi Code \/ Copilot CLI \/ Grok Build CLI \/ Gemini CLI \/ Factory Droid P0|Factory Droid P0/,
+      /Codex \/ Kimi Code \/ Copilot CLI \/ Grok Build CLI \/ Gemini CLI \/ Factory Droid \/ Hermes Agent P0/,
     );
     expect(config).toMatch(/does \*\*not\*\* clamp `confirm_rounds`|does not clamp confirm_rounds/i);
     expect(config).toMatch(
-      /Gemini \/ Factory sessions|Grok \/ Gemini \/ Factory sessions|Copilot \/ Grok \/ Gemini \/ Factory/i,
+      /Gemini \/ Factory \/ Hermes sessions|Grok \/ Gemini \/ Factory \/ Hermes sessions|Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes/i,
     );
     expect(config).toMatch(
-      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, or \*\*Factory Droid\*\*/,
+      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, \*\*Factory Droid\*\*, or \*\*Hermes Agent\*\*/,
     );
     expect(config).toMatch(
       /missing\/incomplete \*\*FAIL\*\*|Copilot[\s\S]*FAIL[\s\S]*WARN/i,
@@ -289,8 +322,23 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Factory[\s\S]*hooksDisabled|allowManagedHooksOnly[\s\S]*WARN|hooksDisabled[\s\S]*allowManagedHooksOnly/i,
     );
     expect(config).toMatch(
-      /## Related[\s\S]*Factory Droid|## Related[\s\S]*multi-block live-proved/i,
+      /## Related[\s\S]*Factory Droid[\s\S]*Hermes|## Related[\s\S]*Hermes[\s\S]*Factory Droid/i,
     );
+    expect(config).toMatch(/HERMES_HOME|Hermes Agent/i);
+    expect(config).toMatch(
+      /\|\s*\*\*`doctor`\*\*[^\n]*\$HERMES_HOME\/config\.yaml[^\n]*hermes hooks doctor/i,
+    );
+    expect(config).toMatch(
+      /\|\s*\*\*`doctor`\*\*[^\n]*timeout omit or &lt;120 \(host default 60s\)[^\n]*nudge missing or still 3 or &lt;32/i,
+    );
+    expect(config).toMatch(/hermes hooks doctor/i);
+    expect(config).toMatch(
+      /\*\*Hermes Agent\*\* does \*\*not\*\* clamp rounds[\s\S]{0,240}(?:nudge still \*\*3\*\*|exhausted mid-chain)[\s\S]{0,80}pending/,
+    );
+    expect(config).toMatch(
+      /## Related[\s\S]*Hermes|## Related[\s\S]*pre_verify continue live-proved/i,
+    );
+    expect(config).toMatch(/nine-way dispatch/i);
   });
 
   it("dogfood .autopilotignore covers Factory hooks path", () => {
@@ -338,7 +386,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, and\/or Factory Droid/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, and\/or Hermes Agent/i,
     );
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
     expect(config).toMatch(/\.codex\/\*\*/);
@@ -400,6 +448,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       expect(body).toMatch(/--add-platform factory-droid/);
       expect(body).toMatch(/FACTORY_PROJECT_DIR/);
       expect(body).toMatch(/multi-block|stop_hook_active|live-proved/i);
+      expect(body).toMatch(/init --platform hermes-agent/);
+      expect(body).toMatch(/--add-platform hermes-agent/);
+      expect(body).toMatch(/HERMES_HOME/);
+      expect(body).toMatch(/pre_verify|0\.21\.3|hermes hooks doctor/i);
+      expect(body).toMatch(
+        /# (?:or|或) Hermes Agent[^\n]*\n[^\n]*init --platform hermes-agent/,
+      );
+      expect(body).toMatch(
+        /# (?:or|或) Factory Droid[^\n]*\n[^\n]*init --platform factory-droid/,
+      );
     }
   });
 
@@ -414,7 +472,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
     expect(cliReadme).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, and Factory Droid|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
+      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, and Hermes Agent/,
     );
     expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
     expect(cliReadme).toMatch(/--platform codex|platform codex/);
@@ -423,6 +481,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toMatch(/grok-build/);
     expect(cliReadme).toMatch(/gemini-cli/);
     expect(cliReadme).toMatch(/factory-droid/);
+    expect(cliReadme).toMatch(/hermes-agent/);
+    expect(cliReadme).toMatch(/HERMES_HOME|hermes hooks doctor/i);
+    expect(cliReadme).toMatch(/pre_verify|0\.21\.3|max_verify_nudges/i);
     expect(cliReadme).toMatch(/FACTORY_PROJECT_DIR/);
     expect(cliReadme).toMatch(/MAX_TURNS|AfterAgent turn cap ≤100|≤100/);
     expect(cliReadme).toMatch(/0\.31\.0/);
@@ -506,6 +567,19 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/0\.31\.0/);
     expect(body).toMatch(/re-trust|\/hooks panel|folder trust/);
+    expect(body).toMatch(/init --platform hermes-agent/);
+    expect(body).toMatch(/--add-platform hermes-agent/);
+    expect(body).toMatch(/port-hermes-agent/);
+    expect(body).toMatch(/HERMES_HOME/);
+    expect(body).toMatch(/pre_verify|0\.21\.3|max_verify_nudges/i);
+    expect(body).toMatch(/hermes hooks doctor/i);
+    // Host comment must sit directly above its matching init command (not another host).
+    expect(body).toMatch(
+      /# or Hermes Agent[^\n]*\n[^\n]*init --platform hermes-agent/,
+    );
+    expect(body).toMatch(
+      /# or Factory Droid[^\n]*\n[^\n]*init --platform factory-droid/,
+    );
   });
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
@@ -550,6 +624,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/FACTORY_PROJECT_DIR/);
     expect(body).toMatch(/multi-block|stop_hook_active|活链已证/i);
     expect(body).toMatch(/免活链|degraded≤1/);
+    expect(body).toMatch(/init --platform hermes-agent/);
+    expect(body).toMatch(/--add-platform hermes-agent/);
+    expect(body).toMatch(/HERMES_HOME/);
+    expect(body).toMatch(/pre_verify|0\.21\.3|活链已证/i);
+    expect(body).toMatch(/人闸认 R1|R1|degraded/i);
+    expect(body).toMatch(
+      /# 或 Hermes Agent[^\n]*\n[^\n]*init --platform hermes-agent/,
+    );
+    expect(body).toMatch(
+      /# 或 Factory Droid[^\n]*\n[^\n]*init --platform factory-droid/,
+    );
   });
 
   it("hosts.md marks Codex, Claude, Kimi, Copilot, and Grok as shipped", () => {
@@ -568,6 +653,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(hosts).toMatch(
       /\|\s*\*\*Factory Droid\*\*\s*\|\s*\*\*Shipped\*\*/,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Hermes Agent\*\*\s*\|\s*\*\*Shipped\*\*/,
     );
     expect(hosts).not.toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*v0\.3 \/ v0\.4 planned\*\*/);
     // Status column only (avoid Notes-column false positives/negatives).
@@ -597,6 +685,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).not.toMatch(
       /\|\s*\*\*Factory Droid\*\*\s*\|\s*\*\*Next\*\*/,
     );
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Hermes Agent\*\*/,
+    );
+    expect(hosts).not.toMatch(
+      /\|\s*\*\*Hermes Agent\*\*\s*\|\s*\*\*Next\*\*/,
+    );
     expect(hosts).toMatch(/handleCodexUserPromptSubmit/);
     expect(hosts).toMatch(/handleCodexPostToolUse/);
     expect(hosts).toMatch(/handleCodexStop/);
@@ -610,6 +704,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/handleGeminiPostToolUse|handleGeminiStop/);
     expect(hosts).toMatch(/handleFactoryUserPromptSubmit|handleFactory\*/);
     expect(hosts).toMatch(/handleFactoryPostToolUse|handleFactoryStop/);
+    expect(hosts).toMatch(/handleHermesPreLlmCall|handleHermes\*/);
+    expect(hosts).toMatch(/handleHermesPostToolCall|handleHermesPreVerify/);
     expect(hosts).toMatch(/apply_patch/);
     expect(hosts).toMatch(/\/hooks/);
     expect(hosts).toMatch(/triggers\.on/);
@@ -620,7 +716,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/host-plan-bridge\.md/);
     expect(hosts).toMatch(/## Roadmap \(not shipped\)/);
     expect(hosts).toMatch(/GitHub Copilot CLI/);
-    expect(hosts).toMatch(/eight-way/);
+    expect(hosts).toMatch(/nine-way/);
+    expect(hosts).not.toMatch(/\beight-way\b/);
     expect(hosts).not.toMatch(/\bseven-way\b/);
     expect(hosts).not.toMatch(/\bsix-way\b/);
     expect(hosts).not.toMatch(/\bfive-way\b/);
@@ -628,7 +725,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Kimi Code\*\*/,
     );
     expect(hosts).toMatch(
-      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Hermes Agent\*\*/,
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Antigravity\*\*/,
     );
     expect(hosts).toMatch(/Kimi Code \| \*\*Shipped\*\* \(degraded Stop≤1\/turn\)/);
     expect(hosts).toMatch(
@@ -643,6 +740,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /Factory Droid \| \*\*Shipped\*\* \(multi-block under `stop_hook_active` live-proved/,
     );
+    expect(hosts).toMatch(
+      /Hermes Agent \| \*\*Shipped\*\* \(shell `pre_verify` continue live-proved/,
+    );
     expect(hosts).toMatch(/Grok Build CLI/);
     expect(hosts).toMatch(/Gemini CLI/);
     expect(hosts).toMatch(/Factory Droid/);
@@ -650,6 +750,31 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/FACTORY_PROJECT_DIR/);
     expect(hosts).toMatch(/\.factory\/hooks\.json/);
     expect(hosts).toMatch(/waive[\s\S]*degraded≤1|waive live → default \*\*degraded≤1/i);
+    expect(hosts).toMatch(/HERMES_HOME/);
+    expect(hosts).toMatch(/config\.yaml/);
+    expect(hosts).toMatch(/max_verify_nudges|0\.21\.3/);
+    expect(hosts).toMatch(/hermes hooks doctor/i);
+    expect(hosts).toMatch(/accept-hooks|HERMES_ACCEPT_HOOKS/i);
+    expect(hosts).toMatch(/edit-only|changed_paths/i);
+    expect(hosts).toMatch(/waive[\s\S]*R1|R1[\s\S]*ack|human R1/i);
+    expect(hosts).toMatch(
+      /\|\s*\*\*Hermes Agent\*\*[\s\S]{0,2000}allow \/ hard-stop \*\*`\{\}`\*\*/i,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Hermes Agent\*\*[\s\S]{0,2000}omit → host default \*\*60s\*\*/i,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Hermes Agent\*\*[\s\S]{0,2000}timeout omit\/&lt;120 \(host default 60s\)/i,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Hermes Agent\*\*[\s\S]{0,2000}(?:not\*\* Codex-style|not Codex-style)[\s\S]{0,40}omit/i,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Hermes Agent\*\*[\s\S]{0,500}(?:nudge still \*\*3\*\*|budget exhausted|plugin-first)[\s\S]{0,120}pending/i,
+    );
+    expect(hosts).toMatch(
+      /HERMES_HOME[\s\S]{0,200}shared across projects|Hermes hooks[\s\S]{0,200}shared across projects/i,
+    );
     expect(hosts).toMatch(/symlink|fail-closed/i);
     expect(hosts).toMatch(
       /instrumented project root|wrong\/hostile|hostile env/i,
@@ -752,7 +877,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
     expect(body).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, and\/or Factory Droid/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, and\/or Hermes Agent/i,
     );
     expect(body).toMatch(/ports\/claude-code/);
     expect(body).toMatch(/ports\/codex/);
@@ -762,7 +887,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/ports\/gemini-cli/);
     expect(body).toMatch(/ports\/factory-droid/);
     expect(body).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent/,
     );
     expect(body).toMatch(/handleCodex\*/);
     expect(body).toMatch(/handleKimi\*/);
@@ -770,7 +895,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/handleGrok\*/);
     expect(body).toMatch(/handleGemini\*/);
     expect(body).toMatch(/handleFactory\*/);
-    expect(body).toMatch(/eight-way/);
+    expect(body).toMatch(/handleHermes\*/);
+    expect(body).toMatch(/nine-way/);
+    expect(body).not.toMatch(/\beight-way\b/);
     expect(body).not.toMatch(/\bseven-way\b/);
     expect(body).not.toMatch(/\bsix-way\b/);
     expect(body).toMatch(/never `local\.toml`|never local\.toml/i);
@@ -788,6 +915,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/Factory Droid[\s\S]*live-proved|Factory Droid[\s\S]*FACTORY_PROJECT_DIR/i);
     expect(body).toMatch(/FACTORY_PROJECT_DIR/);
     expect(body).toMatch(/waive[\s\S]*degraded≤1|Waive live → degraded≤1/i);
+    expect(body).toMatch(/handleHermes\*/);
+    expect(body).toMatch(/HERMES_HOME/);
+    expect(body).toMatch(/0\.21\.3|max_verify_nudges/);
+    expect(body).toMatch(
+      /\|\s*\*\*Hermes Agent\*\* \(shipped\)[\s\S]{0,500}(?:mid-cutoff → pending|nudge still \*\*3\*\*)/,
+    );
+    expect(body).toMatch(
+      /Hermes Agent uses `surface: cli`[\s\S]{0,220}HERMES_HOME/,
+    );
     expect(body).toMatch(/per-turn reset|not consecutive/i);
     expect(body).toMatch(/hooks-trust|--trust/);
     expect(body).toMatch(/userPromptSubmitted/);
@@ -811,7 +947,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 / 0.6.0 / 0.7.0 / 0.8.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 / 0.6.0 / 0.7.0 / 0.8.0 / 0.9.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -837,6 +973,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.6\.0\]/);
     expect(log).toMatch(/## \[0\.7\.0\]/);
     expect(log).toMatch(/## \[0\.8\.0\]/);
+    expect(log).toMatch(/## \[0\.9\.0\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -1048,6 +1185,43 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(section080).toMatch(/pnpm publish|pnpm pack/i);
     expect(section080).toMatch(/1 \(next\)[\s\S]{0,80}Hermes/);
+    const section090 = changelogSection(log, "0.9.0");
+    expect(section090).toMatch(/port-hermes-agent|@autopilot-harness\/port-hermes-agent/i);
+    expect(section090).toMatch(/handleHermesPreLlmCall/);
+    expect(section090).toMatch(/handleHermesPostToolCall/);
+    expect(section090).toMatch(/handleHermesPreVerify/);
+    expect(section090).toMatch(/docs-hermes-shipped/i);
+    expect(section090).toMatch(/marked \*\*Shipped\*\*/);
+    expect(section090).toMatch(/packages\/ports\/hermes-agent\/package\.json/);
+    expect(section090).toMatch(/packages\/cli\/README|cli README/i);
+    expect(section090).toMatch(/HERMES_HOME/);
+    expect(section090).toMatch(/pre_verify|max_verify_nudges|0\.21\.3/);
+    expect(section090).toMatch(
+      /Silence `\{\}`|allow \/ hard-stop \*\*`\{\}`\*\*|allow \/ hard-stop \*\*`\{\}`/,
+    );
+    expect(section090).toMatch(
+      /waive live → degraded \+ human R1 ack|waive → degraded \+ R1|Waive live → degraded \+ explicit R1/i,
+    );
+    expect(section090).toMatch(
+      /mid-cutoff recovery via \*\*pending \/ RESUME \/ nudge\*\*|machine-wide home trust/,
+    );
+    expect(section090).toMatch(/Hermes\+Claude|Hermes Agent \+ Claude/i);
+    expect(section090).toMatch(/no `pre_tool_call`|explicitly \*\*no `pre_tool_call`|no pre_tool_call/i);
+    expect(section090).toMatch(/relative command|relative `node/i);
+    expect(section090).toMatch(/accept-hooks|HERMES_ACCEPT_HOOKS|consent/i);
+    expect(section090).toMatch(/hermes hooks doctor/i);
+    expect(section090).toMatch(
+      /timeout omit\/&lt;120 \(host default 60s; \*\*not\*\* Codex-style/,
+    );
+    expect(section090).toMatch(/nudge missing\/still 3\/&lt;32/);
+    expect(section090).toMatch(/Factory\/Hermes cross-fire|Gemini\/Factory\/Hermes cross-fire|nine-host|Nine-way|nine-way/i);
+    expect(section090).toMatch(/nine-way|Nine-way/i);
+    expect(section090).toMatch(/hermes-agent/);
+    expect(section090).toMatch(
+      /core\s*→\s*i18n\s*→\s*ports[\s\S]*hermes-agent[\s\S]*→\s*cli|ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent\)/i,
+    );
+    expect(section090).toMatch(/pnpm publish|pnpm pack/i);
+    expect(section090).toMatch(/1 \(next\)[\s\S]{0,80}Antigravity/);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
     expect(unreleased).not.toMatch(/handleCopilot/i);
@@ -1058,6 +1232,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/handleGemini/i);
     expect(unreleased).not.toMatch(/docs-factory-shipped/i);
     expect(unreleased).not.toMatch(/handleFactory/i);
+    expect(unreleased).not.toMatch(/docs-hermes-shipped/i);
+    expect(unreleased).not.toMatch(/handleHermes/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
@@ -1092,7 +1268,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),

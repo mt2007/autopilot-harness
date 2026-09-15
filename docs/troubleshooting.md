@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, or **Factory Droid**) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, or Factory `.factory/hooks.json`) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI / Gemini CLI / Factory Droid have no Autopilot skills path).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, **Factory Droid**, or **Hermes Agent**) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, or Hermes **`$HERMES_HOME/config.yaml`**) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI / Gemini CLI / Factory Droid / Hermes Agent have no Autopilot skills path).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -107,6 +107,18 @@ Factory Droid has **no documented numeric Stop-continue cap / raise knob** (2026
 - After `init` / `upgrade`: check **`/hooks`**, then **reload / new session** so the hooks **snapshot** refreshes.
 - `init` / `upgrade` **refuse symlink** `.factory/` or `.factory/hooks.json` (**fail-closed**). `doctor` **FAIL**s when `.factory/hooks.json` is missing / incomplete / unreadable (incl. symlink); WARNs for no raise/hard-cap (live-proved multi-block), `/hooks`+snapshot/reload, missing `--platform factory-droid` or **`$FACTORY_PROJECT_DIR`** in commands, timeout omit/&lt;120, Factory+Claude dual fingerprints, `~/.factory` residual / `settings.json` hooks leftover, and `hooksDisabled` / `allowManagedHooksOnly`.
 - Multi-host: `npx @autopilot-harness/cli init --yes --add-platform factory-droid`.
+- P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
+
+### Hermes Agent
+
+Hermes Agent shell `pre_verify` continue is **live-proved** (**Shipped**; soft min Hermes **≥0.21.3**). Autopilot uses Claude Stop shape `{ decision:"block", reason }` (Hermes maps to wire `action:continue`). Host default `agent.max_verify_nudges` is **3**; init raises to **≥32** (does not lower a higher user value). **`pre_verify` is edit-only** — no product edit that turn → pending / RESUME (`changed_paths` can still arm). If live is **waived**, ship **degraded** and the human gate must **explicitly acknowledge R1 unproven**:
+
+- If nudge is still **3** (or the remaining budget is exhausted mid-confirm), or a **plugin-first** verify path burns nudges, the host may cut the Autopilot chain — expect a **pending followup** and recover with `/autopilot-resume` (or line-start RESUME) and/or a human nudge; do not assume Cursor/Claude long-RUN parity.
+- Hooks live in **`$HERMES_HOME/config.yaml` only** (default `~/.hermes`; **never** `cli-config.yaml`; Autopilot stamps timeout **120** — **not** Codex-style “omit OK”; host default **60s** if omitted). Events: `pre_llm_call` + `post_tool_call` `write_file|patch` + `pre_verify`. That file is **machine-wide** for the Hermes home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command; multi-repo). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$HERMES_HOME` as a **trusted** path. Stock **relative command**: `node .autopilot/bin/… --platform hermes-agent --event …` — open/instrument the **project root** so Hermes’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
+- Allow / hard-stop = **`{}`** or empty stdout. Does **not** clamp `confirm_rounds`. Does **not** install Autopilot skills / `AGENTS.md`. Does **not** wire `pre_tool_call` / subagent* / session*.
+- Consent: approve at TTY, or **`--accept-hooks` / `HERMES_ACCEPT_HOOKS`**; non-TTY unapproved hooks **skip silently**. After `init` / `upgrade`: reload Hermes and run **`hermes hooks doctor`**.
+- `init` / `upgrade` **refuse symlink** `$HERMES_HOME` / `config.yaml` (**fail-closed**). `doctor` **FAIL**s on missing/incomplete fingerprint; WARNs timeout omit/&lt;120 (host default 60s), nudge missing/still **3**/&lt;32, consent/non-TTY, `HERMES_HOME`/multi-repo, Hermes+Claude dual fingerprints, edit-only, plugin-first, and `hermes hooks doctor`.
+- Multi-host: `npx @autopilot-harness/cli init --yes --add-platform hermes-agent`.
 - P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).

@@ -9,6 +9,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-09-16
+
+### Added
+
+- **Hermes Agent hook port** (`@autopilot-harness/port-hermes-agent`): `pre_llm_call` / `post_tool_call` / `pre_verify` adapters; fail-open on errors; `pre_verify` continue = `{ decision:"block", reason }` (**R1 shell continue live-proved**; Hermes maps to wire `action:continue`; also accepts native `action:continue`+`message`); allow / hard-stop **`{}`** or empty; `pre_llm_call` inject `{"context"}` (ON/RUN success `{}`); `post_tool_call` matcher `write_file|patch` + dirty-arm (**never block**); also arms from `pre_verify` `changed_paths`; edit-only when no product edit → pending / RESUME; no `pre_tool_call` / subagent* / session*.
+- **Nine-way vendor dispatch**: `--platform hermes-agent` + aliased exports `handleHermesPreLlmCall` / `handleHermesPostToolCall` / `handleHermesPreVerify` (no clash with Claude/Codex/Kimi/Copilot/Grok/Gemini/Factory bare names); cross-stamp / cross-payload abort + conflict resolver across Cursor / Claude / Codex / Kimi / Copilot / Grok / Gemini / Factory / Hermes.
+- **Init / upgrade / uninstall / doctor** for Hermes Agent: installable `surface:cli`; **`$HERMES_HOME/config.yaml` only** (default `~/.hermes`; **never** `cli-config.yaml`; timeout **120**; relative `node .autopilot/bin/… --platform hermes-agent --event …`; raises **`agent.max_verify_nudges` ≥32**); fingerprint uninstall; `--add-platform hermes-agent`; no default Autopilot skills / `AGENTS.md`; P0 line-start `triggers.on` / `triggers.run`; does **not** clamp `confirm_rounds`; **symlink** `$HERMES_HOME` / `config.yaml` **fail-closed**; consent / non-TTY (`--accept-hooks` / `HERMES_ACCEPT_HOOKS`); doctor **FAIL**s on missing/incomplete fingerprint; WARNs timeout omit/&lt;120 (host default 60s; **not** Codex-style omit-OK), nudge missing/still 3/&lt;32, consent/non-TTY, `HERMES_HOME`/multi-repo, Hermes+Claude dual, edit-only, plugin-first, **`hermes hooks doctor`**; soft min Hermes **≥0.21.3**.
+- **docs-hermes-shipped**: Hermes Agent marked **Shipped** (**shell `pre_verify` continue live-proved**; honest nudge **≥32** / edit-only / R1; **waive live → degraded + human R1 ack**) across README(+zh-CN), hosts, architecture, config, troubleshooting, quickstart, and **`packages/cli/README.md`**; docs-contract Next→Shipped; public package matrix includes `packages/ports/hermes-agent/package.json`; **`$HERMES_HOME`**; relative command; consent/non-TTY; mid-cutoff recovery via **pending / RESUME / nudge** (nudge still 3 / exhausted / plugin-first); machine-wide home trust; explicitly **no `pre_tool_call`**.
+- Contract / nine-host matrix tests for Hermes I/O, Silence `{}`, `pre_verify` continue shape, hooks merge, doctor, add-platform, aliases, and Cursor/Claude/Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes cross-fire.
+
+### Changed
+
+- **docs**: host roadmap — **1 (next)** = Antigravity after Hermes shipped; OpenCode / Runner / Pi / Devin listed ([hosts.md](./docs/hosts.md)).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.9.0 public packages.
+
 ## [0.8.0] — 2026-09-15
 
 ### Added
