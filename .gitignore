@@ -22,6 +22,9 @@ docs/autopilot/*
 .env.local
 .env.*.local
 
+# Local scratch / session dumps at repo root (may contain tokens; never stage)
+/tmp/
+
 # IDE / OS
 .idea/
 .vscode/
