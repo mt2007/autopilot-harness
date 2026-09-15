@@ -1450,4 +1450,133 @@ review:
     expect(afterAgent?.timeout).toBe(120_000);
     expect(afterAgent?.command).toMatch(/--platform gemini-cli/);
   });
+
+  it("dry-run lists Factory hooks action when factory-droid is enabled (no skills)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.factory\/hooks\.json/i.test(a))).toBe(true);
+    expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+    expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
+  });
+
+  it("Factory-enabled upgrade fails closed on corrupt hooks JSON", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    fs.writeFileSync(
+      path.join(root, ".factory", "hooks.json"),
+      "{not-json",
+      "utf8",
+    );
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(false);
+    if (!dry.ok) {
+      expect(dry.error).toMatch(/hooks\.json|valid JSON|JSON|Unexpected/i);
+    }
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/hooks\.json|valid JSON|JSON|Unexpected/i);
+    }
+  });
+
+  it("Cursor-only upgrade ignores corrupt leftover .factory/hooks.json", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const leftover = path.join(root, ".factory", "hooks.json");
+    fs.mkdirSync(path.dirname(leftover), { recursive: true });
+    const corrupt = "{not-json";
+    fs.writeFileSync(leftover, corrupt, "utf8");
+
+    const dry = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(dry.ok).toBe(true);
+    if (!dry.ok) return;
+    expect(dry.actions.some((a) => /\.factory\/hooks\.json/i.test(a))).toBe(
+      false,
+    );
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    expect(fs.readFileSync(leftover, "utf8")).toBe(corrupt);
+  });
+
+  it("Factory-enabled upgrade refreshes stamp/timeout/$FACTORY_PROJECT_DIR", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const hooksPath = path.join(root, ".factory", "hooks.json");
+    const before = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      Stop?: Array<{
+        hooks?: Array<{ command?: string; timeout?: number }>;
+      }>;
+    };
+    for (const g of before.Stop ?? []) {
+      for (const h of g.hooks ?? []) {
+        if (typeof h.command === "string") {
+          h.command = h.command
+            .replace(/\s+--platform\s+factory-droid\b/g, "")
+            .replace(/\$FACTORY_PROJECT_DIR/g, ".");
+          h.timeout = 30;
+        }
+      }
+    }
+    // Also keep a foreign handler.
+    before.Stop = before.Stop ?? [];
+    before.Stop.push({
+      hooks: [{ command: "echo foreign-factory-keep", timeout: 10 }],
+    });
+    fs.writeFileSync(hooksPath, JSON.stringify(before, null, 2) + "\n");
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.3.0" });
+    expect(r.ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      Stop?: Array<{
+        hooks?: Array<{ command?: string; timeout?: number }>;
+      }>;
+    };
+    expect(JSON.stringify(after.Stop)).toMatch(/foreign-factory-keep/);
+    const stop = (after.Stop ?? [])
+      .flatMap((g) => g.hooks ?? [])
+      .find(
+        (h) =>
+          typeof h.command === "string" &&
+          h.command.includes("autopilot-harness-hook"),
+      );
+    expect(stop?.timeout).toBe(120);
+    expect(stop?.command).toMatch(/--platform factory-droid/);
+    expect(stop?.command).toMatch(/\$FACTORY_PROJECT_DIR/);
+  });
 });

@@ -29,6 +29,14 @@ export const FACTORY_HOOK_TIMEOUT_SEC = 120;
 
 export const FACTORY_HOOKS_REL_PATH = [".factory", "hooks.json"].join("/");
 
+/** Legacy nested path still loaded by Droid until next save migrates. */
+export const FACTORY_LEGACY_HOOKS_REL_PATH = [".factory", "hooks", "hooks.json"].join(
+  "/",
+);
+
+/** Project/user settings (hooksDisabled / allowManagedHooksOnly / nested hooks). */
+export const FACTORY_SETTINGS_REL_PATH = [".factory", "settings.json"].join("/");
+
 export interface FactoryHookHandler {
   type?: string;
   command?: string;
@@ -604,4 +612,31 @@ export function factoryHooksUseProjectDirEnv(file: FactoryHooksFile): boolean {
     }
   }
   return seen > 0;
+}
+
+/**
+ * Best-effort parse of Factory `settings.json` flags (project or user home).
+ * Missing/unreadable → all false.
+ */
+export function readFactorySettingsFlags(settings: unknown): {
+  hooksDisabled: boolean;
+  allowManagedHooksOnly: boolean;
+  hooksContainAutopilot: boolean;
+} {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return {
+      hooksDisabled: false,
+      allowManagedHooksOnly: false,
+      hooksContainAutopilot: false,
+    };
+  }
+  const o = settings as Record<string, unknown>;
+  return {
+    hooksDisabled: o.hooksDisabled === true,
+    allowManagedHooksOnly: o.allowManagedHooksOnly === true,
+    // Nested `"hooks":{…}` under settings — same fingerprint walk as hooks.json wrap.
+    hooksContainAutopilot: factoryHooksContainAutopilot(
+      settings as FactoryHooksFile,
+    ),
+  };
 }

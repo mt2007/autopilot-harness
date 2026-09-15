@@ -14,6 +14,7 @@ import {
   factoryHooksUseProjectDirEnv,
   hasCompleteFactoryAutopilotHooks,
   mergeFactoryHooks,
+  readFactorySettingsFlags,
   stripAutopilotFactoryHooks,
   summarizeFactoryAutopilotHooks,
   validateFactoryHooksShape,
@@ -297,6 +298,29 @@ describe("factory hooks merge", () => {
           !Array.isArray(g.hooks),
       ),
     ).toBe(false);
+  });
+
+  it("readFactorySettingsFlags detects hooksDisabled / org / nested Autopilot", () => {
+    const flags = readFactorySettingsFlags({
+      hooksDisabled: true,
+      allowManagedHooksOnly: true,
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                command:
+                  "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(flags.hooksDisabled).toBe(true);
+    expect(flags.allowManagedHooksOnly).toBe(true);
+    expect(flags.hooksContainAutopilot).toBe(true);
+    expect(readFactorySettingsFlags(null).hooksDisabled).toBe(false);
   });
 });
 

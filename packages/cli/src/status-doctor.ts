@@ -82,6 +82,21 @@ import {
   type GeminiSettingsFile,
 } from "./init/gemini-settings-merge.js";
 import {
+  FACTORY_HOOKS_REL_PATH,
+  FACTORY_HOOK_TIMEOUT_SEC,
+  FACTORY_LEGACY_HOOKS_REL_PATH,
+  FACTORY_SETTINGS_REL_PATH,
+  factoryAutopilotHasOmittedOrSmallTimeout,
+  factoryHooksContainAutopilot,
+  factoryHooksHavePlatformStamp,
+  factoryHooksUseProjectDirEnv,
+  hasCompleteFactoryAutopilotHooks,
+  readFactorySettingsFlags,
+  summarizeFactoryAutopilotHooks,
+  validateFactoryHooksShape,
+  type FactoryHooksFile,
+} from "./init/factory-hooks-merge.js";
+import {
   COPILOT_STOP_CAP_RAISE_FOUND,
   COPILOT_STOP_CONSECUTIVE_BLOCK_CAP,
 } from "@autopilot-harness/port-copilot-cli";
@@ -94,6 +109,12 @@ import {
   GEMINI_MIN_CLI_VERSION_HINT,
   GEMINI_STOP_CAP_RAISE_FOUND,
 } from "@autopilot-harness/port-gemini-cli";
+import {
+  FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE,
+  FACTORY_DROID_DEGRADED_STOP_CONTINUE_CAP,
+  FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN,
+  FACTORY_DROID_STOP_CAP_RAISE_FOUND,
+} from "@autopilot-harness/port-factory-droid";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -369,6 +390,84 @@ function projectHasGeminiAutopilotFingerprint(projectRoot: string): boolean {
       return false;
     }
     return geminiSettingsContainAutopilot(parsed as GeminiSettingsFile);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Best-effort: leftover Factory Autopilot fingerprint on disk.
+ * Checks modern hooks.json, settings.json nested hooks, and legacy path.
+ * Missing/unreadable/non-object → false (dual-fingerprint WARN only).
+ */
+function projectHasFactoryAutopilotFingerprint(projectRoot: string): boolean {
+  if (
+    factoryFileHasAutopilotFingerprint(
+      path.join(projectRoot, ".factory", "hooks.json"),
+      FACTORY_HOOKS_REL_PATH,
+    )
+  ) {
+    return true;
+  }
+  if (
+    tryReadFactorySettingsFlags(
+      path.join(projectRoot, ".factory", "settings.json"),
+      FACTORY_SETTINGS_REL_PATH,
+    ).hooksContainAutopilot
+  ) {
+    return true;
+  }
+  return factoryFileHasAutopilotFingerprint(
+    path.join(projectRoot, ".factory", "hooks", "hooks.json"),
+    FACTORY_LEGACY_HOOKS_REL_PATH,
+  );
+}
+
+/** Best-effort Autopilot fingerprint in a Factory hooks.json-shaped file. */
+function factoryFileHasAutopilotFingerprint(
+  filePath: string,
+  label: string,
+): boolean {
+  try {
+    const raw = readUntrustedUtf8File(filePath, MAX_CONFIG_BYTES, label);
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    return factoryHooksContainAutopilot(parsed as FactoryHooksFile);
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort Factory settings.json flags (project or ~/.factory). */
+function tryReadFactorySettingsFlags(
+  filePath: string,
+  label: string,
+): ReturnType<typeof readFactorySettingsFlags> {
+  try {
+    const raw = readUntrustedUtf8File(filePath, MAX_CONFIG_BYTES, label);
+    const parsed: unknown = JSON.parse(raw);
+    return readFactorySettingsFlags(parsed);
+  } catch {
+    return {
+      hooksDisabled: false,
+      allowManagedHooksOnly: false,
+      hooksContainAutopilot: false,
+    };
+  }
+}
+
+/**
+ * True when two absolute dirs are the same tree (resolve + realpath when possible).
+ * Avoids false ~/.factory dual-load WARNs when homeDir is a symlink to projectRoot.
+ */
+function isSameAbsoluteDir(a: string, b: string): boolean {
+  const ra = path.resolve(a);
+  const rb = path.resolve(b);
+  if (ra === rb) return true;
+  try {
+    return fs.realpathSync(ra) === fs.realpathSync(rb);
   } catch {
     return false;
   }
@@ -1457,6 +1556,204 @@ export function runDoctor(
     }
   }
 
+  const wantFactory = configWantsInstallableHost(cfg.platforms, "factory-droid");
+  if (wantFactory) {
+    const factoryHooksPath = path.join(root, ".factory", "hooks.json");
+    // Cap / multi-continue research tip (always when this installable host is enabled).
+    if (!FACTORY_DROID_STOP_CAP_RAISE_FOUND) {
+      lines.push(
+        "WARN  Factory Droid Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs or degraded≤1 until live proves multi under stop_hook_active",
+      );
+    }
+    if (
+      !FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE ||
+      !FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN
+    ) {
+      if (!FACTORY_DROID_ALLOW_MULTI_BLOCK_WHEN_ACTIVE) {
+        lines.push(
+          `WARN  Factory Droid Stop-continue degraded ≤${FACTORY_DROID_DEGRADED_STOP_CONTINUE_CAP} (ALLOW_MULTI_BLOCK_WHEN_ACTIVE=false)`,
+        );
+      } else if (!FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN) {
+        lines.push(
+          "WARN  Factory Droid multi-block under stop_hook_active is unproven (live smoke pending) — treat long confirm chains cautiously",
+        );
+      }
+    }
+    const projectSettings = tryReadFactorySettingsFlags(
+      path.join(root, ".factory", "settings.json"),
+      FACTORY_SETTINGS_REL_PATH,
+    );
+    const factoryHomeDir = opts.homeDir ?? os.homedir();
+    const factoryHomeOk =
+      typeof factoryHomeDir === "string" &&
+      factoryHomeDir.length > 0 &&
+      path.isAbsolute(factoryHomeDir);
+    // When doctor runs with projectRoot === home (e.g. init in ~), or homeDir is
+    // a symlink to the project, home and project .factory paths are the same
+    // tree — do not dual-count or false-WARN.
+    const factoryHomeDistinct =
+      factoryHomeOk && !isSameAbsoluteDir(factoryHomeDir, root);
+    const homeSettings = factoryHomeDistinct
+      ? tryReadFactorySettingsFlags(
+          path.join(factoryHomeDir, ".factory", "settings.json"),
+          "~/.factory/settings.json",
+        )
+      : {
+          hooksDisabled: false,
+          allowManagedHooksOnly: false,
+          hooksContainAutopilot: false,
+        };
+    try {
+      const raw = readUntrustedUtf8File(
+        factoryHooksPath,
+        MAX_CONFIG_BYTES,
+        FACTORY_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push(`FAIL  ${FACTORY_HOOKS_REL_PATH} is not a JSON object`);
+        ok = false;
+      } else {
+        const file = parsed as FactoryHooksFile;
+        const shapeError = validateFactoryHooksShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${FACTORY_HOOKS_REL_PATH}: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeFactoryAutopilotHooks(file);
+          const badTimeout = factoryAutopilotHasOmittedOrSmallTimeout(file);
+          const hasStamp = factoryHooksHavePlatformStamp(file);
+          const usesProjectDir = factoryHooksUseProjectDirEnv(file);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  ${FACTORY_HOOKS_REL_PATH} missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  ${FACTORY_HOOKS_REL_PATH} has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (badTimeout) {
+            lines.push(
+              `WARN  Autopilot Factory hook timeout below ${FACTORY_HOOK_TIMEOUT_SEC} (or omitted; host default too low) — run upgrade`,
+            );
+          }
+          if (missingEvents.length === 0 && !hasStamp) {
+            lines.push(
+              "WARN  Autopilot Factory hooks missing --platform factory-droid — run upgrade",
+            );
+          }
+          if (missingEvents.length === 0 && !usesProjectDir) {
+            lines.push(
+              "WARN  Autopilot Factory hooks missing $FACTORY_PROJECT_DIR — run upgrade (Droid cwd ≠ project root)",
+            );
+          }
+          // Trust/reload tips only after Autopilot event coverage is present.
+          if (missingEvents.length === 0) {
+            lines.push(
+              "WARN  Factory Droid: review hooks in /hooks after install or upgrade (session snapshots hooks at startup)",
+            );
+            lines.push(
+              "WARN  Reload Factory Droid or open a new session after install or upgrade so the hooks snapshot refreshes",
+            );
+          }
+          const hooksWontRun =
+            projectSettings.hooksDisabled ||
+            projectSettings.allowManagedHooksOnly ||
+            homeSettings.hooksDisabled ||
+            homeSettings.allowManagedHooksOnly;
+          // Withhold OK when settings would skip Autopilot (Gemini hooksConfig parity).
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !badTimeout &&
+            hasStamp &&
+            usesProjectDir &&
+            !hooksWontRun &&
+            hasCompleteFactoryAutopilotHooks(file)
+          ) {
+            lines.push(`OK    ${FACTORY_HOOKS_REL_PATH} Autopilot entries`);
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(`FAIL  ${FACTORY_HOOKS_REL_PATH} missing`);
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  ${FACTORY_HOOKS_REL_PATH} unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
+    }
+
+    // Legacy nested path + project settings flags / misplaced Autopilot.
+    if (
+      factoryFileHasAutopilotFingerprint(
+        path.join(root, ".factory", "hooks", "hooks.json"),
+        FACTORY_LEGACY_HOOKS_REL_PATH,
+      )
+    ) {
+      lines.push(
+        `WARN  legacy ${FACTORY_LEGACY_HOOKS_REL_PATH} still has Autopilot — prefer ${FACTORY_HOOKS_REL_PATH}; open /hooks and save to migrate (Autopilot does not dual-write)`,
+      );
+    }
+    if (projectSettings.hooksDisabled) {
+      lines.push(
+        `WARN  ${FACTORY_SETTINGS_REL_PATH} hooksDisabled===true — Autopilot hooks will not run; toggle in /hooks or /settings`,
+      );
+    }
+    if (projectSettings.allowManagedHooksOnly) {
+      lines.push(
+        `WARN  ${FACTORY_SETTINGS_REL_PATH} allowManagedHooksOnly===true — org policy drops project/user hooks; Autopilot project hooks will not load`,
+      );
+    }
+    if (projectSettings.hooksContainAutopilot) {
+      lines.push(
+        `WARN  ${FACTORY_SETTINGS_REL_PATH} hooks still list Autopilot — move to ${FACTORY_HOOKS_REL_PATH} and review in /hooks (Autopilot does not migrate settings.json)`,
+      );
+    }
+
+    // User-home Factory residual / settings flags (never edited by Autopilot).
+    // Reuse the same absolute-home settings snapshot used for OK gating.
+    // Skip when home === projectRoot (same .factory tree as project checks).
+    if (factoryHomeDistinct) {
+      if (
+        factoryFileHasAutopilotFingerprint(
+          path.join(factoryHomeDir, ".factory", "hooks.json"),
+          "~/.factory/hooks.json",
+        )
+      ) {
+        lines.push(
+          "WARN  ~/.factory/hooks.json has Autopilot — may double-load with project hooks; remove user-home Autopilot or rely on project .factory/hooks.json only",
+        );
+      }
+      if (homeSettings.hooksDisabled) {
+        lines.push(
+          "WARN  ~/.factory/settings.json hooksDisabled===true — Autopilot hooks will not run; toggle in /hooks or /settings",
+        );
+      }
+      if (homeSettings.allowManagedHooksOnly) {
+        lines.push(
+          "WARN  ~/.factory/settings.json allowManagedHooksOnly===true — org policy drops project/user hooks; Autopilot project hooks will not load",
+        );
+      }
+      if (homeSettings.hooksContainAutopilot) {
+        lines.push(
+          "WARN  ~/.factory/settings.json hooks still list Autopilot — move to project .factory/hooks.json and review in /hooks",
+        );
+      }
+    }
+  }
+
   // Dual Claude + Copilot Autopilot fingerprints (config and/or on-disk residue).
   if (wantClaude && wantCopilot) {
     lines.push(
@@ -1642,6 +1939,50 @@ export function runDoctor(
     if (!wantGemini && !wantClaude && geminiLeftoverFp && claudeFpVsGemini) {
       lines.push(
         "WARN  Gemini + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
+  // Dual Factory + Claude Autopilot fingerprints (config and/or on-disk residue).
+  const factoryLeftoverFp = wantFactory
+    ? false
+    : projectHasFactoryAutopilotFingerprint(root);
+  if (wantFactory && wantClaude) {
+    lines.push(
+      "WARN  Factory Droid + Claude Code both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFpVsFactory = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFpVsFactory = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantFactory && claudeFpVsFactory) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Factory Droid is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (wantClaude && factoryLeftoverFp) {
+      lines.push(
+        "WARN  Factory Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Factory or expect Stop routing care",
+      );
+    }
+    if (!wantFactory && !wantClaude && factoryLeftoverFp && claudeFpVsFactory) {
+      lines.push(
+        "WARN  Factory + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
       );
     }
   }

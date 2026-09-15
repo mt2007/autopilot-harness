@@ -41,6 +41,11 @@ import {
   GEMINI_SETTINGS_REL_PATH,
 } from "./init/gemini-settings-merge.js";
 import {
+  validateFactoryHooksShape,
+  type FactoryHooksFile,
+  FACTORY_HOOKS_REL_PATH,
+} from "./init/factory-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   readKimiConfigToml,
   resolveKimiCodeHome,
@@ -77,6 +82,7 @@ function preflightHostSettings(
   wantCopilot: boolean,
   wantGrok: boolean,
   wantGemini: boolean,
+  wantFactory: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -311,6 +317,40 @@ function preflightHostSettings(
         return { ok: false, error: `Cannot read ${settingsPath}: ${msg}` };
       }
       // Missing settings.json is OK — force refresh will create it.
+    }
+  }
+
+  if (wantFactory) {
+    const hooksPath = path.join(projectRoot, ".factory", "hooks.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".factory"), ".factory/");
+      assertNotSymlink(hooksPath, FACTORY_HOOKS_REL_PATH);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        FACTORY_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${hooksPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateFactoryHooksShape(parsed as FactoryHooksFile);
+      if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
+      }
+      // Missing hooks.json is OK — force refresh will create it.
     }
   }
 
@@ -617,6 +657,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantCopilot = configWantsInstallableHost(platforms, "copilot-cli");
     const wantGrok = configWantsInstallableHost(platforms, "grok-build");
     const wantGemini = configWantsInstallableHost(platforms, "gemini-cli");
+    const wantFactory = configWantsInstallableHost(platforms, "factory-droid");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -650,6 +691,11 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         `merge ${GEMINI_SETTINGS_REL_PATH} (Autopilot hooks; no skills)`,
       );
     }
+    if (wantFactory) {
+      actions.push(
+        `merge ${FACTORY_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
+      );
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -667,6 +713,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantCopilot,
       wantGrok,
       wantGemini,
+      wantFactory,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

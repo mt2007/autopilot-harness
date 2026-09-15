@@ -3763,6 +3763,500 @@ describe("runDoctor", () => {
     expect(joined).not.toMatch(/disabled lists Autopilot name\(s\)/i);
     expect(joined).toMatch(/OK\s+\.gemini\/settings\.json Autopilot entries/);
   });
+
+  it("Factory-only doctor: OK hooks + WARNs for cap, /hooks, reload", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
+    expect(joined).toMatch(/no documented raise\/hard-cap/i);
+    expect(joined).toMatch(/\/hooks/);
+    expect(joined).toMatch(/snapshot|new session|Reload Factory/i);
+    expect(joined).not.toMatch(/FAIL\s+\.factory\/hooks\.json missing/i);
+  });
+
+  it("FAILs when Factory hooks.json is missing", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".factory", "hooks.json"), { force: true });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    expect(lines.join("\n")).toMatch(/\.factory\/hooks\.json missing/i);
+  });
+
+  it("WARNs Factory timeout below 120 and withholds OK", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".factory", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      Stop?: Array<{ hooks?: Array<{ timeout?: number }> }>;
+    };
+    for (const g of file.Stop ?? []) {
+      for (const h of g.hooks ?? []) {
+        h.timeout = 30;
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/timeout below 120/i);
+    expect(joined).not.toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
+  });
+
+  it("WARNs Factory missing --platform stamp and withholds OK", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".factory", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      [k: string]: Array<{ hooks?: Array<{ command?: string }> }> | unknown;
+    };
+    for (const event of ["UserPromptSubmit", "PostToolUse", "Stop"]) {
+      const groups = file[event];
+      if (!Array.isArray(groups)) continue;
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (typeof h.command === "string") {
+            h.command = h.command.replace(/\s+--platform\s+factory-droid\b/g, "");
+          }
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing --platform factory-droid/i);
+    expect(joined).not.toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
+  });
+
+  it("WARNs Factory missing $FACTORY_PROJECT_DIR and withholds OK", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".factory", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      [k: string]: Array<{ hooks?: Array<{ command?: string }> }> | unknown;
+    };
+    for (const event of ["UserPromptSubmit", "PostToolUse", "Stop"]) {
+      const groups = file[event];
+      if (!Array.isArray(groups)) continue;
+      for (const g of groups) {
+        for (const h of g.hooks ?? []) {
+          if (typeof h.command === "string") {
+            h.command = h.command.replaceAll(
+              '"$FACTORY_PROJECT_DIR"',
+              '"."',
+            );
+          }
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing \$FACTORY_PROJECT_DIR/i);
+    expect(joined).not.toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
+  });
+
+  it("WARNs Factory hooksDisabled and settings.json Autopilot residual", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const settingsPath = path.join(root, ".factory", "settings.json");
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify(
+        {
+          hooksDisabled: true,
+          allowManagedHooksOnly: true,
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command:
+                      "node .autopilot/bin/autopilot-harness-hook.mjs --platform factory-droid --event Stop",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/hooksDisabled===true/i);
+    expect(joined).toMatch(/allowManagedHooksOnly===true/i);
+    expect(joined).toMatch(
+      /\.factory\/settings\.json hooks still list Autopilot/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
+  });
+
+  it("WARNs legacy .factory/hooks/hooks.json Autopilot fingerprint", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const legacyDir = path.join(root, ".factory", "hooks");
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(legacyDir, "hooks.json"),
+      JSON.stringify(
+        {
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop",
+                },
+              ],
+            },
+          ],
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /legacy \.factory\/hooks\/hooks\.json still has Autopilot/i,
+    );
+  });
+
+  it("WARNs ~/.factory residual Autopilot hooks when Factory enabled", () => {
+    root = tmpProject();
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-factory-home-"));
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "factory-droid",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const homeFactory = path.join(fakeHome, ".factory");
+      fs.mkdirSync(homeFactory, { recursive: true });
+      fs.writeFileSync(
+        path.join(homeFactory, "hooks.json"),
+        JSON.stringify(
+          {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command:
+                      "node .autopilot/bin/autopilot-harness-hook.mjs --platform factory-droid --event Stop",
+                  },
+                ],
+              },
+            ],
+          },
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      const { ok, lines } = runDoctor(root, { homeDir: fakeHome });
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).toMatch(/~\/\.factory\/hooks\.json has Autopilot/i);
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds Factory OK when ~/.factory/settings.json hooksDisabled===true", () => {
+    root = tmpProject();
+    const fakeHome = fs.mkdtempSync(
+      path.join(os.tmpdir(), "ap-factory-home-dis-"),
+    );
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "factory-droid",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const homeFactory = path.join(fakeHome, ".factory");
+      fs.mkdirSync(homeFactory, { recursive: true });
+      fs.writeFileSync(
+        path.join(homeFactory, "settings.json"),
+        JSON.stringify({ hooksDisabled: true }, null, 2) + "\n",
+        "utf8",
+      );
+      const { ok, lines } = runDoctor(root, { homeDir: fakeHome });
+      expect(ok).toBe(true);
+      const joined = lines.join("\n");
+      expect(joined).toMatch(/~\/\.factory\/settings\.json hooksDisabled===true/i);
+      expect(joined).not.toMatch(/OK\s+\.factory\/hooks\.json Autopilot entries/);
+    } finally {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs Factory Droid + Claude Code both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platforms: [
+          { id: "factory-droid", surface: "cli" },
+          { id: "claude-code", surface: "cli" },
+        ],
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Factory Droid \+ Claude Code both enabled/i,
+    );
+  });
+
+  it("WARNs when Claude-only project has leftover Factory Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "claude-code", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    expect(fs.existsSync(path.join(root, ".factory", "hooks.json"))).toBe(true);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Factory Autopilot hooks present while Claude Code is enabled/i,
+    );
+  });
+
+  it("WARNs leftover Factory settings.json Autopilot when Claude-only (no hooks.json)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const factoryDir = path.join(root, ".factory");
+    fs.mkdirSync(factoryDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(factoryDir, "settings.json"),
+      JSON.stringify(
+        {
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  {
+                    type: "command",
+                    command:
+                      "node .autopilot/bin/autopilot-harness-hook.mjs --platform factory-droid --event Stop",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Factory Autopilot hooks present while Claude Code is enabled/i,
+    );
+  });
+
+  it("ignores relative homeDir for ~/.factory residual (no cwd leak)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root, { homeDir: "relative-home" });
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).not.toMatch(/~\/\.factory/);
+  });
+
+  it("does not false-WARN ~/.factory when homeDir === projectRoot", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.writeFileSync(
+      path.join(root, ".factory", "settings.json"),
+      JSON.stringify({ hooksDisabled: true }, null, 2) + "\n",
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root, { homeDir: root });
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    // Project path WARN only — not duplicated as ~/.factory for the same file.
+    expect(joined).toMatch(/\.factory\/settings\.json hooksDisabled===true/i);
+    expect(joined).not.toMatch(/~\/\.factory/);
+    expect(joined).not.toMatch(/double-load with project hooks/i);
+  });
+
+  it("does not false-WARN ~/.factory when homeDir is a symlink to projectRoot", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const linkHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-factory-link-"));
+    fs.rmSync(linkHome, { recursive: true, force: true });
+    try {
+      fs.symlinkSync(root, linkHome, "dir");
+    } catch {
+      // Some environments cannot create dir symlinks — skip without failing CI.
+      return;
+    }
+    try {
+      const { ok, lines } = runDoctor(root, { homeDir: linkHome });
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).not.toMatch(/double-load with project hooks/i);
+    } finally {
+      // Unlink the symlink only — never recursive-rm a path that may point at root.
+      try {
+        if (fs.lstatSync(linkHome).isSymbolicLink()) {
+          fs.unlinkSync(linkHome);
+        }
+      } catch {
+        /* already gone */
+      }
+    }
+  });
 });
 
 describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", () => {
