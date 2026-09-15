@@ -13,7 +13,7 @@
 - [x] docs-factory-shipped — eight-way；Shipped(/degraded)+诚实 multi-block/**waive→degraded** 结论；`$FACTORY_PROJECT_DIR`；`/hooks`+快照；next=Hermes；docs-contract；勿改 `[0.7.0]` 历史；新开 `[0.8.0]`
 - [x] changelog-bump-0-8-0 — 公开包 →0.8.0
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
-- [ ] commit-local — conventional；勿 push/tag/publish
+- [x] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 活链或 waive；「同意发 0.8.0」；0.7 pin 或允许叠发；**waive 时确认 degraded≤1 或签字 multi 风险**
 - [ ] push-tag-release — push/tag/GH Release
 - [ ] npm-publish-pnpm — 仅 `pnpm publish`
