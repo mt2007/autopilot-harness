@@ -1092,13 +1092,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, and Factory Droid/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent/,
     );
     expect(cliPkg.keywords).toEqual(
       expect.arrayContaining([
@@ -1110,6 +1110,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "grok-build",
         "gemini-cli",
         "factory-droid",
+        "hermes-agent",
       ]),
     );
     const kimiPkg = JSON.parse(
@@ -1163,6 +1164,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(factoryPkg.description).toMatch(/multi-block/i);
     expect(factoryPkg.description).toMatch(/degraded/i);
     expect(factoryPkg.description).not.toMatch(/Coming v0\.8\b/);
+    const hermesPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/hermes-agent/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string; private?: boolean };
+    expect(hermesPkg.private).not.toBe(true);
+    expect(hermesPkg.description).toMatch(/Hermes Agent/i);
+    expect(hermesPkg.description).toMatch(/pre_llm_call|pre_verify/i);
+    expect(hermesPkg.description).not.toMatch(/Coming v0\.9\b/);
     const runnerPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/runner/package.json"),

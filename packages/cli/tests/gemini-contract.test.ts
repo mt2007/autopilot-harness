@@ -131,11 +131,11 @@ describe("gemini contract matrix", () => {
     expect(handleGeminiStop).not.toBe(handleGrokStop);
   });
 
-  it("shipped hook asset keeps eight-way dispatch + GEMINI_EVENTS allowlist", () => {
+  it("shipped hook asset keeps nine-way dispatch + GEMINI_EVENTS allowlist", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,?\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,\s*"hermes-agent"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(
       /GEMINI_EVENTS\s*=\s*new Set\(\[\s*"BeforeAgent"\s*,\s*"AfterTool"\s*,\s*"AfterAgent"\s*,?\s*\]\)/,

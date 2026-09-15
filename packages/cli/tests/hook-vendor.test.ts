@@ -1353,6 +1353,324 @@ describe("hook vendor runtime", () => {
     expect(noEvent.stdout).toBe("");
   });
 
+  it("nine-way --platform hermes-agent routes pre_llm_call/post_tool_call/pre_verify (context; {} never block; continue; wrong stamp abort)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    for (const slug of ["herm-alpha", "herm-beta"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const cid = "hook-hermes-aaaa-bbbb-cccc-ddddeeee0001";
+
+    // pre_llm_call ON → allow {}
+    const onProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "pre_llm_call", "--platform", "hermes-agent"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          user_message: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(JSON.parse(onProc.stdout.trim() || "{}")).toEqual({});
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("hermes-agent");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    // Unstamped pre_llm_call still routes to hermes-agent (unique event).
+    const unstampedOn = spawnSync(
+      process.execPath,
+      [hook, "--event", "pre_llm_call"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: "hook-hermes-aaaa-bbbb-cccc-ddddeeee0099",
+          user_message: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(unstampedOn.status).toBe(0);
+    expect(JSON.parse(unstampedOn.stdout.trim() || "{}")).toEqual({});
+    const unstampedStore = new StateStore(root);
+    expect(
+      unstampedStore.getSession("hook-hermes-aaaa-bbbb-cccc-ddddeeee0099")
+        ?.platform,
+    ).toBe("hermes-agent");
+    unstampedStore.close();
+
+    // RUN needPick → {context} (cannot discard prompt)
+    const runProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "pre_llm_call", "--platform", "hermes-agent"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          user_message: "Autopilot RUN",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(runProc.status).toBe(0);
+    const runOut = JSON.parse(runProc.stdout.trim() || "{}") as {
+      context?: string;
+      decision?: string;
+    };
+    expect(runOut.decision).toBeUndefined();
+    expect(typeof runOut.context).toBe("string");
+    expect(runOut.context).toMatch(/herm-alpha|herm-beta|Select a plan/i);
+
+    // Wrong stamp + Hermes event → JSON {} before FSM (no new session).
+    // Must still emit JSON {} even when stamp is kimi-code (Kimi fail-open
+    // writes no stdout; Hermes host requires a JSON object).
+    const wrongStamp = spawnSync(
+      process.execPath,
+      [hook, "--event", "pre_llm_call", "--platform", "factory-droid"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: "hook-hermes-wrong-stamp-0001",
+          user_message: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(wrongStamp.status).toBe(0);
+    expect(JSON.parse(wrongStamp.stdout.trim() || "{}")).toEqual({});
+    const wrongStore = new StateStore(root);
+    expect(wrongStore.getSession("hook-hermes-wrong-stamp-0001")).toBeNull();
+    wrongStore.close();
+
+    const wrongKimi = spawnSync(
+      process.execPath,
+      [hook, "--event", "pre_llm_call", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: "hook-hermes-wrong-stamp-kimi-0001",
+          user_message: "Autopilot ON",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(wrongKimi.status).toBe(0);
+    expect(wrongKimi.stdout.trim()).toBe("{}");
+    const wrongKimiStore = new StateStore(root);
+    expect(
+      wrongKimiStore.getSession("hook-hermes-wrong-stamp-kimi-0001"),
+    ).toBeNull();
+    wrongKimiStore.close();
+
+    // Hermes stamp + Cursor-only event on a fresh project must abort before
+    // opening state.db (Cursor beforeSubmitPrompt would create it).
+    const freshRoot = tmpProject();
+    try {
+      expect(
+        installInitYes({
+          projectRoot: freshRoot,
+          platform: "cursor",
+          surface: "ide",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const freshHook = path.join(
+        freshRoot,
+        ".autopilot",
+        "bin",
+        "autopilot-harness-hook.mjs",
+      );
+      const freshAbort = spawnSync(
+        process.execPath,
+        [
+          freshHook,
+          "--platform",
+          "hermes-agent",
+          "--event",
+          "beforeSubmitPrompt",
+        ],
+        {
+          cwd: freshRoot,
+          input: JSON.stringify({
+            conversation_id: "hook-hermes-fresh-abort-0001",
+            prompt: "hello",
+          }),
+          encoding: "utf8",
+          timeout: 15_000,
+        },
+      );
+      expect(freshAbort.status).toBe(0);
+      expect(JSON.parse(freshAbort.stdout.trim() || "{}")).toEqual({});
+      expect(
+        fs.existsSync(path.join(freshRoot, ".autopilot", "state.db")),
+      ).toBe(false);
+    } finally {
+      fs.rmSync(freshRoot, { recursive: true, force: true });
+    }
+
+    // Hermes stamp + Cursor-only event → {} abort before state.db side effects
+    // on a fresh install would open db; assert no pending_followup mutation.
+    const mid = new StateStore(root);
+    const beforeAbort = mid.getReviewChain(cid)?.pending_followup ?? null;
+    mid.close();
+    const hermesCursor = spawnSync(
+      process.execPath,
+      [hook, "--platform", "hermes-agent", "--event", "beforeSubmitPrompt"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          prompt: "hostile cursor shape",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(hermesCursor.status).toBe(0);
+    expect(JSON.parse(hermesCursor.stdout.trim() || "{}")).toEqual({});
+    const afterAbort = new StateStore(root);
+    expect(afterAbort.getSession(cid)?.platform).toBe("hermes-agent");
+    expect(afterAbort.getReviewChain(cid)?.pending_followup ?? null).toBe(
+      beforeAbort,
+    );
+    afterAbort.close();
+
+    // post_tool_call write_file → always {} (never block) + dirty-arm
+    const file = path.join(root, "src", "herm.ts");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "export const h = 1;\n");
+    const editCid = "hook-hermes-aaaa-bbbb-cccc-ddddeeee0002";
+    const editStore = new StateStore(root);
+    editStore.upsertSession({
+      conversation_id: editCid,
+      project_root: root,
+      code_root: root,
+      platform: "hermes-agent",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "herm-alpha",
+      checklist_path: path.join(root, "plans", "herm-alpha", "checklist.md"),
+    });
+    editStore.close();
+    const editProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "post_tool_call", "--platform", "hermes-agent"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: editCid,
+          tool_name: "write_file",
+          tool_input: { path: file },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(editProc.status).toBe(0);
+    expect(JSON.parse(editProc.stdout.trim() || "{}")).toEqual({});
+    const verifyEdit = new StateStore(root);
+    expect(verifyEdit.getReviewChain(editCid)?.code_edited).toBe(1);
+    verifyEdit.close();
+
+    // pre_verify continue → decision:block+reason
+    const armed = new StateStore(root);
+    armed.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "hermes-agent",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "herm-alpha",
+      checklist_path: path.join(root, "plans", "herm-alpha", "checklist.md"),
+      reviewing_item_id: "a",
+    });
+    armed.updateReviewChain(cid, { code_edited: 1 });
+    armed.close();
+
+    const verifyProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "pre_verify", "--platform", "hermes-agent"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          session_id: cid,
+          extra: { attempt: 0, coding: true, changed_paths: ["src/herm.ts"] },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(verifyProc.status).toBe(0);
+    const verifyOut = JSON.parse(verifyProc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+    };
+    expect(verifyOut.decision).toBe("block");
+    expect(verifyOut.reason).toBeTruthy();
+    expect(JSON.stringify(verifyOut)).not.toMatch(/continue:false|stopReason/);
+
+    // Foreign event under Hermes stamp already covered; StopFailure → {}
+    const stopFail = spawnSync(
+      process.execPath,
+      [hook, "--event", "StopFailure", "--platform", "hermes-agent"],
+      {
+        cwd: root,
+        input: JSON.stringify({ session_id: cid }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopFail.status).toBe(0);
+    expect(JSON.parse(stopFail.stdout.trim() || "{}")).toEqual({});
+
+    // writeHermesReply: incomplete decision:block must silence (not fall through
+    // to context); native action:continue is accepted; clip before emit.
+    const hookSrc = fs.readFileSync(hook, "utf8");
+    expect(hookSrc).toMatch(/function writeHermesReply\(/);
+    expect(hookSrc).toMatch(
+      /result\.decision === "block"[\s\S]*?writeReply\("\{\}"\)[\s\S]*?return;[\s\S]*?result\.action === "continue"/,
+    );
+    expect(hookSrc).toMatch(
+      /result\.action === "continue"[\s\S]*?writeReply\("\{\}"\)[\s\S]*?return;[\s\S]*?const context = clipHermesStdio/,
+    );
+    expect(hookSrc).toMatch(
+      /truncated[\s\S]*?slice\(0,\s*HERMES_MAX_STDIO_CHARS\)[\s\S]*?replaceAll\("\\0"/,
+    );
+  });
+
   it("unstamped agentStop + stopHookActive routes Copilot (not Claude Layer C)", () => {
     root = tmpProject();
     expect(

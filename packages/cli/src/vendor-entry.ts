@@ -2,7 +2,7 @@
  * Single ESM entry bundled into assets/vendor/runtime.mjs for project hooks.
  * Consumers get core + port-cursor + port-claude-code + port-codex +
  * port-kimi-code + port-copilot-cli + port-grok-build + port-gemini-cli +
- * port-factory-droid + i18n without installing workspace packages.
+ * port-factory-droid + port-hermes-agent + i18n without installing workspace packages.
  */
 import { loadLocale } from "@autopilot-harness/i18n";
 import {
@@ -76,6 +76,14 @@ export {
   handleStop as handleFactoryStop,
   isFactoryEmptyStdout,
 } from "@autopilot-harness/port-factory-droid";
+
+export {
+  HERMES_PLATFORM,
+  handleHermesPreLlmCall,
+  handleHermesPostToolCall,
+  handleHermesPreVerify,
+  isHermesAllowNoop,
+} from "@autopilot-harness/port-hermes-agent";
 
 /** @deprecated Prefer handleCursorStop — kept for older hook.mjs copies. */
 export { handleStop } from "@autopilot-harness/port-cursor";

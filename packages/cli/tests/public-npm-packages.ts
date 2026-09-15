@@ -14,6 +14,7 @@ export const PUBLIC_PACKAGE_JSON_PATHS = [
   "packages/ports/grok-build/package.json",
   "packages/ports/gemini-cli/package.json",
   "packages/ports/factory-droid/package.json",
+  "packages/ports/hermes-agent/package.json",
 ] as const;
 
 export const PUBLIC_PACKAGE_DIRS = PUBLIC_PACKAGE_JSON_PATHS.map((rel) =>

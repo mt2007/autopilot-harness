@@ -25,6 +25,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/grok-build",
   "packages/ports/gemini-cli",
   "packages/ports/factory-droid",
+  "packages/ports/hermes-agent",
 ] as const;
 
 function workspaceHarnessDeps(

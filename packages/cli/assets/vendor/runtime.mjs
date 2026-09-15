@@ -3653,10 +3653,10 @@ var ReviewEngine = class {
    * salvage again — the prior tip does not cover the new failure.
    */
   classifyCompletedOrphan(transcriptPath) {
-    const path12 = transcriptPath?.trim();
-    if (!path12) return "none";
+    const path13 = transcriptPath?.trim();
+    if (!path13) return "none";
     try {
-      const events = readTranscriptTail(path12);
+      const events = readTranscriptTail(path13);
       const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
       if (errIdx < 0) return "none";
       for (let i = events.length - 1; i > errIdx; i--) {
@@ -4738,8 +4738,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let targets = null;
-      const path12 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path12.length > 0;
+      const path13 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path13.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed?.checklist) {
@@ -9552,6 +9552,553 @@ function handleStopInner5(engine, payload, opts) {
   };
 }
 
+// ../ports/hermes-agent/src/index.ts
+import os from "node:os";
+import path12 from "node:path";
+var HERMES_PLATFORM = "hermes-agent";
+var MAX_NEED_PICK_SLUGS7 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS7 = 2e3;
+var MAX_HOOK_STDIO_CHARS6 = 8192;
+var MAX_TOOL_ARGS_JSON_CHARS5 = 1048576;
+var MAX_HERMES_CHANGED_PATHS = 256;
+var MAX_HERMES_PATH_CHARS = 4096;
+var MAX_HERMES_PATCH_BODY_CHARS = 1048576;
+function isHermesAllowNoop(result) {
+  if (result == null || typeof result !== "object" || Array.isArray(result)) {
+    return false;
+  }
+  for (const value of Object.values(result)) {
+    if (value !== void 0 && value !== null) return false;
+  }
+  return true;
+}
+function sid8(p) {
+  for (const v of [p.session_id, p.sessionId]) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t && !/[\u0000-\u001f\u007f]/.test(t)) return t;
+    }
+  }
+  const extra = p.extra;
+  if (extra && typeof extra === "object") {
+    for (const key of ["session_id", "sessionId"]) {
+      const v = extra[key];
+      if (typeof v === "string") {
+        const t = v.trim();
+        if (t && !/[\u0000-\u001f\u007f]/.test(t)) return t;
+      }
+    }
+  }
+  return "";
+}
+function extraOf(p) {
+  return p.extra && typeof p.extra === "object" && !Array.isArray(p.extra) ? p.extra : {};
+}
+function clipText5(text, max = MAX_HOOK_STDIO_CHARS6) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function blockReason7(message, fallback) {
+  const m = typeof message === "string" ? message.trim() : "";
+  return m || fallback;
+}
+function loopCountFromHermesAttempt(payload) {
+  const raw = extraOf(payload).attempt;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+    return Math.floor(raw);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  }
+  return 0;
+}
+var HERMES_NON_TEXT_PART_TYPES = /* @__PURE__ */ new Set([
+  "image",
+  "image_url",
+  "input_image",
+  "audio",
+  "input_audio",
+  "file",
+  "input_file",
+  "document",
+  "video",
+  "video_url",
+  "input_video"
+]);
+var HERMES_TEXT_PART_KEYS = [
+  "text",
+  "content",
+  "input_text",
+  "output_text",
+  "summary_text"
+];
+function isNonTextHermesContentPart(o) {
+  const typeRaw = typeof o.type === "string" ? o.type.trim().toLowerCase() : "";
+  if (typeRaw && HERMES_NON_TEXT_PART_TYPES.has(typeRaw)) return true;
+  return "image_url" in o || "imageUrl" in o || "video_url" in o || "videoUrl" in o;
+}
+function textFromOneHermesContentPart(o) {
+  if (isNonTextHermesContentPart(o)) return "";
+  for (const key of HERMES_TEXT_PART_KEYS) {
+    const t = o[key];
+    if (typeof t === "string" && t.trim()) {
+      return t.length > MAX_HOOK_STDIO_CHARS6 ? t.slice(0, MAX_HOOK_STDIO_CHARS6) : t;
+    }
+  }
+  return "";
+}
+function textFromHermesContent(value) {
+  if (typeof value === "string") {
+    if (!value.trim()) return "";
+    return value.length > MAX_HOOK_STDIO_CHARS6 ? value.slice(0, MAX_HOOK_STDIO_CHARS6) : value;
+  }
+  if (Array.isArray(value)) {
+    const parts = [];
+    let used = 0;
+    for (const item of value.slice(0, 64)) {
+      const remain = MAX_HOOK_STDIO_CHARS6 - used;
+      if (remain <= 0) break;
+      let piece = "";
+      if (typeof item === "string") {
+        piece = item.trim() ? item : "";
+      } else if (item && typeof item === "object" && !Array.isArray(item)) {
+        piece = textFromOneHermesContentPart(item);
+      }
+      if (!piece) continue;
+      if (piece.length > remain) piece = piece.slice(0, remain);
+      parts.push(piece);
+      used += piece.length + 1;
+    }
+    return parts.join("\n");
+  }
+  if (value && typeof value === "object") {
+    return textFromOneHermesContentPart(value);
+  }
+  return "";
+}
+function userMessageFromHermesSubmit(payload) {
+  for (const root of [
+    payload.user_message,
+    payload.userMessage,
+    payload.prompt
+  ]) {
+    const text = textFromHermesContent(root);
+    if (text) return text;
+  }
+  const extra = extraOf(payload);
+  for (const key of ["user_message", "userMessage", "prompt"]) {
+    const text = textFromHermesContent(extra[key]);
+    if (text) return text;
+  }
+  return "";
+}
+function isSafeHermesPath(raw) {
+  const t = raw.trim();
+  return t.length > 0 && t.length <= MAX_HERMES_PATH_CHARS && !/[\0\r\n]/.test(t);
+}
+function changedPathsFromHermesPreVerify(payload) {
+  const raw = extraOf(payload).changed_paths ?? extraOf(payload).changedPaths;
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const p of raw) {
+    if (out.length >= MAX_HERMES_CHANGED_PATHS) break;
+    if (typeof p === "string" && isSafeHermesPath(p)) out.push(p.trim());
+  }
+  return out;
+}
+function buildNeedPickContext5(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS7);
+  let ctx = fromMessage || (slugs.length > 0 ? `[Autopilot] Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "[Autopilot] Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS7) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS7 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function injectContext(text) {
+  const t = text.trim();
+  if (!t) return {};
+  return { context: clipText5(t, MAX_NEED_PICK_CONTEXT_CHARS7 + 256) };
+}
+function injectNeedPickContext3(userMessage, candidates) {
+  return injectContext(buildNeedPickContext5(userMessage, candidates));
+}
+function parseToolInput(payload) {
+  const raw = payload.tool_input ?? payload.toolInput;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    if (raw.length > MAX_TOOL_ARGS_JSON_CHARS5) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function pathsFromHermesPatchBody(command) {
+  if (typeof command !== "string" || !command.trim()) return [];
+  const text = command.length > MAX_HERMES_PATCH_BODY_CHARS ? command.slice(0, MAX_HERMES_PATCH_BODY_CHARS) : command;
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (raw) => {
+    if (found.length >= MAX_HERMES_CHANGED_PATHS) return;
+    let p = raw.trim();
+    if (!isSafeHermesPath(p) || p === "/dev/null") return;
+    p = p.replace(/^[ab]\//, "");
+    if (!isSafeHermesPath(p) || seen.has(p)) return;
+    seen.add(p);
+    found.push(p);
+  };
+  for (const line of text.split(/\r?\n/)) {
+    if (found.length >= MAX_HERMES_CHANGED_PATHS) break;
+    const rename = line.match(
+      /^\*\*\*\s*(?:Rename|Move)\s+File:\s*(.+?)\s*->\s*(.+?)\s*$/i
+    );
+    if (rename?.[1] && rename[2]) {
+      push(rename[1]);
+      push(rename[2]);
+      continue;
+    }
+    const header = line.match(
+      /^\*\*\*\s*(?:Add|Update|Delete)\s+File:\s*(.+?)\s*$/i
+    );
+    if (header?.[1]) {
+      push(header[1]);
+      continue;
+    }
+    const plus = line.match(/^\+\+\+\s+(?:[ab]\/)?(.+?)\s*$/);
+    if (plus?.[1] && plus[1] !== "/dev/null") {
+      push(plus[1]);
+    }
+  }
+  return found;
+}
+function filePathsFromHermesEdit(payload) {
+  const input = parseToolInput(payload);
+  if (!input) return [];
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  const push = (raw) => {
+    if (found.length >= MAX_HERMES_CHANGED_PATHS) return;
+    const t = raw.trim();
+    if (!isSafeHermesPath(t) || seen.has(t)) return;
+    seen.add(t);
+    found.push(t);
+  };
+  for (const c of [
+    input.path,
+    input.file_path,
+    input.filePath,
+    input.target_file,
+    input.targetFile
+  ]) {
+    if (typeof c === "string") push(c);
+  }
+  for (const key of ["patch", "command"]) {
+    const body = input[key];
+    if (typeof body === "string" && body.trim()) {
+      for (const p of pathsFromHermesPatchBody(body)) push(p);
+    }
+  }
+  return found;
+}
+function isHermesEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "write_file" || n === "patch";
+}
+function stampHermesPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === HERMES_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: HERMES_PLATFORM
+  });
+}
+function gateContext(userMessage, fallback) {
+  return injectContext(
+    blockReason7(
+      typeof userMessage === "string" ? userMessage : void 0,
+      fallback
+    )
+  );
+}
+function handlePreLlmCall(store, payload, projectRoot, portConfig) {
+  try {
+    return handlePreLlmCallInner(store, payload, projectRoot, portConfig);
+  } catch {
+    return {};
+  }
+}
+var handleHermesPreLlmCall = handlePreLlmCall;
+function handlePreLlmCallInner(store, payload, projectRoot, portConfig) {
+  const conversationId = sid8(payload);
+  if (!conversationId) return {};
+  const prompt = userMessageFromHermesSubmit(payload);
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "[Autopilot] Rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampHermesPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: HERMES_PLATFORM
+      });
+      stampHermesPlatform(store, conversationId, projectRoot);
+      if (!result.ok) return gateContext(result.userMessage, gateFallback);
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      stampHermesPlatform(store, conversationId, projectRoot);
+      if (!result.ok) return gateContext(result.userMessage, gateFallback);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampHermesPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: HERMES_PLATFORM
+      });
+      stampHermesPlatform(store, conversationId, projectRoot);
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext3(result.userMessage, result.candidates);
+        }
+        return gateContext(result.userMessage, gateFallback);
+      }
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: HERMES_PLATFORM
+      });
+      stampHermesPlatform(store, conversationId, projectRoot);
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext3(result.userMessage, result.candidates);
+        }
+        return gateContext(result.userMessage, gateFallback);
+      }
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: HERMES_PLATFORM }
+      );
+      stampHermesPlatform(store, conversationId, projectRoot);
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          return injectNeedPickContext3(result.userMessage, result.candidates);
+        }
+        return gateContext(result.userMessage, gateFallback);
+      }
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampHermesPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited7(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      HERMES_PLATFORM
+    );
+  }
+  stampHermesPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function armPaths(store, conversationId, projectRoot, filePaths) {
+  if (filePaths.length === 0) {
+    stampHermesPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited7(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampHermesPlatform(store, conversationId, projectRoot);
+  }
+}
+function handlePostToolCall(store, payload, projectRoot) {
+  try {
+    handlePostToolCallInner(store, payload, projectRoot);
+  } catch {
+  }
+}
+var handleHermesPostToolCall = handlePostToolCall;
+function handlePostToolCallInner(store, payload, projectRoot) {
+  const conversationId = sid8(payload);
+  const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
+  if (!conversationId || !isHermesEditTool(toolName)) return;
+  armPaths(
+    store,
+    conversationId,
+    projectRoot,
+    filePathsFromHermesEdit(payload)
+  );
+}
+function collectHermesErrorText(payload) {
+  const extra = extraOf(payload);
+  const parts = [];
+  const push = (value) => {
+    if (typeof value === "string" && value.trim()) parts.push(value);
+  };
+  push(extra.error);
+  push(extra.error_message);
+  push(extra.message);
+  return clipText5(parts.join("\n"));
+}
+function normalizeHermesStopStatus(payload, opts) {
+  if (opts?.status === "aborted") return "aborted";
+  if (opts?.status === "error") {
+    const errText2 = collectHermesErrorText(payload);
+    if (isUserAbortText(errText2)) return "aborted";
+    return "error";
+  }
+  const errText = collectHermesErrorText(payload);
+  if (isUserAbortText(errText)) return "aborted";
+  return opts?.status ?? "completed";
+}
+function handlePreVerify(engine, store, payload, projectRoot, opts) {
+  try {
+    return handlePreVerifyInner(engine, store, payload, projectRoot, opts);
+  } catch {
+    return {};
+  }
+}
+var handleHermesPreVerify = handlePreVerify;
+function handlePreVerifyInner(engine, store, payload, projectRoot, opts) {
+  const conversationId = sid8(payload);
+  if (!conversationId) return {};
+  try {
+    armPaths(
+      store,
+      conversationId,
+      projectRoot,
+      changedPathsFromHermesPreVerify(payload)
+    );
+  } catch {
+  }
+  const status = normalizeHermesStopStatus(payload, opts);
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromHermesAttempt(payload),
+    platform: HERMES_PLATFORM
+  });
+  if (!action?.message) return {};
+  if (!action.loop) return {};
+  return {
+    decision: "block",
+    reason: clipText5(
+      blockReason7(action.message, "Autopilot followup"),
+      MAX_HOOK_STDIO_CHARS6
+    )
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -9563,6 +10110,7 @@ export {
   FACTORY_PLATFORM,
   GEMINI_PLATFORM,
   GROK_PLATFORM,
+  HERMES_PLATFORM,
   KIMI_PLATFORM,
   ReviewEngine,
   StateStore,
@@ -9588,6 +10136,9 @@ export {
   handlePostToolUse5 as handleGrokPostToolUse,
   handleStop6 as handleGrokStop,
   handleUserPromptSubmit5 as handleGrokUserPromptSubmit,
+  handleHermesPostToolCall,
+  handleHermesPreLlmCall,
+  handleHermesPreVerify,
   handlePostToolUse3 as handleKimiPostToolUse,
   handleStop4 as handleKimiStop,
   handleUserPromptSubmit3 as handleKimiUserPromptSubmit,
@@ -9596,5 +10147,6 @@ export {
   handleStopFailure,
   handleUserPromptSubmit,
   isFactoryEmptyStdout,
+  isHermesAllowNoop,
   loadProjectReviewConfig
 };

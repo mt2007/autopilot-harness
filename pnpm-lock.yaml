@@ -47,6 +47,9 @@ importers:
       '@autopilot-harness/port-grok-build':
         specifier: workspace:*
         version: link:../ports/grok-build
+      '@autopilot-harness/port-hermes-agent':
+        specifier: workspace:*
+        version: link:../ports/hermes-agent
       '@autopilot-harness/port-kimi-code':
         specifier: workspace:*
         version: link:../ports/kimi-code
