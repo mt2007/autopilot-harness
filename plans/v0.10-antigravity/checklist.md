@@ -13,7 +13,7 @@
 - [x] matrix-ten-host — Antigravity↔九宿主错 stamp → abort；既有不红
 - [x] smoke-repo — `pnpm test` + typecheck
 - [x] live-antigravity-smoke — **待你装好 Antigravity 后由本会话活检**：Stop ≥1×（力争 ≥2×）+ edit arm；**优先能 fire 的表面**（CLI 优先，IDE 若可 fire 也记一笔）；证据写明 **CLI / IDE / 两者**；**失败 → 不发 0.10**；半残 degraded 仅人闸；不强制 G/F/H skills 活链
-- [ ] docs-antigravity-shipped — ten-way Shipped（或人闸 degraded）；skills 一体路径表；双开 tip；slash；auto-attach≠ON；Gemini trust；PreInvocation 结论；`.agents`；next=OpenCode；`[0.10.0]`；docs-contract
+- [x] docs-antigravity-shipped — ten-way Shipped（或人闸 degraded）；skills 一体路径表；双开 tip；slash；auto-attach≠ON；Gemini trust；PreInvocation 结论；`.agents`；next=OpenCode；`[0.10.0]`；docs-contract
 - [ ] changelog-bump-0-10-0 — →0.10.0（Antigravity + 三家 skills）— **仅活链过关后**
 - [ ] local-npm-pack-assert — pack；无 `workspace:*`
 - [ ] commit-local — conventional；勿 push/tag/publish

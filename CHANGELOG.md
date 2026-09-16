@@ -9,6 +9,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Antigravity hook port** (`@autopilot-harness/port-antigravity`): PreInvocation / PostToolUse / Stop adapters; fail-open on errors; Stop continue = `{ decision:"continue", reason }` (**not** Claude `block`); allow / no-op **`{}`**; `fullyIdle !== true` → fail-open (do not continue); PostToolUse matcher `write_to_file|replace_file_content|multi_replace_file_content` + dirty-arm (**never deny**); PreInvocation **has no user-prompt field** — ON/RUN from **`transcriptPath` + stateful cursor** (do not treat as Claude UPS).
+- **Ten-way vendor dispatch**: `--platform antigravity` + aliased exports `handleAntigravityPreInvocation` / `handleAntigravityPostToolUse` / `handleAntigravityStop`; cross-stamp / cross-payload abort across Cursor / Claude / Codex / Kimi / Copilot / Grok / Gemini / Factory / Hermes / Antigravity.
+- **Init / upgrade / uninstall / doctor** for Antigravity: installable `surface:cli`; project **`.agents/hooks.json`** named `autopilot-harness` block (timeout **120**; relative `node .autopilot/bin/… --platform antigravity --event …`) + **`.agents/skills/autopilot-*`** (**does not write `.agent/`**); symlink fail-closed; `--add-platform antigravity`; slash + line-start; **auto-attach ≠ Autopilot ON** tip; IDE may stay silent until reload — prefer a firing surface (CLI).
+- **Skills co-install (hooks+skills 一体)** when those hosts are enabled: **`.gemini/skills/autopilot-*`** (always under `.gemini/skills` even if Antigravity is also enabled; wizard/doctor **`/trust` + `/skills reload`**), **`.factory/skills/autopilot-*`** (Factory frontmatter thin adapt), **`$HERMES_HOME/skills/autopilot-*`**; upgrade merges ignore **`.gemini/skills/**`**, **`.factory/skills/**`**, **`.agents/skills/**`**; uninstall peels only that host’s Autopilot skills.
+- **docs-antigravity-shipped**: Antigravity marked **Shipped (degraded — host live Stop-continue unproven)**; CLI live attempt **OAuth-blocked** (host Stop=0); synthetic wiring proved `decision:continue`×2; **human gate must acknowledge degraded / re-live before publishing 0.10**; skills path table; dual Antigravity+Gemini tip; PreInvocation transcript conclusion; **`.agents` only**; next=**OpenCode**; docs-contract Next→OpenCode; public package matrix includes `packages/ports/antigravity/package.json`.
+- Contract / ten-host matrix tests for Antigravity I/O, Silence `{}`, `fullyIdle`, skills co-install, hooks merge, doctor, add-platform, aliases, and Cursor/Claude/Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes/Antigravity cross-fire.
+
+### Changed
+
+- **docs**: host roadmap — **1 (next)** = OpenCode after Antigravity shipped (degraded pending live/human gate); Runner / Pi / Devin listed ([hosts.md](./docs/hosts.md)).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity) → cli** (and local `pnpm pack` assert: no `workspace:*`) for 0.10.0 public packages.
+
 ## [0.9.0] — 2026-09-16
 
 ### Added

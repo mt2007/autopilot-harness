@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, **Factory Droid**, or **Hermes Agent**) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, or Hermes **`$HERMES_HOME/config.yaml`**) and skills under the project skills path where applicable (`.cursor/skills/` or `.claude/skills/` — Codex / Kimi Code / Copilot CLI / Grok Build CLI / Gemini CLI / Factory Droid / Hermes Agent have no Autopilot skills path).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, **Factory Droid**, **Hermes Agent**, or **Antigravity**) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, Hermes **`$HERMES_HOME/config.yaml`**, or Antigravity **`.agents/hooks.json`**) and skills under the project skills path where applicable (`.cursor/skills/` / `.claude/skills/` / **`.agents/skills/`** / **`.gemini/skills/`** / **`.factory/skills/`** / **`$HERMES_HOME/skills/`** — Codex / Kimi / Copilot / Grok have no Autopilot skills path).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -170,3 +170,14 @@ Cursor may show only opaque “Submission blocked”; the `user_message` body (t
 node /path/to/autopilot-harness/packages/cli/dist/bin.js session purge <id>
 node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor --prune-stale
 ```
+
+### Antigravity
+
+Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Claude `block`). **`fullyIdle !== true` → fail-open**. Host live Stop-continue is **unproven** on the v0.10 dogfood machine (CLI OAuth-blocked) — Autopilot marks Antigravity **Shipped (degraded)** until a firing surface proves ≥1× continue + edit arm, **or** human gate explicitly accepts degraded before publishing **0.10**:
+
+- Hooks: project **`.agents/hooks.json`** named `autopilot-harness` (PreInvocation + PostToolUse edit matcher + Stop; timeout **120**; relative command). Skills: **`.agents/skills/autopilot-*`** (**does not write `.agent/`**). **Auto-attach ≠ Autopilot ON**.
+- PreInvocation **has no prompt field** — triggers parse **`transcriptPath`** with a stateful cursor.
+- After install/upgrade: **reload Antigravity / new session** (IDE hooks may stay silent until reload; prefer **CLI**).
+- Gemini skills (if enabled): always **`.gemini/skills/autopilot-*`** even when Antigravity is also enabled — run **`/trust`** + **`/skills reload`**. Dual Antigravity+Gemini: both trees get `autopilot-*`.
+- `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs timeout/cap/IDE dual / missing skills / auto-attach tip.
+
