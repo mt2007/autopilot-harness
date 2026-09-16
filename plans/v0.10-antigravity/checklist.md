@@ -17,7 +17,7 @@
 - [x] changelog-bump-0-10-0 — →0.10.0（Antigravity + 三家 skills）— **仅活链过关后**
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
 - [x] commit-local — conventional；勿 push/tag/publish
-- [ ] human-gate-confirm — 「同意发 0.10.0」；**Antigravity 未达标则停止发版**；半残须显式认 degraded
+- [x] human-gate-confirm — 「同意发 0.10.0」；**Antigravity 未达标则停止发版**；半残须显式认 degraded
 - [ ] push-tag-release — push/tag/GH Release
 - [ ] npm-publish-pnpm — 仅 `pnpm publish`
 - [ ] pin-upgrade-repo — pin→0.10.0
