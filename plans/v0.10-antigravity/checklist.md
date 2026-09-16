@@ -8,8 +8,8 @@
 - [x] init-antigravity-hooks-skills — **一体**：`.agents/hooks.json` 具名块 + **`.agents/skills/autopilot-*`**；timeout 120；相对 command；symlink fail-closed；`--add-platform`；wizard（reload、IDE tip、**auto-attach ≠ ON**、slash+line-start）；**不**写 `.agent/`；ignore 含 hooks+`.agents/skills/**`
 - [x] init-skills-with-hooks-gemini-factory-hermes — **一体**：启用则写 **`.gemini/skills/autopilot-*`** / **`.factory/skills/autopilot-*`** / **`$HERMES_HOME/skills/autopilot-*`**（**不**因 Antigravity 跳过 Gemini）；共享模板；Factory frontmatter 薄适配 per research；upgrade 补装；uninstall 只剥该平台 Autopilot skills；Hermes symlink fail-closed；upgrade 补 ignore **`.gemini/skills/**`** + **`.factory/skills/**`**
 - [x] doctor-upgrade-uninstall — FAIL 缺/残 Antigravity hooks；WARN timeout/cap/IDE/dual/缺 skills（按启用平台）；Gemini `/trust`+`/skills reload`；Hermes 多仓；**auto-attach ≠ ON** tip
-- [ ] tests-antigravity-contract — Antigravity I/O + merge + 十路 + `fullyIdle`
-- [ ] tests-skills-coinstall — 契约：启用谁写谁；Gemini 始终 `.gemini/skills`（即使 Antigravity 也启用）；Factory/Hermes 路径；升级补/卸载剥；locale；不写 `.agent`
+- [x] tests-antigravity-contract — Antigravity I/O + merge + 十路 + `fullyIdle`
+- [x] tests-skills-coinstall — 契约：启用谁写谁；Gemini 始终 `.gemini/skills`（即使 Antigravity 也启用）；Factory/Hermes 路径；升级补/卸载剥；locale；不写 `.agent`
 - [ ] matrix-ten-host — Antigravity↔九宿主错 stamp → abort；既有不红
 - [ ] smoke-repo — `pnpm test` + typecheck
 - [ ] live-antigravity-smoke — **待你装好 Antigravity 后由本会话活检**：Stop ≥1×（力争 ≥2×）+ edit arm；**优先能 fire 的表面**（CLI 优先，IDE 若可 fire 也记一笔）；证据写明 **CLI / IDE / 两者**；**失败 → 不发 0.10**；半残 degraded 仅人闸；不强制 G/F/H skills 活链
