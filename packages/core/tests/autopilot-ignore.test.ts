@@ -113,6 +113,18 @@ describe("isAutopilotIgnoredPath", () => {
       ),
     ).toBe(true);
     expect(
+      isAutopilotIgnoredPath(
+        ".agents/hooks.json",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
+        ".agents/skills/autopilot-on/SKILL.md",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
       isAutopilotIgnoredPath("docs/readme.md", DEFAULT_AUTOPILOT_IGNORE_PATTERNS),
     ).toBe(false);
     expect(

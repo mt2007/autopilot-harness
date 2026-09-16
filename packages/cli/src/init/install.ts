@@ -35,6 +35,11 @@ import {
   type FactoryHooksFile,
 } from "./factory-hooks-merge.js";
 import {
+  mergeAntigravityHooks,
+  validateAntigravityHooksShape,
+  type AntigravityHooksFile,
+} from "./antigravity-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   mergeKimiConfigToml,
   readKimiConfigToml,
@@ -236,6 +241,34 @@ export type {
   FactoryHookHandler,
   FactoryAutopilotEvent,
 } from "./factory-hooks-merge.js";
+export {
+  mergeAntigravityHooks,
+  validateAntigravityHooksShape,
+  hasCompleteAntigravityAutopilotHooks,
+  summarizeAntigravityAutopilotHooks,
+  stripAutopilotAntigravityHooks,
+  antigravityHooksContainAutopilot,
+  antigravityHooksHavePlatformStamp,
+  antigravityAutopilotHasOmittedOrSmallTimeout,
+  antigravityHooksFileIsVacant,
+  antigravityHooksUseRelativeCommand,
+  autopilotAntigravityHookCommandLine,
+  autopilotAntigravityHookHandler,
+  autopilotAntigravityEventEntries,
+  ANTIGRAVITY_AUTOPILOT_EVENTS,
+  ANTIGRAVITY_POST_TOOL_USE_MATCHER,
+  ANTIGRAVITY_HOOK_TIMEOUT_SEC,
+  ANTIGRAVITY_HOOKS_REL_PATH,
+  ANTIGRAVITY_HOOK_BLOCK_NAME,
+  ANTIGRAVITY_LEGACY_AGENT_DIR,
+} from "./antigravity-hooks-merge.js";
+export type {
+  AntigravityHooksFile,
+  AntigravityHookBlock,
+  AntigravityMatcherGroup,
+  AntigravityHookHandler,
+  AntigravityAutopilotEvent,
+} from "./antigravity-hooks-merge.js";
 export {
   mergeKimiConfigToml,
   stripAutopilotKimiHooks,
@@ -505,6 +538,10 @@ type FactoryHooksRead =
   | { ok: true; value: FactoryHooksFile | null }
   | { ok: false; error: string };
 
+type AntigravityHooksRead =
+  | { ok: true; value: AntigravityHooksFile | null }
+  | { ok: false; error: string };
+
 function platformsWantHost(
   platforms: readonly PlatformBinding[],
   hostId: string,
@@ -512,7 +549,7 @@ function platformsWantHost(
   const want = sanitizePlatformId(hostId);
   // Only installable bindings wire host settings. A hand-edited
   // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli`/`grok-build`/
-  // `gemini-cli`/`factory-droid`/`hermes-agent` with the wrong surface must not force
+  // `gemini-cli`/`factory-droid`/`hermes-agent`/`antigravity` with the wrong surface must not force
   // reads/writes (e.g. corrupt leftover settings blocking --add-platform
   // of another host).
   return platforms.some(
@@ -810,6 +847,45 @@ function readFactoryHooksFile(filePath: string): FactoryHooksRead {
   }
 }
 
+/** Read `.agents/hooks.json`; refuse to clobber an existing unreadable file. */
+function readAntigravityHooksFile(filePath: string): AntigravityHooksRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".agents/hooks.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as AntigravityHooksFile;
+    const shapeError = validateAntigravityHooksShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
 function resolveAutopilotIgnoreTemplate(templatesRoot: string): string {
   const templatePath = path.join(templatesRoot, ".autopilotignore");
   if (isRealRegularFile(templatePath)) {
@@ -1038,7 +1114,7 @@ function installSkills(
   projectRoot: string,
   locale: InitLocale,
   /** Host skills root relative to project, e.g. `.cursor` or `.claude`. */
-  hostSkillsParent: ".cursor" | ".claude",
+  hostSkillsParent: ".cursor" | ".claude" | ".agents",
 ): string[] {
   const written: string[] = [];
   const descriptions = skillDescriptions(locale);
@@ -1214,7 +1290,7 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
   // Host settings (`.cursor/hooks.json` / `.claude/settings.json` /
   // `.codex/hooks.json` / `.github/hooks/autopilot-harness.json` /
   // `.grok/hooks/autopilot-harness.json` / `.gemini/settings.json` /
-  // `.factory/hooks.json`) are
+  // `.factory/hooks.json` / `.agents/hooks.json`) are
   // validated only for platforms that will be wired — see installInitYes.
   return { ok: true };
 }
@@ -1224,11 +1300,13 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
  * (`.cursor/hooks.json` and/or `.claude/settings.json` and/or `.codex/hooks.json`
  * and/or Kimi `$KIMI_CODE_HOME/config.toml` and/or
  * `.github/hooks/autopilot-harness.json` and/or `.grok/hooks/autopilot-harness.json`
- * and/or `.gemini/settings.json` and/or `.factory/hooks.json` per platforms). Does not write Codex
+ * and/or `.gemini/settings.json` and/or `.factory/hooks.json` and/or
+ * `.agents/hooks.json` (+ `.agents/skills`) per platforms). Does not write Codex
  * `config.toml` hooks, Kimi `local.toml`, or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
  * updates the `platforms` list (committed only after hooks succeed).
+ * Does **not** write Antigravity legacy `.agent/`.
  */
 export function installInitYes(opts: InitYesOptions): InitResult {
   if (typeof opts.projectRoot !== "string" || opts.projectRoot.trim() === "") {
@@ -1269,6 +1347,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const geminiSettingsPath = path.join(geminiDir, "settings.json");
   const factoryDir = path.join(projectRoot, ".factory");
   const factoryHooksPath = path.join(factoryDir, "hooks.json");
+  const agentsDir = path.join(projectRoot, ".agents");
+  const antigravityHooksPath = path.join(agentsDir, "hooks.json");
   const mergePlatforms = Boolean(opts.mergePlatforms);
   // Adding hosts into an existing config requires the force/refresh path.
   const force = Boolean(opts.force) || mergePlatforms;
@@ -1438,6 +1518,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantGemini = platformsWantHost(effectivePlatforms, "gemini-cli");
     const wantFactory = platformsWantHost(effectivePlatforms, "factory-droid");
     const wantHermes = platformsWantHost(effectivePlatforms, "hermes-agent");
+    const wantAntigravity = platformsWantHost(effectivePlatforms, "antigravity");
     if (
       !wantCursor &&
       !wantClaude &&
@@ -1447,12 +1528,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       !wantGrok &&
       !wantGemini &&
       !wantFactory &&
-      !wantHermes
+      !wantHermes &&
+      !wantAntigravity
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, and/or hermes-agent).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, and/or antigravity).",
       };
     }
 
@@ -1554,6 +1636,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const factoryPre = readFactoryHooksFile(factoryHooksPath);
       if (!factoryPre.ok) {
         return { ok: false, error: factoryPre.error };
+      }
+    }
+    if (wantAntigravity) {
+      try {
+        assertNotSymlink(agentsDir, ".agents/");
+        assertNotSymlink(antigravityHooksPath, ".agents/hooks.json");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const antigravityPre = readAntigravityHooksFile(antigravityHooksPath);
+      if (!antigravityPre.ok) {
+        return { ok: false, error: antigravityPre.error };
       }
     }
     const kimiHome = resolveKimiCodeHome();
@@ -1762,6 +1857,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let grokFresh: GrokHooksRead | null = null;
     let geminiFresh: GeminiSettingsRead | null = null;
     let factoryFresh: FactoryHooksRead | null = null;
+    let antigravityFresh: AntigravityHooksRead | null = null;
     let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
     let hermesFresh: ReturnType<typeof readHermesConfigYaml> | null = null;
     if (wantCursor) {
@@ -1877,6 +1973,21 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantAntigravity) {
+      antigravityFresh = readAntigravityHooksFile(antigravityHooksPath);
+      if (!antigravityFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: antigravityFresh.error };
+      }
+      try {
+        assertNotSymlink(agentsDir, ".agents/");
+        assertNotSymlink(antigravityHooksPath, ".agents/hooks.json");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
     if (wantKimi) {
       kimiFresh = readKimiConfigToml(kimiTomlPath);
       if (!kimiFresh.ok) {
@@ -1933,6 +2044,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantFactory && factoryFresh?.ok) {
         mergeFactoryHooks(factoryFresh.value);
       }
+      if (wantAntigravity && antigravityFresh?.ok) {
+        mergeAntigravityHooks(antigravityFresh.value);
+      }
       if (wantKimi && kimiFresh?.ok) {
         mergeKimiConfigToml(kimiFresh.value);
       }
@@ -1947,6 +2061,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
 
     // Host skills only after settings preflight + merge dry-run succeeded.
     // Codex / Kimi / Copilot / Grok / Gemini / Factory / Hermes have no Autopilot skills path — skip.
+    // Antigravity co-installs `.agents/skills/autopilot-*` with hooks (not `.agent/`).
     if (wantCursor) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
@@ -1955,6 +2070,11 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     if (wantClaude) {
       written.push(
         ...installSkills(templatesRoot, projectRoot, locale, ".claude"),
+      );
+    }
+    if (wantAntigravity) {
+      written.push(
+        ...installSkills(templatesRoot, projectRoot, locale, ".agents"),
       );
     }
 
@@ -1966,6 +2086,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedGrok: ReturnType<typeof mergeGrokHooks> | null = null;
     let mergedGemini: ReturnType<typeof mergeGeminiSettings> | null = null;
     let mergedFactory: ReturnType<typeof mergeFactoryHooks> | null = null;
+    let mergedAntigravity: ReturnType<typeof mergeAntigravityHooks> | null =
+      null;
     let mergedKimi: string | null = null;
     let mergedHermes: string | null = null;
     try {
@@ -2046,6 +2168,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(factoryDir, ".factory/");
         assertNotSymlink(factoryHooksPath, ".factory/hooks.json");
         mergedFactory = mergeFactoryHooks(factoryFinal.value);
+      }
+      if (wantAntigravity) {
+        const antigravityFinal = readAntigravityHooksFile(antigravityHooksPath);
+        if (!antigravityFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: antigravityFinal.error };
+        }
+        assertNotSymlink(agentsDir, ".agents/");
+        assertNotSymlink(antigravityHooksPath, ".agents/hooks.json");
+        mergedAntigravity = mergeAntigravityHooks(antigravityFinal.value);
       }
       if (wantKimi) {
         const kimiFinal = readKimiConfigToml(kimiTomlPath);
@@ -2157,6 +2289,18 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".factory/",
       );
       written.push(path.relative(projectRoot, factoryHooksPath));
+    }
+
+    if (mergedAntigravity) {
+      mkdirRealDirSync(agentsDir, ".agents/", projectRoot);
+      assertRealpathInside(projectRoot, agentsDir, ".agents/");
+      writeFileAtomic(
+        antigravityHooksPath,
+        JSON.stringify(mergedAntigravity, null, 2) + "\n",
+        projectRoot,
+        ".agents/",
+      );
+      written.push(path.relative(projectRoot, antigravityHooksPath));
     }
 
     if (mergedKimi != null) {

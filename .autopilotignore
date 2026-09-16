@@ -24,6 +24,8 @@
 .grok/hooks/**
 .gemini/settings.json
 .factory/hooks.json
+.agents/hooks.json
+.agents/skills/**
 
 # Planning artifacts
 plans/**

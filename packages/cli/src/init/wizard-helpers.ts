@@ -545,6 +545,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Factory Droid";
     case "hermes-agent":
       return "Hermes Agent";
+    case "antigravity":
+      return "Antigravity";
     default: {
       const parts = id.split(/[-_]/).filter(Boolean);
       if (parts.length === 0) return "your agent host";
@@ -587,6 +589,9 @@ export function formatPostInstallOutro(
     if (id === "hermes-agent") {
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; timeout 120; relative command; agent.max_verify_nudges ≥32). pre_verify is edit-only (no product edit → pending/RESUME). Consent/non-TTY: approve hooks or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept). After install: reload Hermes and run hermes hooks doctor.`;
     }
+    if (id === "antigravity") {
+      return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run. Hooks live in .agents/hooks.json (named autopilot-harness block; timeout 120; relative command). After install/upgrade: reload Antigravity / start a new session (IDE tip: hooks may be silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
@@ -597,9 +602,10 @@ export function formatPostInstallOutro(
     ids.includes("grok-build") ||
     ids.includes("gemini-cli") ||
     ids.includes("factory-droid") ||
-    ids.includes("hermes-agent")
+    ids.includes("hermes-agent") ||
+    ids.includes("antigravity")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes: line-start triggers.on / triggers.run; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes: line-start triggers.on / triggers.run; Antigravity: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -650,6 +656,10 @@ export function formatHostActivationTips(
     } else if (id === "hermes-agent") {
       tips.push(
         `${host}: Autopilot merges hooks: into $HERMES_HOME/config.yaml only (default ~/.hermes; never cli-config.yaml). Timeout 120; post_tool_call matcher write_file|patch; relative node .autopilot/bin/… --platform hermes-agent; raises agent.max_verify_nudges to ≥32 (does not lower higher values; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only — no product edit that turn → pending/RESUME. Consent/non-TTY: approve at TTY or --accept-hooks / HERMES_ACCEPT_HOOKS. After install: reload Hermes and run hermes hooks doctor. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
+      );
+    } else if (id === "antigravity") {
+      tips.push(
+        `${host}: Autopilot writes .agents/hooks.json (named autopilot-harness block; PreInvocation+PostToolUse+Stop; timeout 120; relative node .autopilot/bin/… --platform antigravity) and .agents/skills/autopilot-* (does not write .agent/). After install/upgrade: reload Antigravity or start a new session (IDE hooks may stay silent until reload). Auto-attach ≠ Autopilot ON — still /autopilot-on or line-start triggers.on / triggers.run.`,
       );
     } else {
       tips.push(
@@ -738,6 +748,11 @@ function hostActivationPlainLines(
           `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
           `hooks 仅合并进 $HERMES_HOME/config.yaml（默认 ~/.hermes；永不写 cli-config.yaml；timeout 120；相对 command；agent.max_verify_nudges ≥32；不写 hooks_auto_accept / verify_guidance）。pre_verify 仅在有产品编辑时触发（无编辑 → pending/RESUME）。安装后请 reload Hermes，并运行 hermes hooks doctor；consent/non-TTY 需批准或 --accept-hooks / HERMES_ACCEPT_HOOKS。`,
         );
+      } else if (id === "antigravity") {
+        lines.push(
+          `在 ${host} 中试用 /autopilot-on（skills 在 .agents/skills）或行首 triggers.on / triggers.run。`,
+          `hooks 写 .agents/hooks.json（具名 autopilot-harness；timeout 120；相对 command；不写 .agent/）。安装/升级后请 reload 或新开会话（IDE tip：未 reload 时 hooks 可能不响）。auto-attach ≠ Autopilot ON — 仍需 /autopilot-on 或行首触发。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -789,6 +804,11 @@ function hostActivationPlainLines(
         `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
         `Hooks merge into $HERMES_HOME/config.yaml only (default ~/.hermes; never cli-config.yaml; timeout 120; relative command; agent.max_verify_nudges ≥32; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only (no product edit → pending/RESUME). After install: reload Hermes and run hermes hooks doctor; consent/non-TTY needs approval or --accept-hooks / HERMES_ACCEPT_HOOKS.`,
       );
+    } else if (id === "antigravity") {
+      lines.push(
+        `In ${host}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run.`,
+        `Hooks are written to .agents/hooks.json (named autopilot-harness block; timeout 120; relative command; does not write .agent/). After install/upgrade: reload or start a new session (IDE tip: hooks may stay silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`,
+      );
     } else {
       lines.push(
         `Try /autopilot-on in ${host}.`,
@@ -827,6 +847,14 @@ function hostActivationDocLines(
       )
       .replaceAll(".gemini/settings.json", "`.gemini/settings.json`")
       .replaceAll(".factory/hooks.json", "`.factory/hooks.json`")
+      .replaceAll(".agents/hooks.json", "`.agents/hooks.json`")
+      // Longer skills path before the directory prefix (avoid `` `.agents/skills`/autopilot-* ``).
+      .replaceAll(
+        ".agents/skills/autopilot-*",
+        "`.agents/skills/autopilot-*`",
+      )
+      .replaceAll(".agents/skills", "`.agents/skills`")
+      .replaceAll(".agent/", "`.agent/`")
       .replaceAll("$FACTORY_PROJECT_DIR", "`$FACTORY_PROJECT_DIR`")
       // Hermes: wrap longest tokens first — never bare `config.yaml` / `$HERMES_HOME`
       // after wrapping (would split `cli-config.yaml` or `$HERMES_HOME/config.yaml`).

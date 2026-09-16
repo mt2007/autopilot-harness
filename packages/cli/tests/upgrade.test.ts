@@ -1717,4 +1717,22 @@ review:
       fs.rmSync(hermesHome, { recursive: true, force: true });
     }
   });
+
+  it("dry-run lists Antigravity hooks + skills when antigravity is enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = upgradeProject({ projectRoot: root, dryRun: true });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.actions.some((a) => /\.agents\/hooks\.json/i.test(a))).toBe(true);
+    expect(r.actions.some((a) => /\.agents\/skills/i.test(a))).toBe(true);
+  });
 });

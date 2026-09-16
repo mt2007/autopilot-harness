@@ -11,6 +11,7 @@ export const HOOK_PLATFORM_GROK_BUILD = "grok-build";
 export const HOOK_PLATFORM_GEMINI_CLI = "gemini-cli";
 export const HOOK_PLATFORM_FACTORY_DROID = "factory-droid";
 export const HOOK_PLATFORM_HERMES_AGENT = "hermes-agent";
+export const HOOK_PLATFORM_ANTIGRAVITY = "antigravity";
 
 /** Canonical Autopilot hook command line (platform + event). */
 export function autopilotHookCommandLine(

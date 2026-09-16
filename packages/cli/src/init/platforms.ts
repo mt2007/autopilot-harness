@@ -23,6 +23,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "gemini-cli", surface: "cli" },
   { id: "factory-droid", surface: "cli" },
   { id: "hermes-agent", surface: "cli" },
+  { id: "antigravity", surface: "cli" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -38,6 +39,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "gemini-cli": "cli",
   "factory-droid": "cli",
   "hermes-agent": "cli",
+  antigravity: "cli",
   runner: "runner",
 });
 
@@ -163,6 +165,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "hermes-agent") {
     return "Hermes Agent ($HERMES_HOME/config.yaml hooks)";
+  }
+  if (id === "antigravity") {
+    return "Antigravity (.agents/hooks.json + .agents/skills)";
   }
   const host =
     id === "cursor"

@@ -46,6 +46,11 @@ import {
   FACTORY_HOOKS_REL_PATH,
 } from "./init/factory-hooks-merge.js";
 import {
+  validateAntigravityHooksShape,
+  type AntigravityHooksFile,
+  ANTIGRAVITY_HOOKS_REL_PATH,
+} from "./init/antigravity-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   readKimiConfigToml,
   resolveKimiCodeHome,
@@ -90,6 +95,7 @@ function preflightHostSettings(
   wantGemini: boolean,
   wantFactory: boolean,
   wantHermes: boolean,
+  wantAntigravity: boolean,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -350,6 +356,40 @@ function preflightHostSettings(
         };
       }
       const shape = validateFactoryHooksShape(parsed as FactoryHooksFile);
+      if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
+      }
+      // Missing hooks.json is OK — force refresh will create it.
+    }
+  }
+
+  if (wantAntigravity) {
+    const hooksPath = path.join(projectRoot, ".agents", "hooks.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".agents"), ".agents/");
+      assertNotSymlink(hooksPath, ANTIGRAVITY_HOOKS_REL_PATH);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        ANTIGRAVITY_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${hooksPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateAntigravityHooksShape(parsed as AntigravityHooksFile);
       if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
@@ -704,6 +744,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantGemini = configWantsInstallableHost(platforms, "gemini-cli");
     const wantFactory = configWantsInstallableHost(platforms, "factory-droid");
     const wantHermes = configWantsInstallableHost(platforms, "hermes-agent");
+    const wantAntigravity = configWantsInstallableHost(platforms, "antigravity");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -747,6 +788,12 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         "merge $HERMES_HOME/config.yaml Autopilot hooks (no skills)",
       );
     }
+    if (wantAntigravity) {
+      actions.push("refresh .agents/skills/autopilot-*");
+      actions.push(
+        `merge ${ANTIGRAVITY_HOOKS_REL_PATH} (Autopilot named block)`,
+      );
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -766,6 +813,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantGemini,
       wantFactory,
       wantHermes,
+      wantAntigravity,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

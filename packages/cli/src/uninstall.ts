@@ -47,6 +47,14 @@ import {
   FACTORY_HOOKS_REL_PATH,
 } from "./init/factory-hooks-merge.js";
 import {
+  stripAutopilotAntigravityHooks,
+  antigravityHooksContainAutopilot,
+  antigravityHooksFileIsVacant,
+  validateAntigravityHooksShape,
+  type AntigravityHooksFile,
+  ANTIGRAVITY_HOOKS_REL_PATH,
+} from "./init/antigravity-hooks-merge.js";
+import {
   kimiConfigTomlPath,
   kimiTomlHasAutopilotHookTables,
   readKimiConfigToml,
@@ -546,6 +554,63 @@ function readFactoryHooksFile(
   }
 }
 
+function readAntigravityHooksFile(
+  hooksPath: string,
+):
+  | { ok: true; value: AntigravityHooksFile | null }
+  | { ok: false; error: string } {
+  const label = ANTIGRAVITY_HOOKS_REL_PATH;
+  try {
+    assertNotSymlink(hooksPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(hooksPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: `${label} is a symlink; refusing to open`,
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: `${label} exists and is not a regular file; refusing to uninstall`,
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access ${label}: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      label,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${label} is not a JSON object; fix or remove it before uninstall.`,
+      };
+    }
+    const file = parsed as AntigravityHooksFile;
+    const shape = validateAntigravityHooksShape(file);
+    if (shape) return { ok: false, error: `${label}: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${label}: ${msg}` };
+  }
+}
+
 function safeRemovePath(
   projectRoot: string,
   targetPath: string,
@@ -628,6 +693,7 @@ function projectWantsInstallableHosts(configPath: string): {
   gemini: boolean;
   factory: boolean;
   hermes: boolean;
+  antigravity: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -645,6 +711,7 @@ function projectWantsInstallableHosts(configPath: string): {
       gemini: configWantsInstallableHost(platforms, "gemini-cli"),
       factory: configWantsInstallableHost(platforms, "factory-droid"),
       hermes: configWantsInstallableHost(platforms, "hermes-agent"),
+      antigravity: configWantsInstallableHost(platforms, "antigravity"),
     };
   } catch {
     return {
@@ -656,6 +723,7 @@ function projectWantsInstallableHosts(configPath: string): {
       gemini: false,
       factory: false,
       hermes: false,
+      antigravity: false,
     };
   }
 }
@@ -736,6 +804,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const geminiSettingsPath = path.join(geminiDir, "settings.json");
     const factoryDir = path.join(projectRoot, ".factory");
     const factoryHooksPath = path.join(factoryDir, "hooks.json");
+    const agentsDir = path.join(projectRoot, ".agents");
+    const antigravityHooksPath = path.join(agentsDir, "hooks.json");
+    const agentsSkillsRoot = path.join(agentsDir, "skills");
     const docsAutopilotDir = path.join(projectRoot, "docs", "autopilot");
     const workflowsDir = path.join(docsAutopilotDir, "workflows");
     const quickstartPath = path.join(docsAutopilotDir, "quickstart.md");
@@ -749,8 +820,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       gemini: wantGemini,
       factory: wantFactory,
       hermes: wantHermes,
+      antigravity: wantAntigravity,
     } = projectWantsInstallableHosts(configPath);
-    // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory trees when config declares
+    // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory/.agents trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi/Hermes use user-home config (outside project) —
     // strip separately.
@@ -788,6 +860,12 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       if (wantFactory) {
         dirs.push([factoryDir, ".factory/"]);
       }
+      if (wantAntigravity) {
+        dirs.push(
+          [agentsDir, ".agents/"],
+          [agentsSkillsRoot, ".agents/skills/"],
+        );
+      }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
         assertNotSymlink(dir, label);
@@ -811,6 +889,13 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
             projectRoot,
             path.join(claudeSkillsRoot, name),
             `.claude/skills/${name}`,
+          );
+        }
+        if (wantAntigravity) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(agentsSkillsRoot, name),
+            `.agents/skills/${name}`,
           );
         }
       }
@@ -1297,6 +1382,87 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
     }
 
+    // --- Antigravity hooks (.agents/hooks.json) ---
+    // Named autopilot-harness block; keep foreign named blocks / siblings.
+    // Vacant after strip → unlink hooks.json only. Never touch .agent/.
+    const antigravityLabel = ANTIGRAVITY_HOOKS_REL_PATH;
+    const antigravityPre = readAntigravityHooksFile(antigravityHooksPath);
+    if (!antigravityPre.ok) {
+      if (wantAntigravity) {
+        return { ok: false, error: antigravityPre.error };
+      }
+      actions.push(
+        `skip ${antigravityLabel} (${formatUninstallSkipDetail(antigravityPre.error)})`,
+      );
+    } else if (antigravityHooksContainAutopilot(antigravityPre.value)) {
+      const stripAntigravityHooks = (): void => {
+        assertNotSymlink(agentsDir, ".agents/");
+        assertNotSymlink(antigravityHooksPath, antigravityLabel);
+        if (dryRun) {
+          found = true;
+          const preview =
+            antigravityPre.value != null
+              ? stripAutopilotAntigravityHooks(antigravityPre.value)
+              : null;
+          if (antigravityHooksFileIsVacant(preview)) {
+            actions.push(`unlink empty ${antigravityLabel}`);
+          } else {
+            actions.push(`strip Autopilot entries from ${antigravityLabel}`);
+          }
+          return;
+        }
+        const antigravityFresh = readAntigravityHooksFile(antigravityHooksPath);
+        if (!antigravityFresh.ok) {
+          throw new Error(antigravityFresh.error);
+        }
+        const freshFile = antigravityFresh.value;
+        if (
+          freshFile == null ||
+          !antigravityHooksContainAutopilot(freshFile)
+        ) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${antigravityLabel}`);
+          actions.push(
+            `${antigravityLabel} no longer has Autopilot entries (skipped write)`,
+          );
+          return;
+        }
+        const stripped = stripAutopilotAntigravityHooks(freshFile);
+        if (antigravityHooksFileIsVacant(stripped)) {
+          assertRealpathInside(projectRoot, antigravityHooksPath, antigravityLabel);
+          fs.unlinkSync(antigravityHooksPath);
+          found = true;
+          hooksStripped = true;
+          actions.push(`unlink empty ${antigravityLabel}`);
+          removed.push(path.relative(projectRoot, antigravityHooksPath));
+          return;
+        }
+        writeJsonAtomic(
+          antigravityHooksPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          antigravityLabel,
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push(`strip Autopilot entries from ${antigravityLabel}`);
+        removed.push(
+          path.relative(projectRoot, antigravityHooksPath) +
+            " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripAntigravityHooks();
+      } catch (err) {
+        if (wantAntigravity) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip ${antigravityLabel} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
     // --- Kimi Code user-home config.toml (fingerprint only; never local.toml) ---
     const kimiHome = resolveKimiCodeHome();
     const kimiTomlPath = kimiConfigTomlPath(kimiHome);
@@ -1482,6 +1648,36 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .claude/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Antigravity skills (.agents/skills) ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(agentsSkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        if (!wantAntigravity) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.agents/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.agents/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantAntigravity) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .agents/skills/${name} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

@@ -28,6 +28,8 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .grok/hooks/**
 .gemini/settings.json
 .factory/hooks.json
+.agents/hooks.json
+.agents/skills/**
 
 # Planning artifacts
 plans/**

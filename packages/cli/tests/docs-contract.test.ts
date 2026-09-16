@@ -341,13 +341,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/nine-way dispatch/i);
   });
 
-  it("dogfood .autopilotignore covers Factory hooks path", () => {
+  it("dogfood .autopilotignore covers Factory + Antigravity paths", () => {
     const ignore = fs.readFileSync(
       path.join(repoRoot, ".autopilotignore"),
       "utf8",
     );
     expect(ignore).toMatch(/\.factory\/hooks\.json/);
     expect(ignore).toMatch(/\.gemini\/settings\.json/);
+    expect(ignore).toMatch(/\.agents\/hooks\.json/);
+    expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
   });
 
   it("config does not imply require_token is enforced", () => {
