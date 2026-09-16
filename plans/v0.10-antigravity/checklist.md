@@ -20,4 +20,4 @@
 - [x] human-gate-confirm — 「同意发 0.10.0」；**Antigravity 未达标则停止发版**；半残须显式认 degraded
 - [x] push-tag-release — push/tag/GH Release
 - [x] npm-publish-pnpm — 仅 `pnpm publish`
-- [ ] pin-upgrade-repo — pin→0.10.0
+- [x] pin-upgrade-repo — pin→0.10.0
