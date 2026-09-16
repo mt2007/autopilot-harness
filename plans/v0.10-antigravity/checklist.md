@@ -10,7 +10,7 @@
 - [x] doctor-upgrade-uninstall — FAIL 缺/残 Antigravity hooks；WARN timeout/cap/IDE/dual/缺 skills（按启用平台）；Gemini `/trust`+`/skills reload`；Hermes 多仓；**auto-attach ≠ ON** tip
 - [x] tests-antigravity-contract — Antigravity I/O + merge + 十路 + `fullyIdle`
 - [x] tests-skills-coinstall — 契约：启用谁写谁；Gemini 始终 `.gemini/skills`（即使 Antigravity 也启用）；Factory/Hermes 路径；升级补/卸载剥；locale；不写 `.agent`
-- [ ] matrix-ten-host — Antigravity↔九宿主错 stamp → abort；既有不红
+- [x] matrix-ten-host — Antigravity↔九宿主错 stamp → abort；既有不红
 - [ ] smoke-repo — `pnpm test` + typecheck
 - [ ] live-antigravity-smoke — **待你装好 Antigravity 后由本会话活检**：Stop ≥1×（力争 ≥2×）+ edit arm；**优先能 fire 的表面**（CLI 优先，IDE 若可 fire 也记一笔）；证据写明 **CLI / IDE / 两者**；**失败 → 不发 0.10**；半残 degraded 仅人闸；不强制 G/F/H skills 活链
 - [ ] docs-antigravity-shipped — ten-way Shipped（或人闸 degraded）；skills 一体路径表；双开 tip；slash；auto-attach≠ON；Gemini trust；PreInvocation 结论；`.agents`；next=OpenCode；`[0.10.0]`；docs-contract
