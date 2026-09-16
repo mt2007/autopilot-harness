@@ -16,7 +16,7 @@
 - [x] docs-antigravity-shipped — ten-way Shipped（或人闸 degraded）；skills 一体路径表；双开 tip；slash；auto-attach≠ON；Gemini trust；PreInvocation 结论；`.agents`；next=OpenCode；`[0.10.0]`；docs-contract
 - [x] changelog-bump-0-10-0 — →0.10.0（Antigravity + 三家 skills）— **仅活链过关后**
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
-- [ ] commit-local — conventional；勿 push/tag/publish
+- [x] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 「同意发 0.10.0」；**Antigravity 未达标则停止发版**；半残须显式认 degraded
 - [ ] push-tag-release — push/tag/GH Release
 - [ ] npm-publish-pnpm — 仅 `pnpm publish`
