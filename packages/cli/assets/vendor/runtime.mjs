@@ -2432,7 +2432,9 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 .github/hooks/**
 .grok/hooks/**
 .gemini/settings.json
+.gemini/skills/**
 .factory/hooks.json
+.factory/skills/**
 .agents/hooks.json
 .agents/skills/**
 
