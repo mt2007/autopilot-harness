@@ -1,0 +1,14 @@
+OK    config.yml
+OK    .autopilotignore
+OK    pin.json → 0.9.0
+OK    autopilot-harness-hook.mjs
+OK    hook vendor runtime
+WARN  Antigravity Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs on long review
+WARN  Antigravity IDE tip: hooks may stay silent until reload — prefer a firing surface (CLI) or reload IDE after install/upgrade
+WARN  Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger after skills appear
+WARN  Reload Antigravity or open a new session after install or upgrade so Autopilot hooks reload
+OK    .agents/hooks.json Autopilot entries
+OK    Node 26.3.0
+OK    plans (plans/)
+OK    skills (5)
+OK    state.db (not created yet)

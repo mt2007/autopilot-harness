@@ -1,0 +1,62 @@
+{
+  "itemId": "live-antigravity-smoke",
+  "verdict": "blocked",
+  "passed": false,
+  "waived": false,
+  "shipGate": "FAIL \u2014 host live Stop-continue not proven; do not release 0.10 until live pass or explicit human-gate degraded",
+  "surface": "CLI",
+  "ideAttempted": false,
+  "cli": {
+    "package": "antigravity-cli (Homebrew cask)",
+    "version": "1.2.4,6085322963025920",
+    "binaryNote": "Caskroom binary hung at _dyld_start (quarantine); /tmp/agy-bin copy reaches main",
+    "command": "/tmp/agy-bin -p \u2026 --dangerously-skip-permissions"
+  },
+  "disposableRepo": "/tmp/ap-agy-live-vNdJJs",
+  "init": "ok \u2014 .agents/hooks.json + .agents/skills/autopilot-*",
+  "doctor": "OK hooks; WARN cap/IDE/reload/auto-attach",
+  "hostLive": {
+    "StopContinueCount": 0,
+    "editArmFromHost": false,
+    "hooksFiredByHost": false,
+    "blocker": "Antigravity OAuth: not logged in; print-mode silent auth failed; interactive OAuth timed out 60s (browser playwright 404; Terminal AppleEvent denied -1743)"
+  },
+  "wiringProofSynthetic": {
+    "note": "NOT host fire \u2014 same installed hook command with Antigravity-shaped stdin",
+    "PostToolUseStdout": "{}",
+    "StopContinueCount": 2,
+    "StopStdoutShape": "decision:continue + reason"
+  },
+  "artifacts": [
+    "agy-brew-info.txt",
+    "agy-cli-auth-fail.log",
+    "agy-print1.err",
+    "agy-print1.out",
+    "agy-print2.err",
+    "agy-print2.out",
+    "agy-print3.err",
+    "agy-print3.out",
+    "agy-print4.err",
+    "agy-print4.out",
+    "agy-print5.err",
+    "agy-print5.out",
+    "agy-print6.err",
+    "agy-print6.out",
+    "agy-print7.err",
+    "agy-print7.out",
+    "agy-print8.err",
+    "agy-print8.out",
+    "agy-print9.err",
+    "agy-print9.out",
+    "agy-tty.txt",
+    "doctor.log",
+    "hook-invocations.jsonl",
+    "hook-stdout.jsonl",
+    "synth-post.err",
+    "synth-post.out",
+    "synth-stop1.err",
+    "synth-stop1.out",
+    "synth-stop2.err",
+    "synth-stop2.out"
+  ]
+}

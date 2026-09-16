@@ -1,0 +1,5 @@
+==> antigravity-cli (Google Antigravity CLI): 1.2.4,6085322963025920 (auto_updates)
+Terminal interface for Antigravity agents
+https://antigravity.google/product/antigravity-cli
+Installed (on request)
+/opt/homebrew/Caskroom/antigravity-cli/1.2.4,6085322963025920 (183.0MB)
