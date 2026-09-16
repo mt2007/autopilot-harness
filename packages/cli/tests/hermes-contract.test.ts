@@ -232,11 +232,11 @@ describe("hermes contract matrix", () => {
     expect(handleHermesPostToolCall).not.toBe(handleFactoryPostToolUse);
   });
 
-  it("shipped hook asset keeps nine-way dispatch + Hermes Silence writer", () => {
+  it("shipped hook asset keeps ten-way dispatch + Hermes Silence writer", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,\s*"hermes-agent"\s*,?\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,\s*"hermes-agent"\s*,\s*"antigravity"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(
       /HERMES_EVENTS\s*=\s*new Set\(\[\s*"pre_llm_call"\s*,\s*"post_tool_call"\s*,\s*"pre_verify"\s*,?\s*\]\)/,

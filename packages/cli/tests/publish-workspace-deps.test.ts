@@ -26,6 +26,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/gemini-cli",
   "packages/ports/factory-droid",
   "packages/ports/hermes-agent",
+  "packages/ports/antigravity",
 ] as const;
 
 function workspaceHarnessDeps(

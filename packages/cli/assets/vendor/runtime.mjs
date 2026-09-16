@@ -3653,10 +3653,10 @@ var ReviewEngine = class {
    * salvage again — the prior tip does not cover the new failure.
    */
   classifyCompletedOrphan(transcriptPath) {
-    const path13 = transcriptPath?.trim();
-    if (!path13) return "none";
+    const path14 = transcriptPath?.trim();
+    if (!path14) return "none";
     try {
-      const events = readTranscriptTail(path13);
+      const events = readTranscriptTail(path14);
       const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
       if (errIdx < 0) return "none";
       for (let i = events.length - 1; i > errIdx; i--) {
@@ -4738,8 +4738,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let targets = null;
-      const path13 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path13.length > 0;
+      const path14 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path14.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed?.checklist) {
@@ -10099,6 +10099,1200 @@ function handlePreVerifyInner(engine, store, payload, projectRoot, opts) {
   };
 }
 
+// ../ports/antigravity/src/index.ts
+import fs12 from "node:fs";
+import path13 from "node:path";
+var ANTIGRAVITY_PLATFORM = "antigravity";
+var MAX_NEED_PICK_SLUGS8 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS8 = 2e3;
+var MAX_HOOK_STDIO_CHARS7 = 8192;
+var MAX_TOOL_ARGS_JSON_CHARS6 = 1048576;
+var MAX_TRANSCRIPT_SCAN_BYTES = 2e6;
+var MAX_TRANSCRIPT_LINES = 8e3;
+var MAX_PREINVOCATION_CURSOR_ENTRIES = 200;
+var ANTIGRAVITY_PREINVOCATION_CURSOR_FILE = "antigravity-preinvocation-cursor.json";
+function isAntigravityAllowNoop(result) {
+  if (result == null || typeof result !== "object" || Array.isArray(result)) {
+    return false;
+  }
+  for (const value of Object.values(result)) {
+    if (value !== void 0 && value !== null) return false;
+  }
+  return true;
+}
+function sid9(p) {
+  for (const v of [
+    p.conversationId,
+    p.conversation_id,
+    p.sessionId,
+    p.session_id
+  ]) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t && !/[\u0000-\u001f\u007f]/.test(t)) return t;
+    }
+  }
+  return "";
+}
+function clipText6(text, max = MAX_HOOK_STDIO_CHARS7) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function stripHookControls(text) {
+  return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+}
+function followupReason(message, fallback) {
+  const m = typeof message === "string" ? stripHookControls(message).trim() : "";
+  return m || fallback;
+}
+function sanitizeAntigravityTranscriptPath(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return void 0;
+  const p = raw.trim();
+  if (/[\0\r\n]/.test(p)) return void 0;
+  if (p.split(/[/\\]/).includes("..")) return void 0;
+  const normalized = p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const absolute = normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized);
+  if (!absolute) return void 0;
+  if (!normalized.endsWith("/logs/transcript.jsonl")) return void 0;
+  return normalized;
+}
+function isAntigravityFullyIdle(payload) {
+  return payload.fullyIdle === true || payload.fully_idle === true;
+}
+function loopCountFromExecutionNum(payload) {
+  const n = finiteNumberOrNull(
+    payload.executionNum ?? payload.execution_num
+  );
+  if (n != null && n >= 2) return 1;
+  return 0;
+}
+function antigravityErrorFieldText(error) {
+  return clipText6(extractAntigravityErrorFieldText(error));
+}
+function abortProbeText(text) {
+  if (!text) return "";
+  const limit = MAX_HOOK_STDIO_CHARS7 * 2;
+  if (text.length <= limit) return text;
+  const n = MAX_HOOK_STDIO_CHARS7;
+  return `${text.slice(0, n)}
+${text.slice(-n)}`;
+}
+var ABORT_SCAN_MAX_CHARS = 256e3;
+function isAbortTextProbed(text) {
+  if (!text) return false;
+  if (text.length <= ABORT_SCAN_MAX_CHARS) return isUserAbortText(text);
+  return isUserAbortText(abortProbeText(text));
+}
+function extractAntigravityErrorFieldText(error, depth = 0) {
+  if (depth > 3) return "";
+  if (typeof error === "string") return error.trim();
+  if (Array.isArray(error)) {
+    const parts = [];
+    for (const item of error.slice(0, 8)) {
+      const inner = extractAntigravityErrorFieldText(item, depth + 1);
+      if (inner) parts.push(inner);
+    }
+    if (parts.length > 0) return parts.join("\n");
+    return error.length > 0 ? "host_error_object" : "";
+  }
+  if (!error || typeof error !== "object") return "";
+  try {
+    const o = error;
+    const parts = [];
+    for (const key of ["message", "error", "name", "stack", "detail"]) {
+      const nested = o[key];
+      if (typeof nested === "string" && nested.trim()) {
+        parts.push(nested.trim());
+        continue;
+      }
+      if (nested && typeof nested === "object") {
+        const inner = extractAntigravityErrorFieldText(nested, depth + 1);
+        if (inner) parts.push(inner);
+      }
+    }
+    if (parts.length > 0) return parts.join("\n");
+    return Object.keys(o).length > 0 ? "host_error_object" : "";
+  } catch {
+    return "";
+  }
+}
+function collectAntigravityStopErrorTextRaw(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const parts = [];
+  const fromError = extractAntigravityErrorFieldText(payload.error);
+  if (fromError) parts.push(fromError);
+  for (const value of [payload.terminationReason, payload.termination_reason]) {
+    if (typeof value === "string" && value.trim()) parts.push(value);
+  }
+  return parts.join("\n");
+}
+function normalizeAntigravityStopStatus(payload, opts) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return opts?.status ?? "completed";
+  }
+  const reason = String(
+    payload.terminationReason ?? payload.termination_reason ?? ""
+  ).toLowerCase().trim();
+  const errorRaw = extractAntigravityErrorFieldText(payload.error);
+  const errorField = clipText6(errorRaw);
+  const errTextRaw = collectAntigravityStopErrorTextRaw(payload);
+  if (reason === "aborted" || reason === "cancelled" || reason === "canceled" || reason === "user_abort") {
+    return "aborted";
+  }
+  if (opts?.status === "aborted") return "aborted";
+  if (errorRaw && isAbortTextProbed(errorRaw)) return "aborted";
+  if (reason === "error" || reason === "failed" || reason === "max_steps_exceeded" || reason === "timeout" || reason === "timed_out" || reason === "tool_error") {
+    if (isAbortTextProbed(errTextRaw)) return "aborted";
+    return "error";
+  }
+  if (opts?.status === "error") {
+    if (isAbortTextProbed(errTextRaw)) return "aborted";
+    return "error";
+  }
+  if (isAbortTextProbed(errTextRaw)) return "aborted";
+  if (opts?.status === "completed") return "completed";
+  if (errorField) {
+    const completionLike = reason === "model_stop" || reason === "end_turn" || reason === "endturn" || reason === "completed" || reason === "stop";
+    if (!completionLike) {
+      return "error";
+    }
+  }
+  return "completed";
+}
+function isAntigravityStopCompletionReason(payload) {
+  const raw = payload.terminationReason ?? payload.termination_reason;
+  if (raw == null) return true;
+  if (typeof raw !== "string") return false;
+  const r = raw.trim().toLowerCase();
+  if (!r) return true;
+  if (r === "model_stop" || r === "end_turn" || r === "endturn" || r === "completed" || r === "stop") {
+    return true;
+  }
+  return false;
+}
+function buildNeedPickContext6(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS8);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS8) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS8 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function injectEphemeral(text) {
+  const msg = clipText6(
+    stripHookControls(text).trim() || "Autopilot",
+    MAX_NEED_PICK_CONTEXT_CHARS8
+  );
+  return { injectSteps: [{ ephemeralMessage: msg }] };
+}
+function injectNeedPickContext4(userMessage, candidates) {
+  return injectEphemeral(buildNeedPickContext6(userMessage, candidates));
+}
+function latestUserPromptFromTranscriptText(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return "";
+  const text = raw.length > MAX_TRANSCRIPT_SCAN_BYTES ? raw.slice(-MAX_TRANSCRIPT_SCAN_BYTES) : raw;
+  const lines = text.split(/\r?\n/).slice(-MAX_TRANSCRIPT_LINES);
+  let found = "";
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const parsed = JSON.parse(t);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const o = parsed;
+      const roleField = transcriptRoleField(o);
+      const roleHints = transcriptRoleHints(o);
+      const rawUserInput = typeof o.USER_INPUT === "string" ? o.USER_INPUT : typeof o.user_input === "string" ? o.user_input : null;
+      const fromUserInputField = rawUserInput != null && rawUserInput.trim() ? rawUserInput : "";
+      const userInputFlag = o.USER_INPUT === true || o.user_input === true;
+      const userInputKeyPresent = rawUserInput != null || userInputFlag;
+      const candidate = fromUserInputField || typeof o.text === "string" && o.text || textFromTranscriptContent(o.content) || textFromTranscriptMessage(o.message) || typeof o.prompt === "string" && o.prompt || "";
+      if (!candidate.trim()) continue;
+      const roleFieldIsUser = !!roleField && isUserLikeTranscriptRole(roleField) && !isNonUserTranscriptRole(roleField);
+      if (roleFieldIsUser) {
+        found = candidate;
+        continue;
+      }
+      if (roleHints.some(isNonUserTranscriptRole)) continue;
+      if (roleHints.some(isUserLikeTranscriptRole) || userInputKeyPresent) {
+        found = candidate;
+      }
+    } catch {
+    }
+  }
+  return stripUserRequestWrapper(found.trim());
+}
+function transcriptRoleField(o) {
+  const v = o.role;
+  return typeof v === "string" && v.trim() ? v.trim() : "";
+}
+function transcriptRoleHints(o) {
+  const hints = [];
+  for (const key of ["role", "type", "kind"]) {
+    const v = o[key];
+    if (typeof v === "string" && v.trim()) {
+      hints.push(v.trim());
+    }
+  }
+  return hints;
+}
+function isUserLikeTranscriptRole(role) {
+  const tokens = roleTokens(role);
+  if (tokensIncludesExact(tokens, "user") || tokensIncludesExact(tokens, "users") || tokensIncludesExact(tokens, "human") || tokensIncludesExact(tokens, "humans")) {
+    return true;
+  }
+  if (tokensMatchGlued(tokens, "user", USER_GLUED_ROLE_SUFFIXES) || tokensMatchGlued(tokens, "users", USER_GLUED_ROLE_SUFFIXES) || tokensMatchGlued(tokens, "human", USER_GLUED_ROLE_SUFFIXES) || tokensMatchGlued(tokens, "humans", USER_GLUED_ROLE_SUFFIXES)) {
+    return true;
+  }
+  const joined = tokens.join("");
+  return joined === "userinput" || tokens.join("_") === "user_input";
+}
+function isNonUserTranscriptRole(role) {
+  if (!role.trim()) return false;
+  const tokens = roleTokens(role);
+  const compact = tokens.join("");
+  if (OPAQUE_NON_USER_ROLES.has(compact) || tokens.some((t) => OPAQUE_NON_USER_ROLES.has(t))) {
+    return true;
+  }
+  if (tokens.some((t) => USER_OR_HUMAN_NON_USER_SUFFIXES.has(t))) {
+    return true;
+  }
+  if (tokens.some((t) => BARE_IO_TOKENS.has(t)) && !tokens.some((t) => USER_OR_HUMAN_PREFIXES.has(t))) {
+    return true;
+  }
+  if (tokensMatchGlued(tokens, "user", USER_OR_HUMAN_NON_USER_SUFFIXES) || tokensMatchGlued(tokens, "users", USER_OR_HUMAN_NON_USER_SUFFIXES) || tokensMatchGlued(tokens, "human", USER_OR_HUMAN_NON_USER_SUFFIXES) || tokensMatchGlued(tokens, "humans", USER_OR_HUMAN_NON_USER_SUFFIXES) || tokensHaveAdjacentPair(
+    tokens,
+    ["user", "users", "human", "humans"],
+    USER_OR_HUMAN_NON_USER_SUFFIXES
+  ) || // error_user when error was stripped oddly — keep reverse pair for safety.
+  tokensHaveAdjacentPair(tokens, ["error", "errors"], USER_OR_HUMAN_PREFIXES)) {
+    return true;
+  }
+  for (const token of [
+    "assistant",
+    "system",
+    "tool",
+    "model",
+    "agent",
+    "function",
+    "developer"
+  ]) {
+    if (tokensIncludesExact(tokens, token) || tokensIncludesExact(tokens, `${token}s`) || tokensMatchGlued(tokens, token, NON_USER_GLUED_ROLE_SUFFIXES)) {
+      return true;
+    }
+  }
+  return false;
+}
+function tokensIncludesExact(tokens, token) {
+  return tokens.includes(token);
+}
+var OPAQUE_NON_USER_ROLES = /* @__PURE__ */ new Set([
+  "subsystem",
+  "agentic",
+  "agency",
+  "coagent",
+  "subagent",
+  "multiagent"
+]);
+var USER_OR_HUMAN_NON_USER_SUFFIXES = /* @__PURE__ */ new Set([
+  "error",
+  "errors",
+  "result",
+  "results",
+  "response",
+  "responses",
+  "output",
+  "outputs",
+  "reply",
+  "replies"
+]);
+var USER_OR_HUMAN_PREFIXES = /* @__PURE__ */ new Set(["user", "users", "human", "humans"]);
+var BARE_IO_TOKENS = /* @__PURE__ */ new Set([
+  "input",
+  "inputs",
+  "request",
+  "requests",
+  "prompt",
+  "prompts",
+  "query",
+  "queries"
+]);
+var USER_GLUED_ROLE_SUFFIXES = /* @__PURE__ */ new Set([
+  "message",
+  "messages",
+  "request",
+  "requests",
+  "input",
+  "inputs",
+  "prompt",
+  "prompts",
+  "query",
+  "queries"
+]);
+var NON_USER_GLUED_ROLE_SUFFIXES = /* @__PURE__ */ new Set([
+  "result",
+  "results",
+  "response",
+  "responses",
+  "turn",
+  "turns",
+  "call",
+  "calls",
+  "request",
+  "requests",
+  "message",
+  "messages",
+  "output",
+  "outputs",
+  "input",
+  "inputs",
+  "reply",
+  "replies",
+  "error",
+  "errors",
+  "use",
+  "uses"
+]);
+function tokensMatchGlued(tokens, token, suffixes) {
+  for (const t of tokens) {
+    if (t.length <= token.length || !t.startsWith(token)) continue;
+    if (suffixes.has(t.slice(token.length))) return true;
+  }
+  return false;
+}
+function tokensHaveAdjacentPair(tokens, prefixes, suffixes) {
+  const prefixSet = new Set(prefixes);
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const cur = tokens[i];
+    const next = tokens[i + 1];
+    if (cur && next && prefixSet.has(cur) && suffixes.has(next)) return true;
+  }
+  return false;
+}
+function roleTokens(role) {
+  const spaced = role.trim().replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2");
+  return spaced.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+function textFromTranscriptMessage(message) {
+  if (typeof message === "string") return message;
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return "";
+  }
+  const m = message;
+  if (typeof m.text === "string" && m.text.trim()) return m.text;
+  const fromContent = textFromTranscriptContent(m.content);
+  if (fromContent.trim()) return fromContent;
+  if (typeof m.prompt === "string" && m.prompt.trim()) return m.prompt;
+  return "";
+}
+function textFromTranscriptContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const item of content.slice(0, 32)) {
+    if (typeof item === "string" && item.trim()) {
+      parts.push(item);
+      continue;
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const row = item;
+    const t = row.text ?? row.content;
+    if (typeof t === "string" && t.trim()) parts.push(t);
+  }
+  return parts.join("\n");
+}
+function latestUserPromptFromTranscriptFile(transcriptPath) {
+  const p = sanitizeAntigravityTranscriptPath(transcriptPath);
+  if (!p) return "";
+  try {
+    const st = fs12.lstatSync(p);
+    if (st.isSymbolicLink() || !st.isFile()) return "";
+    if (st.size > MAX_TRANSCRIPT_SCAN_BYTES * 4) return "";
+    const raw = fs12.readFileSync(p, "utf8");
+    return latestUserPromptFromTranscriptText(raw);
+  } catch {
+    return "";
+  }
+}
+function stripUserRequestWrapper(text) {
+  const m = text.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/i);
+  if (m?.[1]) return m[1].trim();
+  return text;
+}
+function resolveAntigravityUserPrompt(payload, opts) {
+  for (const v of [
+    opts?.userPrompt,
+    payload.userPrompt,
+    payload.user_prompt,
+    payload.prompt
+  ]) {
+    if (typeof v === "string" && v.trim()) {
+      return clipText6(v.trim(), MAX_HOOK_STDIO_CHARS7 * 4);
+    }
+  }
+  const tp = payload.transcriptPath ?? payload.transcript_path;
+  if (typeof tp === "string" && tp.trim()) {
+    return clipText6(
+      latestUserPromptFromTranscriptFile(tp.trim()),
+      MAX_HOOK_STDIO_CHARS7 * 4
+    );
+  }
+  return "";
+}
+function isExplicitAntigravityUserPrompt(payload, opts) {
+  for (const v of [
+    opts?.userPrompt,
+    payload.userPrompt,
+    payload.user_prompt,
+    payload.prompt
+  ]) {
+    if (typeof v === "string" && v.trim()) return true;
+  }
+  return false;
+}
+function preInvocationCursorPath(projectRoot) {
+  return path13.join(
+    projectRoot,
+    ".autopilot",
+    ANTIGRAVITY_PREINVOCATION_CURSOR_FILE
+  );
+}
+function isSafeAntigravityCursorProjectRoot(projectRoot) {
+  if (typeof projectRoot !== "string") return false;
+  const t = projectRoot.trim();
+  if (!t || /[\0\r\n]/.test(t)) return false;
+  if (t.split(/[/\\]/).includes("..")) return false;
+  return true;
+}
+var MAX_CURSOR_FILE_BYTES = 512e3;
+function readPreInvocationCursor(projectRoot) {
+  try {
+    const p = preInvocationCursorPath(projectRoot);
+    const st = fs12.lstatSync(p);
+    if (st.isSymbolicLink() || !st.isFile()) return { v: 1, entries: {} };
+    if (st.size > MAX_CURSOR_FILE_BYTES) return { v: 1, entries: {} };
+    const raw = fs12.readFileSync(p, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { v: 1, entries: {} };
+    }
+    const o = parsed;
+    const entriesRaw = o.entries;
+    if (!entriesRaw || typeof entriesRaw !== "object" || Array.isArray(entriesRaw)) {
+      return { v: 1, entries: {} };
+    }
+    const entries = {};
+    for (const [k, v] of Object.entries(entriesRaw)) {
+      if (!k || /[\0\r\n]/.test(k)) continue;
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      const row = v;
+      if (typeof row.prompt !== "string" || typeof row.at !== "string") continue;
+      entries[k] = {
+        prompt: clipText6(row.prompt, MAX_HOOK_STDIO_CHARS7 * 4),
+        at: row.at
+      };
+    }
+    return { v: 1, entries };
+  } catch {
+    return { v: 1, entries: {} };
+  }
+}
+function writePreInvocationCursor(projectRoot, data) {
+  const dir = path13.join(projectRoot, ".autopilot");
+  fs12.mkdirSync(dir, { recursive: true });
+  const dirStat = fs12.lstatSync(dir);
+  if (dirStat.isSymbolicLink()) {
+    throw new Error("refusing cursor write via symlinked .autopilot");
+  }
+  let entries = data.entries;
+  const keys = Object.keys(entries);
+  if (keys.length > MAX_PREINVOCATION_CURSOR_ENTRIES) {
+    const sorted = keys.sort(
+      (a, b) => (entries[a]?.at ?? "").localeCompare(entries[b]?.at ?? "")
+    );
+    const drop = sorted.slice(0, keys.length - MAX_PREINVOCATION_CURSOR_ENTRIES);
+    entries = { ...entries };
+    for (const k of drop) delete entries[k];
+  }
+  const payload = `${JSON.stringify({ v: 1, entries }, null, 0)}
+`;
+  const target = preInvocationCursorPath(projectRoot);
+  try {
+    if (fs12.lstatSync(target).isSymbolicLink()) {
+      throw new Error("refusing cursor write over symlink");
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("refusing")) throw e;
+    const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+    if (code !== "ENOENT") {
+    }
+  }
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs12.writeFileSync(tmp, payload, "utf8");
+    fs12.renameSync(tmp, target);
+  } catch (err) {
+    try {
+      fs12.unlinkSync(tmp);
+    } catch {
+    }
+    throw err;
+  }
+}
+var CURSOR_LOCK_STALE_MS = 1e4;
+function withPreInvocationCursorLock(projectRoot, fn) {
+  if (!isSafeAntigravityCursorProjectRoot(projectRoot)) return null;
+  try {
+    fs12.mkdirSync(path13.join(projectRoot, ".autopilot"), { recursive: true });
+  } catch {
+    return null;
+  }
+  const lockPath = `${preInvocationCursorPath(projectRoot)}.lock`;
+  const openExclusive = () => {
+    try {
+      return fs12.openSync(lockPath, "wx");
+    } catch (e) {
+      const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
+      if (code !== "EEXIST") return null;
+      try {
+        const st = fs12.statSync(lockPath);
+        if (Date.now() - st.mtimeMs > CURSOR_LOCK_STALE_MS) {
+          fs12.unlinkSync(lockPath);
+          return fs12.openSync(lockPath, "wx");
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    }
+  };
+  const fd = openExclusive();
+  if (fd == null) return null;
+  try {
+    return fn();
+  } finally {
+    try {
+      fs12.closeSync(fd);
+    } catch {
+    }
+    try {
+      fs12.unlinkSync(lockPath);
+    } catch {
+    }
+  }
+}
+function claimAntigravityUserPrompt(opts) {
+  const prompt = typeof opts.prompt === "string" ? opts.prompt.trim() : "";
+  if (!prompt) return { status: "unavailable" };
+  const cid2 = typeof opts.conversationId === "string" ? opts.conversationId.trim() : "";
+  if (!cid2 || /[\0\r\n]/.test(cid2)) return { status: "unavailable" };
+  const clipped = clipText6(prompt, MAX_HOOK_STDIO_CHARS7 * 4);
+  if (!isSafeAntigravityCursorProjectRoot(opts.projectRoot)) {
+    return { status: "unavailable" };
+  }
+  try {
+    fs12.mkdirSync(path13.join(opts.projectRoot, ".autopilot"), {
+      recursive: true
+    });
+  } catch {
+    return { status: "unavailable" };
+  }
+  let claimed = null;
+  try {
+    claimed = withPreInvocationCursorLock(opts.projectRoot, () => {
+      const cur = readPreInvocationCursor(opts.projectRoot);
+      const previous = cur.entries[cid2]?.prompt ?? null;
+      if (previous === clipped) return { status: "duplicate" };
+      cur.entries[cid2] = { prompt: clipped, at: (/* @__PURE__ */ new Date()).toISOString() };
+      writePreInvocationCursor(opts.projectRoot, cur);
+      return {
+        status: "claimed",
+        previous,
+        prompt: clipped,
+        persisted: true
+      };
+    });
+  } catch {
+    return { status: "unavailable" };
+  }
+  if (claimed != null) return claimed;
+  if (opts.explicit) {
+    try {
+      const cur = readPreInvocationCursor(opts.projectRoot);
+      if (cur.entries[cid2]?.prompt === clipped) {
+        return { status: "duplicate" };
+      }
+    } catch {
+    }
+    return {
+      status: "claimed",
+      previous: null,
+      prompt: clipped,
+      persisted: false
+    };
+  }
+  return { status: "unavailable" };
+}
+function persistAntigravityUserPromptBestEffort(opts) {
+  const prompt = typeof opts.prompt === "string" ? opts.prompt.trim() : "";
+  if (!prompt) return;
+  const cid2 = typeof opts.conversationId === "string" ? opts.conversationId.trim() : "";
+  if (!cid2 || /[\0\r\n]/.test(cid2)) return;
+  if (!isSafeAntigravityCursorProjectRoot(opts.projectRoot)) return;
+  const clipped = clipText6(prompt, MAX_HOOK_STDIO_CHARS7 * 4);
+  try {
+    fs12.mkdirSync(path13.join(opts.projectRoot, ".autopilot"), {
+      recursive: true
+    });
+  } catch {
+    return;
+  }
+  try {
+    withPreInvocationCursorLock(opts.projectRoot, () => {
+      const cur = readPreInvocationCursor(opts.projectRoot);
+      if (cur.entries[cid2]?.prompt === clipped) return true;
+      cur.entries[cid2] = { prompt: clipped, at: (/* @__PURE__ */ new Date()).toISOString() };
+      writePreInvocationCursor(opts.projectRoot, cur);
+      return true;
+    });
+  } catch {
+  }
+}
+function rollbackAntigravityUserPromptClaim(opts) {
+  const cid2 = typeof opts.conversationId === "string" ? opts.conversationId.trim() : "";
+  if (!cid2 || /[\0\r\n]/.test(cid2)) return;
+  try {
+    withPreInvocationCursorLock(opts.projectRoot, () => {
+      const cur = readPreInvocationCursor(opts.projectRoot);
+      if (typeof opts.expected === "string" && opts.expected.length > 0 && cur.entries[cid2]?.prompt !== opts.expected) {
+        return false;
+      }
+      if (opts.previous == null || opts.previous === "") {
+        delete cur.entries[cid2];
+      } else {
+        cur.entries[cid2] = {
+          prompt: clipText6(opts.previous, MAX_HOOK_STDIO_CHARS7 * 4),
+          at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+      }
+      writePreInvocationCursor(opts.projectRoot, cur);
+      return true;
+    });
+  } catch {
+  }
+}
+function shouldClearChainPendingOnAntigravityPreInvocation(payload, prompt, opts) {
+  if (opts?.hasUndeliveredPending === true) return false;
+  if (typeof prompt !== "string" || !prompt.trim()) return false;
+  if (isHarnessFollowupMessage(prompt)) return false;
+  const n = finiteNumberOrNull(
+    payload.invocationNum ?? payload.invocation_num
+  );
+  if (n == null) return false;
+  if (n === 0) return true;
+  if (n === 1) {
+    const steps = finiteNumberOrNull(
+      payload.initialNumSteps ?? payload.initial_num_steps
+    );
+    return steps === 0;
+  }
+  return false;
+}
+function finiteNumberOrNull(raw) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!/^[+-]?\d+$/.test(t)) return null;
+    const n = Number(t);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+function toolNameFromEdit(payload) {
+  const fromCall = payload.toolCall?.name ?? payload.tool_call?.name ?? payload.toolName ?? payload.tool_name;
+  return typeof fromCall === "string" ? fromCall.trim() : "";
+}
+function toolArgsFromEdit(payload) {
+  const fromCall = payload.toolCall?.args ?? payload.tool_call?.args;
+  if (fromCall && typeof fromCall === "object" && !Array.isArray(fromCall)) {
+    return fromCall;
+  }
+  const input = payload.tool_input ?? payload.toolInput;
+  if (!input) return null;
+  if (typeof input === "object" && !Array.isArray(input)) {
+    return input;
+  }
+  if (typeof input === "string") {
+    if (input.length > MAX_TOOL_ARGS_JSON_CHARS6) return null;
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function isAntigravityEditTool(toolName) {
+  if (typeof toolName !== "string") return false;
+  const n = toolName.trim();
+  return n === "write_to_file" || n === "replace_file_content" || n === "multi_replace_file_content";
+}
+function filePathsFromAntigravityEdit(payload) {
+  const args = toolArgsFromEdit(payload);
+  if (!args) return [];
+  const candidates = [
+    args.TargetFile,
+    args.targetFile,
+    args.target_file,
+    args.AbsolutePath,
+    args.absolutePath,
+    args.file_path,
+    args.filePath,
+    args.path
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim() && !/[\0\r\n]/.test(c)) {
+      const t = c.trim();
+      if (t.split(/[/\\]/).includes("..")) continue;
+      return [t];
+    }
+  }
+  return [];
+}
+function stampAntigravityPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === ANTIGRAVITY_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: ANTIGRAVITY_PLATFORM
+  });
+}
+function stampAntigravityPlatformBestEffort(store, conversationId, projectRoot) {
+  try {
+    stampAntigravityPlatform(store, conversationId, projectRoot);
+  } catch {
+  }
+}
+function handlePreInvocation(store, payload, projectRoot, portConfig, opts) {
+  try {
+    return handlePreInvocationInner(
+      store,
+      payload,
+      projectRoot,
+      portConfig,
+      opts
+    );
+  } catch {
+    return {};
+  }
+}
+var handleAntigravityPreInvocation = handlePreInvocation;
+function handlePreInvocationInner(store, payload, projectRoot, portConfig, opts) {
+  const conversationId = sid9(payload);
+  if (!conversationId) return {};
+  const prompt = resolveAntigravityUserPrompt(payload, opts);
+  const explicit = isExplicitAntigravityUserPrompt(payload, opts);
+  const claim = claimAntigravityUserPrompt({
+    projectRoot,
+    conversationId,
+    prompt,
+    explicit
+  });
+  if (claim.status !== "claimed") {
+    stampAntigravityPlatformBestEffort(store, conversationId, projectRoot);
+    return {};
+  }
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const release = { rollbackOnThrow: true };
+  const rollbackClaim = () => {
+    if (!claim.persisted) {
+      release.rollbackOnThrow = false;
+      return;
+    }
+    rollbackAntigravityUserPromptClaim({
+      projectRoot,
+      conversationId,
+      previous: claim.previous,
+      expected: claim.prompt
+    });
+    release.rollbackOnThrow = false;
+  };
+  try {
+    return handlePreInvocationAfterClaim(
+      store,
+      payload,
+      projectRoot,
+      portConfig,
+      conversationId,
+      prompt,
+      claim,
+      rollbackClaim,
+      release
+    );
+  } catch {
+    if (release.rollbackOnThrow) rollbackClaim();
+    return {};
+  }
+}
+function handlePreInvocationAfterClaim(store, payload, projectRoot, portConfig, conversationId, prompt, claim, rollbackClaim, release) {
+  const markCommitted = () => {
+    release.rollbackOnThrow = false;
+    if (!claim.persisted) {
+      persistAntigravityUserPromptBestEffort({
+        projectRoot,
+        conversationId,
+        prompt: claim.prompt
+      });
+    }
+  };
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "Autopilot could not apply this command. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: ANTIGRAVITY_PLATFORM
+      });
+      if (!result.ok) {
+        rollbackClaim();
+        stampAntigravityPlatformBestEffort(
+          store,
+          conversationId,
+          projectRoot
+        );
+        return injectEphemeral(
+          typeof result.userMessage === "string" && result.userMessage.trim() ? result.userMessage : gateFallback
+        );
+      }
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      if (!result.ok) {
+        rollbackClaim();
+        stampAntigravityPlatformBestEffort(
+          store,
+          conversationId,
+          projectRoot
+        );
+        return injectEphemeral(
+          typeof result.userMessage === "string" && result.userMessage.trim() ? result.userMessage : gateFallback
+        );
+      }
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: ANTIGRAVITY_PLATFORM
+      });
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          markCommitted();
+          stampAntigravityPlatformBestEffort(
+            store,
+            conversationId,
+            projectRoot
+          );
+          return injectNeedPickContext4(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        rollbackClaim();
+        stampAntigravityPlatformBestEffort(
+          store,
+          conversationId,
+          projectRoot
+        );
+        return injectEphemeral(
+          typeof result.userMessage === "string" && result.userMessage.trim() ? result.userMessage : gateFallback
+        );
+      }
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: ANTIGRAVITY_PLATFORM
+      });
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          markCommitted();
+          stampAntigravityPlatformBestEffort(
+            store,
+            conversationId,
+            projectRoot
+          );
+          return injectNeedPickContext4(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        rollbackClaim();
+        stampAntigravityPlatformBestEffort(
+          store,
+          conversationId,
+          projectRoot
+        );
+        return injectEphemeral(
+          typeof result.userMessage === "string" && result.userMessage.trim() ? result.userMessage : gateFallback
+        );
+      }
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: ANTIGRAVITY_PLATFORM }
+      );
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          markCommitted();
+          stampAntigravityPlatformBestEffort(
+            store,
+            conversationId,
+            projectRoot
+          );
+          return injectNeedPickContext4(
+            result.userMessage,
+            result.candidates
+          );
+        }
+        rollbackClaim();
+        stampAntigravityPlatformBestEffort(
+          store,
+          conversationId,
+          projectRoot
+        );
+        return injectEphemeral(
+          typeof result.userMessage === "string" && result.userMessage.trim() ? result.userMessage : gateFallback
+        );
+      }
+      markCommitted();
+      stampAntigravityPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    rollbackClaim();
+    return {};
+  }
+  const pendingText = store.getReviewChain(conversationId)?.pending_followup;
+  const hasUndeliveredPending = typeof pendingText === "string" && pendingText.trim().length > 0;
+  if (shouldClearChainPendingOnAntigravityPreInvocation(payload, prompt, {
+    hasUndeliveredPending
+  })) {
+    store.clearChainPending(conversationId);
+  }
+  markCommitted();
+  stampAntigravityPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited8(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      ANTIGRAVITY_PLATFORM
+    );
+  }
+  stampAntigravityPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handlePostToolUse8(store, payload, projectRoot) {
+  try {
+    handlePostToolUseInner6(store, payload, projectRoot);
+  } catch {
+  }
+  return {};
+}
+var handleAntigravityPostToolUse = handlePostToolUse8;
+function handlePostToolUseInner6(store, payload, projectRoot) {
+  const conversationId = sid9(payload);
+  const toolName = toolNameFromEdit(payload);
+  if (!conversationId || !isAntigravityEditTool(toolName)) return;
+  if (antigravityErrorFieldText(payload.error)) return;
+  const filePaths = filePathsFromAntigravityEdit(payload);
+  if (filePaths.length === 0) {
+    stampAntigravityPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited8(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampAntigravityPlatform(store, conversationId, projectRoot);
+  }
+}
+function continueFromFollowupAction(action) {
+  if (!action?.message) return {};
+  const reason = clipText6(
+    followupReason(action.message, "Autopilot followup"),
+    MAX_HOOK_STDIO_CHARS7
+  );
+  if (!action.loop) {
+    return {};
+  }
+  return {
+    decision: "continue",
+    reason
+  };
+}
+function handleStop9(engine, payload, opts) {
+  try {
+    return handleStopInner6(engine, payload, opts);
+  } catch {
+    return {};
+  }
+}
+var handleAntigravityStop = handleStop9;
+function handleStopInner6(engine, payload, opts) {
+  const conversationId = sid9(payload);
+  if (!conversationId) return {};
+  const status = normalizeAntigravityStopStatus(payload, opts);
+  const transcriptPath = sanitizeAntigravityTranscriptPath(
+    payload.transcriptPath ?? payload.transcript_path
+  );
+  if (status === "aborted") {
+    engine.handleStop({
+      conversationId,
+      status,
+      loopCount: loopCountFromExecutionNum(payload),
+      transcriptPath,
+      platform: ANTIGRAVITY_PLATFORM
+    });
+    return {};
+  }
+  if (status === "error") {
+    const action2 = engine.handleStop({
+      conversationId,
+      status,
+      loopCount: loopCountFromExecutionNum(payload),
+      transcriptPath,
+      platform: ANTIGRAVITY_PLATFORM
+    });
+    if (!isAntigravityFullyIdle(payload)) return {};
+    return continueFromFollowupAction(action2);
+  }
+  if (!isAntigravityFullyIdle(payload)) {
+    return {};
+  }
+  const action = engine.handleStop({
+    conversationId,
+    status,
+    loopCount: loopCountFromExecutionNum(payload),
+    transcriptPath,
+    platform: ANTIGRAVITY_PLATFORM
+  });
+  if (!isAntigravityStopCompletionReason(payload)) {
+    return {};
+  }
+  return continueFromFollowupAction(action);
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -10106,6 +11300,7 @@ function createConfiguredReviewEngine2(store, projectRoot) {
   return createConfiguredReviewEngine(store, projectRoot, bundle, cfg);
 }
 export {
+  ANTIGRAVITY_PLATFORM,
   COPILOT_PLATFORM,
   FACTORY_PLATFORM,
   GEMINI_PLATFORM,
@@ -10117,6 +11312,9 @@ export {
   createConfiguredReviewEngine2 as createConfiguredReviewEngine,
   getLatestSchemaVersion,
   handleAfterFileEdit,
+  handleAntigravityPostToolUse,
+  handleAntigravityPreInvocation,
+  handleAntigravityStop,
   handleBeforeSubmitPrompt,
   handleStop2 as handleClaudeStop,
   handlePostToolUse2 as handleCodexPostToolUse,
@@ -10146,6 +11344,7 @@ export {
   handleStop,
   handleStopFailure,
   handleUserPromptSubmit,
+  isAntigravityAllowNoop,
   isFactoryEmptyStdout,
   isHermesAllowNoop,
   loadProjectReviewConfig

@@ -1671,6 +1671,365 @@ describe("hook vendor runtime", () => {
     );
   });
 
+  it("ten-way --platform antigravity routes PreInvocation/PostToolUse/Stop (injectSteps; {} Post; continue; wrong stamp abort)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+
+    const hook = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    for (const slug of ["ag-alpha", "ag-beta"] as const) {
+      const d = path.join(root, "plans", slug);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
+      fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
+    }
+
+    const cid = "hook-antigravity-aaaa-bbbb-cccc-ddddeeee0001";
+    const transcriptDir = path.join(root, "logs");
+    fs.mkdirSync(transcriptDir, { recursive: true });
+    const transcriptPath = path.join(transcriptDir, "transcript.jsonl");
+    fs.writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({ role: "user", text: "Autopilot ON" })}\n`,
+    );
+
+    // PreInvocation ON → allow {}
+    const onProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: cid,
+          transcriptPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(onProc.status).toBe(0);
+    expect(JSON.parse(onProc.stdout.trim() || "{}")).toEqual({});
+
+    const store = new StateStore(root);
+    expect(store.getSession(cid)?.platform).toBe("antigravity");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+    store.close();
+
+    // Unstamped PreInvocation still routes to antigravity (unique event).
+    const unstampedOn = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: "hook-antigravity-aaaa-bbbb-cccc-ddddeeee0099",
+          transcriptPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(unstampedOn.status).toBe(0);
+    expect(JSON.parse(unstampedOn.stdout.trim() || "{}")).toEqual({});
+    const unstampedStore = new StateStore(root);
+    expect(
+      unstampedStore.getSession("hook-antigravity-aaaa-bbbb-cccc-ddddeeee0099")
+        ?.platform,
+    ).toBe("antigravity");
+    unstampedStore.close();
+
+    // RUN needPick → injectSteps (cannot discard prompt)
+    fs.writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({ role: "user", text: "Autopilot RUN" })}\n`,
+    );
+    const runProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: cid,
+          transcriptPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(runProc.status).toBe(0);
+    const runOut = JSON.parse(runProc.stdout.trim() || "{}") as {
+      injectSteps?: Array<{ ephemeralMessage?: string }>;
+      decision?: string;
+    };
+    expect(runOut.decision).toBeUndefined();
+    expect(Array.isArray(runOut.injectSteps)).toBe(true);
+    expect(runOut.injectSteps?.[0]?.ephemeralMessage).toMatch(
+      /ag-alpha|ag-beta|Select a plan/i,
+    );
+
+    // Wrong stamp + PreInvocation → JSON {} before FSM (no new session).
+    const wrongStamp = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation", "--platform", "factory-droid"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: "hook-antigravity-wrong-stamp-0001",
+          transcriptPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(wrongStamp.status).toBe(0);
+    expect(JSON.parse(wrongStamp.stdout.trim() || "{}")).toEqual({});
+    const wrongStore = new StateStore(root);
+    expect(wrongStore.getSession("hook-antigravity-wrong-stamp-0001")).toBeNull();
+    wrongStore.close();
+
+    const wrongKimi = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation", "--platform", "kimi-code"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: "hook-antigravity-wrong-stamp-kimi-0001",
+          transcriptPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(wrongKimi.status).toBe(0);
+    expect(wrongKimi.stdout.trim()).toBe("{}");
+    const wrongKimiStore = new StateStore(root);
+    expect(
+      wrongKimiStore.getSession("hook-antigravity-wrong-stamp-kimi-0001"),
+    ).toBeNull();
+    wrongKimiStore.close();
+
+    // Antigravity stamp + Cursor-only event on a fresh project must abort before
+    // opening state.db.
+    const freshRoot = tmpProject();
+    try {
+      expect(
+        installInitYes({
+          projectRoot: freshRoot,
+          platform: "cursor",
+          surface: "ide",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const freshHook = path.join(
+        freshRoot,
+        ".autopilot",
+        "bin",
+        "autopilot-harness-hook.mjs",
+      );
+      const freshAbort = spawnSync(
+        process.execPath,
+        [
+          freshHook,
+          "--platform",
+          "antigravity",
+          "--event",
+          "beforeSubmitPrompt",
+        ],
+        {
+          cwd: freshRoot,
+          input: JSON.stringify({
+            conversation_id: "hook-antigravity-fresh-abort-0001",
+            prompt: "hello",
+          }),
+          encoding: "utf8",
+          timeout: 15_000,
+        },
+      );
+      expect(freshAbort.status).toBe(0);
+      expect(JSON.parse(freshAbort.stdout.trim() || "{}")).toEqual({});
+      expect(
+        fs.existsSync(path.join(freshRoot, ".autopilot", "state.db")),
+      ).toBe(false);
+    } finally {
+      fs.rmSync(freshRoot, { recursive: true, force: true });
+    }
+
+    // PostToolUse → always {} + dirty-arm
+    const file = path.join(root, "src", "ag.ts");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "export const a = 1;\n");
+    const editCid = "hook-antigravity-aaaa-bbbb-cccc-ddddeeee0002";
+    const editStore = new StateStore(root);
+    editStore.upsertSession({
+      conversation_id: editCid,
+      project_root: root,
+      code_root: root,
+      platform: "antigravity",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "ag-alpha",
+      checklist_path: path.join(root, "plans", "ag-alpha", "checklist.md"),
+    });
+    editStore.close();
+    const editProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PostToolUse", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: editCid,
+          toolCall: {
+            name: "write_to_file",
+            args: { TargetFile: file },
+          },
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(editProc.status).toBe(0);
+    expect(JSON.parse(editProc.stdout.trim() || "{}")).toEqual({});
+    const verifyEdit = new StateStore(root);
+    expect(verifyEdit.getReviewChain(editCid)?.code_edited).toBe(1);
+    verifyEdit.close();
+
+    // Stop continue → decision:continue+reason when fullyIdle
+    const armed = new StateStore(root);
+    armed.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "antigravity",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "ag-alpha",
+      checklist_path: path.join(root, "plans", "ag-alpha", "checklist.md"),
+      reviewing_item_id: "a",
+    });
+    armed.updateReviewChain(cid, { code_edited: 1 });
+    armed.close();
+
+    const stopProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: cid,
+          fullyIdle: true,
+          terminationReason: "model_stop",
+          executionNum: 1,
+          transcriptPath,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopProc.status).toBe(0);
+    const stopOut = JSON.parse(stopProc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+    };
+    expect(stopOut.decision).toBe("continue");
+    expect(stopOut.reason).toBeTruthy();
+
+    // fullyIdle false → {}
+    const idleProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: cid,
+          fullyIdle: false,
+          terminationReason: "model_stop",
+          transcriptPath,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(idleProc.status).toBe(0);
+    expect(JSON.parse(idleProc.stdout.trim() || "{}")).toEqual({});
+
+    // StopFailure under antigravity stamp → {}
+    const stopFailAg = spawnSync(
+      process.execPath,
+      [hook, "--event", "StopFailure", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({ conversationId: cid }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(stopFailAg.status).toBe(0);
+    expect(JSON.parse(stopFailAg.stdout.trim() || "{}")).toEqual({});
+
+    const hookSrc = fs.readFileSync(hook, "utf8");
+    expect(hookSrc).toMatch(/function writeAntigravityReply\(/);
+    expect(hookSrc).toMatch(/handleAntigravityPreInvocation/);
+    expect(hookSrc).toMatch(/handleAntigravityPostToolUse/);
+    expect(hookSrc).toMatch(/handleAntigravityStop/);
+    expect(hookSrc).toMatch(
+      /event === "PreInvocation"\s*&&\s*hostId\s*!==\s*"antigravity"/,
+    );
+    expect(hookSrc).toMatch(
+      /hostId === "antigravity"\s*&&\s*!ANTIGRAVITY_EVENTS\.has\(event\)/,
+    );
+    // Research lock: PreInvocation must not emit Stop decision; Stop must not
+    // emit injectSteps (writer gated by allowInject / allowContinue).
+    expect(hookSrc).toMatch(
+      /writeAntigravityReply\(result,\s*port,\s*\{\s*allowInject:\s*true\s*\}\)/,
+    );
+    expect(hookSrc).toMatch(
+      /writeAntigravityReply\(result,\s*port,\s*\{\s*allowContinue:\s*true\s*\}\)/,
+    );
+    expect(hookSrc).toMatch(/allowContinue === true/);
+    expect(hookSrc).toMatch(/allowInject === true/);
+    expect(hookSrc).toMatch(
+      /\[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f\]/,
+    );
+
+    // Layer-C: Cursor-shaped abort under Antigravity stamp → JSON {} (FSM halt,
+    // no continue / inject leak).
+    const cursorAbort = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversation_id: cid,
+          status: "aborted",
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(cursorAbort.status).toBe(0);
+    expect(JSON.parse(cursorAbort.stdout.trim() || "{}")).toEqual({});
+  });
+
   it("unstamped agentStop + stopHookActive routes Copilot (not Claude Layer C)", () => {
     root = tmpProject();
     expect(

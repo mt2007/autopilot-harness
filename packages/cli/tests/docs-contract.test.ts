@@ -1268,13 +1268,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, and Antigravity|Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, and Hermes Agent/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, and Antigravity/,
     );
     expect(cliPkg.keywords).toEqual(
       expect.arrayContaining([
@@ -1287,6 +1287,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "gemini-cli",
         "factory-droid",
         "hermes-agent",
+        "antigravity",
       ]),
     );
     const kimiPkg = JSON.parse(
@@ -1350,6 +1351,18 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hermesPkg.description).toMatch(/Hermes Agent/i);
     expect(hermesPkg.description).toMatch(/pre_llm_call|pre_verify/i);
     expect(hermesPkg.description).not.toMatch(/Coming v0\.9\b/);
+    const antigravityPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/antigravity/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string; private?: boolean };
+    expect(antigravityPkg.private).not.toBe(true);
+    expect(antigravityPkg.description).toMatch(/Antigravity/i);
+    expect(antigravityPkg.description).toMatch(
+      /PreInvocation|injectSteps|fullyIdle/i,
+    );
+    expect(antigravityPkg.description).not.toMatch(/Coming v0\.10\b/);
     const runnerPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/runner/package.json"),

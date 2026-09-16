@@ -2,8 +2,9 @@
 /**
  * Bundle core + port-cursor + port-claude-code + port-codex + port-kimi-code +
  * port-copilot-cli + port-grok-build + port-gemini-cli + port-factory-droid +
- * port-hermes-agent into assets/vendor/runtime.mjs for project hooks. Also
- * copies migration SQL beside the bundle (migrate.ts resolves relative paths).
+ * port-hermes-agent + port-antigravity into assets/vendor/runtime.mjs for
+ * project hooks. Also copies migration SQL beside the bundle (migrate.ts
+ * resolves relative paths).
  */
 import esbuild from "esbuild";
 import fs from "node:fs";
@@ -106,6 +107,14 @@ await esbuild.build({
       "packages",
       "ports",
       "hermes-agent",
+      "src",
+      "index.ts",
+    ),
+    "@autopilot-harness/port-antigravity": path.join(
+      repoRoot,
+      "packages",
+      "ports",
+      "antigravity",
       "src",
       "index.ts",
     ),

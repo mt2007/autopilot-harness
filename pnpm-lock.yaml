@@ -26,6 +26,9 @@ importers:
       '@autopilot-harness/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@autopilot-harness/port-antigravity':
+        specifier: workspace:*
+        version: link:../ports/antigravity
       '@autopilot-harness/port-claude-code':
         specifier: workspace:*
         version: link:../ports/claude-code
