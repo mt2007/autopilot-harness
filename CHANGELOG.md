@@ -9,6 +9,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-09-17
+
 ### Added
 
 - **Antigravity hook port** (`@autopilot-harness/port-antigravity`): PreInvocation / PostToolUse / Stop adapters; fail-open on errors; Stop continue = `{ decision:"continue", reason }` (**not** Claude `block`); allow / no-op **`{}`**; `fullyIdle !== true` → fail-open (do not continue); PostToolUse matcher `write_to_file|replace_file_content|multi_replace_file_content` + dirty-arm (**never deny**); PreInvocation **has no user-prompt field** — ON/RUN from **`transcriptPath` + stateful cursor** (do not treat as Claude UPS).

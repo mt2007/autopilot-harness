@@ -1044,7 +1044,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
   });
 
-  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 / 0.6.0 / 0.7.0 / 0.8.0 / 0.9.0 and CONTRIBUTING keeps dogfood", () => {
+  it("CHANGELOG records 0.1.0 / 0.2.0 / 0.2.1 / 0.2.2 / 0.2.3 / 0.2.4 / 0.2.5 / 0.2.6 / 0.2.7 / 0.2.8 / 0.2.9 / 0.2.10 / 0.2.11 / 0.2.12 / 0.2.13 / 0.2.14 / 0.2.15 / 0.3.0 / 0.4.0 / 0.4.1 / 0.5.0 / 0.6.0 / 0.7.0 / 0.8.0 / 0.9.0 / 0.10.0 and CONTRIBUTING keeps dogfood", () => {
     const log = fs.readFileSync(path.join(repoRoot, "CHANGELOG.md"), "utf8");
     expect(log).toMatch(/## \[0\.1\.0\]/);
     expect(log).toMatch(/## \[0\.2\.0\]/);
@@ -1071,6 +1071,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(log).toMatch(/## \[0\.7\.0\]/);
     expect(log).toMatch(/## \[0\.8\.0\]/);
     expect(log).toMatch(/## \[0\.9\.0\]/);
+    expect(log).toMatch(/## \[0\.10\.0\]/);
     expect(log).toMatch(
       new RegExp(`## \\[${escapeRegExp(PACKAGE_VERSION)}\\]`),
     );
@@ -1319,6 +1320,37 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(section090).toMatch(/pnpm publish|pnpm pack/i);
     expect(section090).toMatch(/1 \(next\)[\s\S]{0,80}Antigravity/);
+    const section010 = changelogSection(log, "0.10.0");
+    expect(section010).toMatch(/docs-antigravity-shipped/i);
+    expect(section010).toMatch(/handleAntigravityPreInvocation/);
+    expect(section010).toMatch(/handleAntigravityPostToolUse/);
+    expect(section010).toMatch(/handleAntigravityStop/);
+    expect(section010).toMatch(/port-antigravity|@autopilot-harness\/port-antigravity/i);
+    expect(section010).toMatch(/ten-way|Ten-way/i);
+    expect(section010).toMatch(/\.agents\/hooks\.json/);
+    expect(section010).toMatch(/\.agents\/skills/);
+    expect(section010).toMatch(/decision:"continue"|decision:continue/);
+    expect(section010).toMatch(/degraded/);
+    expect(section010).toMatch(/OAuth-blocked/);
+    expect(section010).toMatch(/unproven/i);
+    expect(section010).toMatch(/human gate/i);
+    expect(section010).toMatch(/OpenCode/);
+    expect(section010).toMatch(/dual Antigravity\+Gemini/i);
+    expect(section010).toMatch(/\.gemini\/skills/);
+    expect(section010).toMatch(/\.factory\/skills/);
+    expect(section010).toMatch(/\$HERMES_HOME\/skills|HERMES_HOME\/skills/);
+    expect(section010).toMatch(/Shipped \(degraded/);
+    expect(section010).toMatch(/packages\/ports\/antigravity\/package\.json/);
+    expect(section010).toMatch(/Silence `\{\}`|allow \/ no-op \*\*`\{\}`\*\*/);
+    expect(section010).toMatch(/fullyIdle/);
+    expect(section010).toMatch(/transcriptPath/);
+    expect(section010).toMatch(/auto-attach ≠ Autopilot ON|auto-attach ≠ ON/i);
+    expect(section010).toMatch(/does not write `\.agent\/`/);
+    expect(section010).toMatch(
+      /core\s*→\s*i18n\s*→\s*ports[\s\S]*antigravity[\s\S]*→\s*cli|ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity\)/i,
+    );
+    expect(section010).toMatch(/pnpm publish|pnpm pack/i);
+    expect(section010).toMatch(/1 \(next\)[\s\S]{0,80}OpenCode/);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
     expect(unreleased).not.toMatch(/handleCopilot/i);
@@ -1331,17 +1363,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/handleFactory/i);
     expect(unreleased).not.toMatch(/docs-hermes-shipped/i);
     expect(unreleased).not.toMatch(/handleHermes/i);
-    expect(unreleased).toMatch(/docs-antigravity-shipped/i);
-    expect(unreleased).toMatch(/handleAntigravityPreInvocation/);
-    expect(unreleased).toMatch(/handleAntigravityPostToolUse/);
-    expect(unreleased).toMatch(/handleAntigravityStop/);
-    expect(unreleased).toMatch(/port-antigravity|@autopilot-harness\/port-antigravity/i);
-    expect(unreleased).toMatch(/ten-way|Ten-way/i);
-    expect(unreleased).toMatch(/\.agents\/hooks\.json/);
-    expect(unreleased).toMatch(/decision:"continue"|decision:continue/);
-    expect(unreleased).toMatch(/degraded/);
-    expect(unreleased).toMatch(/OpenCode/);
-    expect(unreleased).toMatch(/\.gemini\/skills|skills co-install|Skills co-install/i);
+    expect(unreleased).not.toMatch(/docs-antigravity-shipped/i);
+    expect(unreleased).not.toMatch(/handleAntigravity/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
