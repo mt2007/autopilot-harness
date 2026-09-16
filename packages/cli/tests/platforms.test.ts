@@ -3,6 +3,7 @@ import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
   configWantsInstallableHost,
+  platformsWantInstallableHost,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
   formatBindingOptionLabel,
@@ -59,6 +60,47 @@ describe("platforms helpers", () => {
     ).toBe(true);
   });
 
+  it("platformsWantInstallableHost does not fall back to Cursor", () => {
+    expect(platformsWantInstallableHost([], "cursor")).toBe(false);
+    expect(platformsWantInstallableHost([], "gemini-cli")).toBe(false);
+    expect(
+      platformsWantInstallableHost(
+        [{ id: "gemini-cli", surface: "ide" }],
+        "gemini-cli",
+      ),
+    ).toBe(false);
+    expect(
+      platformsWantInstallableHost(
+        [{ id: "gemini-cli", surface: "ide" }],
+        "cursor",
+      ),
+    ).toBe(false);
+    expect(
+      platformsWantInstallableHost(
+        [{ id: "gemini-cli", surface: "cli" }],
+        "gemini-cli",
+      ),
+    ).toBe(true);
+    expect(
+      platformsWantInstallableHost(
+        [
+          { id: "cursor", surface: "ide" },
+          { id: "gemini-cli", surface: "ide" },
+        ],
+        "cursor",
+      ),
+    ).toBe(true);
+    expect(
+      platformsWantInstallableHost(
+        [
+          { id: "cursor", surface: "ide" },
+          { id: "gemini-cli", surface: "ide" },
+        ],
+        "gemini-cli",
+      ),
+    ).toBe(false);
+  });
+
   it("parsePlatformBindingsFromConfig prefers platforms[] over legacy", () => {
     expect(
       parsePlatformBindingsFromConfig({
@@ -109,6 +151,17 @@ describe("platforms helpers", () => {
     expect(
       formatBindingOptionLabel({ id: "kimi-code", surface: "cli" }),
     ).toMatch(/Kimi Code.*config\.toml/);
+    expect(
+      formatBindingOptionLabel({ id: "gemini-cli", surface: "cli" }),
+    ).toMatch(/\.gemini\/settings\.json \+ \.gemini\/skills/);
+    expect(
+      formatBindingOptionLabel({ id: "factory-droid", surface: "cli" }),
+    ).toMatch(/\.factory\/hooks\.json \+ \.factory\/skills/);
+    expect(
+      formatBindingOptionLabel({ id: "hermes-agent", surface: "cli" }),
+    ).toMatch(
+      /\$HERMES_HOME\/config\.yaml \+ \$HERMES_HOME\/skills/,
+    );
   });
 
   it("caps platforms list length and does not drop existing for new adds", () => {

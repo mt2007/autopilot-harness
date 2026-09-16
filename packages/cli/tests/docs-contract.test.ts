@@ -341,13 +341,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/nine-way dispatch/i);
   });
 
-  it("dogfood .autopilotignore covers Factory + Antigravity paths", () => {
+  it("dogfood .autopilotignore covers Factory + Antigravity + Gemini/Factory skills", () => {
     const ignore = fs.readFileSync(
       path.join(repoRoot, ".autopilotignore"),
       "utf8",
     );
     expect(ignore).toMatch(/\.factory\/hooks\.json/);
     expect(ignore).toMatch(/\.gemini\/settings\.json/);
+    expect(ignore).toMatch(/\.gemini\/skills\/\*\*/);
+    expect(ignore).toMatch(/\.factory\/skills\/\*\*/);
     expect(ignore).toMatch(/\.agents\/hooks\.json/);
     expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
   });

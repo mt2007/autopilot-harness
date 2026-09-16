@@ -108,7 +108,19 @@ describe("isAutopilotIgnoredPath", () => {
     ).toBe(true);
     expect(
       isAutopilotIgnoredPath(
+        ".gemini/skills/autopilot-on/SKILL.md",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
         ".factory/hooks.json",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
+        ".factory/skills/autopilot-on/SKILL.md",
         DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
       ),
     ).toBe(true);

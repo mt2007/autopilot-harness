@@ -774,18 +774,21 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       );
     }
     if (wantGemini) {
+      actions.push("refresh .gemini/skills/autopilot-*");
       actions.push(
-        `merge ${GEMINI_SETTINGS_REL_PATH} (Autopilot hooks; no skills)`,
+        `merge ${GEMINI_SETTINGS_REL_PATH} (Autopilot hooks)`,
       );
     }
     if (wantFactory) {
+      actions.push("refresh .factory/skills/autopilot-*");
       actions.push(
-        `merge ${FACTORY_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
+        `merge ${FACTORY_HOOKS_REL_PATH} (Autopilot entries)`,
       );
     }
     if (wantHermes) {
+      actions.push("refresh $HERMES_HOME/skills/autopilot-*");
       actions.push(
-        "merge $HERMES_HOME/config.yaml Autopilot hooks (no skills)",
+        "merge $HERMES_HOME/config.yaml Autopilot hooks",
       );
     }
     if (wantAntigravity) {

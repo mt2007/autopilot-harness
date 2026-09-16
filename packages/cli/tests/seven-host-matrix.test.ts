@@ -239,11 +239,16 @@ describe("seven-host Gemini cross-fire matrix", () => {
       expect(h?.command).toMatch(/--platform gemini-cli/);
       expect(h?.command).toMatch(new RegExp(`--event ${event}(?:\\s|$)`));
     }
-    expect(fs.existsSync(path.join(root, ".gemini", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".gemini", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.grok\/hooks\/\*\*/);
     expect(ignore).toMatch(/\.gemini\/settings\.json/);
+    expect(ignore).toMatch(/\.gemini\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

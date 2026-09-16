@@ -1315,7 +1315,7 @@ review:
     expect(JSON.stringify(stopGroups)).toMatch(/foreign-grok-keep/);
   });
 
-  it("dry-run lists Gemini settings action when gemini-cli is enabled (no skills)", () => {
+  it("dry-run lists Gemini settings + skills when gemini-cli is enabled", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -1332,6 +1332,7 @@ review:
     expect(r.actions.some((a) => /\.gemini\/settings\.json/i.test(a))).toBe(
       true,
     );
+    expect(r.actions.some((a) => /\.gemini\/skills/i.test(a))).toBe(true);
     expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
     expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
   });
@@ -1456,7 +1457,7 @@ review:
     expect(afterAgent?.command).toMatch(/--platform gemini-cli/);
   });
 
-  it("dry-run lists Factory hooks action when factory-droid is enabled (no skills)", () => {
+  it("dry-run lists Factory hooks + skills when factory-droid is enabled", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -1471,6 +1472,7 @@ review:
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.actions.some((a) => /\.factory\/hooks\.json/i.test(a))).toBe(true);
+    expect(r.actions.some((a) => /\.factory\/skills/i.test(a))).toBe(true);
     expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
     expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
   });
@@ -1585,7 +1587,7 @@ review:
     expect(stop?.command).toMatch(/\$FACTORY_PROJECT_DIR/);
   });
 
-  it("dry-run lists Hermes config.yaml action when hermes-agent is enabled (no skills)", () => {
+  it("dry-run lists Hermes config.yaml + skills when hermes-agent is enabled", () => {
     root = tmpProject();
     const hermesHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-hermes-up-dry-"));
     const prev = process.env.HERMES_HOME;
@@ -1606,6 +1608,7 @@ review:
       expect(
         r.actions.some((a) => /HERMES_HOME\/config\.yaml/i.test(a)),
       ).toBe(true);
+      expect(r.actions.some((a) => /HERMES_HOME\/skills/i.test(a))).toBe(true);
       expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
       expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
     } finally {

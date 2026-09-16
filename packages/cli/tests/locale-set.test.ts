@@ -509,4 +509,230 @@ describe("locale set", () => {
     expect(config).toContain("开启自动驾驶");
     expect(config).toContain(stock.on[0]!);
   });
+
+  it("Gemini-only locale set rewrites .gemini/skills and does not plant .cursor/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const geminiOn = fs.readFileSync(
+      path.join(root, ".gemini", "skills", "autopilot-on", "SKILL.md"),
+      "utf8",
+    );
+    expect(geminiOn).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+  });
+
+  it("Gemini-only locale set ignores leftover .cursor symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-locale-cur-out-"));
+    try {
+      fs.symlinkSync(outside, path.join(root, ".cursor"));
+      const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(
+        fs.readFileSync(
+          path.join(root, ".gemini", "skills", "autopilot-on", "SKILL.md"),
+          "utf8",
+        ),
+      ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("Factory locale set keeps disable-model-invocation: true", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "factory-droid",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const body = fs.readFileSync(
+      path.join(root, ".factory", "skills", "autopilot-on", "SKILL.md"),
+      "utf8",
+    );
+    expect(body).toMatch(/^disable-model-invocation:\s*true$/m);
+    expect(body).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+  });
+
+  it("Hermes locale set rewrites $HERMES_HOME/skills", () => {
+    root = tmpProject();
+    const prev = process.env.HERMES_HOME;
+    const hermesHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-locale-hermes-"));
+    process.env.HERMES_HOME = hermesHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "hermes-agent",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const body = fs.readFileSync(
+        path.join(hermesHome, "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      );
+      expect(body).toContain(skillDescription("zh-CN", "autopilot-on"));
+      expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_HOME;
+      else process.env.HERMES_HOME = prev;
+      fs.rmSync(hermesHome, { recursive: true, force: true });
+    }
+  });
+
+  it("Codex-only locale set does not plant .cursor/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+    expect(
+      fs.readFileSync(path.join(root, ".autopilot", "config.yml"), "utf8"),
+    ).toMatch(/locale:\s*zh-CN/);
+  });
+
+  it("Claude-only locale set rewrites .claude/skills and does not plant .cursor/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      fs.readFileSync(
+        path.join(root, ".claude", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+  });
+
+  it("Hermes home as a file fail-closed on locale set", () => {
+    root = tmpProject();
+    const prev = process.env.HERMES_HOME;
+    const hermesHome = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "ap-locale-hermes-file-")),
+      "home-file",
+    );
+    fs.writeFileSync(hermesHome, "not-a-dir\n");
+    process.env.HERMES_HOME = hermesHome;
+    try {
+      // Minimal config declaring hermes without going through install (home is a file).
+      fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, ".autopilot", "config.yml"),
+        [
+          "locale: en",
+          "platforms:",
+          "  - id: hermes-agent",
+          "    surface: cli",
+          "triggers:",
+          "  match: line_start",
+          "  on: [Autopilot ON]",
+          "  run: [Autopilot RUN]",
+          "  off: [Autopilot OFF]",
+          "  resume: [Autopilot RESUME]",
+          "  replan: [Autopilot REPLAN]",
+          "  resume_review: [Resume review]",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/not a directory/i);
+    } finally {
+      if (prev === undefined) delete process.env.HERMES_HOME;
+      else process.env.HERMES_HOME = prev;
+      fs.rmSync(path.dirname(hermesHome), { recursive: true, force: true });
+    }
+  });
+
+  it("empty installable platforms does not plant .cursor/skills (no Cursor fallback)", () => {
+    root = tmpProject();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    // Wrong surface → not installable; configWantsInstallableHost would fall
+    // back to Cursor — locale set must not.
+    fs.writeFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      [
+        "locale: en",
+        "platforms:",
+        "  - id: gemini-cli",
+        "    surface: ide",
+        "triggers:",
+        "  match: line_start",
+        "  on: [Autopilot ON]",
+        "  run: [Autopilot RUN]",
+        "  off: [Autopilot OFF]",
+        "  resume: [Autopilot RESUME]",
+        "  replan: [Autopilot REPLAN]",
+        "  resume_review: [Resume review]",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(root, ".gemini", "skills"))).toBe(false);
+    expect(
+      fs.readFileSync(path.join(root, ".autopilot", "config.yml"), "utf8"),
+    ).toMatch(/locale:\s*zh-CN/);
+  });
 });

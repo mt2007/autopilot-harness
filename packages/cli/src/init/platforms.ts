@@ -111,6 +111,21 @@ export function configWantsInstallableHost(
 }
 
 /**
+ * Whether init/locale-set should wire skills/hooks for `hostId`.
+ * Unlike {@link configWantsInstallableHost}, does **not** fall back to Cursor
+ * when the installable list is empty — wrong-surface / empty lists stay false.
+ */
+export function platformsWantInstallableHost(
+  platforms: readonly PlatformBinding[],
+  hostId: string,
+): boolean {
+  const want = sanitizePlatformId(hostId);
+  return platforms.some(
+    (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
+  );
+}
+
+/**
  * Effective primary host: first installable binding in list order, else first
  * entry, else Cursor IDE. Used for status/upgrade hints — not written back as
  * top-level `platform`/`surface` scalars.
@@ -158,13 +173,13 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
     return "Grok Build CLI (.grok/hooks)";
   }
   if (id === "gemini-cli") {
-    return "Gemini CLI (.gemini/settings.json)";
+    return "Gemini CLI (.gemini/settings.json + .gemini/skills)";
   }
   if (id === "factory-droid") {
-    return "Factory Droid (.factory/hooks.json)";
+    return "Factory Droid (.factory/hooks.json + .factory/skills)";
   }
   if (id === "hermes-agent") {
-    return "Hermes Agent ($HERMES_HOME/config.yaml hooks)";
+    return "Hermes Agent ($HERMES_HOME/config.yaml + $HERMES_HOME/skills)";
   }
   if (id === "antigravity") {
     return "Antigravity (.agents/hooks.json + .agents/skills)";

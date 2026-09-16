@@ -1135,7 +1135,11 @@ describe("factory contract matrix", () => {
     expect(factoryHooks.Stop?.[0]?.hooks?.[0]?.command).toBe(
       'node "$FACTORY_PROJECT_DIR"/.autopilot/bin/autopilot-harness-hook.mjs --platform factory-droid --event Stop',
     );
-    expect(fs.existsSync(path.join(root, ".factory", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".factory", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const cfg = fs.readFileSync(

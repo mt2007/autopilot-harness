@@ -581,13 +581,13 @@ export function formatPostInstallOutro(
       return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .grok/hooks/autopilot-harness.json (timeout 120s). Trust via /hooks-trust or --trust after install or upgrade.`;
     }
     if (id === "gemini-cli") {
-      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .gemini/settings.json (timeout 120000ms). After install/upgrade: re-trust hooks, check /hooks panel, and ensure folder trust.`;
+      return `You're all set — in ${name}, try /autopilot-on (skills under .gemini/skills) or line-start triggers.on / triggers.run. Hooks live in .gemini/settings.json (timeout 120000ms). After install/upgrade: re-trust hooks, check /hooks panel, ensure folder trust, and /skills reload.`;
     }
     if (id === "factory-droid") {
-      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in .factory/hooks.json (timeout 120; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes.`;
+      return `You're all set — in ${name}, try /autopilot-on (skills under .factory/skills) or line-start triggers.on / triggers.run. Hooks live in .factory/hooks.json (timeout 120; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes.`;
     }
     if (id === "hermes-agent") {
-      return `You're all set — in ${name}, use line-start triggers.on / triggers.run (P0). Hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; timeout 120; relative command; agent.max_verify_nudges ≥32). pre_verify is edit-only (no product edit → pending/RESUME). Consent/non-TTY: approve hooks or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept). After install: reload Hermes and run hermes hooks doctor.`;
+      return `You're all set — in ${name}, try /autopilot-on (skills under $HERMES_HOME/skills) or line-start triggers.on / triggers.run. Hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; timeout 120; relative command; agent.max_verify_nudges ≥32). pre_verify is edit-only (no product edit → pending/RESUME). Consent/non-TTY: approve hooks or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept). After install: reload Hermes and run hermes hooks doctor.`;
     }
     if (id === "antigravity") {
       return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run. Hooks live in .agents/hooks.json (named autopilot-harness block; timeout 120; relative command). After install/upgrade: reload Antigravity / start a new session (IDE tip: hooks may be silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`;
@@ -605,7 +605,7 @@ export function formatPostInstallOutro(
     ids.includes("hermes-agent") ||
     ids.includes("antigravity")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes: line-start triggers.on / triggers.run; Antigravity: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Gemini/Factory/Hermes/Antigravity: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -647,15 +647,15 @@ export function formatHostActivationTips(
       );
     } else if (id === "gemini-cli") {
       tips.push(
-        `${host}: Autopilot writes .gemini/settings.json only (nested matcher groups; timeout 120000ms; BeforeAgent+AfterTool+AfterAgent). After install/upgrade: re-trust hooks, open /hooks panel, and ensure folder trust. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; does not rewrite hooksConfig).`,
+        `${host}: Autopilot writes .gemini/settings.json (nested matcher groups; timeout 120000ms; BeforeAgent+AfterTool+AfterAgent) and .gemini/skills/autopilot-* (not skipped when Antigravity is also enabled; does not rewrite hooksConfig). After install/upgrade: re-trust hooks, open /hooks panel, ensure folder trust, and /skills reload. Activation: /autopilot-on or line-start triggers.on / triggers.run.`,
       );
     } else if (id === "factory-droid") {
       tips.push(
-        `${host}: Autopilot writes .factory/hooks.json only (top-level events; timeout 120; UPS+PostToolUse+Stop; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
+        `${host}: Autopilot writes .factory/hooks.json (top-level events; timeout 120; UPS+PostToolUse+Stop; commands use $FACTORY_PROJECT_DIR) and .factory/skills/autopilot-* (disable-model-invocation: true; user-invocable default). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes. Activation: /autopilot-on or line-start triggers.on / triggers.run.`,
       );
     } else if (id === "hermes-agent") {
       tips.push(
-        `${host}: Autopilot merges hooks: into $HERMES_HOME/config.yaml only (default ~/.hermes; never cli-config.yaml). Timeout 120; post_tool_call matcher write_file|patch; relative node .autopilot/bin/… --platform hermes-agent; raises agent.max_verify_nudges to ≥32 (does not lower higher values; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only — no product edit that turn → pending/RESUME. Consent/non-TTY: approve at TTY or --accept-hooks / HERMES_ACCEPT_HOOKS. After install: reload Hermes and run hermes hooks doctor. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
+        `${host}: Autopilot merges hooks: into $HERMES_HOME/config.yaml (default ~/.hermes; never cli-config.yaml) and installs $HERMES_HOME/skills/autopilot-*. Timeout 120; post_tool_call matcher write_file|patch; relative node .autopilot/bin/… --platform hermes-agent; raises agent.max_verify_nudges to ≥32 (does not lower higher values; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only — no product edit that turn → pending/RESUME. Consent/non-TTY: approve at TTY or --accept-hooks / HERMES_ACCEPT_HOOKS. After install: reload Hermes and run hermes hooks doctor. Activation: /autopilot-on or line-start triggers.on / triggers.run.`,
       );
     } else if (id === "antigravity") {
       tips.push(
@@ -735,18 +735,18 @@ function hostActivationPlainLines(
         );
       } else if (id === "gemini-cli") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
-          `hooks 仅写 .gemini/settings.json（nested；timeout 120000ms）。安装/升级后请重新信任 hooks、查看 /hooks panel，并确认 folder trust。`,
+          `在 ${host} 中试用 /autopilot-on（skills 在 .gemini/skills）或行首 triggers.on / triggers.run。`,
+          `hooks 写 .gemini/settings.json（nested；timeout 120000ms）；skills 始终写 .gemini/skills（即使同时启用 Antigravity 也不跳过）。安装/升级后请重新信任 hooks、查看 /hooks panel、确认 folder trust，并 /skills reload。`,
         );
       } else if (id === "factory-droid") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
-          `hooks 仅写 .factory/hooks.json（顶层 event；timeout 120；命令用 $FACTORY_PROJECT_DIR）。安装/升级后请查看 /hooks，并 reload 或新开会话以刷新 hooks 快照。`,
+          `在 ${host} 中试用 /autopilot-on（skills 在 .factory/skills）或行首 triggers.on / triggers.run。`,
+          `hooks 写 .factory/hooks.json（顶层 event；timeout 120；命令用 $FACTORY_PROJECT_DIR）；skills 含 disable-model-invocation: true。安装/升级后请查看 /hooks，并 reload 或新开会话以刷新 hooks 快照。`,
         );
       } else if (id === "hermes-agent") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
-          `hooks 仅合并进 $HERMES_HOME/config.yaml（默认 ~/.hermes；永不写 cli-config.yaml；timeout 120；相对 command；agent.max_verify_nudges ≥32；不写 hooks_auto_accept / verify_guidance）。pre_verify 仅在有产品编辑时触发（无编辑 → pending/RESUME）。安装后请 reload Hermes，并运行 hermes hooks doctor；consent/non-TTY 需批准或 --accept-hooks / HERMES_ACCEPT_HOOKS。`,
+          `在 ${host} 中试用 /autopilot-on（skills 在 $HERMES_HOME/skills）或行首 triggers.on / triggers.run。`,
+          `hooks 合并进 $HERMES_HOME/config.yaml（默认 ~/.hermes；永不写 cli-config.yaml；timeout 120；相对 command；agent.max_verify_nudges ≥32；不写 hooks_auto_accept / verify_guidance）。pre_verify 仅在有产品编辑时触发（无编辑 → pending/RESUME）。安装后请 reload Hermes，并运行 hermes hooks doctor；consent/non-TTY 需批准或 --accept-hooks / HERMES_ACCEPT_HOOKS。`,
         );
       } else if (id === "antigravity") {
         lines.push(
@@ -791,18 +791,18 @@ function hostActivationPlainLines(
       );
     } else if (id === "gemini-cli") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
-        `Hooks are written to .gemini/settings.json only (nested; timeout 120000ms). After install/upgrade: re-trust hooks, check /hooks panel, and ensure folder trust.`,
+        `In ${host}, try /autopilot-on (skills under .gemini/skills) or line-start triggers.on / triggers.run.`,
+        `Hooks are written to .gemini/settings.json (nested; timeout 120000ms); skills always under .gemini/skills (not skipped when Antigravity is also enabled). After install/upgrade: re-trust hooks, check /hooks panel, ensure folder trust, and /skills reload.`,
       );
     } else if (id === "factory-droid") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
-        `Hooks are written to .factory/hooks.json only (top-level events; timeout 120; commands use $FACTORY_PROJECT_DIR). After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes.`,
+        `In ${host}, try /autopilot-on (skills under .factory/skills) or line-start triggers.on / triggers.run.`,
+        `Hooks are written to .factory/hooks.json (top-level events; timeout 120; commands use $FACTORY_PROJECT_DIR); skills include disable-model-invocation: true. After install/upgrade: check /hooks, then reload or start a new session so the hooks snapshot refreshes.`,
       );
     } else if (id === "hermes-agent") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
-        `Hooks merge into $HERMES_HOME/config.yaml only (default ~/.hermes; never cli-config.yaml; timeout 120; relative command; agent.max_verify_nudges ≥32; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only (no product edit → pending/RESUME). After install: reload Hermes and run hermes hooks doctor; consent/non-TTY needs approval or --accept-hooks / HERMES_ACCEPT_HOOKS.`,
+        `In ${host}, try /autopilot-on (skills under $HERMES_HOME/skills) or line-start triggers.on / triggers.run.`,
+        `Hooks merge into $HERMES_HOME/config.yaml (default ~/.hermes; never cli-config.yaml; timeout 120; relative command; agent.max_verify_nudges ≥32; does not set hooks_auto_accept or rewrite verify_guidance). pre_verify is edit-only (no product edit → pending/RESUME). After install: reload Hermes and run hermes hooks doctor; consent/non-TTY needs approval or --accept-hooks / HERMES_ACCEPT_HOOKS.`,
       );
     } else if (id === "antigravity") {
       lines.push(
@@ -846,7 +846,17 @@ function hostActivationDocLines(
         "`.grok/hooks/autopilot-harness.json`",
       )
       .replaceAll(".gemini/settings.json", "`.gemini/settings.json`")
+      .replaceAll(
+        ".gemini/skills/autopilot-*",
+        "`.gemini/skills/autopilot-*`",
+      )
+      .replaceAll(".gemini/skills", "`.gemini/skills`")
       .replaceAll(".factory/hooks.json", "`.factory/hooks.json`")
+      .replaceAll(
+        ".factory/skills/autopilot-*",
+        "`.factory/skills/autopilot-*`",
+      )
+      .replaceAll(".factory/skills", "`.factory/skills`")
       .replaceAll(".agents/hooks.json", "`.agents/hooks.json`")
       // Longer skills path before the directory prefix (avoid `` `.agents/skills`/autopilot-* ``).
       .replaceAll(
@@ -858,6 +868,11 @@ function hostActivationDocLines(
       .replaceAll("$FACTORY_PROJECT_DIR", "`$FACTORY_PROJECT_DIR`")
       // Hermes: wrap longest tokens first — never bare `config.yaml` / `$HERMES_HOME`
       // after wrapping (would split `cli-config.yaml` or `$HERMES_HOME/config.yaml`).
+      .replaceAll(
+        "$HERMES_HOME/skills/autopilot-*",
+        "`$HERMES_HOME/skills/autopilot-*`",
+      )
+      .replaceAll("$HERMES_HOME/skills", "`$HERMES_HOME/skills`")
       .replaceAll(
         "$HERMES_HOME/config.yaml",
         "`$HERMES_HOME/config.yaml`",
@@ -872,6 +887,7 @@ function hostActivationDocLines(
       .replaceAll("--accept-hooks", "`--accept-hooks`")
       // Longer /hooks* tips before generic `/hooks` wrap.
       .replaceAll("/hooks panel", "`/hooks panel`")
+      .replaceAll("/skills reload", "`/skills reload`")
       .replaceAll("/hooks-trust", "`/hooks-trust`")
       // Trust tip `/hooks` only — do not split `.github/hooks/...`,
       // `.codex/hooks.json`, `.factory/hooks.json`, or already-wrapped `/hooks panel`.
@@ -915,15 +931,13 @@ export function writeQuickstart(
   const platformId = sanitizePlatformId(platform) || "cursor";
   const host = formatHostDisplayName(platformId);
   const afterInstall = hostActivationDocLines(locale, platformId);
-  // Codex + Kimi + Copilot + Grok + Gemini + Factory + Hermes: P0 is line-start triggers (no Autopilot skills path).
+  // Codex + Kimi + Copilot + Grok: P0 is line-start triggers (no Autopilot skills path).
+  // Gemini / Factory / Hermes / Antigravity co-install skills — prefer slash + line-start.
   const isLineStartHost =
     platformId === "codex" ||
     platformId === "kimi-code" ||
     platformId === "copilot-cli" ||
-    platformId === "grok-build" ||
-    platformId === "gemini-cli" ||
-    platformId === "factory-droid" ||
-    platformId === "hermes-agent";
+    platformId === "grok-build";
   const flowPlanYouZh = isLineStartHost
     ? "行首 `Autopilot ON` / `开启自动驾驶`（或手打 `/autopilot-on`）；逐轮回答 grill"
     : "`/autopilot-on`（可带需求描述）；逐轮回答 grill";
@@ -1166,7 +1180,7 @@ export function formatCheatSheet(
     ids.length <= 1
       ? formatHostDisplayName(ids[0] ?? "cursor")
       : ids.map((id) => formatHostDisplayName(id)).join(" / ");
-  // All selected hosts are line-start P0 (Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes) — prefer triggers
+  // All selected hosts are line-start P0 (Codex/Kimi/Copilot/Grok) — prefer triggers
   // over slash, including multi line-start-only host mixes.
   const lineStartOnly =
     ids.length > 0 &&
@@ -1175,10 +1189,7 @@ export function formatCheatSheet(
         id === "codex" ||
         id === "kimi-code" ||
         id === "copilot-cli" ||
-        id === "grok-build" ||
-        id === "gemini-cli" ||
-        id === "factory-droid" ||
-        id === "hermes-agent",
+        id === "grok-build",
     );
   const lineStartSideTips = lineStartOnly
     ? []
@@ -1187,10 +1198,7 @@ export function formatCheatSheet(
           id === "codex" ||
           id === "kimi-code" ||
           id === "copilot-cli" ||
-          id === "grok-build" ||
-          id === "gemini-cli" ||
-          id === "factory-droid" ||
-          id === "hermes-agent",
+          id === "grok-build",
       );
   if (locale === "zh-CN") {
     const planningBlock = lineStartOnly

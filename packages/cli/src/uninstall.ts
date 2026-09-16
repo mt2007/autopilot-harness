@@ -665,6 +665,63 @@ function safeRemovePath(
   );
 }
 
+/**
+ * Remove Autopilot skill trees under `$HERMES_HOME` (outside project).
+ * Containment is vs Hermes home, not projectRoot.
+ */
+function safeRemoveHermesSkillPath(
+  hermesHome: string,
+  targetPath: string,
+  label: string,
+  removed: string[],
+  dryRun: boolean,
+  actions: string[],
+): void {
+  try {
+    assertNotSymlink(targetPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/symlink/i.test(msg)) {
+      actions.push(`skip ${label} (symlink)`);
+      return;
+    }
+    throw err;
+  }
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(targetPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") return;
+    throw err;
+  }
+  if (st.isSymbolicLink()) {
+    actions.push(`skip ${label} (symlink)`);
+    return;
+  }
+  if (st.isDirectory()) {
+    assertRealpathInside(hermesHome, targetPath, label);
+    actions.push(`remove ${label}/`);
+    if (!dryRun) {
+      fs.rmSync(targetPath, { recursive: true, force: false });
+      removed.push(`${label}/`);
+    }
+    return;
+  }
+  if (st.isFile()) {
+    assertRealpathInside(hermesHome, targetPath, label);
+    actions.push(`remove ${label}`);
+    if (!dryRun) {
+      fs.unlinkSync(targetPath);
+      removed.push(label);
+    }
+    return;
+  }
+  throw new Error(
+    `${label} exists and is not a regular file or directory; refusing to uninstall`,
+  );
+}
+
 function pathExistsViaLstat(p: string): boolean {
   try {
     fs.lstatSync(p);
@@ -802,8 +859,10 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
     const geminiDir = path.join(projectRoot, ".gemini");
     const geminiSettingsPath = path.join(geminiDir, "settings.json");
+    const geminiSkillsRoot = path.join(geminiDir, "skills");
     const factoryDir = path.join(projectRoot, ".factory");
     const factoryHooksPath = path.join(factoryDir, "hooks.json");
+    const factorySkillsRoot = path.join(factoryDir, "skills");
     const agentsDir = path.join(projectRoot, ".agents");
     const antigravityHooksPath = path.join(agentsDir, "hooks.json");
     const agentsSkillsRoot = path.join(agentsDir, "skills");
@@ -855,10 +914,16 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         dirs.push([grokDir, ".grok/"], [grokHooksDir, ".grok/hooks/"]);
       }
       if (wantGemini) {
-        dirs.push([geminiDir, ".gemini/"]);
+        dirs.push(
+          [geminiDir, ".gemini/"],
+          [geminiSkillsRoot, ".gemini/skills/"],
+        );
       }
       if (wantFactory) {
-        dirs.push([factoryDir, ".factory/"]);
+        dirs.push(
+          [factoryDir, ".factory/"],
+          [factorySkillsRoot, ".factory/skills/"],
+        );
       }
       if (wantAntigravity) {
         dirs.push(
@@ -870,6 +935,11 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         if (!pathExistsViaLstat(dir)) continue;
         assertNotSymlink(dir, label);
         assertRealpathInside(projectRoot, dir, label);
+        // Skills roots must be real directories (Hermes parity). A planted file
+        // named `skills` must fail closed before hooks strip / leaf rm.
+        if (label.endsWith("skills/") && !isRealDirectory(dir)) {
+          throw new Error(`${label} exists and is not a directory`);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -891,11 +961,65 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
             `.claude/skills/${name}`,
           );
         }
+        if (wantGemini) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(geminiSkillsRoot, name),
+            `.gemini/skills/${name}`,
+          );
+        }
+        if (wantFactory) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(factorySkillsRoot, name),
+            `.factory/skills/${name}`,
+          );
+        }
         if (wantAntigravity) {
           assertRemovalTargetSafe(
             projectRoot,
             path.join(agentsSkillsRoot, name),
             `.agents/skills/${name}`,
+          );
+        }
+      }
+      if (wantHermes) {
+        const hermesHome = resolveHermesHome();
+        assertNotSymlink(hermesHome, "Hermes home/");
+        if (pathExistsViaLstat(hermesHome) && !isRealDirectory(hermesHome)) {
+          throw new Error("Hermes home/ exists and is not a directory");
+        }
+        const hermesSkillsRoot = path.join(hermesHome, "skills");
+        // Skills root symlink: fail closed (escape). Leaf skill symlinks:
+        // soft-skip later like Cursor — do not block hooks strip.
+        if (pathExistsViaLstat(hermesSkillsRoot)) {
+          assertNotSymlink(hermesSkillsRoot, "$HERMES_HOME/skills/");
+          if (!isRealDirectory(hermesSkillsRoot)) {
+            throw new Error(
+              "$HERMES_HOME/skills/ exists and is not a directory",
+            );
+          }
+          assertRealpathInside(
+            hermesHome,
+            hermesSkillsRoot,
+            "$HERMES_HOME/skills/",
+          );
+        }
+        for (const name of AUTOPILOT_SKILL_NAMES) {
+          const skillDir = path.join(hermesSkillsRoot, name);
+          let st: fs.Stats;
+          try {
+            st = fs.lstatSync(skillDir);
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException)?.code;
+            if (code === "ENOENT") continue;
+            throw err;
+          }
+          if (st.isSymbolicLink()) continue;
+          assertRealpathInside(
+            hermesHome,
+            skillDir,
+            `$HERMES_HOME/skills/${name}`,
           );
         }
       }
@@ -1678,6 +1802,105 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .agents/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Gemini skills (.gemini/skills) ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(geminiSkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        if (!wantGemini) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.gemini/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.gemini/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantGemini) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .gemini/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Factory skills (.factory/skills) ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(factorySkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        if (!wantFactory) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.factory/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.factory/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantFactory) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .factory/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Hermes skills ($HERMES_HOME/skills) ---
+    // Shared home: only strip when this project declares hermes-agent.
+    // Cursor-only (etc.) uninstall must not wipe another repo's Hermes skills.
+    if (wantHermes) {
+      const hermesHome = resolveHermesHome();
+      assertNotSymlink(hermesHome, "Hermes home/");
+      if (pathExistsViaLstat(hermesHome) && !isRealDirectory(hermesHome)) {
+        throw new Error("Hermes home/ is not a real directory");
+      }
+      const hermesSkillsRoot = path.join(hermesHome, "skills");
+      // Re-check root before leaf ops (shrink TOCTOU after hooks strip).
+      if (pathExistsViaLstat(hermesSkillsRoot)) {
+        assertNotSymlink(hermesSkillsRoot, "$HERMES_HOME/skills/");
+        if (!isRealDirectory(hermesSkillsRoot)) {
+          throw new Error(
+            "$HERMES_HOME/skills/ exists and is not a directory",
+          );
+        }
+        assertRealpathInside(
+          hermesHome,
+          hermesSkillsRoot,
+          "$HERMES_HOME/skills/",
+        );
+      }
+      for (const name of AUTOPILOT_SKILL_NAMES) {
+        const skillDir = path.join(hermesSkillsRoot, name);
+        if (!pathExistsViaLstat(skillDir)) continue;
+        found = true;
+        safeRemoveHermesSkillPath(
+          hermesHome,
+          skillDir,
+          `$HERMES_HOME/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
         );
       }
     }

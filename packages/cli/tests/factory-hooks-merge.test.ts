@@ -334,7 +334,7 @@ describe("factory init wiring", () => {
     root = "";
   });
 
-  it("init --platform factory-droid writes top-level hooks + ignore; no skills; no rounds clamp", () => {
+  it("init --platform factory-droid writes top-level hooks + skills + ignore; no rounds clamp", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-factory-init-"));
     const r = installInitYes({
       projectRoot: root,
@@ -358,12 +358,19 @@ describe("factory init wiring", () => {
     expect(file.Stop[0].hooks[0].timeout).toBe(120);
     expect(file.Stop[0].hooks[0].command).toMatch(/\$FACTORY_PROJECT_DIR/);
 
+    const skill = fs.readFileSync(
+      path.join(root, ".factory", "skills", "autopilot-on", "SKILL.md"),
+      "utf8",
+    );
+    expect(skill).toMatch(/^---\n/);
+    expect(skill).toMatch(/^disable-model-invocation:\s*true$/m);
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".claude", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.factory\/hooks\.json/);
+    expect(ignore).toMatch(/\.factory\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),
@@ -378,6 +385,9 @@ describe("factory init wiring", () => {
       /\.factory\/hooks\.json/,
     );
     expect(formatHostActivationTips("factory-droid").join("\n")).toMatch(
+      /\.factory\/skills/,
+    );
+    expect(formatHostActivationTips("factory-droid").join("\n")).toMatch(
       /\$FACTORY_PROJECT_DIR|FACTORY_PROJECT_DIR/,
     );
     expect(formatPostInstallOutro("factory-droid")).toMatch(/\/hooks/);
@@ -390,6 +400,8 @@ describe("factory init wiring", () => {
       "utf8",
     );
     expect(qs).toMatch(/`\.factory\/hooks\.json`/);
+    expect(qs).toMatch(/`\.factory\/skills`/);
+    expect(qs).not.toMatch(/`\.factory`\s*\/\s*`skills`/);
     expect(qs).toMatch(/`\$FACTORY_PROJECT_DIR`/);
     expect(qs).toMatch(/`\/hooks`/);
     expect(qs).not.toMatch(/\.factory`\/hooks`/);

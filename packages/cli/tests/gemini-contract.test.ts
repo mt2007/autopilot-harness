@@ -871,7 +871,11 @@ describe("gemini contract matrix", () => {
     expect(GEMINI_SETTINGS_REL_PATH).toBe(".gemini/settings.json");
     expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(true);
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(true);
-    expect(fs.existsSync(path.join(root, ".gemini", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".gemini", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const cfg = fs.readFileSync(

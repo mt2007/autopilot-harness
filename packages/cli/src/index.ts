@@ -208,6 +208,7 @@ export {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
   configWantsInstallableHost,
+  platformsWantInstallableHost,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
   formatBindingOptionLabel,

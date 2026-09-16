@@ -272,9 +272,23 @@ hooks:
     );
     expect(projectCfg).toMatch(/confirm_rounds:\s*5/);
     expect(projectCfg).not.toMatch(/confirm_rounds:\s*1/);
+    for (const name of [
+      "autopilot-on",
+      "autopilot-run",
+      "autopilot-off",
+      "autopilot-resume",
+      "autopilot-replan",
+    ]) {
+      expect(
+        fs.existsSync(path.join(hermesHome, "skills", name, "SKILL.md")),
+      ).toBe(true);
+    }
     expect(formatPostInstallOutro("hermes-agent")).toMatch(/HERMES_HOME|hermes hooks doctor/i);
     expect(formatHostActivationTips("hermes-agent").join("\n")).toMatch(
       /max_verify_nudges|hermes hooks doctor/i,
+    );
+    expect(formatHostActivationTips("hermes-agent").join("\n")).toMatch(
+      /HERMES_HOME\/skills/,
     );
     const qs = fs.readFileSync(
       path.join(root, "docs", "autopilot", "quickstart.md"),
@@ -283,6 +297,8 @@ hooks:
     expect(qs).toMatch(/Autopilot ON|triggers\.on/i);
     // Markdown wraps must not split cli-config.yaml / $HERMES_HOME/config.yaml.
     expect(qs).toMatch(/`\$HERMES_HOME\/config\.yaml`/);
+    expect(qs).toMatch(/`\$HERMES_HOME\/skills`/);
+    expect(qs).not.toMatch(/`\$HERMES_HOME`\s*\/\s*`skills`/);
     expect(qs).toMatch(/`cli-config\.yaml`/);
     expect(qs).toMatch(/`agent\.max_verify_nudges`/);
     expect(qs).not.toMatch(/agent\.`max_verify_nudges`/);

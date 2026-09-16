@@ -18,6 +18,10 @@ import {
   writeFileReplaceSync,
 } from "./read-untrusted-file.js";
 import { resolveTemplatesRoot as resolveTemplatesRootFromCli } from "./template-paths.js";
+import { applyFactorySkillFrontmatter } from "./init/install.js";
+import { readConfigPlatformsOrThrow } from "./init/config-merge.js";
+import { platformsWantInstallableHost } from "./init/platforms.js";
+import { resolveHermesHome } from "./init/hermes-hooks-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -156,31 +160,141 @@ function plainStringList(node: unknown): string[] | null {
   return out;
 }
 
-function rewriteSkills(projectRoot: string, locale: LocaleCode): string[] {
+type HostSkillsParent =
+  | ".cursor"
+  | ".claude"
+  | ".agents"
+  | ".gemini"
+  | ".factory";
+
+function skillHostsFromConfigYaml(yaml: string): {
+  project: HostSkillsParent[];
+  hermes: boolean;
+} {
+  const platforms = readConfigPlatformsOrThrow(yaml);
+  const project: HostSkillsParent[] = [];
+  // platformsWantInstallableHost (not configWantsInstallableHost): no Cursor
+  // fallback when installable list is empty / wrong-surface only.
+  if (platformsWantInstallableHost(platforms, "cursor")) project.push(".cursor");
+  if (platformsWantInstallableHost(platforms, "claude-code")) {
+    project.push(".claude");
+  }
+  if (platformsWantInstallableHost(platforms, "gemini-cli")) {
+    project.push(".gemini");
+  }
+  if (platformsWantInstallableHost(platforms, "factory-droid")) {
+    project.push(".factory");
+  }
+  if (platformsWantInstallableHost(platforms, "antigravity")) {
+    project.push(".agents");
+  }
+  return {
+    project,
+    hermes: platformsWantInstallableHost(platforms, "hermes-agent"),
+  };
+}
+
+function rewriteProjectSkills(
+  projectRoot: string,
+  locale: LocaleCode,
+  hostSkillsParent: HostSkillsParent,
+): string[] {
   const written: string[] = [];
   const templatesRoot = resolveTemplatesRoot();
   const descriptions = skillDescriptions(locale);
-  const skillsRoot = path.join(projectRoot, ".cursor", "skills");
-  assertNotSymlink(skillsRoot, ".cursor/skills/");
+  const skillsRoot = path.join(projectRoot, hostSkillsParent, "skills");
+  const skillsLabel = `${hostSkillsParent}/skills/`;
+  assertNotSymlink(skillsRoot, skillsLabel);
+  mkdirRealDirSync(skillsRoot, skillsLabel, projectRoot);
+  if (!isRealDirectory(skillsRoot)) {
+    throw new Error(`${skillsLabel} exists and is not a directory`);
+  }
 
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
     assertPresentRealFile(tplPath, `skill template ${name}`);
     const destDir = path.join(skillsRoot, name);
-    mkdirRealDirSync(destDir, `.cursor/skills/${name}/`, projectRoot);
-    assertRealpathInside(projectRoot, destDir, `.cursor/skills/${name}/`);
+    mkdirRealDirSync(destDir, `${skillsLabel}${name}/`, projectRoot);
+    assertRealpathInside(projectRoot, destDir, `${skillsLabel}${name}/`);
     const dest = path.join(destDir, "SKILL.md");
-    assertNotSymlink(dest, `.cursor/skills/${name}/SKILL.md`);
+    assertNotSymlink(dest, `${skillsLabel}${name}/SKILL.md`);
+    let body = renderSkill(
+      readUntrustedUtf8File(
+        tplPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        `skill template ${name}`,
+      ),
+      descriptions[name] ?? name,
+    );
+    if (hostSkillsParent === ".factory") {
+      body = applyFactorySkillFrontmatter(body);
+    }
+    writeFileAtomic(dest, body, projectRoot, `${skillsLabel}${name}/`);
+    written.push(path.relative(projectRoot, dest));
+  }
+  return written;
+}
+
+function rewriteHermesSkills(locale: LocaleCode): string[] {
+  const written: string[] = [];
+  const templatesRoot = resolveTemplatesRoot();
+  const descriptions = skillDescriptions(locale);
+  const hermesHome = resolveHermesHome();
+  assertNotSymlink(hermesHome, "Hermes home/");
+  try {
+    const homeSt = fs.lstatSync(hermesHome);
+    if (!homeSt.isDirectory()) {
+      throw new Error("Hermes home/ exists and is not a directory");
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") throw err;
+  }
+  const skillsRoot = path.join(hermesHome, "skills");
+  assertNotSymlink(skillsRoot, "$HERMES_HOME/skills/");
+  mkdirRealDirSync(skillsRoot, "$HERMES_HOME/skills/", hermesHome);
+  assertNotSymlink(hermesHome, "Hermes home/");
+  if (!isRealDirectory(hermesHome)) {
+    throw new Error("Hermes home/ is not a real directory");
+  }
+  for (const name of SKILL_NAMES) {
+    const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
+    assertPresentRealFile(tplPath, `skill template ${name}`);
+    const destDir = path.join(skillsRoot, name);
+    mkdirRealDirSync(destDir, `$HERMES_HOME/skills/${name}/`, hermesHome);
+    assertRealpathInside(hermesHome, destDir, `$HERMES_HOME/skills/${name}/`);
+    const dest = path.join(destDir, "SKILL.md");
+    assertNotSymlink(dest, `$HERMES_HOME/skills/${name}/SKILL.md`);
     const body = renderSkill(
       readUntrustedUtf8File(
         tplPath,
         MAX_UNTRUSTED_TEXT_BYTES,
         `skill template ${name}`,
       ),
-      descriptions[name],
+      descriptions[name] ?? name,
     );
-    writeFileAtomic(dest, body, projectRoot, `.cursor/skills/${name}/`);
-    written.push(path.relative(projectRoot, dest));
+    writeFileReplaceSync(dest, body);
+    assertRealpathInside(
+      hermesHome,
+      dest,
+      `$HERMES_HOME/skills/${name}/SKILL.md`,
+    );
+    written.push(dest);
+  }
+  return written;
+}
+
+function rewriteEnabledSkills(
+  projectRoot: string,
+  locale: LocaleCode,
+  hosts: { project: HostSkillsParent[]; hermes: boolean },
+): string[] {
+  const written: string[] = [];
+  for (const host of hosts.project) {
+    written.push(...rewriteProjectSkills(projectRoot, locale, host));
+  }
+  if (hosts.hermes) {
+    written.push(...rewriteHermesSkills(locale));
   }
   return written;
 }
@@ -236,7 +350,6 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
 
   try {
     assertNotSymlink(path.join(projectRoot, ".autopilot"), ".autopilot/");
-    assertNotSymlink(path.join(projectRoot, ".cursor"), ".cursor/");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
@@ -279,6 +392,46 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
   }
   if (!doc.contents || !isMap(doc.contents)) {
     return { ok: false, error: "config.yml root must be a mapping" };
+  }
+
+  let skillHosts: { project: HostSkillsParent[]; hermes: boolean };
+  try {
+    skillHosts = skillHostsFromConfigYaml(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read platforms in config.yml: ${msg}` };
+  }
+
+  try {
+    for (const host of skillHosts.project) {
+      const hostDir = path.join(projectRoot, host);
+      assertNotSymlink(hostDir, `${host}/`);
+      try {
+        const st = fs.lstatSync(hostDir);
+        if (!st.isDirectory()) {
+          throw new Error(`${host}/ exists and is not a directory`);
+        }
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") throw err;
+      }
+    }
+    if (skillHosts.hermes) {
+      const hermesHome = resolveHermesHome();
+      assertNotSymlink(hermesHome, "Hermes home/");
+      try {
+        const st = fs.lstatSync(hermesHome);
+        if (!st.isDirectory()) {
+          throw new Error("Hermes home/ exists and is not a directory");
+        }
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException)?.code;
+        if (code !== "ENOENT") throw err;
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
   }
 
   const previousRaw = doc.get("locale");
@@ -330,11 +483,21 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
   doc.set("locale", nextLocale);
 
   try {
-    assertTemplatesReady();
-    // Ensure skills tree is creatable *before* rewriting config.yml.
-    const skillsRoot = path.join(projectRoot, ".cursor", "skills");
-    mkdirRealDirSync(skillsRoot, ".cursor/skills/", projectRoot);
-    assertRealpathInside(projectRoot, skillsRoot, ".cursor/skills/");
+    if (skillHosts.project.length > 0 || skillHosts.hermes) {
+      assertTemplatesReady();
+      // Ensure skills trees are creatable *before* rewriting config.yml.
+      for (const host of skillHosts.project) {
+        const skillsRoot = path.join(projectRoot, host, "skills");
+        mkdirRealDirSync(skillsRoot, `${host}/skills/`, projectRoot);
+        assertRealpathInside(projectRoot, skillsRoot, `${host}/skills/`);
+      }
+      if (skillHosts.hermes) {
+        const hermesHome = resolveHermesHome();
+        const skillsRoot = path.join(hermesHome, "skills");
+        mkdirRealDirSync(skillsRoot, "$HERMES_HOME/skills/", hermesHome);
+        assertRealpathInside(hermesHome, skillsRoot, "$HERMES_HOME/skills/");
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
@@ -351,7 +514,7 @@ export function setProjectLocale(opts: LocaleSetOptions): LocaleSetResult {
   }
 
   try {
-    written.push(...rewriteSkills(projectRoot, nextLocale));
+    written.push(...rewriteEnabledSkills(projectRoot, nextLocale, skillHosts));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {

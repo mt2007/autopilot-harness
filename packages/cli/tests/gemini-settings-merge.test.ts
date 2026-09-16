@@ -262,7 +262,7 @@ describe("gemini settings merge", () => {
     expect(geminiSettingsHaveForeignContent(onlyAp)).toBe(false);
   });
 
-  it("init --platform gemini-cli writes settings + ignore; no skills", () => {
+  it("init --platform gemini-cli writes settings + skills + ignore", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-gem-init-"));
     const result = installInitYes({
       projectRoot: root,
@@ -277,9 +277,14 @@ describe("gemini settings merge", () => {
     const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
     expect(hasCompleteGeminiAutopilotHooks(settings)).toBe(true);
     expect(geminiHooksHavePlatformStamp(settings)).toBe(true);
-    expect(fs.existsSync(path.join(root, ".gemini", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".gemini", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.gemini\/settings\.json/);
+    expect(ignore).toMatch(/\.gemini\/skills\/\*\*/);
   });
 
   it("init symlink settings.json fail-closed", () => {
@@ -339,13 +344,15 @@ describe("gemini settings merge", () => {
     expect(after.hooks?.SessionStart).toBeTruthy();
   });
 
-  it("wizard tips mention re-trust, hooks panel, folder trust", () => {
+  it("wizard tips mention re-trust, hooks panel, folder trust, skills reload", () => {
     expect(formatPostInstallOutro("gemini-cli")).toMatch(/folder trust/i);
     expect(formatPostInstallOutro("gemini-cli")).toMatch(/\/hooks panel/);
+    expect(formatPostInstallOutro("gemini-cli")).toMatch(/\.gemini\/skills/);
     const tips = formatHostActivationTips("gemini-cli").join("\n");
     expect(tips).toMatch(/re-trust|\/hooks panel|folder trust/i);
     expect(tips).toMatch(/120000/);
-    expect(tips).not.toMatch(/skills\/AGENTS\.md.*required/i);
+    expect(tips).toMatch(/\.gemini\/skills/);
+    expect(tips).toMatch(/\/skills reload/);
   });
 
   it("writeQuickstart wraps /hooks panel without mangling via generic /hooks", () => {
@@ -355,6 +362,9 @@ describe("gemini settings merge", () => {
     const body = fs.readFileSync(path.join(root, rel!), "utf8");
     expect(body).toContain("`/hooks panel`");
     expect(body).not.toMatch(/``\/hooks` panel`/);
+    expect(body).toMatch(/`\.gemini\/skills`/);
+    expect(body).not.toMatch(/`\.gemini`\s*\/\s*`skills`/);
+    expect(body).toContain("`/skills reload`");
   });
 
   it("uninstall unlinks settings when only Autopilot content remains", () => {
@@ -370,9 +380,17 @@ describe("gemini settings merge", () => {
     ).toBe(true);
     const settingsPath = path.join(root, ".gemini", "settings.json");
     expect(fs.existsSync(settingsPath)).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".gemini", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     const un = uninstallProject({ projectRoot: root, dryRun: false });
     expect(un.ok).toBe(true);
     expect(fs.existsSync(settingsPath)).toBe(false);
+    expect(fs.existsSync(path.join(root, ".gemini", "skills", "autopilot-on"))).toBe(
+      false,
+    );
   });
 
   it("detects hooksConfig.enabled===false and Autopilot names in disabled", () => {

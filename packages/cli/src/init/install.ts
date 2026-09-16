@@ -89,8 +89,8 @@ import {
   mergePlatformBindings,
   mergedIncludesAllRequested,
   normalizeBinding,
+  platformsWantInstallableHost,
   primaryBinding,
-  sanitizePlatformId,
   type PlatformBinding,
 } from "./platforms.js";
 import {
@@ -541,21 +541,6 @@ type FactoryHooksRead =
 type AntigravityHooksRead =
   | { ok: true; value: AntigravityHooksFile | null }
   | { ok: false; error: string };
-
-function platformsWantHost(
-  platforms: readonly PlatformBinding[],
-  hostId: string,
-): boolean {
-  const want = sanitizePlatformId(hostId);
-  // Only installable bindings wire host settings. A hand-edited
-  // `claude-code`/`cursor`/`codex`/`kimi-code`/`copilot-cli`/`grok-build`/
-  // `gemini-cli`/`factory-droid`/`hermes-agent`/`antigravity` with the wrong surface must not force
-  // reads/writes (e.g. corrupt leftover settings blocking --add-platform
-  // of another host).
-  return platforms.some(
-    (b) => sanitizePlatformId(b.id) === want && isInstallableBinding(b),
-  );
-}
 
 /** Read hooks.json; refuse to clobber an existing unreadable file. */
 function readHooksFile(filePath: string): HooksRead {
@@ -1060,6 +1045,38 @@ function renderSkill(template: string, description: string): string {
   return template.replaceAll("{{description}}", escaped);
 }
 
+/**
+ * Factory thin adapt (research): keep shared body; set
+ * `disable-model-invocation: true` so slash `/autopilot-*` stays user-invocable
+ * (default) while discouraging model auto-pick (auto-attach ≠ ON).
+ */
+export function applyFactorySkillFrontmatter(body: string): string {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(body);
+  if (!match) {
+    throw new Error(
+      "Factory skill template is missing a closed YAML frontmatter block",
+    );
+  }
+  let fm = match[1]!;
+  const rest = body.slice(match[0].length);
+  // Already correct — keep body intact (preserve CRLF / ordering).
+  if (/^disable-model-invocation\s*:\s*true\s*$/m.test(fm)) return body;
+  // Drop false/other values so force-refresh always stamps research lock.
+  fm = fm
+    .split(/\r?\n/)
+    .filter((line) => !/^disable-model-invocation\s*:/.test(line))
+    .join("\n")
+    .replace(/\n+$/g, "");
+  return `---\n${fm}\ndisable-model-invocation: true\n---\n${rest}`;
+}
+
+type HostSkillsParent =
+  | ".cursor"
+  | ".claude"
+  | ".agents"
+  | ".gemini"
+  | ".factory";
+
 function resolveInstallPlatforms(opts: InitYesOptions): PlatformBinding[] {
   if (opts.platforms && opts.platforms.length > 0) {
     return mergePlatformBindings([], opts.platforms);
@@ -1113,21 +1130,28 @@ function installSkills(
   templatesRoot: string,
   projectRoot: string,
   locale: InitLocale,
-  /** Host skills root relative to project, e.g. `.cursor` or `.claude`. */
-  hostSkillsParent: ".cursor" | ".claude" | ".agents",
+  /** Host skills root relative to project, e.g. `.cursor` or `.gemini`. */
+  hostSkillsParent: HostSkillsParent,
+  opts?: { factoryFrontmatter?: boolean },
 ): string[] {
   const written: string[] = [];
   const descriptions = skillDescriptions(locale);
   const skillsRoot = path.join(projectRoot, hostSkillsParent, "skills");
   const skillsLabel = `${hostSkillsParent}/skills/`;
+  // Create/verify skills root first (Hermes parity): a planted file named
+  // `skills` must fail closed with a clear error, not ENOTDIR on a child mkdir.
   assertNotSymlink(skillsRoot, skillsLabel);
+  mkdirRealDirSync(skillsRoot, skillsLabel, projectRoot);
+  if (!isRealDirectory(skillsRoot)) {
+    throw new Error(`${skillsLabel} exists and is not a directory`);
+  }
   for (const name of SKILL_NAMES) {
     const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
     assertPresentRealFile(tplPath, `skill template ${name}`);
     const destDir = path.join(skillsRoot, name);
     mkdirRealDirSync(destDir, `${skillsLabel}${name}/`, projectRoot);
     assertRealpathInside(projectRoot, destDir, `${skillsLabel}${name}/`);
-    const body = renderSkill(
+    let body = renderSkill(
       readUntrustedUtf8File(
         tplPath,
         MAX_UNTRUSTED_TEXT_BYTES,
@@ -1135,6 +1159,9 @@ function installSkills(
       ),
       descriptions[name] ?? name,
     );
+    if (opts?.factoryFrontmatter) {
+      body = applyFactorySkillFrontmatter(body);
+    }
     const dest = path.join(destDir, "SKILL.md");
     assertNotSymlink(dest, `${skillsLabel}${name}/SKILL.md`);
     writeFileAtomic(
@@ -1144,6 +1171,61 @@ function installSkills(
       `${skillsLabel}${name}/`,
     );
     written.push(path.relative(projectRoot, dest));
+  }
+  return written;
+}
+
+/**
+ * Hermes skills live under `$HERMES_HOME/skills/` (home-only; not project tree).
+ * Symlink home / skills root / SKILL.md leaf fail closed on install.
+ */
+function installHermesSkills(
+  templatesRoot: string,
+  locale: InitLocale,
+  hermesHome: string,
+): string[] {
+  const written: string[] = [];
+  const descriptions = skillDescriptions(locale);
+  assertNotSymlink(hermesHome, "Hermes home/");
+  try {
+    const homeSt = fs.lstatSync(hermesHome);
+    if (!homeSt.isDirectory()) {
+      throw new Error("Hermes home/ exists and is not a directory");
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") throw err;
+  }
+  const skillsRoot = path.join(hermesHome, "skills");
+  assertNotSymlink(skillsRoot, "$HERMES_HOME/skills/");
+  mkdirRealDirSync(skillsRoot, "$HERMES_HOME/skills/", hermesHome);
+  assertNotSymlink(hermesHome, "Hermes home/");
+  if (!isRealDirectory(hermesHome)) {
+    throw new Error("Hermes home/ is not a real directory");
+  }
+  for (const name of SKILL_NAMES) {
+    const tplPath = path.join(templatesRoot, "skills", name, "SKILL.md.tpl");
+    assertPresentRealFile(tplPath, `skill template ${name}`);
+    const destDir = path.join(skillsRoot, name);
+    mkdirRealDirSync(destDir, `$HERMES_HOME/skills/${name}/`, hermesHome);
+    assertRealpathInside(hermesHome, destDir, `$HERMES_HOME/skills/${name}/`);
+    const body = renderSkill(
+      readUntrustedUtf8File(
+        tplPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        `skill template ${name}`,
+      ),
+      descriptions[name] ?? name,
+    );
+    const dest = path.join(destDir, "SKILL.md");
+    assertNotSymlink(dest, `$HERMES_HOME/skills/${name}/SKILL.md`);
+    writeFileReplaceSync(dest, body);
+    assertRealpathInside(
+      hermesHome,
+      dest,
+      `$HERMES_HOME/skills/${name}/SKILL.md`,
+    );
+    written.push(dest);
   }
   return written;
 }
@@ -1301,12 +1383,16 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
  * and/or Kimi `$KIMI_CODE_HOME/config.toml` and/or
  * `.github/hooks/autopilot-harness.json` and/or `.grok/hooks/autopilot-harness.json`
  * and/or `.gemini/settings.json` and/or `.factory/hooks.json` and/or
- * `.agents/hooks.json` (+ `.agents/skills`) per platforms). Does not write Codex
+ * `.agents/hooks.json` (+ `.agents/skills`) and/or Gemini/Factory/Hermes skills
+ * per platforms). Does not write Codex
  * `config.toml` hooks, Kimi `local.toml`, or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
  * updates the `platforms` list (committed only after hooks succeed).
  * Does **not** write Antigravity legacy `.agent/`.
+ * Gemini skills always land under `.gemini/skills` (not skipped when Antigravity
+ * is also enabled). Factory skills get thin frontmatter adapt.
+ * Hermes skills land under `$HERMES_HOME/skills` (symlink fail-closed).
  */
 export function installInitYes(opts: InitYesOptions): InitResult {
   if (typeof opts.projectRoot !== "string" || opts.projectRoot.trim() === "") {
@@ -1509,16 +1595,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       }
     }
 
-    const wantCursor = platformsWantHost(effectivePlatforms, "cursor");
-    const wantClaude = platformsWantHost(effectivePlatforms, "claude-code");
-    const wantCodex = platformsWantHost(effectivePlatforms, "codex");
-    const wantKimi = platformsWantHost(effectivePlatforms, "kimi-code");
-    const wantCopilot = platformsWantHost(effectivePlatforms, "copilot-cli");
-    const wantGrok = platformsWantHost(effectivePlatforms, "grok-build");
-    const wantGemini = platformsWantHost(effectivePlatforms, "gemini-cli");
-    const wantFactory = platformsWantHost(effectivePlatforms, "factory-droid");
-    const wantHermes = platformsWantHost(effectivePlatforms, "hermes-agent");
-    const wantAntigravity = platformsWantHost(effectivePlatforms, "antigravity");
+    const wantCursor = platformsWantInstallableHost(effectivePlatforms, "cursor");
+    const wantClaude = platformsWantInstallableHost(effectivePlatforms, "claude-code");
+    const wantCodex = platformsWantInstallableHost(effectivePlatforms, "codex");
+    const wantKimi = platformsWantInstallableHost(effectivePlatforms, "kimi-code");
+    const wantCopilot = platformsWantInstallableHost(effectivePlatforms, "copilot-cli");
+    const wantGrok = platformsWantInstallableHost(effectivePlatforms, "grok-build");
+    const wantGemini = platformsWantInstallableHost(effectivePlatforms, "gemini-cli");
+    const wantFactory = platformsWantInstallableHost(effectivePlatforms, "factory-droid");
+    const wantHermes = platformsWantInstallableHost(effectivePlatforms, "hermes-agent");
+    const wantAntigravity = platformsWantInstallableHost(effectivePlatforms, "antigravity");
     if (
       !wantCursor &&
       !wantClaude &&
@@ -2060,22 +2146,47 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex / Kimi / Copilot / Grok / Gemini / Factory / Hermes have no Autopilot skills path — skip.
-    // Antigravity co-installs `.agents/skills/autopilot-*` with hooks (not `.agent/`).
-    if (wantCursor) {
-      written.push(
-        ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
-      );
-    }
-    if (wantClaude) {
-      written.push(
-        ...installSkills(templatesRoot, projectRoot, locale, ".claude"),
-      );
-    }
-    if (wantAntigravity) {
-      written.push(
-        ...installSkills(templatesRoot, projectRoot, locale, ".agents"),
-      );
+    // Codex / Kimi / Copilot / Grok have no Autopilot skills path — skip.
+    // Gemini / Factory / Hermes / Antigravity co-install skills with hooks
+    // (Gemini always `.gemini/skills` even when Antigravity is also enabled;
+    // Antigravity uses `.agents/skills`, never `.agent/`).
+    try {
+      if (wantCursor) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".cursor"),
+        );
+      }
+      if (wantClaude) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".claude"),
+        );
+      }
+      if (wantGemini) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".gemini"),
+        );
+      }
+      if (wantFactory) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".factory", {
+            factoryFrontmatter: true,
+          }),
+        );
+      }
+      if (wantAntigravity) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".agents"),
+        );
+      }
+      if (wantHermes) {
+        written.push(
+          ...installHermesSkills(templatesRoot, locale, hermesHome),
+        );
+      }
+    } catch (err) {
+      rollbackFreshConfig();
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
     }
 
     // Final re-read + merge immediately before any host settings write.
