@@ -898,8 +898,8 @@ describe("gemini contract matrix", () => {
         "i",
       ),
     );
-    expect(healthyJoined).toMatch(/re-trust|\/hooks panel|folder trust/i);
-    expect(healthyJoined).toMatch(/Reload Gemini CLI|new session/i);
+    expect(healthyJoined).toMatch(/re-trust|\/trust|\/hooks panel|folder trust/i);
+    expect(healthyJoined).toMatch(/hooks reload|\/skills reload|reload session/i);
     expect(healthyJoined).toMatch(
       /OK\s+\.gemini\/settings\.json Autopilot entries/,
     );

@@ -14,6 +14,7 @@ import {
   antigravityHooksFileIsVacant,
   antigravityHooksHavePlatformStamp,
   antigravityHooksUseRelativeCommand,
+  antigravityAutopilotHasExpectedPostMatcher,
   hasCompleteAntigravityAutopilotHooks,
   mergeAntigravityHooks,
   stripAutopilotAntigravityHooks,
@@ -32,6 +33,7 @@ describe("antigravity hooks merge", () => {
     const merged = mergeAntigravityHooks(null);
     expect(hasCompleteAntigravityAutopilotHooks(merged)).toBe(true);
     expect(antigravityHooksHavePlatformStamp(merged)).toBe(true);
+    expect(antigravityAutopilotHasExpectedPostMatcher(merged)).toBe(true);
     expect(antigravityAutopilotHasOmittedOrSmallTimeout(merged)).toBe(false);
     expect(antigravityHooksUseRelativeCommand(merged)).toBe(true);
     expect(ANTIGRAVITY_HOOK_TIMEOUT_SEC).toBe(120);
@@ -79,6 +81,34 @@ describe("antigravity hooks merge", () => {
         expect(g.timeout).toBe(120);
       }
     }
+  });
+
+  it("treats wrong/missing PostToolUse matcher as incomplete", () => {
+    const good = mergeAntigravityHooks(null);
+    expect(antigravityAutopilotHasExpectedPostMatcher(good)).toBe(true);
+    const block = good[ANTIGRAVITY_HOOK_BLOCK_NAME] as {
+      PostToolUse: Array<{ matcher?: string; hooks?: unknown[] }>;
+    };
+    block.PostToolUse[0]!.matcher = "run_command";
+    expect(antigravityAutopilotHasExpectedPostMatcher(good)).toBe(false);
+    expect(hasCompleteAntigravityAutopilotHooks(good)).toBe(false);
+    delete block.PostToolUse[0]!.matcher;
+    expect(antigravityAutopilotHasExpectedPostMatcher(good)).toBe(false);
+  });
+
+  it("treats missing --platform stamp as incomplete", () => {
+    const good = mergeAntigravityHooks(null);
+    expect(antigravityHooksHavePlatformStamp(good)).toBe(true);
+    const block = good[ANTIGRAVITY_HOOK_BLOCK_NAME] as {
+      Stop: Array<{ command?: string }>;
+      PostToolUse: Array<{ hooks?: Array<{ command?: string }> }>;
+    };
+    block.Stop[0]!.command =
+      "node .autopilot/bin/autopilot-harness-hook.mjs --event Stop";
+    block.PostToolUse[0]!.hooks![0]!.command =
+      "node .autopilot/bin/autopilot-harness-hook.mjs --event PostToolUse";
+    expect(antigravityHooksHavePlatformStamp(good)).toBe(false);
+    expect(hasCompleteAntigravityAutopilotHooks(good)).toBe(false);
   });
 
   it("preserves foreign named blocks; replaces Autopilot handlers", () => {

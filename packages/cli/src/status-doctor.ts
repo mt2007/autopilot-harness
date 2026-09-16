@@ -131,6 +131,21 @@ import {
   FACTORY_DROID_MULTI_BLOCK_ACROSS_ACTIVE_PROVEN,
   FACTORY_DROID_STOP_CAP_RAISE_FOUND,
 } from "@autopilot-harness/port-factory-droid";
+import { ANTIGRAVITY_STOP_CAP_RAISE_FOUND } from "@autopilot-harness/port-antigravity";
+import {
+  ANTIGRAVITY_HOOKS_REL_PATH,
+  ANTIGRAVITY_HOOK_BLOCK_NAME,
+  ANTIGRAVITY_HOOK_TIMEOUT_SEC,
+  antigravityAutopilotHasOmittedOrSmallTimeout,
+  antigravityHooksContainAutopilot,
+  antigravityHooksHavePlatformStamp,
+  antigravityHooksUseRelativeCommand,
+  antigravityAutopilotHasExpectedPostMatcher,
+  hasCompleteAntigravityAutopilotHooks,
+  summarizeAntigravityAutopilotHooks,
+  validateAntigravityHooksShape,
+  type AntigravityHooksFile,
+} from "./init/antigravity-hooks-merge.js";
 import { PACKAGE_VERSION, type HooksFile } from "./init/types.js";
 import { assertNotSymlink, assertRealpathInside } from "./init/wizard-helpers.js";
 import {
@@ -411,6 +426,29 @@ function projectHasGeminiAutopilotFingerprint(projectRoot: string): boolean {
       return false;
     }
     return geminiSettingsContainAutopilot(parsed as GeminiSettingsFile);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Best-effort: leftover Antigravity Autopilot fingerprint on disk.
+ * Missing/unreadable/non-object → false (dual-fingerprint WARN only).
+ */
+function projectHasAntigravityAutopilotFingerprint(
+  projectRoot: string,
+): boolean {
+  try {
+    const raw = readUntrustedUtf8File(
+      path.join(projectRoot, ".agents", "hooks.json"),
+      MAX_CONFIG_BYTES,
+      ANTIGRAVITY_HOOKS_REL_PATH,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    return antigravityHooksContainAutopilot(parsed as AntigravityHooksFile);
   } catch {
     return false;
   }
@@ -1542,10 +1580,10 @@ export function runDoctor(
           // Trust/reload tips only after Autopilot event coverage is present.
           if (missingEvents.length === 0) {
             lines.push(
-              "WARN  Gemini CLI: re-trust hooks, check /hooks panel, and ensure folder trust after install or upgrade",
+              "WARN  Gemini CLI: /trust (re-trust hooks), check /hooks panel, and ensure folder trust after install or upgrade",
             );
             lines.push(
-              "WARN  Reload Gemini CLI or open a new session after install or upgrade so Autopilot hooks reload",
+              "WARN  After Gemini install/upgrade: reload session so Autopilot hooks reload, and run /skills reload so skills appear",
             );
           }
           // Withhold OK when hooksConfig would skip Autopilot (same bar as stamp/timeout).
@@ -1790,7 +1828,7 @@ export function runDoctor(
     // Always-on tips when this installable host is enabled (consent / multi-repo /
     // edit-only / plugin order / host doctor CLI).
     lines.push(
-      "WARN  Hermes Agent hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; shared across repos) — keep relative node .autopilot/bin/… commands",
+      "WARN  Hermes Agent $HERMES_HOME is shared across repos (default ~/.hermes; hooks in config.yaml + skills/) — multi-repo installs share one home; keep relative node .autopilot/bin/… commands",
     );
     lines.push(
       "WARN  Hermes consent/non-TTY: approve hooks at TTY or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept)",
@@ -1882,6 +1920,129 @@ export function runDoctor(
             `FAIL  Hermes config.yaml invalid (${safeDisplayToken(msg, "invalid")})`,
           );
         }
+        ok = false;
+      }
+    }
+  }
+
+  const wantAntigravity = configWantsInstallableHost(
+    cfg.platforms,
+    "antigravity",
+  );
+  if (wantAntigravity) {
+    const antigravityHooksPath = path.join(root, ".agents", "hooks.json");
+    // Cap / IDE / auto-attach tips always when this installable host is enabled.
+    if (!ANTIGRAVITY_STOP_CAP_RAISE_FOUND) {
+      lines.push(
+        "WARN  Antigravity Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs on long review",
+      );
+    }
+    lines.push(
+      "WARN  Antigravity IDE tip: hooks may stay silent until reload — prefer a firing surface (CLI) or reload IDE after install/upgrade",
+    );
+    lines.push(
+      "WARN  Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger after skills appear",
+    );
+    try {
+      const raw = readUntrustedUtf8File(
+        antigravityHooksPath,
+        MAX_CONFIG_BYTES,
+        ANTIGRAVITY_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push(`FAIL  ${ANTIGRAVITY_HOOKS_REL_PATH} is not a JSON object`);
+        ok = false;
+      } else {
+        const file = parsed as AntigravityHooksFile;
+        const shapeError = validateAntigravityHooksShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${ANTIGRAVITY_HOOKS_REL_PATH}: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeAntigravityAutopilotHooks(file);
+          const badTimeout = antigravityAutopilotHasOmittedOrSmallTimeout(file);
+          const hasStamp = antigravityHooksHavePlatformStamp(file);
+          const usesRelative = antigravityHooksUseRelativeCommand(file);
+          const hasPostMatcher =
+            antigravityAutopilotHasExpectedPostMatcher(file);
+          const blockRaw = file[ANTIGRAVITY_HOOK_BLOCK_NAME];
+          const blockDisabled =
+            blockRaw &&
+            typeof blockRaw === "object" &&
+            !Array.isArray(blockRaw) &&
+            (blockRaw as { enabled?: unknown }).enabled === false;
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  ${ANTIGRAVITY_HOOKS_REL_PATH} missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          } else if (!hasStamp || !hasPostMatcher) {
+            // FAIL 残指纹 (stamp/matcher) — checklist; not a soft WARN.
+            lines.push(
+              `FAIL  ${ANTIGRAVITY_HOOKS_REL_PATH} Autopilot fingerprint incomplete (stamp/matcher) — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  ${ANTIGRAVITY_HOOKS_REL_PATH} has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (badTimeout) {
+            lines.push(
+              `WARN  Autopilot Antigravity hook timeout below ${ANTIGRAVITY_HOOK_TIMEOUT_SEC} (or omitted) — run upgrade`,
+            );
+          }
+          if (missingEvents.length === 0 && !usesRelative) {
+            lines.push(
+              "WARN  Autopilot Antigravity hooks missing relative node .autopilot/bin/… command — run upgrade",
+            );
+          }
+          if (blockDisabled) {
+            lines.push(
+              `WARN  ${ANTIGRAVITY_HOOKS_REL_PATH} Autopilot block enabled===false — enable or run init --force`,
+            );
+          }
+          // Reload tip only when Autopilot coverage + runnable fingerprint are present
+          // (wrong stamp/matcher/disabled need init --force or enable, not reload).
+          if (
+            missingEvents.length === 0 &&
+            hasStamp &&
+            hasPostMatcher &&
+            !blockDisabled
+          ) {
+            lines.push(
+              "WARN  Reload Antigravity or open a new session after install or upgrade so Autopilot hooks reload",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !badTimeout &&
+            hasStamp &&
+            usesRelative &&
+            hasPostMatcher &&
+            !blockDisabled &&
+            hasCompleteAntigravityAutopilotHooks(file)
+          ) {
+            lines.push(`OK    ${ANTIGRAVITY_HOOKS_REL_PATH} Autopilot entries`);
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(`FAIL  ${ANTIGRAVITY_HOOKS_REL_PATH} missing`);
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  ${ANTIGRAVITY_HOOKS_REL_PATH} unreadable (${safeDisplayToken(msg, "error")})`,
+        );
         ok = false;
       }
     }
@@ -2180,6 +2341,88 @@ export function runDoctor(
     }
   }
 
+  // Dual Antigravity + Claude Autopilot fingerprints.
+  const antigravityLeftoverFp = wantAntigravity
+    ? false
+    : projectHasAntigravityAutopilotFingerprint(root);
+  if (wantAntigravity && wantClaude) {
+    lines.push(
+      "WARN  Antigravity + Claude Code both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFpVsAntigravity = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFpVsAntigravity = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantAntigravity && claudeFpVsAntigravity) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Antigravity is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (wantClaude && antigravityLeftoverFp) {
+      lines.push(
+        "WARN  Antigravity Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Antigravity or expect Stop routing care",
+      );
+    }
+    if (
+      !wantAntigravity &&
+      !wantClaude &&
+      antigravityLeftoverFp &&
+      claudeFpVsAntigravity
+    ) {
+      lines.push(
+        "WARN  Antigravity + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
+  // Dual Antigravity + Gemini Autopilot fingerprints (co-enabled is supported for
+  // skills, but dual Stop routing still needs care).
+  if (wantAntigravity && wantGemini) {
+    lines.push(
+      "WARN  Antigravity + Gemini CLI both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let geminiFpVsAntigravity = false;
+    if (!wantGemini) {
+      geminiFpVsAntigravity = projectHasGeminiAutopilotFingerprint(root);
+    }
+    if (wantAntigravity && geminiFpVsAntigravity) {
+      lines.push(
+        "WARN  Gemini Autopilot hooks present while Antigravity is enabled — dual fingerprints; uninstall Gemini or expect Stop routing care",
+      );
+    }
+    if (wantGemini && antigravityLeftoverFp) {
+      lines.push(
+        "WARN  Antigravity Autopilot hooks present while Gemini CLI is enabled — dual fingerprints; uninstall Antigravity or expect Stop routing care",
+      );
+    }
+    if (
+      !wantAntigravity &&
+      !wantGemini &&
+      antigravityLeftoverFp &&
+      geminiFpVsAntigravity
+    ) {
+      lines.push(
+        "WARN  Antigravity + Gemini Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
+      );
+    }
+  }
+
   const homeDir = opts.homeDir ?? os.homedir();
   if (wantCursor && hasGlobalSelfReviewHooks(homeDir)) {
     lines.push(
@@ -2233,12 +2476,72 @@ export function runDoctor(
   }
 
   let missingSkills = 0;
-  const skillHosts: Array<{ parent: ".cursor" | ".claude"; label: string }> = [];
-  if (wantCursor) skillHosts.push({ parent: ".cursor", label: ".cursor/skills/" });
-  if (wantClaude) skillHosts.push({ parent: ".claude", label: ".claude/skills/" });
+  type SkillHostCheck = {
+    label: string;
+    /** Absolute SKILL.md path for one skill name. */
+    pathFor: (name: string) => string;
+    /** Realpath containment root (project or Hermes home). */
+    containRoot: string;
+  };
+  const skillHosts: SkillHostCheck[] = [];
+  if (wantCursor) {
+    skillHosts.push({
+      label: ".cursor/skills/",
+      pathFor: (name) =>
+        path.join(root, ".cursor", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantClaude) {
+    skillHosts.push({
+      label: ".claude/skills/",
+      pathFor: (name) =>
+        path.join(root, ".claude", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantAntigravity) {
+    skillHosts.push({
+      label: ".agents/skills/",
+      pathFor: (name) =>
+        path.join(root, ".agents", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantGemini) {
+    skillHosts.push({
+      label: ".gemini/skills/",
+      pathFor: (name) =>
+        path.join(root, ".gemini", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantFactory) {
+    skillHosts.push({
+      label: ".factory/skills/",
+      pathFor: (name) =>
+        path.join(root, ".factory", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantHermes) {
+    const injectHermesHome = opts.hermesHome;
+    const hermesSkillsHome =
+      typeof injectHermesHome === "string" &&
+      injectHermesHome &&
+      path.isAbsolute(injectHermesHome)
+        ? injectHermesHome
+        : resolveHermesHome();
+    skillHosts.push({
+      label: "$HERMES_HOME/skills/",
+      pathFor: (name) =>
+        path.join(hermesSkillsHome, "skills", name, "SKILL.md"),
+      containRoot: hermesSkillsHome,
+    });
+  }
   for (const host of skillHosts) {
     for (const name of SKILL_NAMES) {
-      const skillPath = path.join(root, host.parent, "skills", name, "SKILL.md");
+      const skillPath = host.pathFor(name);
       try {
         const st = fs.lstatSync(skillPath);
         // existsSync follows pointing symlinks / lies on dangling — require a real file.
@@ -2246,11 +2549,11 @@ export function runDoctor(
           missingSkills += 1;
           continue;
         }
-        // Skill dir itself may be a symlink escape; realpath must stay in-project.
+        // Skill dir itself may be a symlink escape; realpath must stay in contain root.
         assertRealpathInside(
-          root,
+          host.containRoot,
           skillPath,
-          `${host.parent}/skills/${name}/SKILL.md`,
+          `${host.label}${name}/SKILL.md`,
         );
       } catch {
         missingSkills += 1;

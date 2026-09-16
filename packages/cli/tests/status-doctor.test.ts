@@ -3329,8 +3329,8 @@ describe("runDoctor", () => {
     );
     expect(joined).toMatch(/AfterAgent turn cap ≤100/i);
     expect(joined).toMatch(/Prefer Gemini CLI ≥0\.31\.0/i);
-    expect(joined).toMatch(/re-trust|\/hooks panel|folder trust/i);
-    expect(joined).toMatch(/Reload Gemini CLI|new session/i);
+    expect(joined).toMatch(/re-trust|\/trust|\/hooks panel|folder trust/i);
+    expect(joined).toMatch(/hooks reload|\/skills reload|reload session/i);
     expect(joined).not.toMatch(/FAIL\s+\.gemini\/settings\.json missing/i);
   });
 
@@ -3351,8 +3351,8 @@ describe("runDoctor", () => {
     expect(ok).toBe(false);
     const joined = lines.join("\n");
     expect(joined).toMatch(/\.gemini\/settings\.json missing/i);
-    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
-    expect(joined).not.toMatch(/Reload Gemini CLI|new session/i);
+    expect(joined).not.toMatch(/re-trust|\/trust|\/hooks panel|folder trust/i);
+    expect(joined).not.toMatch(/hooks reload|\/skills reload|reload session/i);
   });
 
   it("FAILs flat (non-nested) Gemini hooks without trust/reload tips", () => {
@@ -3381,7 +3381,8 @@ describe("runDoctor", () => {
     const joined = lines.join("\n");
     expect(joined).toMatch(/FAIL\s+\.gemini\/settings\.json/i);
     expect(joined).toMatch(/nested matcher groups|invalid shape/i);
-    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
+    expect(joined).not.toMatch(/re-trust|\/trust|\/hooks panel|folder trust/i);
+    expect(joined).not.toMatch(/hooks reload|\/skills reload/i);
   });
 
   it("FAILs incomplete Gemini Autopilot events without trust/reload tips", () => {
@@ -3406,7 +3407,8 @@ describe("runDoctor", () => {
     expect(ok).toBe(false);
     const joined = lines.join("\n");
     expect(joined).toMatch(/missing Autopilot for:.*AfterAgent/i);
-    expect(joined).not.toMatch(/re-trust|\/hooks panel|folder trust/i);
+    expect(joined).not.toMatch(/re-trust|\/trust|\/hooks panel|folder trust/i);
+    expect(joined).not.toMatch(/hooks reload|\/skills reload/i);
   });
 
   it("WARNs when Autopilot Gemini hook timeout is omitted or below 120000", () => {
@@ -4304,6 +4306,378 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(true);
     expect(lines.join("\n")).toMatch(/OK\s+plans \(work\/plans\/\)/);
+  });
+
+  it("OKs Antigravity Autopilot entries and WARNs cap + IDE + auto-attach + reload", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+    expect(joined).toMatch(/Antigravity Stop-continue: no documented raise/i);
+    expect(joined).toMatch(/IDE tip|hooks may stay silent/i);
+    expect(joined).toMatch(/Auto-attach.*Autopilot ON/i);
+    expect(joined).toMatch(/Reload Antigravity|new session/i);
+    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).not.toMatch(/FAIL\s+\.agents\/hooks\.json missing/i);
+  });
+
+  it("FAILs when Antigravity hooks.json is missing", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".agents", "hooks.json"), { force: true });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/FAIL\s+\.agents\/hooks\.json missing/i);
+    expect(joined).not.toMatch(/Reload Antigravity|new session/i);
+  });
+
+  it("FAILs when Antigravity Autopilot events are incomplete", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      "autopilot-harness"?: Record<string, unknown>;
+    };
+    delete file["autopilot-harness"]!.Stop;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing Autopilot for:.*Stop/i);
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+  });
+
+  it("FAILs when Antigravity PostToolUse matcher is wrong (残指纹)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      "autopilot-harness"?: {
+        PostToolUse?: Array<{ matcher?: string }>;
+      };
+    };
+    file["autopilot-harness"]!.PostToolUse![0]!.matcher = "run_command";
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /FAIL\s+\.agents\/hooks\.json Autopilot fingerprint incomplete \(stamp\/matcher\)/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+    expect(joined).not.toMatch(/Reload Antigravity|new session/i);
+  });
+
+  it("FAILs when Antigravity hooks omit --platform stamp (残指纹)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    const raw = fs.readFileSync(hooksPath, "utf8");
+    fs.writeFileSync(
+      hooksPath,
+      raw.replaceAll(" --platform antigravity", ""),
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /FAIL\s+\.agents\/hooks\.json Autopilot fingerprint incomplete \(stamp\/matcher\)/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+    expect(joined).not.toMatch(/Reload Antigravity|new session/i);
+  });
+
+  it("WARNs when Antigravity Autopilot block enabled===false (withholds OK + reload)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      "autopilot-harness"?: { enabled?: boolean };
+    };
+    file["autopilot-harness"]!.enabled = false;
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+\.agents\/hooks\.json Autopilot block enabled===false/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+    expect(joined).not.toMatch(/Reload Antigravity|new session/i);
+  });
+
+  it("WARNs when Antigravity hooks omit relative .autopilot/bin command", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    const raw = fs.readFileSync(hooksPath, "utf8");
+    fs.writeFileSync(
+      hooksPath,
+      raw.replaceAll(
+        "node .autopilot/bin/autopilot-harness-hook.mjs",
+        "node /abs/.autopilot/bin/autopilot-harness-hook.mjs",
+      ),
+      "utf8",
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+Autopilot Antigravity hooks missing relative node \.autopilot\/bin/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+  });
+
+  it("WARNs Antigravity timeout below 120 and withholds OK", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    const file = JSON.parse(fs.readFileSync(hooksPath, "utf8")) as {
+      "autopilot-harness"?: Record<
+        string,
+        Array<{ timeout?: number; hooks?: Array<{ timeout?: number }> }>
+      >;
+    };
+    const block = file["autopilot-harness"]!;
+    for (const entries of Object.values(block)) {
+      if (!Array.isArray(entries)) continue;
+      for (const g of entries) {
+        // Flat PreInvocation/Stop handlers carry timeout on the entry itself.
+        if (typeof g.timeout === "number") g.timeout = 30;
+        for (const h of g.hooks ?? []) {
+          h.timeout = 30;
+        }
+      }
+    }
+    fs.writeFileSync(hooksPath, JSON.stringify(file, null, 2) + "\n");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+Autopilot Antigravity hook timeout below 120/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+  });
+
+  it("FAILs when Antigravity hooks.json is a dangling symlink (not treated as missing)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const hooksPath = path.join(root, ".agents", "hooks.json");
+    fs.rmSync(hooksPath, { force: true });
+    fs.symlinkSync(path.join(root, "missing-agents-hooks.json"), hooksPath);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/\.agents\/hooks\.json unreadable|symlink/i);
+    expect(joined).not.toMatch(/FAIL\s+\.agents\/hooks\.json missing/i);
+  });
+
+  it("WARNs Antigravity + Claude dual fingerprints when both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Antigravity \+ Claude Code both enabled/i,
+    );
+  });
+
+  it("WARNs when Claude-only project has leftover Antigravity Autopilot hooks", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    const cfgPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(cfgPath, "utf8");
+    fs.writeFileSync(
+      cfgPath,
+      applyPlatformsToConfigYaml(yaml, [
+        { id: "claude-code", surface: "cli" },
+      ]),
+      "utf8",
+    );
+    new StateStore(root).close();
+    expect(fs.existsSync(path.join(root, ".agents", "hooks.json"))).toBe(true);
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(
+      /Antigravity Autopilot hooks present while Claude Code is enabled/i,
+    );
+  });
+
+  it("WARNs Antigravity + Gemini dual fingerprints when both enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: true,
+        mergePlatforms: true,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/Antigravity \+ Gemini CLI both enabled/i);
+    // Co-install still plants both skill trees.
+    expect(joined).toMatch(/OK\s+skills \(10\)/);
+  });
+
+  it("WARNs missing Gemini skills when Gemini enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "gemini-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".gemini", "skills"), {
+      recursive: true,
+      force: true,
+    });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+5 skill\(s\) missing under \.gemini\/skills\//i,
+    );
+    expect(joined).not.toMatch(/OK\s+skills/);
   });
 
 });

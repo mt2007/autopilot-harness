@@ -474,7 +474,36 @@ export function hasCompleteAntigravityAutopilotHooks(
   const block = raw as AntigravityHookBlock;
   // enabled:false would silently disable Autopilot — treat as incomplete.
   if (block.enabled === false) return false;
+  // Wrong-platform leftovers / PostToolUse matcher drift are residual.
+  if (!antigravityHooksHavePlatformStamp(file)) return false;
+  if (!antigravityAutopilotHasExpectedPostMatcher(file)) return false;
   return true;
+}
+
+/**
+ * True when every Autopilot PostToolUse entry uses the expected edit-tool matcher.
+ * Flat Autopilot handlers under PostToolUse (no matcher) count as incomplete.
+ */
+export function antigravityAutopilotHasExpectedPostMatcher(
+  file: AntigravityHooksFile,
+): boolean {
+  const raw = file[ANTIGRAVITY_HOOK_BLOCK_NAME];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const block = raw as AntigravityHookBlock;
+  const entries = Array.isArray(block.PostToolUse)
+    ? (block.PostToolUse as AntigravityMatcherGroup[])
+    : [];
+  let seen = 0;
+  for (const g of entries) {
+    const hasAutopilot =
+      isAutopilotCommand(g.command) ||
+      (Array.isArray(g.hooks) &&
+        g.hooks.some((h) => isAutopilotCommand(h?.command)));
+    if (!hasAutopilot) continue;
+    seen += 1;
+    if (g.matcher !== ANTIGRAVITY_POST_TOOL_USE_MATCHER) return false;
+  }
+  return seen > 0;
 }
 
 /** True when every Autopilot Antigravity command stamps `--platform antigravity`. */
