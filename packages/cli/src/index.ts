@@ -211,8 +211,11 @@ export {
   platformsWantInstallableHost,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
+  ensureRunnerConfigKeys,
   formatBindingOptionLabel,
   formatPlatformsDisplay,
+  hasInstallableHookHost,
+  isInstallableBinding,
   mergePlatformBindings,
   mergedIncludesAllRequested,
   normalizeBinding,
@@ -220,6 +223,7 @@ export {
   parsePlatformsCliList,
   primaryBinding,
   sanitizePlatformId,
+  stripRunnerConfigTraces,
 } from "./init/platforms.js";
 export type { PlatformBinding, PlatformSurface } from "./init/platforms.js";
 export { setProjectLocale } from "./locale-set.js";

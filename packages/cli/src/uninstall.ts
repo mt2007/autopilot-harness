@@ -69,7 +69,10 @@ import {
   stripAutopilotHermesConfigYaml,
 } from "./init/hermes-hooks-merge.js";
 import { readConfigInstallHints } from "./init/config-merge.js";
-import { configWantsInstallableHost } from "./init/platforms.js";
+import {
+  configWantsInstallableHost,
+  stripRunnerConfigTraces,
+} from "./init/platforms.js";
 import {
   AUTOPILOT_SKILL_NAMES,
   AUTOPILOT_WORKFLOW_FILES,
@@ -751,6 +754,7 @@ function projectWantsInstallableHosts(configPath: string): {
   factory: boolean;
   hermes: boolean;
   antigravity: boolean;
+  runner: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -769,6 +773,7 @@ function projectWantsInstallableHosts(configPath: string): {
       factory: configWantsInstallableHost(platforms, "factory-droid"),
       hermes: configWantsInstallableHost(platforms, "hermes-agent"),
       antigravity: configWantsInstallableHost(platforms, "antigravity"),
+      runner: configWantsInstallableHost(platforms, "runner"),
     };
   } catch {
     return {
@@ -781,6 +786,7 @@ function projectWantsInstallableHosts(configPath: string): {
       factory: false,
       hermes: false,
       antigravity: false,
+      runner: false,
     };
   }
 }
@@ -880,6 +886,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       factory: wantFactory,
       hermes: wantHermes,
       antigravity: wantAntigravity,
+      runner: wantRunner,
     } = projectWantsInstallableHosts(configPath);
     // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory/.agents trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
@@ -1968,6 +1975,55 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         );
       }
     } else {
+      // Clear runner: YAML + platforms entry only when runner is an enabled host.
+      // Do not wipe a configured runner.command stub left by upgrade on hook-only
+      // projects (CLI can still use runner: without platforms including runner).
+      if (wantRunner && isRealRegularFile(configPath)) {
+        try {
+          const yaml = readUntrustedUtf8File(
+            configPath,
+            MAX_UNTRUSTED_TEXT_BYTES,
+            ".autopilot/config.yml",
+          );
+          const stripped = stripRunnerConfigTraces(yaml);
+          if (stripped.removedRunnerKey || stripped.removedFromPlatforms) {
+            found = true;
+            if (dryRun) {
+              actions.push("would clear runner: from .autopilot/config.yml");
+            } else {
+              assertParentDirInProject(projectRoot, configPath, ".autopilot/");
+              assertNotSymlink(configPath, ".autopilot/config.yml");
+              writeFileReplaceSync(configPath, stripped.yaml);
+              assertWrittenInsideProject(
+                projectRoot,
+                configPath,
+                ".autopilot/config.yml",
+              );
+              actions.push("cleared runner: from .autopilot/config.yml");
+              removed.push(".autopilot/config.yml (runner traces)");
+            }
+          }
+          // Runner-only: platforms entry is kept on purpose (empty list → Cursor
+          // fallback). Silent no-op when key already cleared — avoid spam.
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          actions.push(
+            `skip .autopilot/config.yml runner strip (${formatUninstallSkipDetail(msg)})`,
+          );
+        }
+      }
+      const runnerPromptsDir = path.join(autopilotDir, "runner-prompts");
+      if (pathExistsViaLstat(runnerPromptsDir)) {
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          runnerPromptsDir,
+          ".autopilot/runner-prompts",
+          removed,
+          dryRun,
+          actions,
+        );
+      }
       if (pathExistsViaLstat(binDir)) {
         found = true;
         safeRemovePath(

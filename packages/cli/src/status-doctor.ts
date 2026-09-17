@@ -14,9 +14,16 @@ import { parseDocument } from "yaml";
 import {
   formatPlatformsDisplay,
   configWantsInstallableHost,
+  hasInstallableHookHost,
   parsePlatformBindingsFromConfig,
   type PlatformBinding,
 } from "./init/platforms.js";
+import {
+  hasRunnerCommand,
+  normalizeRunnerConfig,
+  RUNNER_MIN_RECOMMENDED_ITERATIONS,
+  type RunnerConfigInput,
+} from "@autopilot-harness/port-runner";
 import {
   autopilotStopHasUnlimitedLoop,
   cursorHooksHavePlatformStamp,
@@ -851,8 +858,11 @@ export function runDoctor(
 
   const configPath = path.join(root, ".autopilot", "config.yml");
   let cfg: ReturnType<typeof readStatusConfig>;
+  /** Same bytes as {@link cfg} — runner checks must not re-read (TOCTOU drift). */
+  let configYamlText = "";
   try {
-    cfg = readStatusConfig(readProjectConfigYaml(configPath), root);
+    configYamlText = readProjectConfigYaml(configPath);
+    cfg = readStatusConfig(configYamlText, root);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") {
@@ -2461,6 +2471,56 @@ export function runDoctor(
       lines.push(
         "WARN  Antigravity + Gemini Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers or expect Stop routing care",
       );
+    }
+  }
+
+  const wantRunner = configWantsInstallableHost(cfg.platforms, "runner");
+  if (wantRunner && cfg.configOk) {
+    try {
+      const parsed = parseConfigObject(configYamlText);
+      if (!parsed) {
+        // configOk came from the same text — treat as unexpected parse drift.
+        lines.push(
+          "WARN  runner: config unreadable — fix .autopilot/config.yml",
+        );
+      } else {
+        const runnerRaw = isPlainObject(parsed.runner) ? parsed.runner : {};
+        const runnerCfg = normalizeRunnerConfig(runnerRaw as RunnerConfigInput);
+        if (!hasRunnerCommand(runnerCfg)) {
+          lines.push(
+            "WARN  runner.command is empty — set a real agent CLI template before runner start (init does not write a fake default)",
+          );
+        }
+        // Prefer the YAML-declared number for the too-small WARN so clamp/default
+        // (normalize → 32) does not hide an explicit undersized max_iterations.
+        const rawMax = runnerRaw.max_iterations ?? runnerRaw.maxIterations;
+        let iterationsForWarn = runnerCfg.maxIterations;
+        if (typeof rawMax === "number" && Number.isFinite(rawMax)) {
+          iterationsForWarn = rawMax;
+        } else if (typeof rawMax === "string" && rawMax.trim()) {
+          const n = Number(rawMax.trim());
+          if (Number.isFinite(n)) iterationsForWarn = n;
+        }
+        if (iterationsForWarn < RUNNER_MIN_RECOMMENDED_ITERATIONS) {
+          lines.push(
+            `WARN  runner.max_iterations is ${safeDisplayToken(String(iterationsForWarn))} (< ${RUNNER_MIN_RECOMMENDED_ITERATIONS}) — too small for fix + confirm×5 headroom`,
+          );
+        }
+        const concurrency = isPlainObject(parsed.concurrency)
+          ? parsed.concurrency
+          : {};
+        const mode =
+          typeof concurrency.mode === "string" && concurrency.mode.trim()
+            ? concurrency.mode.trim().toLowerCase()
+            : "one_executor";
+        if (mode === "one_executor" && hasInstallableHookHost(cfg.platforms)) {
+          lines.push(
+            "WARN  Runner + hook host under concurrency.mode: one_executor — dual track cannot both hold an armed executing session; prefer one track or expect busy on RUN",
+          );
+        }
+      }
+    } catch {
+      lines.push("WARN  runner: config unreadable — fix .autopilot/config.yml");
     }
   }
 

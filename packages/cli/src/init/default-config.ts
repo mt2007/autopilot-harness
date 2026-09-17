@@ -127,5 +127,13 @@ triggers:
 
 security:
   require_token: false
+
+runner:
+  # Required for autopilot-harness runner start — set a real agent CLI template
+  # (no fake default). Examples:
+  # command: "claude -p {prompt}"
+  # command: "codex exec -- {prompt_file}"
+  max_iterations: 32
+  # prompt_mode: auto   # argv | file | auto
 `;
 }

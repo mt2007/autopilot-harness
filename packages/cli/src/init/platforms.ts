@@ -24,6 +24,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "factory-droid", surface: "cli" },
   { id: "hermes-agent", surface: "cli" },
   { id: "antigravity", surface: "cli" },
+  { id: "runner", surface: "runner" },
 ]);
 
 /** Hard cap so hostile/hand-edited config cannot inflate status/merge work. */
@@ -183,6 +184,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "antigravity") {
     return "Antigravity (.agents/hooks.json + .agents/skills)";
+  }
+  if (id === "runner") {
+    return "Runner (external loop; no hooks.json)";
   }
   const host =
     id === "cursor"
@@ -398,6 +402,145 @@ export function applyPlatformsToConfigYaml(
   doc.delete("surface");
 
   return String(doc);
+}
+
+/**
+ * Fill missing `runner.max_iterations` (and the `runner:` map) without
+ * inventing a fake `command`. Used by add-platform when runner is enabled.
+ */
+export function ensureRunnerConfigKeys(existingYaml: string): {
+  yaml: string;
+  addedPaths: string[];
+} {
+  const doc = parseDocument(existingYaml);
+  if (doc.errors.length > 0) {
+    throw doc.errors[0]!;
+  }
+  if (doc.contents != null && isAlias(doc.contents)) {
+    throw new Error("config.yml root must be a mapping");
+  }
+  if (doc.contents != null && !isMap(doc.contents)) {
+    throw new Error("config.yml root must be a mapping");
+  }
+  const addedPaths: string[] = [];
+  const raw = doc.toJS({ maxAliasCount: 64 });
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("config.yml root must be a mapping");
+  }
+  const root = raw as Record<string, unknown>;
+  const runner = root.runner;
+  if (runner == null) {
+    doc.set("runner", { max_iterations: 32 });
+    addedPaths.push("runner");
+    return { yaml: String(doc), addedPaths };
+  }
+  if (typeof runner !== "object" || Array.isArray(runner)) {
+    return { yaml: existingYaml, addedPaths };
+  }
+  const runnerObj = runner as Record<string, unknown>;
+  const hasSnake = Object.prototype.hasOwnProperty.call(
+    runnerObj,
+    "max_iterations",
+  );
+  const hasCamel = Object.prototype.hasOwnProperty.call(
+    runnerObj,
+    "maxIterations",
+  );
+  const snakeVal = runnerObj.max_iterations;
+  const camelVal = runnerObj.maxIterations;
+  const snakeMissing = !hasSnake || snakeVal === undefined || snakeVal === null;
+  const camelMissing = !hasCamel || camelVal === undefined || camelVal === null;
+  // Either key counts as configured — do not invent max_iterations:32 over a
+  // camelCase-only value (normalize prefers max_iterations ?? maxIterations).
+  if (snakeMissing && camelMissing) {
+    const node = doc.get("runner");
+    if (isMap(node)) {
+      node.set("max_iterations", 32);
+      addedPaths.push("runner.max_iterations");
+    }
+  }
+  return { yaml: String(doc), addedPaths };
+}
+
+/**
+ * Remove `runner:` and drop runner bindings from `platforms` when other hosts
+ * remain. Runner-only configs keep the platforms entry so empty-list does not
+ * falsely fall back to Cursor via {@link configWantsInstallableHost}.
+ */
+export function stripRunnerConfigTraces(existingYaml: string): {
+  yaml: string;
+  removedRunnerKey: boolean;
+  removedFromPlatforms: boolean;
+} {
+  const doc = parseDocument(existingYaml);
+  if (doc.errors.length > 0) {
+    throw doc.errors[0]!;
+  }
+  if (doc.contents != null && isAlias(doc.contents)) {
+    throw new Error("config.yml root must be a mapping");
+  }
+  if (doc.contents != null && !isMap(doc.contents)) {
+    throw new Error("config.yml root must be a mapping");
+  }
+
+  let removedRunnerKey = false;
+  if (doc.has("runner")) {
+    doc.delete("runner");
+    removedRunnerKey = true;
+  }
+
+  let removedFromPlatforms = false;
+  try {
+    // Fail closed on over-cap lists — never rewrite a truncated platforms[] and
+    // drop hosts the best-effort reader would silently omit.
+    const platforms = parsePlatformBindingsFromConfig(
+      (doc.toJS({ maxAliasCount: 64 }) ?? {}) as Record<string, unknown>,
+      { failOnOverflow: true },
+    );
+    const withoutRunner = platforms.filter(
+      (b) => sanitizePlatformId(b.id) !== "runner",
+    );
+    if (withoutRunner.length > 0 && withoutRunner.length < platforms.length) {
+      doc.set(
+        "platforms",
+        withoutRunner.map((b) => ({ id: b.id, surface: b.surface })),
+      );
+      removedFromPlatforms = true;
+    }
+  } catch (err) {
+    // Only soften over-cap: still ship runner: removal, leave platforms untouched.
+    // Other parse/toJS failures must fail closed (do not pretend strip succeeded).
+    const msg = err instanceof Error ? err.message : String(err);
+    // Match only platforms overflow copy from parsePlatformBindingsFromConfig —
+    // do not soften unrelated "exceeds" errors (e.g. YAML alias caps).
+    if (
+      removedRunnerKey &&
+      /platforms list exceeds cap of \d+ unique entries/i.test(msg)
+    ) {
+      return {
+        yaml: String(doc),
+        removedRunnerKey: true,
+        removedFromPlatforms: false,
+      };
+    }
+    throw err;
+  }
+
+  return {
+    yaml: String(doc),
+    removedRunnerKey,
+    removedFromPlatforms,
+  };
+}
+
+/** True when any installable hook host (ide/cli surface) is enabled. */
+export function hasInstallableHookHost(
+  platforms: readonly PlatformBinding[],
+): boolean {
+  return platforms.some(
+    (b) =>
+      isInstallableBinding(b) && sanitizePlatformId(b.id) !== "runner",
+  );
 }
 
 /** Stable display token for status/doctor (comma-separated id(surface)). */

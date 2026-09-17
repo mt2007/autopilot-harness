@@ -547,6 +547,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Hermes Agent";
     case "antigravity":
       return "Antigravity";
+    case "runner":
+      return "Runner";
     default: {
       const parts = id.split(/[-_]/).filter(Boolean);
       if (parts.length === 0) return "your agent host";
@@ -592,9 +594,21 @@ export function formatPostInstallOutro(
     if (id === "antigravity") {
       return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run. Hooks live in .agents/hooks.json (named autopilot-harness block; timeout 120; .agents/bin shim). After install/upgrade: reload Antigravity / start a new session (IDE tip: hooks may be silent until reload). CLI: mount the project workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`;
     }
+    if (id === "runner") {
+      return `You're all set — set runner.command in .autopilot/config.yml (no fake default), then: autopilot-harness runner start --run <slug>. Status: autopilot-harness runner status. Under concurrency.mode: one_executor, Runner and a hook host cannot both hold an armed executing session.`;
+    }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
   const names = ids.map((id) => formatHostDisplayName(id)).join(", ");
+  if (ids.includes("runner")) {
+    const hookNames = ids
+      .filter((id) => id !== "runner")
+      .map((id) => formatHostDisplayName(id))
+      .join(", ");
+    if (hookNames) {
+      return `You're all set — try /autopilot-on in ${hookNames}; for Runner set runner.command then autopilot-harness runner start --run. Note: one_executor blocks dual armed executing across Runner + hook hosts.`;
+    }
+  }
   if (
     ids.includes("codex") ||
     ids.includes("kimi-code") ||
@@ -660,6 +674,10 @@ export function formatHostActivationTips(
     } else if (id === "antigravity") {
       tips.push(
         `${host}: Autopilot writes .agents/hooks.json (named autopilot-harness block; PreInvocation+PostToolUse+Stop; timeout 120; node .agents/bin/autopilot-harness-hook.mjs shim → ../../.autopilot/bin/… via import.meta.url — not bare ../.autopilot; --platform antigravity) and .agents/skills/autopilot-* (does not write .agent/). After install/upgrade: reload Antigravity or start a new session (IDE hooks may stay silent until reload). CLI: mount the project workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0). Auto-attach ≠ Autopilot ON — still /autopilot-on or line-start triggers.on / triggers.run.`,
+      );
+    } else if (id === "runner") {
+      tips.push(
+        `${host}: set runner.command in .autopilot/config.yml (no fake default), then autopilot-harness runner start --run <slug>. Status via runner status. Under concurrency.mode: one_executor, Runner and a hook host cannot both hold an armed executing session.`,
       );
     } else {
       tips.push(
@@ -753,6 +771,11 @@ function hostActivationPlainLines(
           `在 ${host} 中试用 /autopilot-on（skills 在 .agents/skills）或行首 triggers.on / triggers.run。`,
           `hooks 写 .agents/hooks.json（具名 autopilot-harness；timeout 120；.agents/bin shim；不写 .agent/）。安装/升级后请 reload 或新开会话（IDE tip：未 reload 时 hooks 可能不响）。CLI 须挂项目 workspace（如 --add-dir / 打开文件夹），否则 hooks 可能不加载（loaded 0）。auto-attach ≠ Autopilot ON — 仍需 /autopilot-on 或行首触发。`,
         );
+      } else if (id === "runner") {
+        lines.push(
+          `在 .autopilot/config.yml 设置 runner.command（无假默认），然后：autopilot-harness runner start --run <slug>。`,
+          `查看状态：autopilot-harness runner status。concurrency.mode: one_executor 下，Runner 与 hook 宿主不能同时持有武装 executing 会话。`,
+        );
       } else {
         lines.push(
           `在 ${host} 中试用 /autopilot-on。`,
@@ -808,6 +831,11 @@ function hostActivationPlainLines(
       lines.push(
         `In ${host}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run.`,
         `Hooks are written to .agents/hooks.json (named autopilot-harness block; timeout 120; .agents/bin shim; does not write .agent/). After install/upgrade: reload or start a new session (IDE tip: hooks may stay silent until reload). CLI: mount the project workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`,
+      );
+    } else if (id === "runner") {
+      lines.push(
+        `Set runner.command in .autopilot/config.yml (no fake default), then: autopilot-harness runner start --run <slug>.`,
+        `Status: autopilot-harness runner status. Under concurrency.mode: one_executor, Runner and a hook host cannot both hold an armed executing session.`,
       );
     } else {
       lines.push(

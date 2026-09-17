@@ -84,6 +84,7 @@ import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
   configYamlHasLegacyHostScalars,
+  ensureRunnerConfigKeys,
   isInstallableBinding,
   MAX_PLATFORM_BINDINGS,
   mergePlatformBindings,
@@ -1641,6 +1642,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantFactory = platformsWantInstallableHost(effectivePlatforms, "factory-droid");
     const wantHermes = platformsWantInstallableHost(effectivePlatforms, "hermes-agent");
     const wantAntigravity = platformsWantInstallableHost(effectivePlatforms, "antigravity");
+    const wantRunner = platformsWantInstallableHost(effectivePlatforms, "runner");
     if (
       !wantCursor &&
       !wantClaude &&
@@ -1651,12 +1653,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       !wantGemini &&
       !wantFactory &&
       !wantHermes &&
-      !wantAntigravity
+      !wantAntigravity &&
+      !wantRunner
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, and/or antigravity).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, and/or runner).",
       };
     }
 
@@ -2530,9 +2533,15 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           freshYaml,
           mergedPlatforms,
         );
+        const withRunner = platformsWantInstallableHost(
+          mergedPlatforms,
+          "runner",
+        )
+          ? ensureRunnerConfigKeys(nextYaml).yaml
+          : nextYaml;
         assertParentDirInProject(projectRoot, configPath, ".autopilot/");
         assertNotSymlink(configPath, ".autopilot/config.yml");
-        writeFileReplaceSync(configPath, nextYaml);
+        writeFileReplaceSync(configPath, withRunner);
         assertWrittenInsideProject(
           projectRoot,
           configPath,
