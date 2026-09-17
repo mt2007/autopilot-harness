@@ -173,7 +173,7 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor --prune-stale
 
 ### Antigravity
 
-Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Claude `block`). **`fullyIdle !== true` → fail-open**. Host live Stop-continue is **unproven** on the v0.10 dogfood machine (CLI OAuth-blocked) — Autopilot marks Antigravity **Shipped (degraded)** until a firing surface proves ≥1× continue + edit arm, **or** human gate explicitly accepts degraded before publishing **0.10**:
+Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Claude `block`). **`fullyIdle !== true` → fail-open**. Host Stop continue is **live-proved** in **0.10.1** (`NO_TOOL_CALL` + `transcript_full.jsonl` + **`.agents/bin` shim**). Prefer a firing surface (CLI with project workspace mounted, e.g. `--add-dir`):
 
 - Hooks: project **`.agents/hooks.json`** named `autopilot-harness` (PreInvocation + PostToolUse edit matcher + Stop; timeout **120**; **`.agents/bin` shim** → `../../.autopilot/bin/…` via `import.meta.url` — **not** bare `../.autopilot`). Skills: **`.agents/skills/autopilot-*`** (**does not write `.agent/`**). **Auto-attach ≠ Autopilot ON**.
 - PreInvocation **has no prompt field** — triggers parse **`transcriptPath`** with a stateful cursor.

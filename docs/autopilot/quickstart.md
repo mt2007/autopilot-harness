@@ -93,7 +93,7 @@ npx @autopilot-harness/cli init --platform gemini-cli --yes
 npx @autopilot-harness/cli init --platform factory-droid --yes
 # or Hermes Agent (`$HERMES_HOME/config.yaml`; pre_verify continue live-proved; relative command; consent / `hermes hooks doctor`)
 npx @autopilot-harness/cli init --platform hermes-agent --yes
-# or Antigravity (`.agents/hooks.json` + `.agents/skills`; Stop `decision:continue`; degraded pending live/human gate)
+# or Antigravity (`.agents/hooks.json` + `.agents/skills` + `.agents/bin` shim; Stop `decision:continue`; live-proved in 0.10.1)
 npx @autopilot-harness/cli init --platform antigravity --yes
 # multi-host after the first install:
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
@@ -125,7 +125,7 @@ Developing or dogfooding from a clone of this repo: see [Contributing](../../CON
 - Gemini CLI is **Shipped** with honest **AfterAgent turn cap ≤100** (`MAX_TURNS`; no raise; prefer CLI **≥0.31.0**) — re-trust / `/hooks panel` / folder trust after install; needPick deny+reason (re-submit with slug); doctor WARNs cap + min-CLI + `hooksConfig`; do not confuse `GEMINI_PLANS_DIR` with Autopilot `plans/` (see [Troubleshooting](../troubleshooting.md)).
 - Factory Droid is **Shipped** (**multi-block under `stop_hook_active` live-proved**; no raise) — commands use **`$FACTORY_PROJECT_DIR`**; check **`/hooks`** then reload/new session for snapshot; **waive live → degraded≤1**; doctor WARNs raise/hard-cap + Factory+Claude dual (see [Troubleshooting](../troubleshooting.md)).
 - Hermes Agent is **Shipped** (**shell `pre_verify` continue live-proved**; soft min **≥0.21.3**) — **`$HERMES_HOME/config.yaml`**; relative command; nudge ≥32; edit-only; consent/non-TTY; **`hermes hooks doctor`**; **waive → degraded + human R1 ack** (see [Troubleshooting](../troubleshooting.md)).
-- Antigravity is **Shipped (degraded — host live Stop-continue unproven)** — **`.agents/hooks.json`** + **`.agents/skills`** only (no `.agent/`); Stop **`decision:continue`**; PreInvocation via **transcriptPath**; auto-attach ≠ Autopilot ON; **human gate / re-live before publishing 0.10** (see [Troubleshooting](../troubleshooting.md)).
+- Antigravity is **Shipped** (**host Stop continue live-proved** in **0.10.1**) — **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim** (no `.agent/`); Stop **`decision:continue`**; PreInvocation via **transcriptPath**; auto-attach ≠ Autopilot ON; CLI must mount workspace (see [Troubleshooting](../troubleshooting.md)).
 - More failure modes: [Troubleshooting](../troubleshooting.md).
 
 ## Self-review scope (`review.scope`)

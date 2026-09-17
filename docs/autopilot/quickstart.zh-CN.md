@@ -93,7 +93,7 @@ npx @autopilot-harness/cli init --platform gemini-cli --yes
 npx @autopilot-harness/cli init --platform factory-droid --yes
 # 或 Hermes Agent（`$HERMES_HOME/config.yaml`；pre_verify continue 活链已证；相对 command；consent/`hermes hooks doctor`）
 npx @autopilot-harness/cli init --platform hermes-agent --yes
-# 或 Antigravity（`.agents/hooks.json` + `.agents/skills`；Stop `decision:continue`；degraded 待活链/人闸）
+# 或 Antigravity（`.agents/hooks.json` + `.agents/skills` + `.agents/bin` shim；Stop `decision:continue`；0.10.1 活链已证）
 npx @autopilot-harness/cli init --platform antigravity --yes
 # 第一个宿主装好后再加：
 # npx @autopilot-harness/cli init --yes --add-platform claude-code
@@ -125,7 +125,7 @@ npx @autopilot-harness/cli upgrade --dry-run
 - Gemini CLI 已 **Shipped**，诚实上限 **AfterAgent turn cap ≤100**（`MAX_TURNS`；无 raise；建议 CLI **≥0.31.0**）— 安装后需 re-trust / `/hooks panel` / folder trust；needPick 用 deny+reason（须重提 slug）；doctor 会 WARN cap + min-CLI + `hooksConfig`；勿把 `GEMINI_PLANS_DIR` 当成 Autopilot `plans/`（见 [排障](../troubleshooting.md)）。
 - Factory Droid 已 **Shipped**（**`stop_hook_active` 下 multi-block 活链已证**；无 raise）— 命令用 **`$FACTORY_PROJECT_DIR`**；查 **`/hooks`** 后 reload/新开会话刷新快照；**免活链 → degraded≤1**；doctor 会 WARN raise/hard-cap + Factory+Claude 双装（见 [排障](../troubleshooting.md)）。
 - Hermes Agent 已 **Shipped**（**shell `pre_verify` continue 活链已证**；软下限 **≥0.21.3**）— **`$HERMES_HOME/config.yaml`**；相对 command；nudge ≥32；edit-only；consent/non-TTY；**`hermes hooks doctor`**；**免活链 → degraded + 人闸认 R1**（见 [排障](../troubleshooting.md)）。
-- Antigravity 已 **Shipped（degraded — 宿主活链 Stop-continue 未证）** — **`.agents/hooks.json`** + **`.agents/skills`**（不写 `.agent/`）；Stop **`decision:continue`**；PreInvocation 走 **transcriptPath**；auto-attach ≠ Autopilot ON；**发 0.10 前人闸 / 再活链**（见 [排障](../troubleshooting.md)）。
+- Antigravity 已 **Shipped**（**宿主 Stop continue 活链已证**，**0.10.1**）— **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim**（不写 `.agent/`）；Stop **`decision:continue`**；PreInvocation 走 **transcriptPath**；auto-attach ≠ Autopilot ON；CLI 须挂 workspace（见 [排障](../troubleshooting.md)）。
 - 更多故障模式见 [排障](../troubleshooting.md)。
 
 ## 自审范围（`review.scope`）

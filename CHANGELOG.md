@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-09-17
+
+### Fixed
+
+- **Antigravity Stop continue**: `isAntigravityStopCompletionReason` accepts host `NO_TOOL_CALL` (case-insensitive) so an armed session can emit `{ decision:"continue", reason }` instead of `{}`.
+- **Antigravity transcript sanitize**: accept `…/logs/transcript_full.jsonl` as well as `transcript.jsonl` under `/logs/`.
+- **Antigravity hook shim**: install **`.agents/bin/autopilot-harness-hook.mjs`** (cwd-agnostic via `import.meta.url` → `../../.autopilot/bin/…`); init/upgrade **rewrite** legacy `node .autopilot/bin/…` commands; doctor recognizes the shim fingerprint.
+
+### Changed
+
+- **docs / doctor**: Antigravity CLI must mount the project workspace (e.g. `--add-dir`) or hooks may not load (`loaded 0`); Antigravity status upgraded from **Shipped (degraded — live unproven)** to **Shipped** with **host Stop continue live-proved** (0.10.1).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (…, antigravity) → cli** for **0.10.1** public packages (local `pnpm pack` assert: no `workspace:*`).
+
 ## [0.10.0] — 2026-09-17
 
 ### Added

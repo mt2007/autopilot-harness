@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-kimi-code",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Autopilot harness host port for Kimi Code hooks (degraded Stop ≤1/turn)",
   "license": "MIT",
   "repository": {

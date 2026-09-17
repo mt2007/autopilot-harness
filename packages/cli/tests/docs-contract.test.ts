@@ -265,7 +265,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/transcriptPath|PreInvocation/);
     expect(tips).toMatch(/--add-dir|CLI workspace|loaded 0/i);
     expect(tips).toMatch(/auto-attach|Auto-attach/);
-    expect(tips).toMatch(/degraded|human gate|0\.10/);
+    expect(tips).toMatch(/live-proved|0\.10\.1|shim|--add-dir/i);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -829,7 +829,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Hermes Agent \| \*\*Shipped\*\* \(shell `pre_verify` continue live-proved/,
     );
     expect(hosts).toMatch(
-      /Antigravity \| \*\*Shipped\*\* \(degraded/,
+      /Antigravity \| \*\*Shipped\*\* \(host Stop continue live-proved|Antigravity \| \*\*Shipped\*\* \(v0\.10\.1\)/,
     );
     expect(hosts).toMatch(/\.gemini\/skills\/autopilot-\*/);
     expect(hosts).toMatch(/\.factory\/skills\/autopilot-\*/);
@@ -1354,6 +1354,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(section010).toMatch(/pnpm publish|pnpm pack/i);
     expect(section010).toMatch(/1 \(next\)[\s\S]{0,80}OpenCode/);
+    const section0101 = changelogSection(log, "0.10.1");
+    expect(section0101).toMatch(/NO_TOOL_CALL/);
+    expect(section0101).toMatch(/transcript_full\.jsonl/);
+    expect(section0101).toMatch(/\.agents\/bin|shim/i);
+    expect(section0101).toMatch(/live-proved|0\.10\.1/);
+    expect(section0101).toMatch(/pnpm publish|pnpm pack/i);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
     expect(unreleased).not.toMatch(/handleCopilot/i);

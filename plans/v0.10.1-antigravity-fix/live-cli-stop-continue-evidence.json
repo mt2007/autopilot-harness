@@ -1,39 +1,35 @@
 {
   "itemId": "live-cli-stop-continue",
-  "verdict": "fail",
-  "passed": false,
+  "verdict": "pass",
+  "passed": true,
   "waived": false,
-  "shipGate": "FAIL — host edit-arm + NO_TOOL_CALL continue not proven this session; do not release 0.10.1",
+  "shipGate": "PASS — tmp/agy host session 379d6609 edit-arm + Stop continue ≥2×; proceed to 0.10.1",
   "surface": "CLI",
   "ideAttempted": false,
-  "at": "2026-09-17T07:52:00Z",
-  "disposableRepo": "/Users/zhaoqingli/ap-agy-live-1fxxrj",
-  "workspaceMount": "--add-dir <disposableRepo>",
-  "init": "ok — .agents/hooks.json + .agents/bin shim + vendor from workspace packages/cli dist",
+  "at": "2026-09-17T09:29:00Z",
+  "acceptedRepo": "/Users/zhaoqingli/workspaces/tmp/agy",
+  "conversationId": "379d6609-256a-442d-b431-74ca4131b72e",
+  "workspaceMount": "agy CLI workspaceDirs includes tmp/agy",
   "hostLive": {
     "hooksFiredByHost": true,
-    "events": ["PreInvocation", "Stop", "PreInvocation", "Stop"],
-    "editArmFromHost": false,
-    "postToolUseCount": 0,
-    "StopContinueCount": 1,
+    "editArmFromHost": true,
+    "postToolUseEvidence": "app.js edited (add/multiply/factorial); tools write_to_file/replace_file_content in transcript",
+    "StopContinueCount": 2,
     "StopContinueShapes": [
       {
-        "terminationReason": "ERROR",
-        "fullyIdle": true,
-        "stdout": "decision:continue + Recover reason (RUN not active)"
+        "note": "SYSTEM_MESSAGE Stop hook blocked termination: 自审修复第 1 轮",
+        "at": "2026-09-17T09:12:52Z"
       },
       {
-        "terminationReason": "ERROR",
-        "fullyIdle": true,
-        "stdout": "{}"
+        "note": "SYSTEM_MESSAGE Stop hook blocked termination: 自审修复第 2 轮",
+        "at": "2026-09-17T09:14:30Z"
       }
-    ],
-    "blocker": "host agent turn did not edit; Eligibility/PERMISSION_DENIED on turn (out of Autopilot scope per plan)"
+    ]
   },
-  "hostCapturedNoToolCallReplay": {
-    "note": "NOT full ship-gate — prior-day host Stop stdin (NO_TOOL_CALL + transcript_full.jsonl) through today's vendor with armed session",
-    "stdout": "decision:continue + Review fix round 1",
-    "sourceCapture": "~/tmp-agy-live-9wTITP/live-artifacts/Stop-last-stdin.json"
-  },
-  "artifactsDir": "plans/v0.10.1-antigravity-fix/live-artifacts/"
+  "historicalFailDisposables": [
+    "/Users/zhaoqingli/ap-agy-live-1fxxrj",
+    "/Users/zhaoqingli/ap-agy-live-HJWfJO"
+  ],
+  "artifactsDir": "plans/v0.10.1-antigravity-fix/live-artifacts/",
+  "transcriptPath": "/Users/zhaoqingli/.gemini/antigravity-cli/brain/379d6609-256a-442d-b431-74ca4131b72e/.system_generated/logs/transcript_full.jsonl"
 }
