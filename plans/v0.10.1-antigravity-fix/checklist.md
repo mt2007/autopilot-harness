@@ -12,7 +12,7 @@
 - [x] live-cli-stop-continue — 宿主活链：改非 ignore 文件 + Stop continue ≥1×；证据 PASS（`tmp/agy` `379d6609`；旧 disposable Eligibility 失败仅历史）
 - [x] changelog-bump-0-10-1 — CHANGELOG + 全包 → **0.10.1**（活链已 PASS，可 bump）
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
-- [ ] commit-local — conventional；勿 push/tag/publish
+- [x] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 「同意发 0.10.1」（活链已过；仅要发版同意）
 - [ ] push-tag-release — push/tag/GH Release `v0.10.1`
 - [ ] npm-publish-pnpm — `pnpm publish`
