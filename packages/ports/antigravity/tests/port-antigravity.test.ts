@@ -508,6 +508,21 @@ describe("port-antigravity adapters", () => {
     ).toBe(true);
     expect(
       isAntigravityStopCompletionReason({
+        terminationReason: "NO_TOOL_CALL",
+      }),
+    ).toBe(true);
+    expect(
+      isAntigravityStopCompletionReason({
+        termination_reason: "no_tool_call",
+      }),
+    ).toBe(true);
+    expect(
+      isAntigravityStopCompletionReason({
+        terminationReason: "  No_Tool_Call  ",
+      }),
+    ).toBe(true);
+    expect(
+      isAntigravityStopCompletionReason({
         terminationReason: "max_steps_exceeded",
       }),
     ).toBe(false);
@@ -523,6 +538,11 @@ describe("port-antigravity adapters", () => {
     );
     expect(
       normalizeAntigravityStopStatus({ terminationReason: "model_stop" }),
+    ).toBe("completed");
+    expect(
+      normalizeAntigravityStopStatus({
+        terminationReason: "NO_TOOL_CALL",
+      }),
     ).toBe("completed");
     expect(
       normalizeAntigravityStopStatus({
@@ -596,6 +616,12 @@ describe("port-antigravity adapters", () => {
     expect(
       normalizeAntigravityStopStatus({
         terminationReason: "model_stop",
+        error: "prior tool warning",
+      }),
+    ).toBe("completed");
+    expect(
+      normalizeAntigravityStopStatus({
+        terminationReason: "NO_TOOL_CALL",
         error: "prior tool warning",
       }),
     ).toBe("completed");
@@ -1530,6 +1556,47 @@ describe("port-antigravity adapters", () => {
       expect(cont.decision).toBe("continue");
       expect(typeof cont.reason).toBe("string");
       expect(String(cont.decision)).not.toBe("block");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("Stop NO_TOOL_CALL continues when armed and fullyIdle", () => {
+    const root = tmpRoot();
+    try {
+      fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+      writeChecklist(root, "demo", "# Checklist\n\n- [ ] a — A\n");
+      const store = new StateStore(root);
+      store.upsertSession({
+        conversation_id: "agy-no-tool-call",
+        project_root: root,
+        code_root: root,
+        platform: ANTIGRAVITY_PLATFORM,
+        phase: "executing",
+        track_id: "demo",
+        checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+        armed: 1,
+      });
+      store.markCodeEdited("agy-no-tool-call", () => "a");
+      const engine = new ReviewEngine(store, {
+        confirmRounds: 5,
+        reviewScope: "executing_only",
+        verifyEnabled: false,
+        verifyCommands: [],
+        maxIdleStops: 5,
+        maxErrorsBeforePause: 0,
+        projectRoot: root,
+        recoverDebounceMs: 0,
+      });
+
+      const cont = handleStop(engine, {
+        conversationId: "agy-no-tool-call",
+        fullyIdle: true,
+        terminationReason: "NO_TOOL_CALL",
+        executionNum: 1,
+      });
+      expect(cont.decision).toBe("continue");
+      expect(typeof cont.reason).toBe("string");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

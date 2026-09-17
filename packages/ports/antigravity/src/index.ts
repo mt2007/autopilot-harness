@@ -458,7 +458,8 @@ export function normalizeAntigravityStopStatus(
       reason === "end_turn" ||
       reason === "endturn" ||
       reason === "completed" ||
-      reason === "stop";
+      reason === "stop" ||
+      reason === "no_tool_call";
     if (!completionLike) {
       return "error";
     }
@@ -469,7 +470,9 @@ export function normalizeAntigravityStopStatus(
 /**
  * Completion-like Stop reasons may Autopilot-continue.
  * Empty / missing → allow (host often omits or uses model_stop).
- * Unknown non-empty reasons → false (fail closed; live may widen allow-list).
+ * Host live Stop may emit NO_TOOL_CALL (case-insensitive) when the turn ends
+ * without a tool call — treat as completion so armed sessions can continue.
+ * Unknown non-empty reasons → false (fail closed).
  */
 export function isAntigravityStopCompletionReason(
   payload: AntigravityStopPayload,
@@ -484,7 +487,8 @@ export function isAntigravityStopCompletionReason(
     r === "end_turn" ||
     r === "endturn" ||
     r === "completed" ||
-    r === "stop"
+    r === "stop" ||
+    r === "no_tool_call"
   ) {
     return true;
   }
