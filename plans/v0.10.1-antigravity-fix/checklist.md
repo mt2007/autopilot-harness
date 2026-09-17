@@ -13,7 +13,7 @@
 - [x] changelog-bump-0-10-1 — CHANGELOG + 全包 → **0.10.1**（活链已 PASS，可 bump）
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
 - [x] commit-local — conventional；勿 push/tag/publish
-- [ ] human-gate-confirm — 「同意发 0.10.1」（活链已过；仅要发版同意）
+- [x] human-gate-confirm — 「同意发 0.10.1」（活链已过；仅要发版同意）
 - [ ] push-tag-release — push/tag/GH Release `v0.10.1`
 - [ ] npm-publish-pnpm — `pnpm publish`
 - [ ] pin-upgrade-repo — pin → 0.10.1
