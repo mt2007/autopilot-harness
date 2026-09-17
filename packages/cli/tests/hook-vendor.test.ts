@@ -1953,6 +1953,103 @@ describe("hook vendor runtime", () => {
     expect(stopOut.decision).toBe("continue");
     expect(stopOut.reason).toBeTruthy();
 
+    // transcript_full.jsonl allowlist must work via PreInvocation prompt fallback
+    // (Stop continue does not depend on a valid transcriptPath).
+    const transcriptFullPath = path.join(transcriptDir, "transcript_full.jsonl");
+    expect(path.isAbsolute(transcriptFullPath)).toBe(true);
+    fs.writeFileSync(
+      transcriptFullPath,
+      `${JSON.stringify({ role: "user", text: "Autopilot ON" })}\n`,
+    );
+    const fullCid = "hook-antigravity-aaaa-bbbb-cccc-ddddeeee0003";
+    const fullOnProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: fullCid,
+          transcriptPath: transcriptFullPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(fullOnProc.status).toBe(0);
+    expect(JSON.parse(fullOnProc.stdout.trim() || "{}")).toEqual({});
+    const fullStore = new StateStore(root);
+    expect(fullStore.getSession(fullCid)?.platform).toBe("antigravity");
+    expect(fullStore.getSession(fullCid)?.phase).toBe("planning");
+    fullStore.close();
+
+    // Suffix must be exact — .bak twin with same ON text must not open a session.
+    const badFullPath = `${transcriptFullPath}.bak`;
+    fs.writeFileSync(
+      badFullPath,
+      `${JSON.stringify({ role: "user", text: "Autopilot ON" })}\n`,
+    );
+    const badCid = "hook-antigravity-aaaa-bbbb-cccc-ddddeeee0004";
+    const badOnProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "PreInvocation", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: badCid,
+          transcriptPath: badFullPath,
+          workspacePaths: [root],
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(badOnProc.status).toBe(0);
+    expect(JSON.parse(badOnProc.stdout.trim() || "{}")).toEqual({});
+    const badStore = new StateStore(root);
+    expect(badStore.getSession(badCid)).toBeNull();
+    badStore.close();
+
+    // Live host: NO_TOOL_CALL must continue via shipped vendor (stale bundle
+    // that only accepts model_stop would return {}).
+    const armedNoTool = new StateStore(root);
+    armedNoTool.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: "antigravity",
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "ag-alpha",
+      checklist_path: path.join(root, "plans", "ag-alpha", "checklist.md"),
+      reviewing_item_id: "a",
+    });
+    armedNoTool.updateReviewChain(cid, { code_edited: 1 });
+    armedNoTool.close();
+    const noToolProc = spawnSync(
+      process.execPath,
+      [hook, "--event", "Stop", "--platform", "antigravity"],
+      {
+        cwd: root,
+        input: JSON.stringify({
+          conversationId: cid,
+          fullyIdle: true,
+          terminationReason: "NO_TOOL_CALL",
+          executionNum: 2,
+        }),
+        encoding: "utf8",
+        timeout: 15_000,
+      },
+    );
+    expect(noToolProc.status).toBe(0);
+    const noToolOut = JSON.parse(noToolProc.stdout.trim() || "{}") as {
+      decision?: string;
+      reason?: string;
+    };
+    expect(noToolOut.decision).toBe("continue");
+    expect(noToolOut.reason).toBeTruthy();
+
     // fullyIdle false → {}
     const idleProc = spawnSync(
       process.execPath,
@@ -2010,6 +2107,18 @@ describe("hook vendor runtime", () => {
     expect(hookSrc).toMatch(
       /\[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f\]/,
     );
+    const vendorPath = path.join(
+      root,
+      ".autopilot",
+      "bin",
+      "vendor",
+      "runtime.mjs",
+    );
+    expect(fs.existsSync(vendorPath)).toBe(true);
+    const vendorSrc = fs.readFileSync(vendorPath, "utf8");
+    expect(vendorSrc).toMatch(/transcript_full\.jsonl/);
+    expect(vendorSrc).toMatch(/no_tool_call/);
+    expect(vendorSrc).toMatch(/\.agents\/bin\/\*\*/);
 
     // Layer-C: Cursor-shaped abort under Antigravity stamp → JSON {} (FSM halt,
     // no continue / inject leak).

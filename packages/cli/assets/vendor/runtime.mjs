@@ -2436,6 +2436,7 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 .factory/hooks.json
 .factory/skills/**
 .agents/hooks.json
+.agents/bin/**
 .agents/skills/**
 
 # Planning artifacts
@@ -10157,7 +10158,9 @@ function sanitizeAntigravityTranscriptPath(raw) {
   const normalized = p.replace(/\\/g, "/").replace(/\/+$/, "");
   const absolute = normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized);
   if (!absolute) return void 0;
-  if (!normalized.endsWith("/logs/transcript.jsonl")) return void 0;
+  if (!normalized.endsWith("/logs/transcript.jsonl") && !normalized.endsWith("/logs/transcript_full.jsonl")) {
+    return void 0;
+  }
   return normalized;
 }
 function isAntigravityFullyIdle(payload) {
@@ -10256,7 +10259,7 @@ function normalizeAntigravityStopStatus(payload, opts) {
   if (isAbortTextProbed(errTextRaw)) return "aborted";
   if (opts?.status === "completed") return "completed";
   if (errorField) {
-    const completionLike = reason === "model_stop" || reason === "end_turn" || reason === "endturn" || reason === "completed" || reason === "stop";
+    const completionLike = reason === "model_stop" || reason === "end_turn" || reason === "endturn" || reason === "completed" || reason === "stop" || reason === "no_tool_call";
     if (!completionLike) {
       return "error";
     }
@@ -10269,7 +10272,7 @@ function isAntigravityStopCompletionReason(payload) {
   if (typeof raw !== "string") return false;
   const r = raw.trim().toLowerCase();
   if (!r) return true;
-  if (r === "model_stop" || r === "end_turn" || r === "endturn" || r === "completed" || r === "stop") {
+  if (r === "model_stop" || r === "end_turn" || r === "endturn" || r === "completed" || r === "stop" || r === "no_tool_call") {
     return true;
   }
   return false;
