@@ -48,7 +48,7 @@ Autopilot needs three capabilities on a host: **prompt/submit** (ON/RUN), **edit
 
 | Priority | Host | Fit | Why this order |
 |---------:|------|-----|----------------|
-| **1 (next)** | **OpenCode** | Medium–Low | Extensibility is **plugin**-centric; first-party Stop-continue is weaker than Claude/Codex. Community Claude-compat plugins exist but are partial — prefer waiting for a stable first-party contract or use Runner. |
+| **1 (next)** | **OpenCode** | Medium–Low | Extensibility is **plugin**-centric; first-party Stop-continue is weaker than Claude/Codex. Community Claude-compat plugins exist but are partial — prefer waiting for a stable first-party contract or use Runner. **Track `v0.11-opencode` deferred (2026-09-17):** probed OpenCode **1.18.31** — no shipped `session.stopping` (upstream PRs still open); keep as **1 (next)** until stop-continue lands; do **not** ship an empty 0.11 port. |
 | **2** | **Runner** | Meta | Catch-all for hosts that cannot stop-continue (or when we want one external loop). Stub exists; ship after at least one more native hook port **or** when targeting a no-hooks host. |
 | — | **Pi** | Research | In-process JS/TS hook factories / event bus — different packaging model than shell-stdin ports. |
 | — | **Devin CLI** | Research / low | Cloud/agent product surface; local hook dogfood and durable project wiring are unclear. Prefer Runner or skip until a documented local hook API exists. |
