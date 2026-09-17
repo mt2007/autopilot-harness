@@ -16,6 +16,7 @@ export const PUBLIC_PACKAGE_JSON_PATHS = [
   "packages/ports/factory-droid/package.json",
   "packages/ports/hermes-agent/package.json",
   "packages/ports/antigravity/package.json",
+  "packages/ports/runner/package.json",
 ] as const;
 
 export const PUBLIC_PACKAGE_DIRS = PUBLIC_PACKAGE_JSON_PATHS.map((rel) =>
