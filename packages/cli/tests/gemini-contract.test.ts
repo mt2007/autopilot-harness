@@ -94,7 +94,7 @@ describe("gemini contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Gemini handlers without colliding with other hosts", () => {
+  it("vendor-entry aliases Gemini handlers", () => {
     expect(handleGeminiUserPromptSubmit).toBeTypeOf("function");
     expect(handleGeminiPostToolUse).toBeTypeOf("function");
     expect(handleGeminiStop).toBeTypeOf("function");

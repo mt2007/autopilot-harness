@@ -186,7 +186,7 @@ describe("hermes contract matrix", () => {
     return next;
   }
 
-  it("vendor-entry aliases Hermes handlers without colliding with other hosts", () => {
+  it("vendor-entry aliases Hermes handlers", () => {
     expect(handleHermesPreLlmCall).toBeTypeOf("function");
     expect(handleHermesPostToolCall).toBeTypeOf("function");
     expect(handleHermesPreVerify).toBeTypeOf("function");

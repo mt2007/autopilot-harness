@@ -378,7 +378,7 @@ export function handleUserPromptSubmit(
   }
 }
 
-/** Aliased export for vendor (never collide with Claude bare names). */
+/** Aliased export for vendor. */
 export const handleGeminiUserPromptSubmit = handleUserPromptSubmit;
 
 function handleUserPromptSubmitInner(

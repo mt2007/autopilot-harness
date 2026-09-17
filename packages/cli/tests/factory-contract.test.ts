@@ -141,7 +141,7 @@ describe("factory contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Factory handlers without colliding with other hosts", () => {
+  it("vendor-entry aliases Factory handlers", () => {
     expect(handleFactoryUserPromptSubmit).toBeTypeOf("function");
     expect(handleFactoryPostToolUse).toBeTypeOf("function");
     expect(handleFactoryStop).toBeTypeOf("function");

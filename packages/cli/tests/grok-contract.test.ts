@@ -80,7 +80,7 @@ describe("grok contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Grok handlers without colliding with Claude/Codex/Kimi/Copilot bare names", () => {
+  it("vendor-entry aliases Grok handlers", () => {
     expect(handleGrokUserPromptSubmit).toBeTypeOf("function");
     expect(handleGrokPostToolUse).toBeTypeOf("function");
     expect(handleGrokStop).toBeTypeOf("function");

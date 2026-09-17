@@ -80,7 +80,7 @@ describe("copilot contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Copilot handlers without colliding with Claude/Codex/Kimi/Grok bare names", () => {
+  it("vendor-entry aliases Copilot handlers", () => {
     expect(handleCopilotUserPromptSubmit).toBeTypeOf("function");
     expect(handleCopilotUserPromptTransformed).toBeTypeOf("function");
     expect(handleCopilotPostToolUse).toBeTypeOf("function");

@@ -168,7 +168,7 @@ describe("antigravity contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Antigravity handlers without colliding with other hosts", () => {
+  it("vendor-entry aliases Antigravity handlers", () => {
     expect(vendorHandleAntigravityPreInvocation).toBeTypeOf("function");
     expect(vendorHandleAntigravityPostToolUse).toBeTypeOf("function");
     expect(vendorHandleAntigravityStop).toBeTypeOf("function");

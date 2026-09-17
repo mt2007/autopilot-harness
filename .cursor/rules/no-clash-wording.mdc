@@ -1,0 +1,23 @@
+---
+description: Ban casual clash/collide/bare-names asides in docs, changelog, comments, and tests
+alwaysApply: true
+---
+
+# No clash-style naming asides
+
+Do **not** use casual naming-conflict asides like:
+
+- `clash` / `no clash with …`
+- `collide with … bare names` / `without colliding with …`
+- `Claude bare names` (as a parenthetical rationale)
+
+in CHANGELOG, docs, comments, test titles, commit messages, or followup copy.
+
+## Prefer
+
+- State the fact only: **aliased exports** (`handleCodex…` / `handleKimi…` / …).
+- Omit the “why not Claude bare names” parenthetical — the alias name is enough.
+
+## Allowed exception
+
+Timestamp / value equality in code (e.g. `pending_followup_at` **collides with** `expectedAt`) is fine — that is clock/identity language, not export-naming copy.

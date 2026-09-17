@@ -61,7 +61,7 @@ describe("codex contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Codex/Kimi handlers without colliding with Claude bare names", () => {
+  it("vendor-entry aliases Codex/Kimi handlers", () => {
     expect(handleCodexUserPromptSubmit).toBeTypeOf("function");
     expect(handleCodexPostToolUse).toBeTypeOf("function");
     expect(handleCodexStop).toBeTypeOf("function");

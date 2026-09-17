@@ -73,7 +73,7 @@ describe("kimi contract matrix", () => {
     root = "";
   });
 
-  it("vendor-entry aliases Kimi handlers without colliding with Claude/Codex bare names", () => {
+  it("vendor-entry aliases Kimi handlers", () => {
     expect(handleKimiUserPromptSubmit).toBeTypeOf("function");
     expect(handleKimiPostToolUse).toBeTypeOf("function");
     expect(handleKimiStop).toBeTypeOf("function");
