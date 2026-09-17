@@ -31,6 +31,7 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .factory/hooks.json
 .factory/skills/**
 .agents/hooks.json
+.agents/bin/**
 .agents/skills/**
 
 # Planning artifacts

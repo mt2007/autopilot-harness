@@ -175,9 +175,9 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor --prune-stale
 
 Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Claude `block`). **`fullyIdle !== true` → fail-open**. Host live Stop-continue is **unproven** on the v0.10 dogfood machine (CLI OAuth-blocked) — Autopilot marks Antigravity **Shipped (degraded)** until a firing surface proves ≥1× continue + edit arm, **or** human gate explicitly accepts degraded before publishing **0.10**:
 
-- Hooks: project **`.agents/hooks.json`** named `autopilot-harness` (PreInvocation + PostToolUse edit matcher + Stop; timeout **120**; relative command). Skills: **`.agents/skills/autopilot-*`** (**does not write `.agent/`**). **Auto-attach ≠ Autopilot ON**.
+- Hooks: project **`.agents/hooks.json`** named `autopilot-harness` (PreInvocation + PostToolUse edit matcher + Stop; timeout **120**; **`.agents/bin` shim** → `../../.autopilot/bin/…` via `import.meta.url` — **not** bare `../.autopilot`). Skills: **`.agents/skills/autopilot-*`** (**does not write `.agent/`**). **Auto-attach ≠ Autopilot ON**.
 - PreInvocation **has no prompt field** — triggers parse **`transcriptPath`** with a stateful cursor.
 - After install/upgrade: **reload Antigravity / new session** (IDE hooks may stay silent until reload; prefer **CLI**).
 - Gemini skills (if enabled): always **`.gemini/skills/autopilot-*`** even when Antigravity is also enabled — run **`/trust`** + **`/skills reload`**. Dual Antigravity+Gemini: both trees get `autopilot-*`.
-- `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs timeout/cap/IDE dual / missing skills / auto-attach tip.
+- `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs missing `.agents/bin` shim (or legacy `.autopilot/bin`), timeout/cap/IDE dual / missing skills / auto-attach tip.
 

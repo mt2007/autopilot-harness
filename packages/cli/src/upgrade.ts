@@ -793,8 +793,9 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     }
     if (wantAntigravity) {
       actions.push("refresh .agents/skills/autopilot-*");
+      actions.push("refresh .agents/bin/autopilot-harness-hook.mjs (shim)");
       actions.push(
-        `merge ${ANTIGRAVITY_HOOKS_REL_PATH} (Autopilot named block)`,
+        `merge ${ANTIGRAVITY_HOOKS_REL_PATH} (Autopilot named block; rewrite legacy .autopilot/bin → .agents/bin shim)`,
       );
     }
 

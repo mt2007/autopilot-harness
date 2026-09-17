@@ -84,6 +84,7 @@ import {
   stripAutopilotAntigravityHooks,
 } from "../src/init/antigravity-hooks-merge.js";
 import { installInitYes } from "../src/init/install.js";
+import { uninstallProject } from "../src/uninstall.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOOK_ASSET = path.resolve(
@@ -587,7 +588,7 @@ describe("antigravity contract matrix", () => {
         expect(h.type).toBe("command");
         expect(h.timeout).toBe(ANTIGRAVITY_HOOK_TIMEOUT_SEC);
         expect(h.command).toMatch(
-          /node \.autopilot\/bin\/autopilot-harness-hook\.mjs/,
+          /node \.agents\/bin\/autopilot-harness-hook\.mjs/,
         );
         expect(h.command).toMatch(/--platform antigravity/);
         expect(h.command).toMatch(/--event PostToolUse/);
@@ -602,7 +603,7 @@ describe("antigravity contract matrix", () => {
         expect(h.type).toBe("command");
         expect(h.timeout).toBe(ANTIGRAVITY_HOOK_TIMEOUT_SEC);
         expect(h.command).toMatch(
-          /node \.autopilot\/bin\/autopilot-harness-hook\.mjs/,
+          /node \.agents\/bin\/autopilot-harness-hook\.mjs/,
         );
         expect(h.command).toMatch(/--platform antigravity/);
         expect(h.command).toMatch(new RegExp(`--event ${event}`));
@@ -654,7 +655,118 @@ describe("antigravity contract matrix", () => {
     expect(antigravityAutopilotHasExpectedPostMatcher(onDisk)).toBe(true);
     expect(antigravityHooksUseRelativeCommand(onDisk)).toBe(true);
     expect(antigravityAutopilotHasOmittedOrSmallTimeout(onDisk)).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "bin", "autopilot-harness-hook.mjs"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, ".agent"))).toBe(false);
+  });
+
+  it("install writes cwd-agnostic .agents/bin shim (resolves real hook via import.meta.url)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const shim = path.join(
+      root,
+      ".agents",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    expect(fs.existsSync(shim)).toBe(true);
+    const cid = "hook-agy-shim-aaaa-bbbb-cccc-ddddeeee0001";
+    const runFrom = (cwd: string) => {
+      const proc = spawnSync(
+        process.execPath,
+        [shim, "--platform", "antigravity", "--event", "Stop"],
+        {
+          cwd,
+          input: JSON.stringify({
+            conversationId: cid,
+            fullyIdle: false,
+            workspacePaths: [root],
+          }),
+          encoding: "utf8",
+          timeout: 15_000,
+        },
+      );
+      if (proc.error) throw proc.error;
+      expect(proc.status).toBe(0);
+      expectAntigravitySilenceStdout(proc.stdout ?? "");
+    };
+    // Host may resolve relative command from project root or from .agents/.
+    runFrom(root);
+    runFrom(path.join(root, ".agents"));
+  });
+
+  it("uninstall removes Antigravity .agents/bin shim", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const shim = path.join(
+      root,
+      ".agents",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    expect(fs.existsSync(shim)).toBe(true);
+    const un = uninstallProject({ projectRoot: root, dryRun: false });
+    expect(un.ok).toBe(true);
+    if (!un.ok) return;
+    expect(fs.existsSync(shim)).toBe(false);
+    expect(
+      un.actions.some((a) =>
+        /\.agents\/bin\/autopilot-harness-hook\.mjs/.test(a),
+      ),
+    ).toBe(true);
+  });
+
+  it("uninstall skips symlink Antigravity shim without failing (hooks still strip)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const shim = path.join(
+      root,
+      ".agents",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    const outside = path.join(root, "outside-shim.mjs");
+    fs.writeFileSync(outside, "// outside\n", "utf8");
+    fs.unlinkSync(shim);
+    fs.symlinkSync(outside, shim);
+    const un = uninstallProject({ projectRoot: root, dryRun: false });
+    expect(un.ok).toBe(true);
+    if (!un.ok) return;
+    expect(
+      un.actions.some((a) =>
+        /skip \.agents\/bin\/autopilot-harness-hook\.mjs \(symlink\)/i.test(a),
+      ),
+    ).toBe(true);
+    // Symlink left in place (safeRemovePath does not follow/unlink links).
+    expect(fs.lstatSync(shim).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(root, ".agents", "hooks.json"))).toBe(false);
   });
 
   it("runner: injectSteps/Silence/Post {}; Stop fullyIdle; ten-way stamp cross", () => {

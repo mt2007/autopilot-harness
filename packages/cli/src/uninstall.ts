@@ -1587,6 +1587,28 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
     }
 
+    // Always drop Autopilot Antigravity shim when uninstalling that host (or
+    // leftover after hooks strip). Never touch foreign .agents content.
+    // Use safeRemovePath (symlink → skip, not throw) so a planted shim symlink
+    // cannot fail the whole uninstall after hooks were already stripped.
+    const antigravityShimPath = path.join(
+      projectRoot,
+      ".agents",
+      "bin",
+      "autopilot-harness-hook.mjs",
+    );
+    if (pathExistsViaLstat(antigravityShimPath)) {
+      found = true;
+      safeRemovePath(
+        projectRoot,
+        antigravityShimPath,
+        ".agents/bin/autopilot-harness-hook.mjs",
+        removed,
+        dryRun,
+        actions,
+      );
+    }
+
     // --- Kimi Code user-home config.toml (fingerprint only; never local.toml) ---
     const kimiHome = resolveKimiCodeHome();
     const kimiTomlPath = kimiConfigTomlPath(kimiHome);

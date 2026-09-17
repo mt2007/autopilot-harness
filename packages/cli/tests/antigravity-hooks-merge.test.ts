@@ -14,6 +14,7 @@ import {
   antigravityHooksFileIsVacant,
   antigravityHooksHavePlatformStamp,
   antigravityHooksUseRelativeCommand,
+  antigravityHooksUseShimCommand,
   antigravityAutopilotHasExpectedPostMatcher,
   hasCompleteAntigravityAutopilotHooks,
   mergeAntigravityHooks,
@@ -67,7 +68,7 @@ describe("antigravity hooks merge", () => {
         expect(g.hooks).toHaveLength(1);
         const h = g.hooks![0]!;
         expect(h.type).toBe("command");
-        expect(h.command).toMatch(/node \.autopilot\/bin\/autopilot-harness-hook\.mjs/);
+        expect(h.command).toMatch(/node \.agents\/bin\/autopilot-harness-hook\.mjs/);
         expect(h.command).toMatch(/--platform antigravity/);
         expect(h.command).toMatch(/--event PostToolUse/);
         expect(h.timeout).toBe(120);
@@ -75,12 +76,67 @@ describe("antigravity hooks merge", () => {
       } else {
         expect(g.matcher).toBeUndefined();
         expect(g.type).toBe("command");
-        expect(g.command).toMatch(/node \.autopilot\/bin\/autopilot-harness-hook\.mjs/);
+        expect(g.command).toMatch(/node \.agents\/bin\/autopilot-harness-hook\.mjs/);
         expect(g.command).toMatch(/--platform antigravity/);
         expect(g.command).toMatch(new RegExp(`--event ${event}`));
         expect(g.timeout).toBe(120);
       }
     }
+  });
+
+  it("rewrites legacy .autopilot/bin commands to .agents/bin shim on merge", () => {
+    const legacy = {
+      "autopilot-harness": {
+        enabled: true,
+        PreInvocation: [
+          {
+            type: "command",
+            command:
+              "node .autopilot/bin/autopilot-harness-hook.mjs --platform antigravity --event PreInvocation",
+            timeout: 120,
+          },
+        ],
+        PostToolUse: [
+          {
+            matcher: ANTIGRAVITY_POST_TOOL_USE_MATCHER,
+            hooks: [
+              {
+                type: "command",
+                command:
+                  "node .autopilot/bin/autopilot-harness-hook.mjs --platform antigravity --event PostToolUse",
+                timeout: 120,
+              },
+            ],
+          },
+        ],
+        Stop: [
+          {
+            type: "command",
+            command:
+              "node .autopilot/bin/autopilot-harness-hook.mjs --platform antigravity --event Stop",
+            timeout: 120,
+          },
+        ],
+      },
+    };
+    expect(antigravityHooksUseRelativeCommand(legacy)).toBe(true);
+    const merged = mergeAntigravityHooks(legacy);
+    expect(antigravityHooksUseShimCommand(merged)).toBe(true);
+    expect(antigravityHooksUseRelativeCommand(merged)).toBe(true);
+    const json = JSON.stringify(merged);
+    expect(json).toMatch(/node \.agents\/bin\/autopilot-harness-hook\.mjs/);
+    expect(json).not.toMatch(/node \.autopilot\/bin\/autopilot-harness-hook\.mjs/);
+    expect(json).not.toMatch(/\.\.\/\.autopilot/);
+  });
+
+  it("rejects bare ../.autopilot relative command for doctor gate", () => {
+    const bad = mergeAntigravityHooks(null);
+    const block = bad[ANTIGRAVITY_HOOK_BLOCK_NAME] as {
+      Stop: Array<{ command?: string }>;
+    };
+    block.Stop[0]!.command =
+      "node ../.autopilot/bin/autopilot-harness-hook.mjs --platform antigravity --event Stop";
+    expect(antigravityHooksUseRelativeCommand(bad)).toBe(false);
   });
 
   it("treats wrong/missing PostToolUse matcher as incomplete", () => {
@@ -367,7 +423,12 @@ describe("antigravity init wiring", () => {
     expect(block.PostToolUse[0].matcher).toBe(ANTIGRAVITY_POST_TOOL_USE_MATCHER);
     expect(block.PreInvocation[0].matcher).toBeUndefined();
     expect(block.Stop[0].timeout).toBe(120);
-    expect(block.Stop[0].command).toMatch(/node \.autopilot\/bin\//);
+    expect(block.Stop[0].command).toMatch(/node \.agents\/bin\//);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "bin", "autopilot-harness-hook.mjs"),
+      ),
+    ).toBe(true);
 
     for (const name of [
       "autopilot-on",
@@ -386,6 +447,7 @@ describe("antigravity init wiring", () => {
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.agents\/hooks\.json/);
+    expect(ignore).toMatch(/\.agents\/bin\/\*\*/);
     expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
@@ -445,6 +507,11 @@ describe("antigravity init wiring", () => {
     const file = JSON.parse(fs.readFileSync(agentsPath, "utf8"));
     expect(hasCompleteAntigravityAutopilotHooks(file)).toBe(true);
     expect(
+      fs.existsSync(
+        path.join(root, ".agents", "bin", "autopilot-harness-hook.mjs"),
+      ),
+    ).toBe(true);
+    expect(
       fs.existsSync(path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md")),
     ).toBe(true);
 
@@ -484,6 +551,11 @@ describe("antigravity init wiring", () => {
     expect(fs.existsSync(sibling)).toBe(true);
     expect(JSON.parse(fs.readFileSync(sibling, "utf8")).keep).toBe(true);
     expect(fs.existsSync(hooksPath)).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(agentsDir, "bin", "autopilot-harness-hook.mjs"),
+      ),
+    ).toBe(false);
     const after = JSON.parse(fs.readFileSync(hooksPath, "utf8"));
     expect(antigravityHooksContainAutopilot(after)).toBe(false);
     expect(JSON.stringify(after["foreign-block"])).toMatch(/echo keep-pre/);

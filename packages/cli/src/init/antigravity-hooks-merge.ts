@@ -2,7 +2,8 @@
  * Merge Autopilot hooks into Antigravity project `.agents/hooks.json`.
  * Named top-level block (`autopilot-harness`); preserves foreign named blocks.
  * PreInvocation / Stop: flat handler arrays. PostToolUse: matcher groups.
- * Always writes timeout: 120. Relative `node .autopilot/bin/…` command.
+ * Always writes timeout: 120. Commands call `.agents/bin/` shim (cwd-agnostic
+ * via import.meta.url → `../../.autopilot/bin/…`); never bare `../.autopilot`.
  */
 import {
   ANTIGRAVITY_HOOK_BLOCK_NAME as PORT_BLOCK_NAME,
@@ -11,7 +12,6 @@ import {
 } from "@autopilot-harness/port-antigravity";
 import {
   HOOK_PLATFORM_ANTIGRAVITY,
-  autopilotHookCommandLine,
   commandHasPlatformStamp,
   isAutopilotCommand,
 } from "./hooks-merge.js";
@@ -36,6 +36,20 @@ export const ANTIGRAVITY_POST_TOOL_USE_MATCHER = PORT_POST_TOOL_MATCHER;
 export const ANTIGRAVITY_HOOK_TIMEOUT_SEC = PORT_TIMEOUT_SEC;
 
 export const ANTIGRAVITY_HOOKS_REL_PATH = [".agents", "hooks.json"].join("/");
+
+/** Installed shim path (relative to project root). */
+export const ANTIGRAVITY_HOOK_SHIM_REL_PATH = [
+  ".agents",
+  "bin",
+  "autopilot-harness-hook.mjs",
+].join("/");
+
+/** Canonical hooks.json command prefix (shim entry). */
+export const ANTIGRAVITY_HOOK_SHIM_COMMAND_PREFIX = `node ${ANTIGRAVITY_HOOK_SHIM_REL_PATH}`;
+
+/** Legacy 0.10.0 command prefix (rewrite on init/upgrade). */
+export const ANTIGRAVITY_HOOK_LEGACY_COMMAND_PREFIX =
+  "node .autopilot/bin/autopilot-harness-hook.mjs";
 
 /** Never write this legacy skills/hooks path (research lock). */
 export const ANTIGRAVITY_LEGACY_AGENT_DIR = ".agent";
@@ -83,9 +97,41 @@ function isUnsafeKey(key: string): boolean {
   return key === "__proto__" || key === "prototype" || key === "constructor";
 }
 
-/** Relative Autopilot command (cwd = project root per research). */
+/** True when command uses the `.agents/bin/` shim entry. */
+export function isAntigravityShimHookCommand(
+  cmd: string | undefined,
+): boolean {
+  return (
+    typeof cmd === "string" && cmd.includes(ANTIGRAVITY_HOOK_SHIM_COMMAND_PREFIX)
+  );
+}
+
+/**
+ * True when command uses legacy project-root-relative `.autopilot/bin/…`
+ * (not abs / `$ENV` / bare `../.autopilot`).
+ */
+export function isAntigravityLegacyRelativeHookCommand(
+  cmd: string | undefined,
+): boolean {
+  return (
+    typeof cmd === "string" &&
+    cmd.includes(ANTIGRAVITY_HOOK_LEGACY_COMMAND_PREFIX)
+  );
+}
+
+/**
+ * Relative Autopilot command via `.agents/bin/` shim (real hook resolved by
+ * shim file path — not host cwd).
+ */
 export function autopilotAntigravityHookCommandLine(event: string): string {
-  return autopilotHookCommandLine(HOOK_PLATFORM_ANTIGRAVITY, event);
+  if (typeof event !== "string") {
+    throw new Error("autopilotAntigravityHookCommandLine: invalid event");
+  }
+  const safeEvent = event.replace(/[^A-Za-z0-9._+-]/g, "").slice(0, 64);
+  if (!safeEvent || safeEvent !== event) {
+    throw new Error("autopilotAntigravityHookCommandLine: invalid event");
+  }
+  return `${ANTIGRAVITY_HOOK_SHIM_COMMAND_PREFIX} --platform ${HOOK_PLATFORM_ANTIGRAVITY} --event ${safeEvent}`;
 }
 
 /** Flat handler for PreInvocation / Stop (timeout 120). */
@@ -575,7 +621,7 @@ export function antigravityAutopilotHasOmittedOrSmallTimeout(
   return false;
 }
 
-/** True when every Autopilot command uses relative `.autopilot/bin/…` (no $ENV abs). */
+/** True when every Autopilot command uses shim or legacy relative entry. */
 export function antigravityHooksUseRelativeCommand(
   file: AntigravityHooksFile,
 ): boolean {
@@ -598,9 +644,44 @@ export function antigravityHooksUseRelativeCommand(
       for (const cmd of cmds) {
         if (!isAutopilotCommand(cmd)) continue;
         seen += 1;
-        if (!cmd.includes("node .autopilot/bin/autopilot-harness-hook.mjs")) {
+        // Reject bare ../.autopilot (CLI/IDE cwd split — not supported).
+        if (/(^|[\s"'=])\.\.\/\.autopilot\b/.test(cmd)) return false;
+        if (
+          !isAntigravityShimHookCommand(cmd) &&
+          !isAntigravityLegacyRelativeHookCommand(cmd)
+        ) {
           return false;
         }
+      }
+    }
+  }
+  return seen > 0;
+}
+
+/** True when every Autopilot command already uses the `.agents/bin/` shim. */
+export function antigravityHooksUseShimCommand(
+  file: AntigravityHooksFile,
+): boolean {
+  let seen = 0;
+  const raw = file[ANTIGRAVITY_HOOK_BLOCK_NAME];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const block = raw as AntigravityHookBlock;
+  for (const event of ANTIGRAVITY_AUTOPILOT_EVENTS) {
+    const entries = Array.isArray(block[event])
+      ? (block[event] as AntigravityMatcherGroup[])
+      : [];
+    for (const g of entries) {
+      const cmds: string[] = [];
+      if (typeof g.command === "string") cmds.push(g.command);
+      if (Array.isArray(g.hooks)) {
+        for (const h of g.hooks) {
+          if (typeof h?.command === "string") cmds.push(h.command);
+        }
+      }
+      for (const cmd of cmds) {
+        if (!isAutopilotCommand(cmd)) continue;
+        seen += 1;
+        if (!isAntigravityShimHookCommand(cmd)) return false;
       }
     }
   }

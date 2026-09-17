@@ -380,10 +380,18 @@ describe("ten-host Antigravity cross-fire matrix", () => {
     expect(ANTIGRAVITY_POST_TOOL_USE_MATCHER).toMatch(/write_to_file/);
     expect(agyRaw).toMatch(/--platform antigravity(?:\s|$)/);
     expect(agyRaw).toMatch(/"timeout"\s*:\s*120/);
+    expect(agyRaw).toMatch(/node \.agents\/bin\/autopilot-harness-hook\.mjs/);
+    expect(agyRaw).not.toMatch(/node \.autopilot\/bin\/autopilot-harness-hook\.mjs/);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "bin", "autopilot-harness-hook.mjs"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, ".agent"))).toBe(false);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.agents\/hooks\.json/);
+    expect(ignore).toMatch(/\.agents\/bin\/\*\*/);
     expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(

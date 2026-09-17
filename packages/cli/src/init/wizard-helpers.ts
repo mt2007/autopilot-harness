@@ -590,7 +590,7 @@ export function formatPostInstallOutro(
       return `You're all set — in ${name}, try /autopilot-on (skills under $HERMES_HOME/skills) or line-start triggers.on / triggers.run. Hooks live in $HERMES_HOME/config.yaml (default ~/.hermes; timeout 120; relative command; agent.max_verify_nudges ≥32). pre_verify is edit-only (no product edit → pending/RESUME). Consent/non-TTY: approve hooks or use --accept-hooks / HERMES_ACCEPT_HOOKS (Autopilot does not set hooks_auto_accept). After install: reload Hermes and run hermes hooks doctor.`;
     }
     if (id === "antigravity") {
-      return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run. Hooks live in .agents/hooks.json (named autopilot-harness block; timeout 120; relative command). After install/upgrade: reload Antigravity / start a new session (IDE tip: hooks may be silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`;
+      return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run. Hooks live in .agents/hooks.json (named autopilot-harness block; timeout 120; .agents/bin shim). After install/upgrade: reload Antigravity / start a new session (IDE tip: hooks may be silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`;
     }
     return `You're all set — try /autopilot-on in ${name}.`;
   }
@@ -659,7 +659,7 @@ export function formatHostActivationTips(
       );
     } else if (id === "antigravity") {
       tips.push(
-        `${host}: Autopilot writes .agents/hooks.json (named autopilot-harness block; PreInvocation+PostToolUse+Stop; timeout 120; relative node .autopilot/bin/… --platform antigravity) and .agents/skills/autopilot-* (does not write .agent/). After install/upgrade: reload Antigravity or start a new session (IDE hooks may stay silent until reload). Auto-attach ≠ Autopilot ON — still /autopilot-on or line-start triggers.on / triggers.run.`,
+        `${host}: Autopilot writes .agents/hooks.json (named autopilot-harness block; PreInvocation+PostToolUse+Stop; timeout 120; node .agents/bin/autopilot-harness-hook.mjs shim → ../../.autopilot/bin/… via import.meta.url — not bare ../.autopilot; --platform antigravity) and .agents/skills/autopilot-* (does not write .agent/). After install/upgrade: reload Antigravity or start a new session (IDE hooks may stay silent until reload). Auto-attach ≠ Autopilot ON — still /autopilot-on or line-start triggers.on / triggers.run.`,
       );
     } else {
       tips.push(
@@ -751,7 +751,7 @@ function hostActivationPlainLines(
       } else if (id === "antigravity") {
         lines.push(
           `在 ${host} 中试用 /autopilot-on（skills 在 .agents/skills）或行首 triggers.on / triggers.run。`,
-          `hooks 写 .agents/hooks.json（具名 autopilot-harness；timeout 120；相对 command；不写 .agent/）。安装/升级后请 reload 或新开会话（IDE tip：未 reload 时 hooks 可能不响）。auto-attach ≠ Autopilot ON — 仍需 /autopilot-on 或行首触发。`,
+          `hooks 写 .agents/hooks.json（具名 autopilot-harness；timeout 120；.agents/bin shim；不写 .agent/）。安装/升级后请 reload 或新开会话（IDE tip：未 reload 时 hooks 可能不响）。auto-attach ≠ Autopilot ON — 仍需 /autopilot-on 或行首触发。`,
         );
       } else {
         lines.push(
@@ -807,7 +807,7 @@ function hostActivationPlainLines(
     } else if (id === "antigravity") {
       lines.push(
         `In ${host}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run.`,
-        `Hooks are written to .agents/hooks.json (named autopilot-harness block; timeout 120; relative command; does not write .agent/). After install/upgrade: reload or start a new session (IDE tip: hooks may stay silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`,
+        `Hooks are written to .agents/hooks.json (named autopilot-harness block; timeout 120; .agents/bin shim; does not write .agent/). After install/upgrade: reload or start a new session (IDE tip: hooks may stay silent until reload). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`,
       );
     } else {
       lines.push(

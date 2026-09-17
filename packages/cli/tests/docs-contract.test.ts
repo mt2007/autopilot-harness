@@ -261,6 +261,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/decision:"continue"|decision:continue/);
     expect(tips).toMatch(/fullyIdle/);
     expect(tips).toMatch(/\.agents\/hooks\.json/);
+    expect(tips).toMatch(/\.agents\/bin|import\.meta\.url|shim/i);
     expect(tips).toMatch(/transcriptPath|PreInvocation/);
     expect(tips).toMatch(/auto-attach|Auto-attach/);
     expect(tips).toMatch(/degraded|human gate|0\.10/);
@@ -363,6 +364,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(ignore).toMatch(/\.gemini\/skills\/\*\*/);
     expect(ignore).toMatch(/\.factory\/skills\/\*\*/);
     expect(ignore).toMatch(/\.agents\/hooks\.json/);
+    expect(ignore).toMatch(/\.agents\/bin\/\*\*/);
     expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
   });
 

@@ -536,6 +536,7 @@ describe("bundled templates for npm publish", () => {
     }
     expect(list).toContain("templates/.autopilotignore");
     expect(list).toContain("autopilot-harness-hook.mjs");
+    expect(list).toContain("antigravity-hook-shim.mjs");
     expect(list).toContain("vendor/runtime.mjs");
     const migDir = path.join(cliRoot, "../core/migrations");
     const migFiles = fs

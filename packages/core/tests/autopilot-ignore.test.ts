@@ -132,6 +132,12 @@ describe("isAutopilotIgnoredPath", () => {
     ).toBe(true);
     expect(
       isAutopilotIgnoredPath(
+        ".agents/bin/autopilot-harness-hook.mjs",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
         ".agents/skills/autopilot-on/SKILL.md",
         DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
       ),

@@ -136,10 +136,12 @@ import {
   ANTIGRAVITY_HOOKS_REL_PATH,
   ANTIGRAVITY_HOOK_BLOCK_NAME,
   ANTIGRAVITY_HOOK_TIMEOUT_SEC,
+  ANTIGRAVITY_HOOK_SHIM_REL_PATH,
   antigravityAutopilotHasOmittedOrSmallTimeout,
   antigravityHooksContainAutopilot,
   antigravityHooksHavePlatformStamp,
   antigravityHooksUseRelativeCommand,
+  antigravityHooksUseShimCommand,
   antigravityAutopilotHasExpectedPostMatcher,
   hasCompleteAntigravityAutopilotHooks,
   summarizeAntigravityAutopilotHooks,
@@ -1969,6 +1971,7 @@ export function runDoctor(
           const usesRelative = antigravityHooksUseRelativeCommand(file);
           const hasPostMatcher =
             antigravityAutopilotHasExpectedPostMatcher(file);
+          let shimFileMissingOrBad = false;
           const blockRaw = file[ANTIGRAVITY_HOOK_BLOCK_NAME];
           const blockDisabled =
             blockRaw &&
@@ -1999,8 +2002,40 @@ export function runDoctor(
           }
           if (missingEvents.length === 0 && !usesRelative) {
             lines.push(
-              "WARN  Autopilot Antigravity hooks missing relative node .autopilot/bin/… command — run upgrade",
+              "WARN  Autopilot Antigravity hooks missing .agents/bin shim (or legacy .autopilot/bin) relative command — run upgrade",
             );
+          }
+          if (
+            missingEvents.length === 0 &&
+            antigravityHooksUseShimCommand(file)
+          ) {
+            const shimPath = path.join(
+              root,
+              ...ANTIGRAVITY_HOOK_SHIM_REL_PATH.split("/"),
+            );
+            try {
+              assertNotSymlink(shimPath, ANTIGRAVITY_HOOK_SHIM_REL_PATH);
+              const shimSt = fs.lstatSync(shimPath);
+              if (!shimSt.isFile()) {
+                shimFileMissingOrBad = true;
+                lines.push(
+                  `WARN  ${ANTIGRAVITY_HOOK_SHIM_REL_PATH} is not a regular file — run upgrade`,
+                );
+              }
+            } catch (err) {
+              shimFileMissingOrBad = true;
+              const code = (err as NodeJS.ErrnoException)?.code;
+              if (code === "ENOENT") {
+                lines.push(
+                  `WARN  ${ANTIGRAVITY_HOOK_SHIM_REL_PATH} missing — run upgrade`,
+                );
+              } else {
+                const msg = err instanceof Error ? err.message : String(err);
+                lines.push(
+                  `WARN  ${ANTIGRAVITY_HOOK_SHIM_REL_PATH} unreadable (${safeDisplayToken(msg, "error")}) — run upgrade`,
+                );
+              }
+            }
           }
           if (blockDisabled) {
             lines.push(
@@ -2008,12 +2043,14 @@ export function runDoctor(
             );
           }
           // Reload tip only when Autopilot coverage + runnable fingerprint are present
-          // (wrong stamp/matcher/disabled need init --force or enable, not reload).
+          // (wrong stamp/matcher/disabled/non-relative/missing shim → init --force / enable / upgrade, not reload).
           if (
             missingEvents.length === 0 &&
             hasStamp &&
             hasPostMatcher &&
-            !blockDisabled
+            !blockDisabled &&
+            usesRelative &&
+            !shimFileMissingOrBad
           ) {
             lines.push(
               "WARN  Reload Antigravity or open a new session after install or upgrade so Autopilot hooks reload",
@@ -2027,6 +2064,7 @@ export function runDoctor(
             usesRelative &&
             hasPostMatcher &&
             !blockDisabled &&
+            !shimFileMissingOrBad &&
             hasCompleteAntigravityAutopilotHooks(file)
           ) {
             lines.push(`OK    ${ANTIGRAVITY_HOOKS_REL_PATH} Autopilot entries`);

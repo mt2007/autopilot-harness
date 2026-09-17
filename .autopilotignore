@@ -27,6 +27,7 @@
 .factory/hooks.json
 .factory/skills/**
 .agents/hooks.json
+.agents/bin/**
 .agents/skills/**
 
 # Planning artifacts

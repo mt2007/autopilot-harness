@@ -812,6 +812,7 @@ MUTATED_FACTORY
     expect(after).toMatch(/\.gemini\/skills\/\*\*/);
     expect(after).toMatch(/\.factory\/skills\/\*\*/);
     expect(after).toMatch(/\.agents\/skills\/\*\*/);
+    expect(after).toMatch(/\.agents\/bin\/\*\*/);
     expectAllSkills(root, ".gemini");
     expectNoSkills(root, ".factory");
     expectNoSkills(root, ".agents");

@@ -4464,7 +4464,7 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     expect(joined).not.toMatch(/Reload Antigravity|new session/i);
   });
 
-  it("WARNs when Antigravity hooks omit relative .autopilot/bin command", () => {
+  it("WARNs when Antigravity hooks omit relative .agents/bin shim (and legacy)", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -4481,7 +4481,7 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     fs.writeFileSync(
       hooksPath,
       raw.replaceAll(
-        "node .autopilot/bin/autopilot-harness-hook.mjs",
+        "node .agents/bin/autopilot-harness-hook.mjs",
         "node /abs/.autopilot/bin/autopilot-harness-hook.mjs",
       ),
       "utf8",
@@ -4490,9 +4490,37 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(
-      /WARN\s+Autopilot Antigravity hooks missing relative node \.autopilot\/bin/i,
+      /WARN\s+Autopilot Antigravity hooks missing \.agents\/bin shim \(or legacy \.autopilot\/bin\)/i,
     );
     expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+    expect(joined).not.toMatch(
+      /WARN\s+Reload Antigravity or open a new session after install or upgrade so Autopilot hooks reload/,
+    );
+  });
+
+  it("WARNs when Antigravity hooks.json points at shim but shim file is missing", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "antigravity",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.unlinkSync(
+      path.join(root, ".agents", "bin", "autopilot-harness-hook.mjs"),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+\.agents\/bin\/autopilot-harness-hook\.mjs missing/i,
+    );
+    expect(joined).not.toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
+    expect(joined).not.toMatch(/Reload Antigravity|new session/i);
   });
 
   it("WARNs Antigravity timeout below 120 and withholds OK", () => {

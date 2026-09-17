@@ -356,6 +356,14 @@ function resolveHookAsset(cliRoot: string): string | null {
   return candidates.find((p) => isRealRegularFile(p)) ?? null;
 }
 
+function resolveAntigravityHookShimAsset(cliRoot: string): string | null {
+  const candidates = [
+    path.join(cliRoot, "assets", "antigravity-hook-shim.mjs"),
+    path.join(cliRoot, "dist", "assets", "antigravity-hook-shim.mjs"),
+  ];
+  return candidates.find((p) => isRealRegularFile(p)) ?? null;
+}
+
 function resolveVendorRoot(cliRoot: string): string | null {
   const candidates = [
     path.join(cliRoot, "assets", "vendor"),
@@ -508,6 +516,28 @@ function copyHookAsset(
     hookDest,
     ".autopilot/bin/autopilot-harness-hook.mjs",
   );
+}
+
+function copyAntigravityHookShim(
+  cliRoot: string,
+  projectRoot: string,
+): string {
+  const src = resolveAntigravityHookShimAsset(cliRoot);
+  if (!src) {
+    throw new Error("Missing antigravity-hook-shim.mjs asset in CLI package");
+  }
+  const agentsBin = path.join(projectRoot, ".agents", "bin");
+  const shimDest = path.join(agentsBin, "autopilot-harness-hook.mjs");
+  mkdirRealDirSync(agentsBin, ".agents/bin/", projectRoot);
+  assertNotSymlink(shimDest, ".agents/bin/autopilot-harness-hook.mjs");
+  assertParentDirInProject(projectRoot, shimDest, ".agents/bin/");
+  copyFileReplaceSync(src, shimDest);
+  assertWrittenInsideProject(
+    projectRoot,
+    shimDest,
+    ".agents/bin/autopilot-harness-hook.mjs",
+  );
+  return path.relative(projectRoot, shimDest);
 }
 
 type HooksRead =
@@ -1360,6 +1390,12 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
     return {
       ok: false,
       error: "Missing autopilot-harness-hook.mjs asset in CLI package",
+    };
+  }
+  if (!resolveAntigravityHookShimAsset(cliRoot)) {
+    return {
+      ok: false,
+      error: "Missing antigravity-hook-shim.mjs asset in CLI package",
     };
   }
   if (!resolveVendorRoot(cliRoot)) {
@@ -2405,6 +2441,17 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     if (mergedAntigravity) {
       mkdirRealDirSync(agentsDir, ".agents/", projectRoot);
       assertRealpathInside(projectRoot, agentsDir, ".agents/");
+      try {
+        const shimRel = copyAntigravityHookShim(cliRoot, projectRoot);
+        if (!written.includes(shimRel)) written.push(shimRel);
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          ok: false,
+          error: `Cannot write Antigravity hook shim: ${msg}`,
+        };
+      }
       writeFileAtomic(
         antigravityHooksPath,
         JSON.stringify(mergedAntigravity, null, 2) + "\n",
