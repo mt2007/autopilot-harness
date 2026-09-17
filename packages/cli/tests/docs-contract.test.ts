@@ -1513,6 +1513,19 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0101).toMatch(/\.agents\/bin|shim/i);
     expect(section0101).toMatch(/live-proved|0\.10\.1/);
     expect(section0101).toMatch(/pnpm publish|pnpm pack/i);
+    const section012 = changelogSection(log, "0.12.0");
+    expect(section012).toMatch(/port-runner|@autopilot-harness\/port-runner/i);
+    expect(section012).toMatch(/Shipped \(meta\)|Runner \(meta\)/i);
+    expect(section012).toMatch(/runner start|runner\.command/i);
+    expect(section012).toMatch(/one_executor/);
+    expect(section012).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(section012).toMatch(/skip 0\.11|跳过 0\.11|skip 0\.11\.x/i);
+    expect(section012).toMatch(/OpenCode/);
+    expect(section012).toMatch(
+      /ports[\s\S]*runner[\s\S]*→\s*cli|ports \(cursor[\s\S]*runner\)/i,
+    );
+    expect(section012).toMatch(/pnpm publish|pnpm pack/i);
+    expect(log).not.toMatch(/## \[0\.11(\.\d+)?\]/);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
     expect(unreleased).not.toMatch(/handleCopilot/i);
@@ -1527,6 +1540,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/handleHermes/i);
     expect(unreleased).not.toMatch(/docs-antigravity-shipped/i);
     expect(unreleased).not.toMatch(/handleAntigravity/i);
+    expect(unreleased).not.toMatch(/docs-runner-shipped/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
@@ -1561,13 +1575,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, and Antigravity/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Runner/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, and Antigravity/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Runner/,
     );
     expect(cliPkg.keywords).toEqual(
       expect.arrayContaining([
@@ -1581,6 +1595,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "factory-droid",
         "hermes-agent",
         "antigravity",
+        "runner",
       ]),
     );
     const kimiPkg = JSON.parse(

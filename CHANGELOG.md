@@ -9,6 +9,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-09-18
+
+### Added
+
+- **Runner (meta)** (`@autopilot-harness/port-runner` public): external CLI loop for hosts without usable in-host Stop-continue — `npx @autopilot-harness/cli runner start|status`; **`--run [slug]`**; resume without `--run` when pending/executing and **not paused**; **`runner.command` required** (no fake default; blank → start **FAIL** + doctor **WARN**); CliDriver/MockDriver; first turn = executing summary + `firstUnchecked`; later = pending tip; dirty-arm + in-process `handleStop` (`platform:"runner"`, `loopCount`). **Not** a `--platform runner` hook stamp (dispatch stays **ten-way**). **`--on` / planning-in-runner deferred** (v1).
+- **Init / upgrade / uninstall / doctor** for Runner: installable `{ id: runner, surface: runner }`; writes `runner:` keys (`max_iterations` default **32**; command empty / commented examples); doctor WARNs empty command, small `max_iterations` (&lt;8), and **Runner + hook host under `one_executor`**; `--add-platform runner`.
+- **docs-runner-shipped**: Runner marked **Shipped (meta)** across README(+zh-CN), hosts, architecture, config, troubleshooting, and `packages/cli/README.md`; **`one_executor`** mutual block with hook hosts; paused before needPick (exit **1** ≠ needPick exit **2**); cwd / `prompt_mode` / `max_iterations` fail-closed; trusted `command`+`env` with **`shell: false`**; live smoke may be **waived**; **OpenCode** remains **1 (next)**.
+- Contract / CLI tests for runner mock loop, empty-start, needPick/busy/paused gates, docs-contract, and public package matrix includes `packages/ports/runner/package.json`.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.12.0** public packages.
+- **Versioning**: ship **0.12.0** and **skip 0.11.x** — OpenCode host work was deferred (no **0.11** release); next roadmap host remains **OpenCode**.
+
 ## [0.10.1] — 2026-09-17
 
 ### Fixed

@@ -5935,6 +5935,12 @@ function applyRun(store, conversationId, projectRoot, opts) {
     projectRoot,
     opts?.platform
   );
+  if (session.paused !== 0) {
+    return {
+      ok: false,
+      userMessage: "Cannot start executing: session paused."
+    };
+  }
   const resolved = resolveRunSlug(
     store,
     session,
@@ -5987,7 +5993,7 @@ Reply with a number or /autopilot-run <slug>.`
   const gate = canEnterExecuting({
     slug,
     checklistPath,
-    paused: session.paused === 1,
+    paused: session.paused !== 0,
     projectRoot
   });
   if (!gate.ok) {
@@ -6015,7 +6021,17 @@ Reply with a number or /autopilot-run <slug>.`
           };
         }
       }
-      const fresh = store.getSession(conversationId);
+      const locked = store.getSession(conversationId);
+      if (locked && locked.paused !== 0) {
+        return {
+          commit: false,
+          value: {
+            ok: false,
+            userMessage: "Cannot start executing: session paused."
+          }
+        };
+      }
+      const fresh = locked ?? store.getSession(conversationId);
       const alreadyExecutingSameTrack = fresh?.phase === "executing" && fresh.armed === 1 && fresh.paused === 0 && fresh.track_id === slug && sameChecklistBinding(fresh.checklist_path, checklistPath, projectRoot);
       upsertTrack(store, slug, checklistPath, plansDir, projectRoot);
       const updated = store.upsertSession({
