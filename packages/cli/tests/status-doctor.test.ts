@@ -4308,7 +4308,7 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     expect(lines.join("\n")).toMatch(/OK\s+plans \(work\/plans\/\)/);
   });
 
-  it("OKs Antigravity Autopilot entries and WARNs cap + IDE + auto-attach + reload", () => {
+  it("OKs Antigravity Autopilot entries and WARNs cap + IDE + CLI workspace + auto-attach + reload", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -4326,6 +4326,9 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     expect(joined).toMatch(/OK\s+\.agents\/hooks\.json Autopilot entries/);
     expect(joined).toMatch(/Antigravity Stop-continue: no documented raise/i);
     expect(joined).toMatch(/IDE tip|hooks may stay silent/i);
+    expect(joined).toMatch(
+      /CLI tip:.*--add-dir|mount the instrumented project as a workspace/i,
+    );
     expect(joined).toMatch(/Auto-attach.*Autopilot ON/i);
     expect(joined).toMatch(/Reload Antigravity|new session/i);
     expect(joined).toMatch(/OK\s+skills \(5\)/);

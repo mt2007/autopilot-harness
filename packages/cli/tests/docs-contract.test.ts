@@ -263,6 +263,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/\.agents\/hooks\.json/);
     expect(tips).toMatch(/\.agents\/bin|import\.meta\.url|shim/i);
     expect(tips).toMatch(/transcriptPath|PreInvocation/);
+    expect(tips).toMatch(/--add-dir|CLI workspace|loaded 0/i);
     expect(tips).toMatch(/auto-attach|Auto-attach/);
     expect(tips).toMatch(/degraded|human gate|0\.10/);
     // Dual default: missing/invalid → executing_only; fresh init → project

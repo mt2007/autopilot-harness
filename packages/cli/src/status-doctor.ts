@@ -1933,7 +1933,7 @@ export function runDoctor(
   );
   if (wantAntigravity) {
     const antigravityHooksPath = path.join(root, ".agents", "hooks.json");
-    // Cap / IDE / auto-attach tips always when this installable host is enabled.
+    // Cap / IDE / CLI workspace / auto-attach tips always when this installable host is enabled.
     if (!ANTIGRAVITY_STOP_CAP_RAISE_FOUND) {
       lines.push(
         "WARN  Antigravity Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs on long review",
@@ -1941,6 +1941,9 @@ export function runDoctor(
     }
     lines.push(
       "WARN  Antigravity IDE tip: hooks may stay silent until reload — prefer a firing surface (CLI) or reload IDE after install/upgrade",
+    );
+    lines.push(
+      "WARN  Antigravity CLI tip: mount the instrumented project as a workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0)",
     );
     lines.push(
       "WARN  Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger after skills appear",

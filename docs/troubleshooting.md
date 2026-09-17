@@ -178,6 +178,7 @@ Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Cl
 - Hooks: project **`.agents/hooks.json`** named `autopilot-harness` (PreInvocation + PostToolUse edit matcher + Stop; timeout **120**; **`.agents/bin` shim** → `../../.autopilot/bin/…` via `import.meta.url` — **not** bare `../.autopilot`). Skills: **`.agents/skills/autopilot-*`** (**does not write `.agent/`**). **Auto-attach ≠ Autopilot ON**.
 - PreInvocation **has no prompt field** — triggers parse **`transcriptPath`** with a stateful cursor.
 - After install/upgrade: **reload Antigravity / new session** (IDE hooks may stay silent until reload; prefer **CLI**).
+- **CLI workspace:** mount the instrumented project (e.g. **`--add-dir`** / open the folder) or hooks may **not load** (`loaded 0`) — product tip, not a network/proxy issue.
 - Gemini skills (if enabled): always **`.gemini/skills/autopilot-*`** even when Antigravity is also enabled — run **`/trust`** + **`/skills reload`**. Dual Antigravity+Gemini: both trees get `autopilot-*`.
-- `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs missing `.agents/bin` shim (or legacy `.autopilot/bin`), timeout/cap/IDE dual / missing skills / auto-attach tip.
+- `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs missing `.agents/bin` shim (or legacy `.autopilot/bin`), timeout/cap/IDE+CLI workspace / missing skills / auto-attach tip.
 

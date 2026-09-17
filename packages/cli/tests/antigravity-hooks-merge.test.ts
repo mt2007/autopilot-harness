@@ -463,7 +463,13 @@ describe("antigravity init wiring", () => {
     expect(formatHostActivationTips("antigravity").join("\n")).toMatch(
       /auto-attach|Auto-attach/i,
     );
+    expect(formatHostActivationTips("antigravity").join("\n")).toMatch(
+      /--add-dir|loaded 0|mount the project workspace/i,
+    );
     expect(formatPostInstallOutro("antigravity")).toMatch(/reload|session/i);
+    expect(formatPostInstallOutro("antigravity")).toMatch(
+      /--add-dir|mount the project workspace/i,
+    );
 
     const qs = fs.readFileSync(
       path.join(root, "docs", "autopilot", "quickstart.md"),
@@ -472,6 +478,7 @@ describe("antigravity init wiring", () => {
     expect(qs).toMatch(/`\.agents\/hooks\.json`/);
     expect(qs).toMatch(/`\.agents\/skills`/);
     expect(qs).toMatch(/does not write `\.agent\/`/);
+    expect(qs).toMatch(/`--add-dir`|mount the project workspace/i);
     // Longer-first wrap must not split `.agents/skills/autopilot-*` if present.
     expect(qs).not.toMatch(/`\.agents\/skills`\/autopilot/);
   });
