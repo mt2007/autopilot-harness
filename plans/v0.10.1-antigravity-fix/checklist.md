@@ -16,4 +16,4 @@
 - [x] human-gate-confirm — 「同意发 0.10.1」（活链已过；仅要发版同意）
 - [x] push-tag-release — push/tag/GH Release `v0.10.1`
 - [x] npm-publish-pnpm — `pnpm publish`
-- [ ] pin-upgrade-repo — pin → 0.10.1
+- [x] pin-upgrade-repo — pin → 0.10.1
