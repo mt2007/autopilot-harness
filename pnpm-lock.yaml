@@ -56,6 +56,9 @@ importers:
       '@autopilot-harness/port-kimi-code':
         specifier: workspace:*
         version: link:../ports/kimi-code
+      '@autopilot-harness/port-runner':
+        specifier: workspace:*
+        version: link:../ports/runner
       '@clack/prompts':
         specifier: ^0.10.0
         version: 0.10.1

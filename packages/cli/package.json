@@ -37,6 +37,7 @@
   "dependencies": {
     "@autopilot-harness/core": "workspace:*",
     "@autopilot-harness/i18n": "workspace:*",
+    "@autopilot-harness/port-runner": "workspace:*",
     "@autopilot-harness/port-claude-code": "workspace:*",
     "@autopilot-harness/port-codex": "workspace:*",
     "@autopilot-harness/port-cursor": "workspace:*",

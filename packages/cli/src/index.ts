@@ -239,3 +239,14 @@ export type {
   SessionCmdResult,
   SessionListResult,
 } from "./session.js";
+export {
+  formatRunnerStartSuccess,
+  formatRunnerStatus,
+  loadProjectRunnerSettings,
+  resolveRunnerConfigForStart,
+  startRunner,
+} from "./runner-cli.js";
+export type {
+  RunnerCliFlagOverrides,
+  RunnerStartOutcome,
+} from "./runner-cli.js";

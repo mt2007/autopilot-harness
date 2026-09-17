@@ -7,6 +7,8 @@ import {
   formatHostActivationTips,
   formatSessionList,
   formatStatus,
+  formatRunnerStartSuccess,
+  formatRunnerStatus,
   installInitYes,
   PACKAGE_VERSION,
   PREFERRED_NAME,
@@ -16,6 +18,7 @@ import {
   runDoctor,
   runInteractiveInit,
   setProjectLocale,
+  startRunner,
   readStaleAfterHours,
   upgradeProject,
   uninstallProject,
@@ -409,6 +412,107 @@ sessionCmd
       return;
     }
     console.log(`${PREFERRED_NAME} review chain reset`);
+  });
+
+const runnerCmd = program
+  .command("runner")
+  .description("External process Autopilot loop (no host Stop hook)");
+
+runnerCmd
+  .command("start")
+  .description(
+    "Run the Autopilot loop (resume pending/executing, or --run to bind a track)",
+  )
+  .option(
+    "--run [slug]",
+    "Bind/rebind a track (omit slug to auto-bind one runnable). Required when nothing is resumable",
+  )
+  .option(
+    "--conversation <id>",
+    "Conversation id (default: stable runner:<projectHash>)",
+  )
+  .option("--command <template>", "Override runner.command ({prompt} / {prompt_file})")
+  .option(
+    "--max-iterations <n>",
+    "Override runner.max_iterations",
+    (v: string) => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+        throw new Error(
+          `Invalid --max-iterations "${v}" (expected an integer >= 1).`,
+        );
+      }
+      return n;
+    },
+  )
+  .option("--cwd <path>", "Override runner.cwd (inside project)")
+  .option(
+    "--prompt-mode <mode>",
+    "Override runner.prompt_mode: argv | file | auto",
+  )
+  .action(
+    async (opts: {
+      run?: string | true;
+      conversation?: string;
+      command?: string;
+      maxIterations?: number;
+      cwd?: string;
+      promptMode?: string;
+    }) => {
+      const hasRun = opts.run !== undefined;
+      const runSlug = hasRun
+        ? opts.run === true
+          ? ""
+          : String(opts.run)
+        : undefined;
+      const outcome = await startRunner({
+        projectRoot: process.cwd(),
+        runSlug,
+        conversationId: opts.conversation,
+        flags: {
+          command: opts.command,
+          maxIterations:
+            typeof opts.maxIterations === "number" &&
+            Number.isFinite(opts.maxIterations)
+              ? opts.maxIterations
+              : undefined,
+          cwd: opts.cwd,
+          promptMode: opts.promptMode,
+        },
+      });
+      if (!outcome.ok) {
+        console.error(`runner start failed: ${outcome.error}`);
+        process.exitCode = outcome.exitCode;
+        return;
+      }
+      console.log(`${PREFERRED_NAME} runner start`);
+      for (const line of formatRunnerStartSuccess(outcome.result)) {
+        console.log(`  ${line}`);
+      }
+      if (outcome.exitCode !== 0) {
+        process.exitCode = outcome.exitCode;
+      }
+    },
+  );
+
+runnerCmd
+  .command("status")
+  .description("Show runner session / resume readiness for this project")
+  .option(
+    "--conversation <id>",
+    "Conversation id (default: stable runner:<projectHash>)",
+  )
+  .action((opts: { conversation?: string }) => {
+    const result = formatRunnerStatus({
+      projectRoot: process.cwd(),
+      conversationId: opts.conversation,
+    });
+    if (!result.ok) {
+      console.error(`runner status failed: ${result.error}`);
+      process.exitCode = 1;
+      return;
+    }
+    for (const line of result.lines) console.log(line);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
