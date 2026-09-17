@@ -244,7 +244,8 @@ function followupReason(message: string | undefined, fallback: string): string {
 }
 
 /**
- * Host transcript logs live under …/logs/transcript.jsonl.
+ * Host transcript logs live under …/logs/transcript.jsonl
+ * or …/logs/transcript_full.jsonl (same allow rules).
  * Shared by PreInvocation prompt fallback and Stop → ReviewEngine reads.
  * Absolute paths only — relative paths would resolve via hook cwd.
  */
@@ -259,7 +260,12 @@ export function sanitizeAntigravityTranscriptPath(
   const absolute =
     normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized);
   if (!absolute) return undefined;
-  if (!normalized.endsWith("/logs/transcript.jsonl")) return undefined;
+  if (
+    !normalized.endsWith("/logs/transcript.jsonl") &&
+    !normalized.endsWith("/logs/transcript_full.jsonl")
+  ) {
+    return undefined;
+  }
   return normalized;
 }
 

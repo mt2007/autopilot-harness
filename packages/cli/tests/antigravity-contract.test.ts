@@ -376,6 +376,27 @@ describe("antigravity contract matrix", () => {
     ).toBeUndefined();
     expect(sanitizeAntigravityTranscriptPath("")).toBeUndefined();
     expect(sanitizeAntigravityTranscriptPath(null)).toBeUndefined();
+    expect(
+      sanitizeAntigravityTranscriptPath("/tmp/logs/transcript_full.jsonl"),
+    ).toBe("/tmp/logs/transcript_full.jsonl");
+    expect(
+      sanitizeAntigravityTranscriptPath("logs/transcript_full.jsonl"),
+    ).toBeUndefined();
+    expect(
+      sanitizeAntigravityTranscriptPath(
+        "/proj/../etc/logs/transcript_full.jsonl",
+      ),
+    ).toBeUndefined();
+    expect(
+      sanitizeAntigravityTranscriptPath(
+        "/tmp/secret.env\0/logs/transcript_full.jsonl",
+      ),
+    ).toBeUndefined();
+    expect(
+      sanitizeAntigravityTranscriptPath(
+        "/tmp/logs/transcript_full.jsonl\n/etc/passwd",
+      ),
+    ).toBeUndefined();
 
     root = tmpProject();
     fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });

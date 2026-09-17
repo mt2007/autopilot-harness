@@ -901,6 +901,31 @@ describe("port-antigravity adapters", () => {
       expect(
         sanitizeAntigravityTranscriptPath(tp + "/"),
       ).toBe(tp.replace(/\\/g, "/"));
+      const tpFull = path.join(root, "logs", "transcript_full.jsonl");
+      expect(sanitizeAntigravityTranscriptPath(tpFull)).toBe(
+        tpFull.replace(/\\/g, "/"),
+      );
+      expect(
+        sanitizeAntigravityTranscriptPath(tpFull + "/"),
+      ).toBe(tpFull.replace(/\\/g, "/"));
+      expect(
+        sanitizeAntigravityTranscriptPath("logs/transcript_full.jsonl"),
+      ).toBeUndefined();
+      expect(
+        sanitizeAntigravityTranscriptPath(
+          "/tmp/secret.env/logs/transcript_full.jsonl.bak",
+        ),
+      ).toBeUndefined();
+      expect(
+        sanitizeAntigravityTranscriptPath(
+          "/proj/../etc/logs/transcript_full.jsonl",
+        ),
+      ).toBeUndefined();
+      expect(
+        sanitizeAntigravityTranscriptPath(
+          "/tmp/logs/transcript_full.jsonl\n/etc/passwd",
+        ),
+      ).toBeUndefined();
 
       const store = new StateStore(root);
       const first = handlePreInvocation(
