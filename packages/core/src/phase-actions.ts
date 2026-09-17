@@ -364,6 +364,16 @@ export function applyRun(
     opts?.platform,
   );
 
+  // Refuse paused before resolve/needPick — bare RUN must not surface a pick
+  // list when the session cannot enter executing until unpaused (parity with
+  // canResumeRunnerSession: any non-zero paused blocks).
+  if (session.paused !== 0) {
+    return {
+      ok: false,
+      userMessage: "Cannot start executing: session paused.",
+    };
+  }
+
   const resolved = resolveRunSlug(
     store,
     session,
@@ -421,7 +431,7 @@ export function applyRun(
   const gate = canEnterExecuting({
     slug,
     checklistPath,
-    paused: session.paused === 1,
+    paused: session.paused !== 0,
     projectRoot,
   });
   if (!gate.ok) {
@@ -454,11 +464,24 @@ export function applyRun(
         }
       }
 
+      // Re-check pause under the write lock — concurrent OFF must not be cleared
+      // by an in-flight applyRun that passed the pre-lock snapshot.
+      const locked = store.getSession(conversationId);
+      if (locked && locked.paused !== 0) {
+        return {
+          commit: false,
+          value: {
+            ok: false,
+            userMessage: "Cannot start executing: session paused.",
+          },
+        };
+      }
+
       // Re-read inside the lock: idempotent re-RUN on the *same* armed track
       // (same checklist binding) preserves review chain (F-E8). Switching tracks,
       // plansDir/checklist path, or freshly entering must reset — otherwise
       // confirm_left/pending from track A (or an old checklist) leak onto B.
-      const fresh = store.getSession(conversationId);
+      const fresh = locked ?? store.getSession(conversationId);
       const alreadyExecutingSameTrack =
         fresh?.phase === "executing" &&
         fresh.armed === 1 &&

@@ -355,7 +355,7 @@ function exitCodeForLoopResult(result: RunnerLoopResult): number {
  */
 export async function startRunner(opts: {
   projectRoot: string;
-  /** undefined = resume; "" = bare --run; non-empty = --run <slug> */
+  /** undefined = resume; "" / whitespace = bare --run; non-empty = --run <slug> */
   runSlug?: string;
   conversationId?: string;
   flags?: RunnerCliFlagOverrides;
@@ -458,7 +458,11 @@ export async function startRunner(opts: {
     if (wantRun) {
       // Bind here so needPick → exit 2 (research §8); then loop resumes session.
       const runResult = applyRun(store, conversationId, root, {
-        slug: opts.runSlug === "" ? undefined : opts.runSlug,
+        // "" / whitespace-only → bare --run (auto-bind / needPick), not an invalid slug.
+        slug:
+          typeof opts.runSlug === "string" && opts.runSlug.trim()
+            ? opts.runSlug.trim()
+            : undefined,
         config: phaseActions,
         platform: RUNNER_PLATFORM,
       });

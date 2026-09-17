@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity / Runner in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -154,11 +154,11 @@ Planning writes `plans/<slug>/` (and may edit docs). Review starts only after a 
 
 ## RUN blocked: another session executing
 
-`one_executor` refuses a second **armed executing** session (`phase=executing`, `armed=1`, `paused=0`). Planning chats do **not** hold this lock.
+`one_executor` refuses a second **armed executing** session (`phase=executing`, `armed=1`, `paused=0`) — including a **Runner** conversation. A hook-host RUN and a Runner `start --run` **mutually block** under the same gate. Planning chats do **not** hold this lock.
 
 1. Run `npx @autopilot-harness/cli status` — look for `executors:` (track + short session id).
-2. In that chat: `/autopilot-off`, or from cwd: `npx @autopilot-harness/cli session purge <id>` (see `session list`).
-3. Retry `/autopilot-run`.
+2. In that chat: `/autopilot-off`, or from cwd: `npx @autopilot-harness/cli session purge <id>` (see `session list`). For Runner-only: stop the CLI loop / purge the `runner:…` session.
+3. Retry `/autopilot-run` or `runner start`.
 
 Cursor may show only opaque “Submission blocked”; the `user_message` body (track + session) is the intended reason when the host surfaces it.
 
@@ -181,4 +181,18 @@ Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Cl
 - **CLI workspace:** mount the instrumented project (e.g. **`--add-dir`** / open the folder) or hooks may **not load** (`loaded 0`) — product tip, not a network/proxy issue.
 - Gemini skills (if enabled): always **`.gemini/skills/autopilot-*`** even when Antigravity is also enabled — run **`/trust`** + **`/skills reload`**. Dual Antigravity+Gemini: both trees get `autopilot-*`.
 - `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs missing `.agents/bin` shim (or legacy `.autopilot/bin`), timeout/cap/IDE+CLI workspace / missing skills / auto-attach tip.
+
+### Runner
+
+**Runner** is **Shipped (meta)** — external CLI loop (`npx @autopilot-harness/cli runner start|status`), outside the ten-way `--platform` hook stamp set (dispatch stays **ten-way**). Plan with a hook host first: **`--on` / planning-in-runner is deferred** (v1).
+
+- Set **`runner.command`** in `.autopilot/config.yml` (template may use `{prompt}` / `{prompt_file}`). Treat command + `runner.env` as **trusted project config** (spawn with `shell: false`; `cwd` must stay in-project). Init writes **no** fake default — blank → `runner start` **FAIL**; `doctor` **WARN**s (not FAIL).
+- Bare `runner start` with no pending/executing session → start **FAIL** (pass `--run [slug]`); doctor does **not** emit a line for that case.
+- **Paused** Runner session → `runner start` **FAIL**s (bare **and** `--run`, including bare `--run` with several other runnable tracks) even if a pending tip exists — unpause via Autopilot OFF/RESUME or session tools first; doctor does **not** emit a line for that case. (Paused is checked **before** needPick — exit **1**, not exit **2**.)
+- Bad **`runner.cwd`** (outside project / missing / not a dir) or invalid **`runner.prompt_mode`** → start **FAIL** before bind (no dedicated doctor line). Explicit **`max_iterations` &lt;1** / non-integer → start **FAIL**; doctor may still **WARN** when the declared value is **&lt;8**.
+- Bare `--run` (no slug) when **several** tracks are runnable → **needPick** (**exit 2** + candidate list); then pass `--run <slug>`. (A `--run` attempt opens `state.db` / may write a pending pick session — expected; **`armed=0`**, so it does **not** hold the **`one_executor`** lock.)
+- Failed **resume without `--run`** (no session) and config/cwd/`prompt_mode`/`max_iterations` failures **before** the store opens do **not** create an empty `state.db` as a side effect.
+- `doctor` also **WARN**s when Runner + a hook host are both enabled under **`one_executor`** (dual armed executing cannot both hold the lock). A peer RUN / `runner start --run` that hits the live gate fails with the already-executing / **busy** message (**exit 1**), not needPick.
+- Resume: with pending/executing and **not paused**, `runner start` without `--run` continues; idle/nothing-to-resume → pass `--run [slug]`; if **paused**, unpause first (then bare resume or `--run`).
+- Live agent smoke may be **waived**; MockDriver / contract tests remain the hard ship gate. See [Hosts — Runner](./hosts.md#status) and [Config — Runner](./config.md#runner-external-loop).
 

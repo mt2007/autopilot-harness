@@ -333,6 +333,111 @@ describe("F-RUN applyRun gates", () => {
     }
   });
 
+  it("paused session refuses bare RUN before needPick (keeps pause)", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    const cp = writeChecklist(root, "demo", `- [ ] d — D\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      track_id: "demo",
+      checklist_path: cp,
+      armed: 1,
+      paused: 1,
+      paused_reason: "human_gate",
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.needPick).toBeUndefined();
+      expect(r.busy).toBeUndefined();
+      expect(r.userMessage).toMatch(/session paused/i);
+    }
+    const s = store.getSession("c1")!;
+    expect(s.paused).toBe(1);
+    expect(s.paused_reason).toBe("human_gate");
+    expect(s.armed).toBe(1);
+    expect(s.phase).toBe("executing");
+    expect(s.pending_action).toBeNull();
+    expect(s.track_candidates_json).toBeNull();
+  });
+
+  it("non-zero paused (not only 1) also refuses before needPick", () => {
+    writeChecklist(root, "alpha", `- [ ] a — A\n`);
+    writeChecklist(root, "beta", `- [ ] b — B\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 2,
+      paused_reason: "human_gate",
+    });
+    const r = applyRun(store, "c1", root);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.needPick).toBeUndefined();
+      expect(r.userMessage).toMatch(/session paused/i);
+    }
+    expect(store.getSession("c1")!.paused).toBe(2);
+  });
+
+  it("applyRun refuses pause that lands under the write lock (does not clear it)", () => {
+    writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "c1",
+      project_root: root,
+      code_root: root,
+      phase: "idle",
+      track_id: "_pending",
+      checklist_path: "",
+      armed: 0,
+      paused: 0,
+    });
+    const origWrite = store.exclusiveWrite.bind(store);
+    const origGet = store.getSession.bind(store);
+    let underWrite = false;
+    store.exclusiveWrite = ((fn) =>
+      origWrite(() => {
+        underWrite = true;
+        try {
+          return fn();
+        } finally {
+          underWrite = false;
+        }
+      })) as typeof store.exclusiveWrite;
+    store.getSession = ((id: string) => {
+      const row = origGet(id);
+      if (underWrite && id === "c1" && row) {
+        return { ...row, paused: 1, paused_reason: "human_gate" };
+      }
+      return row;
+    }) as typeof store.getSession;
+    try {
+      const r = applyRun(store, "c1", root, { slug: "demo" });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.busy).toBeUndefined();
+        expect(r.needPick).toBeUndefined();
+        expect(r.userMessage).toMatch(/session paused/i);
+      }
+      // Pre-lock snapshot was unpaused; refuse must not arm or bind.
+      const s = origGet("c1")!;
+      expect(s.paused).toBe(0);
+      expect(s.phase).toBe("idle");
+      expect(s.armed).toBe(0);
+      expect(s.track_id).toBe("_pending");
+    } finally {
+      store.exclusiveWrite = origWrite;
+      store.getSession = origGet;
+    }
+  });
+
   it("one_executor blocks second armed executing session", () => {
     const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
     store.upsertSession({

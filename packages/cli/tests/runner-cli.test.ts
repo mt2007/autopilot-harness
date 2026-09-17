@@ -191,6 +191,57 @@ describe("cli runner-cli helpers", () => {
     }
   });
 
+  it("start --run with whitespace-only slug is bare --run (needPick), not invalid slug", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    for (const slug of ["a", "b"]) {
+      const plans = path.join(root, "plans", slug);
+      fs.mkdirSync(plans, { recursive: true });
+      fs.writeFileSync(
+        path.join(plans, "checklist.md"),
+        `# c\n\n- [ ] item-${slug} — X\n`,
+        "utf8",
+      );
+    }
+    const outcome = await startRunner({
+      projectRoot: root,
+      runSlug: "  \t  ",
+      flags: { command: "echo {prompt}", maxIterations: 1 },
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.exitCode).toBe(2);
+      expect(outcome.error).toMatch(/Select a plan to execute/i);
+      expect(outcome.error).not.toMatch(/Invalid track slug/i);
+    }
+  });
+
+  it("start --run trims padded slug before bind", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const plans = path.join(root, "plans", "demo");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      runSlug: "  demo  ",
+      flags: { command: "echo {prompt}", maxIterations: 1 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(mock.calls[0]?.prompt).toContain("item-a");
+    const after = new StateStore(root);
+    expect(after.getSession(outcome.conversationId)?.track_id).toBe("demo");
+    after.close();
+  });
+
   it("refuses symlink .autopilot/config.yml", async () => {
     const root = tmpRoot();
     fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
@@ -476,6 +527,182 @@ describe("cli runner-cli helpers", () => {
     if (!outcome.ok) {
       expect(outcome.error).toMatch(/paused/i);
     }
+    const afterBare = new StateStore(root);
+    expect(afterBare.getSession(cid)?.paused).toBe(1);
+    afterBare.close();
+  });
+
+  it("start --run fails when session is paused (does not clear pause)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const plans = path.join(root, "plans", "demo");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    const store = new StateStore(root);
+    const cid = stableRunnerConversationId(root);
+    expect(
+      applyRun(store, cid, root, {
+        slug: "demo",
+        platform: RUNNER_PLATFORM,
+        config: { plansDir: "plans" },
+      }).ok,
+    ).toBe(true);
+    const session = store.getSession(cid);
+    expect(session).toBeTruthy();
+    if (session) {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: session.project_root,
+        code_root: session.code_root,
+        track_id: session.track_id,
+        checklist_path: session.checklist_path,
+        phase: session.phase,
+        armed: session.armed,
+        paused: 1,
+        paused_reason: "human_gate",
+      });
+    }
+    store.close();
+
+    const outcome = await startRunner({
+      projectRoot: root,
+      conversationId: cid,
+      runSlug: "demo",
+      flags: { command: "echo {prompt}" },
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      // Early paused gate (before resolveRunSlug / needPick).
+      expect(outcome.error).toMatch(/session paused/i);
+    }
+    // Still paused — --run must not clear pause on the failed path.
+    const after = new StateStore(root);
+    expect(after.getSession(cid)?.paused).toBe(1);
+    after.close();
+  });
+
+  it("bare --run on paused session is exit 1 paused (not needPick)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    for (const slug of ["a", "b"]) {
+      const plans = path.join(root, "plans", slug);
+      fs.mkdirSync(plans, { recursive: true });
+      fs.writeFileSync(
+        path.join(plans, "checklist.md"),
+        `# c\n\n- [ ] item-${slug} — X\n`,
+        "utf8",
+      );
+    }
+    const store = new StateStore(root);
+    const cid = "runner:paused-multi";
+    expect(
+      applyRun(store, cid, root, {
+        slug: "a",
+        platform: RUNNER_PLATFORM,
+        config: { plansDir: "plans" },
+      }).ok,
+    ).toBe(true);
+    const session = store.getSession(cid);
+    expect(session).toBeTruthy();
+    if (session) {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: session.project_root,
+        code_root: session.code_root,
+        track_id: session.track_id,
+        checklist_path: session.checklist_path,
+        phase: session.phase,
+        armed: session.armed,
+        paused: 1,
+        paused_reason: "human_gate",
+      });
+    }
+    store.close();
+
+    const outcome = await startRunner({
+      projectRoot: root,
+      conversationId: cid,
+      runSlug: "", // bare --run — must not become needPick while paused
+      flags: { command: "echo {prompt}" },
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.exitCode).not.toBe(2);
+      expect(outcome.error).toMatch(/session paused/i);
+      expect(outcome.error).not.toMatch(/Select a plan to execute/i);
+    }
+    const after = new StateStore(root);
+    expect(after.getSession(cid)?.paused).toBe(1);
+    after.close();
+  });
+
+  it("start --run hits one_executor busy as exit 1 (not needPick)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const plans = path.join(root, "plans", "demo");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    const store = new StateStore(root);
+    const holder = "runner:holder-session";
+    expect(
+      applyRun(store, holder, root, {
+        slug: "demo",
+        platform: RUNNER_PLATFORM,
+        config: { plansDir: "plans" },
+      }).ok,
+    ).toBe(true);
+    const held = store.getSession(holder);
+    expect(held?.phase).toBe("executing");
+    expect(held?.armed).toBe(1);
+    expect(held?.paused).toBe(0);
+    store.close();
+
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      conversationId: "runner:challenger-session",
+      runSlug: "demo",
+      flags: { command: "echo {prompt}" },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.exitCode).not.toBe(2);
+      expect(outcome.error).toMatch(/already executing|Another session/i);
+      // Real needPick copy (not the flag name) — must not appear on busy.
+      expect(outcome.error).not.toMatch(
+        /Select a plan to execute|Reply with a number|\/autopilot-run/i,
+      );
+    }
+    expect(mock.calls.length).toBe(0);
+    // Challenger may be ensureSession'd idle, but must not take the executor lock;
+    // holder must still own it.
+    const after = new StateStore(root);
+    const challenger = after.getSession("runner:challenger-session");
+    expect(challenger).toBeTruthy();
+    expect(challenger!.armed).toBe(0);
+    expect(challenger!.phase).toBe("idle");
+    const stillHeld = after.getSession(holder);
+    expect(stillHeld).toBeTruthy();
+    expect(stillHeld!.phase).toBe("executing");
+    expect(stillHeld!.armed).toBe(1);
+    expect(stillHeld!.paused).toBe(0);
+    expect(
+      after.findExecutingSession("runner:challenger-session")?.conversation_id,
+    ).toBe(holder);
+    after.close();
   });
 
   it("rejects control-bearing --conversation before creating state.db", async () => {

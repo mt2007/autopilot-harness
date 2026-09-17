@@ -255,7 +255,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /### Hermes Agent[\s\S]*Allow \/ hard-stop = \*\*`\{\}`\*\*/i,
     );
     expect(tips).toMatch(
-      /including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity/i,
+      /including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Runner/i,
     );
     expect(tips).toMatch(/### Antigravity/);
     expect(tips).toMatch(/decision:"continue"|decision:continue/);
@@ -266,6 +266,53 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/--add-dir|CLI workspace|loaded 0/i);
     expect(tips).toMatch(/auto-attach|Auto-attach/);
     expect(tips).toMatch(/live-proved|0\.10\.1|shim|--add-dir/i);
+    expect(tips).toMatch(/### Runner/);
+    expect(tips).toMatch(/runner\.command/);
+    // Trust callout must sit on Runner (not only elsewhere in the file).
+    expect(tips).toMatch(
+      /runner\.command[\s\S]{0,280}trusted project config|command \+ `runner\.env` as \*\*trusted project config\*\*/i,
+    );
+    expect(tips).toMatch(
+      /runner\.command[\s\S]{0,350}shell:\s*false|shell: false[\s\S]{0,120}runner\.command/i,
+    );
+    expect(tips).toMatch(/one_executor/);
+    expect(tips).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(tips).toMatch(/doctor[\s\S]{0,40}\*\*WARN\*\*|doctor \*\*WARN\*\*/i);
+    expect(tips).toMatch(
+      /Bare `runner start`[\s\S]{0,120}FAIL|nothing to resume[\s\S]{0,80}FAIL|no pending\/executing[\s\S]{0,80}FAIL/i,
+    );
+    expect(tips).toMatch(
+      /Paused[\s\S]{0,160}FAIL|paused[\s\S]{0,80}start \*\*FAIL\*\*/i,
+    );
+    expect(tips).toMatch(
+      /Paused[\s\S]{0,200}`--run`|paused[\s\S]{0,120}bare or `--run`|FAIL\*\*s \(bare \*\*and\*\* `--run`\)/i,
+    );
+    expect(tips).toMatch(
+      /Paused[\s\S]{0,220}before[\s\S]{0,40}needPick|paused[\s\S]{0,80}before[\s\S]{0,40}needPick|exit \*\*1\*\*, not exit \*\*2\*\*/i,
+    );
+    expect(tips).toMatch(
+      /runner\.cwd[\s\S]{0,200}FAIL|Bad \*\*`runner\.cwd`\*\*|max_iterations[\s\S]{0,80}&lt;1|max_iterations[\s\S]{0,80}<1/i,
+    );
+    expect(tips).toMatch(
+      /max_iterations[\s\S]{0,120}&lt;8|declared value is \*\*&lt;8\*\*|declared `max_iterations` is \*\*&lt;8\*\*/i,
+    );
+    expect(tips).toMatch(
+      /needPick[\s\S]{0,80}exit 2|exit 2[\s\S]{0,40}needPick/i,
+    );
+    expect(tips).toMatch(
+      /several[\s\S]{0,40}runnable|when \*\*several\*\* tracks/i,
+    );
+    expect(tips).toMatch(
+      /armed=0[\s\S]{0,80}one_executor|does \*\*not\*\* hold[\s\S]{0,40}one_executor/i,
+    );
+    expect(tips).toMatch(
+      /busy[\s\S]{0,60}exit \*\*1\*\*|busy[\s\S]{0,60}exit 1|already-executing[\s\S]{0,40}exit 1/i,
+    );
+    expect(tips).toMatch(
+      /before[\s\S]{0,40}store[\s\S]{0,80}state\.db|do \*\*not\*\* create an empty `state\.db`/i,
+    );
+    expect(tips).not.toMatch(/doctor WARN\/FAIL/);
+    expect(tips).not.toMatch(/eleventh hook|eleven-way/i);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -302,7 +349,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).not.toMatch(/\bquaternary dispatch\b/);
     expect(config).not.toMatch(/\bternary dispatch\b/);
     expect(config).toMatch(
-      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid \+ Hermes Agent \+ Antigravity build/,
+      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid \+ Hermes Agent \+ Antigravity \+ Runner build/,
     );
     expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
     expect(config).toMatch(/Stop consecutive ≤8|Copilot.*≤8/i);
@@ -312,10 +359,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(config).toMatch(/does \*\*not\*\* clamp `confirm_rounds`|does not clamp confirm_rounds/i);
     expect(config).toMatch(
-      /Gemini \/ Factory \/ Hermes \/ Antigravity sessions|Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity sessions|Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity/i,
+      /Gemini \/ Factory \/ Hermes \/ Antigravity \/ Runner sessions|Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Runner sessions|Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Runner/i,
     );
     expect(config).toMatch(
-      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, \*\*Factory Droid\*\*, \*\*Hermes Agent\*\*, or \*\*Antigravity\*\*/,
+      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, \*\*Factory Droid\*\*, \*\*Hermes Agent\*\*, \*\*Antigravity\*\*, or \*\*Runner\*\*/,
     );
     expect(config).toMatch(
       /missing\/incomplete \*\*FAIL\*\*|Copilot[\s\S]*FAIL[\s\S]*WARN/i,
@@ -407,6 +454,53 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(
       /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity/i,
     );
+    expect(config).toMatch(/and\/or Runner|Runner.*surface: runner/i);
+    expect(config).toMatch(/## Runner/);
+    expect(config).toMatch(/runner\.command/);
+    expect(config).toMatch(/runner\.max_iterations/);
+    // Must bind to Runner keys — `verify.commands` also says "trusted project config".
+    expect(config).toMatch(
+      /runner\.command[\s\S]{0,500}trusted project config/i,
+    );
+    expect(config).toMatch(
+      /runner\.cwd` \/ `runner\.env`[\s\S]{0,280}trusted project config|Treat `env` as \*\*trusted project config\*\*/i,
+    );
+    expect(config).toMatch(
+      /runner\.command[\s\S]{0,500}shell:\s*false|shell: false[\s\S]{0,80}runner\.command/i,
+    );
+    expect(config).toMatch(
+      /runner\.max_iterations[\s\S]{0,280}1\.\.500|clamped to \*\*1\.\.500\*\*/i,
+    );
+    expect(config).toMatch(
+      /max_iterations[\s\S]{0,200}start \*\*FAIL\*\*|`<1`[\s\S]{0,120}FAIL/i,
+    );
+    expect(config).toMatch(
+      /runner\.cwd[\s\S]{0,280}start \*\*FAIL\*\*|outside project[\s\S]{0,80}FAIL/i,
+    );
+    expect(config).toMatch(
+      /prompt_mode[\s\S]{0,120}start \*\*FAIL\*\*|Invalid value → start \*\*FAIL\*\*/i,
+    );
+    expect(config).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(config).toMatch(
+      /needPick[\s\S]{0,80}exit 2|exit 2[\s\S]{0,40}needPick/i,
+    );
+    expect(config).toMatch(
+      /On \*\*hook\*\* hosts[\s\S]{0,120}needPick|On \*\*Runner\*\*[\s\S]{0,80}needPick[\s\S]{0,80}exit 2/i,
+    );
+    expect(config).toMatch(
+      /several[\s\S]{0,40}runnable|when \*\*several\*\* tracks/i,
+    );
+    expect(config).toMatch(
+      /not paused[\s\S]{0,80}resume|paused[\s\S]{0,80}FAIL/i,
+    );
+    expect(config).toMatch(
+      /Paused[\s\S]{0,80}bare or `--run`|paused[\s\S]{0,60}FAIL[\s\S]{0,40}`--run`/i,
+    );
+    expect(config).toMatch(/one_executor[\s\S]{0,200}Runner|Runner[\s\S]{0,200}one_executor/i);
+    expect(config).toMatch(
+      /runner\.command[\s\S]{0,500}doctor \*\*WARN\*\*|doctor \*\*WARN\*\*[\s\S]{0,120}runner\.command/,
+    );
+    expect(config).not.toMatch(/doctor WARN\/FAIL/);
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
     expect(config).toMatch(/\.codex\/\*\*/);
     expect(config).toMatch(/\.github\/hooks\/\*\*/);
@@ -497,8 +591,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
     expect(cliReadme).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and Antigravity/,
+      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Runner \(meta\)/,
     );
+    expect(cliReadme).toMatch(/runner\.command/);
+    expect(cliReadme).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
     expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
     expect(cliReadme).toMatch(/--platform codex|platform codex/);
     expect(cliReadme).toMatch(/kimi-code/);
@@ -541,6 +637,22 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       expect(body).toMatch(/MIT/);
       expect(body).not.toMatch(/(?:^|[^\w`])npx autopilot-harness(?:\s|$)/);
     }
+  });
+
+  it("README English ships Runner meta and keeps OpenCode next", () => {
+    const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+    expect(body).toMatch(/Runner \(meta\)|Runner.*Shipped \(meta\)/i);
+    expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/i);
+    expect(body).toMatch(/runner\.command/);
+    expect(body).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
+  });
+
+  it("README.zh-CN ships Runner meta and keeps OpenCode next", () => {
+    const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
+    expect(body).toMatch(/Runner（meta）|Runner.*Shipped \(meta\)/i);
+    expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/);
+    expect(body).toMatch(/runner\.command/);
+    expect(body).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/);
   });
 
   it("README English keeps review.scope section markers", () => {
@@ -831,6 +943,36 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /Antigravity \| \*\*Shipped\*\* \(host Stop continue live-proved|Antigravity \| \*\*Shipped\*\* \(v0\.10\.1\)/,
     );
+    expect(hosts).toMatch(
+      /Runner \| \*\*Shipped \(meta\)\*\*|Runner \| \*\*Shipped\*\* \(meta\)/,
+    );
+    expect(hosts).toMatch(/runner\.command/);
+    expect(hosts).toMatch(/one_executor/);
+    expect(hosts).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(hosts).toMatch(/max_iterations|\*\*32\*\*/);
+    expect(hosts).toMatch(/ten-way/);
+    expect(hosts).not.toMatch(/\beleven-way\b/i);
+    expect(hosts).not.toMatch(/eleventh hook/i);
+    // Doctor empty-command is WARN-only; start FAIL is separate.
+    // Bare start with nothing to resume FAILs without a doctor line.
+    expect(hosts).toMatch(
+      /runner\.command[\s\S]{0,200}doctor \*\*WARN\*\*|doctor \*\*WARN\*\*[\s\S]{0,120}runner\.command/,
+    );
+    expect(hosts).toMatch(
+      /nothing to resume[\s\S]{0,80}FAIL|bare start[\s\S]{0,80}FAIL/,
+    );
+    expect(hosts).toMatch(
+      /not paused[\s\S]{0,80}resume|paused[\s\S]{0,80}FAIL/i,
+    );
+    expect(hosts).toMatch(
+      /paused[\s\S]{0,80}bare or `--run`|paused[\s\S]{0,60}FAIL[\s\S]{0,40}`--run`/i,
+    );
+    // Platforms blurb must not re-open the old "pending/executing ⇒ resume" gap.
+    expect(hosts).toMatch(
+      /resume without `--run` when pending\/executing and \*\*not paused\*\*/i,
+    );
+    expect(hosts).not.toMatch(/doctor WARN\/FAIL/);
+    expect(hosts).not.toMatch(/empty start \/ missing/);
     expect(hosts).toMatch(/\.gemini\/skills\/autopilot-\*/);
     expect(hosts).toMatch(/\.factory\/skills\/autopilot-\*/);
     expect(hosts).not.toMatch(
@@ -881,7 +1023,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/Devin CLI/);
     expect(hosts).toMatch(/Codex CLI and Codex App/);
     expect(hosts).toMatch(
-      /roadmap markers only[\s\S]*init[\s\S]*do \*\*not\*\* install them yet/i,
+      /OpenCode[\s\S]{0,200}roadmap|roadmap[\s\S]{0,200}OpenCode/i,
+    );
+    expect(hosts).toMatch(
+      /OpenCode[\s\S]{0,120}do \*\*not\*\* install|do \*\*not\*\* install them yet[\s\S]{0,80}OpenCode/i,
     );
     expect(hosts).toMatch(/Stop-continue hard-capped at 1|≤1 continue \/ turn|Stop continue ≤1|Stop≤1\/turn/i);
     expect(hosts).toMatch(/Stop consecutive ≤8|consecutive ≤8/);
@@ -975,6 +1120,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(
       /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity/i,
     );
+    expect(body).toMatch(/and\/or Runner|Runner.*surface: runner/i);
     expect(body).toMatch(/ports\/claude-code/);
     expect(body).toMatch(/ports\/codex/);
     expect(body).toMatch(/ports\/kimi-code/);
@@ -983,10 +1129,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/ports\/gemini-cli/);
     expect(body).toMatch(/ports\/factory-droid/);
     expect(body).toMatch(/ports\/antigravity/);
+    expect(body).toMatch(/ports\/runner/);
     expect(body).toMatch(/antigravity`\/`cli|antigravity\/cli/);
+    expect(body).toMatch(/runner`\/`runner|runner\/runner/);
     expect(body).toMatch(
       /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, and Antigravity/,
     );
+    expect(body).toMatch(
+      /\|\s*\*\*Runner\*\* \(shipped, meta\)[\s\S]{0,400}runner\.command/,
+    );
+    expect(body).toMatch(/one_executor/);
+    expect(body).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
     expect(body).toMatch(/handleCodex\*/);
     expect(body).toMatch(/handleKimi\*/);
     expect(body).toMatch(/handleCopilot\*/);
@@ -1508,7 +1661,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         path.join(repoRoot, "packages/ports/runner/package.json"),
         "utf8",
       ),
-    ) as { description?: string };
+    ) as { description?: string; private?: boolean; publishConfig?: { access?: string } };
+    expect(runnerPkg.private).not.toBe(true);
+    expect(runnerPkg.publishConfig?.access).toBe("public");
+    expect(runnerPkg.description).toMatch(/runner|external process/i);
     expect(runnerPkg.description).not.toMatch(/Coming v0\.4/);
+    expect(runnerPkg.description).not.toMatch(/Coming v0\.11\b/);
   });
 });

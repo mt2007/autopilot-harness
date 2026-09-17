@@ -4,20 +4,20 @@ Product front door: English [README.md](../README.md) is authoritative.
 
 Also: [CONTRIBUTING.md](../CONTRIBUTING.md) · [CHANGELOG.md](../CHANGELOG.md) · [Config](./config.md) · [Troubleshooting](./troubleshooting.md) · [Hosts](./hosts.md) · [Plan bridge](./host-plan-bridge.md).
 
-Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, …).
+Autopilot Harness separates **core** (FSM, SQLite, checklist, review) from **ports** (Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Runner, …).
 
 Project config (`.autopilot/config.yml`) lists enabled hosts under `platforms:`
 (`id` + `surface`: `ide` | `cli` | `runner`). Primary host is the first
 installable binding in that list. Deprecated top-level `platform` / `surface`
 scalars are still read as a fallback when `platforms` is missing; `init` /
 `upgrade` stop writing them and strip them on refresh. Config may list multiple
-`platforms`; **this build installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and/or Antigravity** when those
-bindings are present (`cursor`/`ide`, `claude-code`/`cli`, `codex`/`cli`, `kimi-code`/`cli`, `copilot-cli`/`cli`, `grok-build`/`cli`, `gemini-cli`/`cli`, `factory-droid`/`cli`, `hermes-agent`/`cli`, `antigravity`/`cli`). Other ids are
+`platforms`; **this build installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and/or Antigravity** (hook hosts) **and/or Runner** when those
+bindings are present (`cursor`/`ide`, `claude-code`/`cli`, `codex`/`cli`, `kimi-code`/`cli`, `copilot-cli`/`cli`, `grok-build`/`cli`, `gemini-cli`/`cli`, `factory-droid`/`cli`, `hermes-agent`/`cli`, `antigravity`/`cli`, `runner`/`runner`). Other ids are
 reserved for future ports. For Claude, `surface: cli` means official hooks are
 **shared across terminal + IDE** — not CLI-only. Codex also uses `surface: cli`
 (project `.codex/hooks.json`; trust via `/hooks`). Kimi Code uses `surface: cli`
 (user-home `config.toml` `[[hooks]]`; prefer `$KIMI_CODE_HOME` / `~/.kimi-code`; never `local.toml`).
-Copilot CLI uses `surface: cli` (project `.github/hooks/autopilot-harness.json`; **Restart Copilot CLI** after install/upgrade). Grok Build CLI uses `surface: cli` (project `.grok/hooks/autopilot-harness.json`; **trust** via `/hooks-trust` or `--trust`; reload / new session after install/upgrade). Gemini CLI uses `surface: cli` (project `.gemini/settings.json`; **re-trust** / `/hooks panel` / **folder trust**; AfterAgent cap ≤100 / `MAX_TURNS`; prefer CLI ≥0.31.0). Factory Droid uses `surface: cli` (project `.factory/hooks.json`; **`$FACTORY_PROJECT_DIR`**; **`/hooks` + snapshot/reload**; multi-block under `stop_hook_active` live-proved). Hermes Agent uses `surface: cli` (**`$HERMES_HOME/config.yaml`**; relative command; `pre_verify` continue live-proved; nudge ≥32; consent/non-TTY; soft min ≥0.21.3; **waive → degraded + R1 ack**). Antigravity uses `surface: cli` (project **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim**; Stop `decision:continue`; PreInvocation via transcript; **host Stop continue live-proved** in 0.10.1).
+Copilot CLI uses `surface: cli` (project `.github/hooks/autopilot-harness.json`; **Restart Copilot CLI** after install/upgrade). Grok Build CLI uses `surface: cli` (project `.grok/hooks/autopilot-harness.json`; **trust** via `/hooks-trust` or `--trust`; reload / new session after install/upgrade). Gemini CLI uses `surface: cli` (project `.gemini/settings.json`; **re-trust** / `/hooks panel` / **folder trust**; AfterAgent cap ≤100 / `MAX_TURNS`; prefer CLI ≥0.31.0). Factory Droid uses `surface: cli` (project `.factory/hooks.json`; **`$FACTORY_PROJECT_DIR`**; **`/hooks` + snapshot/reload**; multi-block under `stop_hook_active` live-proved). Hermes Agent uses `surface: cli` (**`$HERMES_HOME/config.yaml`**; relative command; `pre_verify` continue live-proved; nudge ≥32; consent/non-TTY; soft min ≥0.21.3; **waive → degraded + R1 ack**). Antigravity uses `surface: cli` (project **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim**; Stop `decision:continue`; PreInvocation via transcript; **host Stop continue live-proved** in 0.10.1). Runner uses `surface: runner` (no `hooks.json`; CLI `runner start|status`; **`runner.command` required**; **not** a `--platform runner` hook stamp; **`one_executor`** still blocks dual armed executing; **`--on` deferred**).
 
 ```
 packages/core               StateStore, ReviewEngine, project-config, checklist, triggers
@@ -31,6 +31,7 @@ packages/ports/gemini-cli   BeforeAgent / AfterTool / AfterAgent (aliased handle
 packages/ports/factory-droid UserPromptSubmit / PostToolUse / Stop (aliased handleFactory*; Stop = decision:block+reason; multi-block under stop_hook_active live-proved; empty allow stdout)
 packages/ports/hermes-agent  pre_llm_call / post_tool_call / pre_verify (aliased handleHermes*; pre_verify = decision:block+reason live-proved; Silence {}; edit-only + changed_paths)
 packages/ports/antigravity   PreInvocation / PostToolUse / Stop (aliased handleAntigravity*; Stop = decision:continue+reason; Silence {}; fullyIdle fail-open; PreInvocation via transcriptPath)
+packages/ports/runner       external CliDriver/MockDriver loop (public; no vendor Stop hook; in-process handleStop platform:"runner")
 packages/cli                @autopilot-harness/cli (bin: autopilot-harness; npm public)
 packages/i18n               en + zh-CN
 packages/templates          skills (*.tpl) + planning/executing workflows
@@ -88,7 +89,7 @@ followup left in DB). Caps that still cover worst-case fix+confirm (e.g. Gemini 
 | **Factory Droid** (shipped) | Stop `decision:"block"` + `reason`; `stop_hook_active` | No documented numeric cap (2026-09 research); multi under active **live-proved** | **Shipped** `@autopilot-harness/port-factory-droid` multi-block (no raise). Commands use **`$FACTORY_PROJECT_DIR`**. **`/hooks` + snapshot/reload**. Doctor WARN no raise/hard-cap + Factory+Claude dual. **Waive live → degraded≤1**. Does not clamp `confirm_rounds`. No PreToolUse / Session*. |
 | **Hermes Agent** (shipped) | Shell `pre_verify` `decision:"block"` + `reason` | Default nudge **3**; init **≥32** | **Shipped** `@autopilot-harness/port-hermes-agent` R1 live-proved. **`$HERMES_HOME/config.yaml`**; relative command; edit-only + `changed_paths`; consent/non-TTY; soft min **≥0.21.3**. If nudge still **3** / exhausted (or plugin-first) → mid-cutoff → pending / RESUME / nudge. **Waive → degraded + R1 ack**. Does not clamp `confirm_rounds`. No `pre_tool_call`. |
 | **Antigravity** (shipped) | Stop `decision:"continue"` + `reason`; `fullyIdle` gate | No documented numeric cap | **Shipped** `@autopilot-harness/port-antigravity` (**host Stop continue live-proved** in 0.10.1). **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim**; PreInvocation via transcript; IDE may stay silent; CLI mount workspace. Does not clamp `confirm_rounds`. |
-| **Runner** (later) | External process loop `max iterations` | Port-defined | Size the runner budget ≥ worst-case review chain, or chunk work. For hosts without stop continuation only. |
+| **Runner** (shipped, meta) | External process loop; `runner.max_iterations` | Default **32** | **Shipped** `@autopilot-harness/port-runner` (public). CLI `runner start\|status`; **`runner.command` required** (no fake default); first turn = executing summary + item; later = pending tip; dirty-arm + in-process `handleStop` (`platform:"runner"`). **Not** a `--platform runner` hook. **`one_executor`** still blocks dual armed executing. **`--on` deferred**. Live waive OK. |
 
 `beforeSubmitPrompt` / `afterFileEdit` (and Claude/Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes/Antigravity submit analogues —
 `UserPromptSubmit` / `userPromptSubmitted` / `BeforeAgent` / `pre_llm_call` / `PreInvocation`)
