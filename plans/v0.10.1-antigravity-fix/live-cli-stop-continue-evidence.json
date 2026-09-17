@@ -1,0 +1,39 @@
+{
+  "itemId": "live-cli-stop-continue",
+  "verdict": "fail",
+  "passed": false,
+  "waived": false,
+  "shipGate": "FAIL — host edit-arm + NO_TOOL_CALL continue not proven this session; do not release 0.10.1",
+  "surface": "CLI",
+  "ideAttempted": false,
+  "at": "2026-09-17T07:52:00Z",
+  "disposableRepo": "/Users/zhaoqingli/ap-agy-live-1fxxrj",
+  "workspaceMount": "--add-dir <disposableRepo>",
+  "init": "ok — .agents/hooks.json + .agents/bin shim + vendor from workspace packages/cli dist",
+  "hostLive": {
+    "hooksFiredByHost": true,
+    "events": ["PreInvocation", "Stop", "PreInvocation", "Stop"],
+    "editArmFromHost": false,
+    "postToolUseCount": 0,
+    "StopContinueCount": 1,
+    "StopContinueShapes": [
+      {
+        "terminationReason": "ERROR",
+        "fullyIdle": true,
+        "stdout": "decision:continue + Recover reason (RUN not active)"
+      },
+      {
+        "terminationReason": "ERROR",
+        "fullyIdle": true,
+        "stdout": "{}"
+      }
+    ],
+    "blocker": "host agent turn did not edit; Eligibility/PERMISSION_DENIED on turn (out of Autopilot scope per plan)"
+  },
+  "hostCapturedNoToolCallReplay": {
+    "note": "NOT full ship-gate — prior-day host Stop stdin (NO_TOOL_CALL + transcript_full.jsonl) through today's vendor with armed session",
+    "stdout": "decision:continue + Review fix round 1",
+    "sourceCapture": "~/tmp-agy-live-9wTITP/live-artifacts/Stop-last-stdin.json"
+  },
+  "artifactsDir": "plans/v0.10.1-antigravity-fix/live-artifacts/"
+}

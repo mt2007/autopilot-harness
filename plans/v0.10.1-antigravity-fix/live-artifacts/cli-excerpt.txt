@@ -1,0 +1,35 @@
+79:I0917 15:52:27.842728       1 server.go:299] Creating CLI server backend: product=antigravity workspaceDirs=[/Users/zhaoqingli/ap-agy-live-1fxxrj /Users/zhaoqingli/ap-agy-live-1fxxrj] appDataDir=/Users/zhaoqingli/.gemini/antigravity-cli cascadeManager=true codeAssist=true
+91:I0917 15:52:27.844727       1 printmode.go:174] Print mode: starting (promptLength=106, model="", conversationID="")
+109:I0917 15:52:27.847314       1 session.go:68] Print mode: --dangerously-skip-permissions set, auto-approving all tool permissions
+110:I0917 15:52:27.847372       1 printmode.go:365] Print mode: not authenticated, trying silent auth
+126:    "message": "Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.",
+127:    "status": "PERMISSION_DENIED",
+141:W0917 15:52:30.202712     292 cache.go:135] Cache(retrieveUserQuotaSummary): Singleflight refresh failed: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+142:E0917 15:52:30.202812     292 errorreport.go:224] PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+143:W0917 15:52:30.202829     292 cache.go:163] Failed to refresh cache in background: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+144:W0917 15:52:30.202841     272 cache.go:163] Failed to refresh cache in background: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+149:I0917 15:52:30.461000       1 printmode.go:367] Print mode: silent auth succeeded
+153:    "message": "Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.",
+154:    "status": "PERMISSION_DENIED",
+168:W0917 15:52:30.799784     214 cache.go:135] Cache(retrieveUserQuotaSummary): Singleflight refresh failed: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+169:E0917 15:52:30.799842     214 errorreport.go:224] PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+170:W0917 15:52:30.799871     214 quota_manager.go:57] Failed to retrieve user quota summary: failed to retrieve user quota summary: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+171:W0917 15:52:30.799878     359 cache.go:163] Failed to refresh cache in background: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+197:I0917 15:52:33.225243       1 session.go:168] Print mode: conversation=6459c23f-96fd-4355-b67e-54d7b2bcc635, sending message
+217:    "message": "Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.",
+218:    "status": "PERMISSION_DENIED",
+232:W0917 15:52:34.011193     214 cache.go:135] Cache(retrieveUserQuotaSummary): Singleflight refresh failed: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+233:E0917 15:52:34.011417     214 errorreport.go:224] PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+234:W0917 15:52:34.011518     214 quota_manager.go:57] Failed to retrieve user quota summary: failed to retrieve user quota summary: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+236:W0917 15:52:34.011524     391 cache.go:163] Failed to refresh cache in background: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+245:    "message": "Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.",
+246:    "status": "PERMISSION_DENIED",
+260:W0917 15:52:34.346177     214 cache.go:135] Cache(retrieveUserQuotaSummary): Singleflight refresh failed: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+261:E0917 15:52:34.346241     214 errorreport.go:224] PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+262:W0917 15:52:34.346275     214 quota_manager.go:57] Failed to retrieve user quota summary: failed to retrieve user quota summary: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+263:W0917 15:52:34.346270     607 cache.go:163] Failed to refresh cache in background: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+265:E0917 15:52:37.261096     441 errorreport.go:224] conversation title generation for 6459c23f-96fd-4355-b67e-54d7b2bcc635: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+266:W0917 15:52:37.261384     441 conversation_title.go:149] Conversation title generation failed for 6459c23f-96fd-4355-b67e-54d7b2bcc635: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+267:E0917 15:52:38.640953     442 errorreport.go:224] agent executor error: generating and executing: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+268:E0917 15:52:38.641589     442 errorreport.go:224] generating and executing: PERMISSION_DENIED (code 403): Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.
+269:E0917 15:52:38.662750       1 session.go:239] Print mode: run ended with error and no response: Your current account is not eligible for Gemini Code Assist for individuals because it is not currently available in your location.

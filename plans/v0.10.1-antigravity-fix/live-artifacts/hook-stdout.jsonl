@@ -1,0 +1,4 @@
+{"ts":"2026-09-17T07:52:33.458Z","event":"PreInvocation","stdout":"{}","status":0}
+{"ts":"2026-09-17T07:52:37.252Z","event":"Stop","stdout":"{\"decision\":\"continue\",\"reason\":\"Recover: the previous turn ended with an error. Continue your current work; Autopilot RUN is not active.\"}","status":0}
+{"ts":"2026-09-17T07:52:37.400Z","event":"PreInvocation","stdout":"{}","status":0}
+{"ts":"2026-09-17T07:52:38.638Z","event":"Stop","stdout":"{}","status":0}

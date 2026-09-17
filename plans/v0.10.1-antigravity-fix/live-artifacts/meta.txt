@@ -1,0 +1,4 @@
+disposableRepo=/Users/zhaoqingli/ap-agy-live-1fxxrj
+agyBin=/Users/zhaoqingli/.local/bin/agy-bin
+hookStopCommand=node bin/autopilot-harness-hook.mjs --platform antigravity --event Stop
+appJs='export const n = 2'
