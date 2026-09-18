@@ -1,46 +1,41 @@
-# Live smoke evidence — `live-pi-smoke` (**blocked**)
+# Live smoke evidence — `live-pi-smoke` (**proven ≥1**)
 
 ## Verdict
 
-**Not proven** (2026-09-18). Interactive TUI reached an armed executing session, then the model call failed. Continue **0×**. Edit arm **not observed**.
+**Proven** (2026-09-18 retry). Interactive TUI, model reachable. Edit arm **yes**. Host continue **1×** (`custom_message` `customType: autopilot-harness`, text starts `Review fix round 1`). Aim **≥2× not reached** — driver stopped during that first review turn, before a second settle.
 
-Ship gate: **do not release 0.14.0**. This is not a waive and not a degraded pass. A later retry needs a reachable provider, then continue ≥1× (aim ≥2×) plus an edit/`write` tool arm.
-
-Checklist item stays `[ ]`.
+Prior attempt the same day was **blocked** (provider NXDOMAIN, continue 0×). This retry replaces that ship block for the continue/edit gates.
 
 ## Environment
 
 | Item | Value |
 |------|-------|
-| Pi | **0.85.1** on PATH |
-| Surface | interactive TUI (`ctx.mode = "tui"`), `pi --approve`, **not** `pi -p` / JSON |
+| Pi | **0.85.1** |
+| Surface | interactive TUI (`pi --approve`), **not** `pi -p` / JSON |
 | Provider | `newapi` / `deepseek/deepseek-v4-flash-20260731` |
-| `NEWAPI_API_KEY` | set |
-| DNS | `newapi.zbjt.com` → **NXDOMAIN** (system resolver). `pi auth check --provider newapi` still prints ready (key present, host unreachable) |
-| Disposable repo | `/tmp/ap-pi-live-0EzhTR` (`init --yes --platform pi`) |
+| DNS | `newapi.zbjt.com` resolves (was NXDOMAIN on the blocked run) |
+| Disposable repo | `/tmp/ap-pi-live-GHVik9` (`init --yes --platform pi`) |
+| Session file | `/tmp/ap-pi-live-evidence/sessions2/2026-09-18T15-13-20-176Z_01a0b514-472f-70d2-87d5-ec6e1cab9977.jsonl` |
 
 ## What ran
 
-1. Rebuilt CLI so `--platform pi` is installable, then init wrote `.pi/extensions/autopilot.ts` + vendor runtime + `.agents/skills`.
-2. First TUI: events fired, but `ExtensionAPI` has **no** `sessionManager` / `mode` / `cwd`. Handlers read `pi.sessionManager`, so conversation id was empty and **no session was armed**.
-3. Extension now reads **`ctx.sessionManager` / `ctx.mode` / `ctx.cwd`** (research R2). Contract test updated. `packages/cli/tests/pi-contract.test.ts` — 10 passed.
-4. Retry, clean line-start `Autopilot RUN live-pi-smoke`:
-   - `mode=tui`, session file present
-   - session `phase=executing`, `armed=1`, `track_id=live-pi-smoke`
-5. Model turn: `Error: Connection error` then `Retry failed after 3 attempts`. `agent_settled` fired. No `source=extension` input. No `tool_result`. `src/hello.ts` unchanged. `chain_pending=0`, `code_edited=0`.
+1. Fresh disposable init wrote `.pi/extensions/autopilot.ts` (ctx session id) + vendor runtime.
+2. One TUI prompt started with `Autopilot RUN live-pi-smoke` plus the edit instruction on the same line.
+3. Model used the **edit** tool. `src/hello.ts` gained `// live-smoke`.
+4. After `agent_settled`, the session contains **one** `custom_message` / `autopilot-harness` whose content is the harness fix-round followup. The next assistant turn treats that text as the user request.
+5. SQLite session stayed `phase=idle`, `track_id=_pending` (slug did not bind — extra sentence after the RUN phrase). Review still armed under `review.scope: project`. Continue path is the same `agent_settled` → `sendMessage(followUp, triggerTurn)`.
 
 ## Gates
 
 | Gate | Status |
 |------|--------|
 | Interactive TUI (R5), not print/JSON | **Yes** |
-| RUN arms Pi session | **Yes** (after ctx session-id fix) |
-| continue ≥1× | **No** |
-| edit arm | **No** |
-| Ship 0.14.0 | **No** |
+| Edit arm (`edit` tool + file change) | **Yes** |
+| continue ≥1× | **Yes** (1× custom message) |
+| continue ≥2× (aim) | **No** |
+| RUN binds `track_id=live-pi-smoke` / `phase=executing` | **No** this retry (prompt shape). Prior blocked run did arm executing. |
+| Ship 0.14.0 | **Not yet** — docs/bump still unchecked; aim-2 and clean RUN bind not repeated |
 
-## Working tree (not committed here)
+## Prior blocked run
 
-- `packages/cli/assets/pi-extension/autopilot.ts` — session/mode/cwd from event `ctx`
-- `packages/cli/tests/pi-contract.test.ts` — assert no `pi.sessionManager`
-- `packages/cli/dist/assets/pi-extension/autopilot.ts` — synced copy
+See git history of this file (2026-09-18 earlier): TUI armed `phase=executing` `track_id=live-pi-smoke`, then `Connection error` / continue **0×**.

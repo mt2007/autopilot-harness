@@ -10,8 +10,8 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 
 ## Skills / hooks do not appear
 
-1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, **Factory Droid**, **Hermes Agent**, or **Antigravity**) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, Hermes **`$HERMES_HOME/config.yaml`**, or Antigravity **`.agents/hooks.json`**) and skills under the project skills path where applicable (`.cursor/skills/` / `.claude/skills/` / **`.agents/skills/`** / **`.gemini/skills/`** / **`.factory/skills/`** / **`$HERMES_HOME/skills/`** — Codex / Kimi / Copilot / Grok have no Autopilot skills path).
+1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, **Factory Droid**, **Hermes Agent**, **Antigravity**, or **Pi**) or start a **new** Agent chat.
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, Hermes **`$HERMES_HOME/config.yaml`**, Antigravity **`.agents/hooks.json`**, or Pi **`.pi/extensions/autopilot.ts`**) and skills under the project skills path where applicable (`.cursor/skills/` / `.claude/skills/` / **`.agents/skills/`** / **`.gemini/skills/`** / **`.factory/skills/`** / **`$HERMES_HOME/skills/`** — Codex / Kimi / Copilot / Grok have no Autopilot skills path; Pi **shares** Antigravity **`.agents/skills`**).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity / Runner in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity / Pi / Runner in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -181,6 +181,20 @@ Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Cl
 - **CLI workspace:** mount the instrumented project (e.g. **`--add-dir`** / open the folder) or hooks may **not load** (`loaded 0`) — product tip, not a network/proxy issue.
 - Gemini skills (if enabled): always **`.gemini/skills/autopilot-*`** even when Antigravity is also enabled — run **`/trust`** + **`/skills reload`**. Dual Antigravity+Gemini: both trees get `autopilot-*`.
 - `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs missing `.agents/bin` shim (or legacy `.autopilot/bin`), timeout/cap/IDE+CLI workspace / missing skills / auto-attach tip.
+
+### Pi
+
+**Pi** is **Shipped** (**interactive TUI live Stop-continue ≥1× proved**). Autopilot is an **in-process** TypeScript extension (not a shell `--platform pi` stamp — dispatch stays **ten-way shell + Pi extension**).
+
+- Extension: project **`.pi/extensions/autopilot.ts`** (init **direct-writes**; **never** `pi install`; PATH `pi` not required to write) loading **`.autopilot/bin/vendor/runtime.mjs`**.
+- Events: **`input`** / **`before_agent_start`** (ON/RUN) / **`tool_result`** (`write`\|`edit` + dirty-arm) / **`agent_settled`** continue via **`sendMessage` + `followUp` + `triggerTurn`** (**R1:** inject only when pending followup).
+- Skills: **shares `.agents/skills/autopilot-*`** with Antigravity (**does not** write Antigravity `hooks.json`).
+- Soft min Pi **≥0.85.1** (doctor WARN when missing/below).
+- After install/upgrade: **`/trust` then `/reload`**.
+- **R10:** Autopilot surface = **interactive TUI only** — **`pi -p` / JSON / print unsupported**.
+- Under **`one_executor`**, Pi + Runner cannot both hold an armed executing session.
+- `doctor` **FAIL**s when the extension fingerprint is missing/incomplete (symlink / non-file → FAIL); WARNs soft min / trust+reload / R10; WARNs shared-skills dual when Pi+Antigravity; WARNs leftover `.pi/extensions/autopilot.ts` fingerprint when `pi` is not in `platforms`; Runner+Pi dual under **`one_executor`** uses the same Runner+hook-host WARN.
+- Live: interactive TUI continue **≥1×** proved (`custom_message` / `autopilot-harness`) + edit arm yes (`plans/v0.14-pi/live-smoke-evidence.md`); aim ≥2× optional.
 
 ### Runner
 
