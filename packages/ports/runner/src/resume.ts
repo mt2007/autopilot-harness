@@ -7,14 +7,19 @@ import {
 } from "@autopilot-harness/core";
 import { resolveChecklistPathInProject } from "./command-template.js";
 
+/** Idle / missing-session hint: planning flags + executing --run. */
+export const RUNNER_RESUME_START_HINT =
+  "npx @autopilot-harness/cli runner start --on [--brief ...] [--message ...] or --run <slug>";
+
 export type ResumeDecision =
-  | { ok: true; reason: "pending" | "executing" }
+  | { ok: true; reason: "pending" | "planning" | "executing" }
   | { ok: false; reason: "missing" | "paused" | "idle"; message: string };
 
 /**
- * Whether `runner start` may continue without `--run` (research §8).
+ * Whether `runner start` may continue without `--run` / `--on` (research §5).
  * When there is no pending tip, gates must match first-turn prompt builders
- * (track + in-project checklist + unchecked item) so resume never ok-then-throw.
+ * so resume never ok-then-throw: planning needs only unpaused phase;
+ * executing needs track + in-project checklist + unchecked item.
  */
 export function canResumeRunnerSession(
   store: StateStore,
@@ -33,8 +38,7 @@ export function canResumeRunnerSession(
     return {
       ok: false,
       reason: "missing",
-      message:
-        "No runner session. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+      message: `No runner session. Start with: ${RUNNER_RESUME_START_HINT}`,
     };
   }
   if (session.paused !== 0) {
@@ -52,6 +56,10 @@ export function canResumeRunnerSession(
     return { ok: true, reason: "pending" };
   }
 
+  if (session.phase === "planning") {
+    return { ok: true, reason: "planning" };
+  }
+
   if (session.phase === "executing") {
     const root =
       normalizeProjectRoot(store.projectRoot) ??
@@ -62,8 +70,7 @@ export function canResumeRunnerSession(
       return {
         ok: false,
         reason: "idle",
-        message:
-          "Cannot resume: missing track or checklist path. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+        message: `Cannot resume: missing track or checklist path. Start with: ${RUNNER_RESUME_START_HINT}`,
       };
     }
     if (!isSafeTrackSlug(slug)) {
@@ -79,8 +86,7 @@ export function canResumeRunnerSession(
         return {
           ok: false,
           reason: "idle",
-          message:
-            "Checklist not found or outside project. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+          message: `Checklist not found or outside project. Start with: ${RUNNER_RESUME_START_HINT}`,
         };
       }
       const cl = parseChecklist(abs, { projectRoot: root });
@@ -90,15 +96,13 @@ export function canResumeRunnerSession(
       return {
         ok: false,
         reason: "idle",
-        message:
-          "Track has no unchecked items. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+        message: `Track has no unchecked items. Start with: ${RUNNER_RESUME_START_HINT}`,
       };
     } catch {
       return {
         ok: false,
         reason: "idle",
-        message:
-          "Cannot read checklist for resume. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+        message: `Cannot read checklist for resume. Start with: ${RUNNER_RESUME_START_HINT}`,
       };
     }
   }
@@ -106,7 +110,6 @@ export function canResumeRunnerSession(
   return {
     ok: false,
     reason: "idle",
-    message:
-      "Nothing to resume. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+    message: `Nothing to resume. Start with: ${RUNNER_RESUME_START_HINT}`,
   };
 }

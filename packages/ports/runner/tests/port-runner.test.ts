@@ -19,6 +19,7 @@ import {
   runRunnerLoop,
   runStopTick,
   resolveInitialPrompt,
+  RUNNER_RESUME_START_HINT,
   shouldContinueAfterStop,
   stableRunnerConversationId,
   tokenizeCommandTemplate,
@@ -439,6 +440,109 @@ describe("resolveInitialPrompt phase branch", () => {
     expect(tip).toMatch(/Autopilot Runner — planning/i);
     expect(tip).toMatch(/Track: \(unset/i);
     expect(tip).not.toContain("_pending");
+  });
+});
+
+describe("canResumeRunnerSession planning", () => {
+  it("succeeds for phase=planning when unpaused", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resumeplan01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "v0.13-runner-on",
+    });
+    const d = canResumeRunnerSession(store, cid, root);
+    expect(d.ok).toBe(true);
+    if (d.ok) expect(d.reason).toBe("planning");
+  });
+
+  it("fails for paused planning session", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resumeplanpaused";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 1,
+      paused_reason: "user_off",
+    });
+    const d = canResumeRunnerSession(store, cid, root);
+    expect(d.ok).toBe(false);
+    if (!d.ok) expect(d.reason).toBe("paused");
+  });
+
+  it("prefers pending tip over planning reason", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resumeplanpend";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "v0.13-runner-on",
+    });
+    store.updateReviewChain(cid, {
+      pending_followup: "Review fix round 1: pending wins resume",
+      pending_followup_at: new Date().toISOString(),
+    });
+    const d = canResumeRunnerSession(store, cid, root);
+    expect(d.ok).toBe(true);
+    if (d.ok) expect(d.reason).toBe("pending");
+  });
+
+  it("idle/missing hints mention --on / --message / --brief and keep --run", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const missing = canResumeRunnerSession(store, "runner:nosession99", root);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.reason).toBe("missing");
+      expect(missing.message).toContain(RUNNER_RESUME_START_HINT);
+      expect(missing.message).toContain("--on");
+      expect(missing.message).toContain("--message");
+      expect(missing.message).toContain("--brief");
+      expect(missing.message).toContain("--run");
+    }
+
+    const cid = "runner:resumeidle01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "idle",
+      armed: 0,
+      paused: 0,
+    });
+    const idle = canResumeRunnerSession(store, cid, root);
+    expect(idle.ok).toBe(false);
+    if (!idle.ok) {
+      expect(idle.reason).toBe("idle");
+      expect(idle.message).toContain(RUNNER_RESUME_START_HINT);
+      expect(idle.message).toContain("--on");
+      expect(idle.message).toContain("--message");
+      expect(idle.message).toContain("--brief");
+      expect(idle.message).toContain("--run");
+    }
   });
 });
 

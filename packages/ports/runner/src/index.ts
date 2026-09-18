@@ -62,6 +62,7 @@ export {
 
 export {
   canResumeRunnerSession,
+  RUNNER_RESUME_START_HINT,
   type ResumeDecision,
 } from "./resume.js";
 
