@@ -52,6 +52,11 @@ describe("runner installable binding", () => {
     expect(yaml).toMatch(/max_iterations:\s*32/);
     expect(yaml).not.toMatch(/^\s*command:/m);
     expect(yaml).toMatch(/# command:/);
+    // Commented examples must use argv-shaped tips for claude/codex — `{prompt_file}`
+    // expands to a path string (shell:false); `codex exec` treats PROMPT as text, not a file.
+    expect(yaml).toMatch(/# command: "claude -p \{prompt\}"/);
+    expect(yaml).toMatch(/# command: "codex exec -- \{prompt\}"/);
+    expect(yaml).not.toMatch(/codex exec -- \{prompt_file\}/);
   });
 
   it("upgrade merge appends missing runner keys", () => {

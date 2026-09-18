@@ -130,9 +130,9 @@ security:
 
 runner:
   # Required for autopilot-harness runner start — set a real agent CLI template
-  # (no fake default). Examples:
+  # (no fake default). Examples ({prompt} = tip argv; {prompt_file} = path the CLI must read):
   # command: "claude -p {prompt}"
-  # command: "codex exec -- {prompt_file}"
+  # command: "codex exec -- {prompt}"
   max_iterations: 32
   # prompt_mode: auto   # argv | file | auto
 `;

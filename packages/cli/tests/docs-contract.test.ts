@@ -270,10 +270,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/runner\.command/);
     // Trust callout must sit on Runner (not only elsewhere in the file).
     expect(tips).toMatch(
-      /runner\.command[\s\S]{0,280}trusted project config|command \+ `runner\.env` as \*\*trusted project config\*\*/i,
+      /runner\.command[\s\S]{0,400}trusted project config|command \+ `runner\.env` as \*\*trusted project config\*\*/i,
     );
     expect(tips).toMatch(
-      /runner\.command[\s\S]{0,350}shell:\s*false|shell: false[\s\S]{0,120}runner\.command/i,
+      /runner\.command[\s\S]{0,450}shell:\s*false|shell: false[\s\S]{0,120}runner\.command/i,
+    );
+    // Live-learned: {prompt_file} is a path; paused peer session can make --run "not runnable".
+    expect(tips).toMatch(
+      /\{prompt_file\}[\s\S]{0,120}file path|prompt_file[\s\S]{0,80}path/i,
+    );
+    expect(tips).toMatch(
+      /not runnable \(paused\)|paused[\s\S]{0,80}non-runnable|session purge/i,
     );
     expect(tips).toMatch(/one_executor/);
     expect(tips).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
@@ -460,13 +467,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/runner\.max_iterations/);
     // Must bind to Runner keys — `verify.commands` also says "trusted project config".
     expect(config).toMatch(
-      /runner\.command[\s\S]{0,500}trusted project config/i,
+      /runner\.command[\s\S]{0,900}trusted project config/i,
     );
     expect(config).toMatch(
       /runner\.cwd` \/ `runner\.env`[\s\S]{0,280}trusted project config|Treat `env` as \*\*trusted project config\*\*/i,
     );
     expect(config).toMatch(
-      /runner\.command[\s\S]{0,500}shell:\s*false|shell: false[\s\S]{0,80}runner\.command/i,
+      /runner\.command[\s\S]{0,900}shell:\s*false|shell: false[\s\S]{0,80}runner\.command/i,
     );
     expect(config).toMatch(
       /runner\.max_iterations[\s\S]{0,280}1\.\.500|clamped to \*\*1\.\.500\*\*/i,
@@ -498,7 +505,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(config).toMatch(/one_executor[\s\S]{0,200}Runner|Runner[\s\S]{0,200}one_executor/i);
     expect(config).toMatch(
-      /runner\.command[\s\S]{0,500}doctor \*\*WARN\*\*|doctor \*\*WARN\*\*[\s\S]{0,120}runner\.command/,
+      /runner\.command[\s\S]{0,900}doctor \*\*WARN\*\*|doctor \*\*WARN\*\*[\s\S]{0,120}runner\.command/,
     );
     expect(config).not.toMatch(/doctor WARN\/FAIL/);
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
