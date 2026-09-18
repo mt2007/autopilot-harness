@@ -39,6 +39,20 @@ function writeChecklist(root: string, slug: string, body: string): string {
   return cp;
 }
 
+/** Real ReviewEngine — never omit config (fail-open hides settle bugs). */
+function testEngine(store: StateStore, projectRoot: string): ReviewEngine {
+  return new ReviewEngine(store, {
+    confirmRounds: 5,
+    reviewScope: "executing_only",
+    verifyEnabled: false,
+    verifyCommands: [],
+    maxIdleStops: 5,
+    maxErrorsBeforePause: 3,
+    projectRoot,
+    recoverDebounceMs: 0,
+  });
+}
+
 describe("port-pi adapters", () => {
   it("documents constants and aliases", () => {
     expect(PI_PLATFORM).toBe("pi");
@@ -184,6 +198,21 @@ describe("port-pi adapters", () => {
       );
       const chain = store.getReviewChain("pi:sess-ed");
       expect(chain?.code_edited).toBe(1);
+
+      // plans/** is ignored — no dirty-arm.
+      store.updateReviewChain("pi:sess-ed", { code_edited: 0 });
+      const plansPath = path.join(root, "plans", "demo", "checklist.md");
+      handlePiToolResult(
+        store,
+        {
+          toolName: "write",
+          input: { path: plansPath },
+          sessionId: "sess-ed",
+          cwd: root,
+        },
+        root,
+      );
+      expect(store.getReviewChain("pi:sess-ed")?.code_edited ?? 0).toBe(0);
     } finally {
       store.close();
       fs.rmSync(root, { recursive: true, force: true });
@@ -193,7 +222,7 @@ describe("port-pi adapters", () => {
   it("R1: agent_settled without pending returns no continueMessage", () => {
     const root = tmpRoot();
     const store = new StateStore(root);
-    const engine = new ReviewEngine(store);
+    const engine = testEngine(store, root);
     try {
       handlePiBeforeAgentStart(
         store,
@@ -207,6 +236,8 @@ describe("port-pi adapters", () => {
         root,
       );
       expect(r.continueMessage).toBeUndefined();
+      expect(Object.keys(r)).toEqual([]);
+      expect(store.getReviewChain("pi:idle")?.chain_pending ?? 0).toBe(0);
     } finally {
       store.close();
       fs.rmSync(root, { recursive: true, force: true });
@@ -237,6 +268,19 @@ describe("port-pi adapters", () => {
         root,
       );
       expect(halt.continueMessage).toBeUndefined();
+
+      const blank = handlePiAgentSettled(
+        {
+          handleStop: () => ({
+            message: "  \n",
+            loop: true,
+          }),
+        } as unknown as ReviewEngine,
+        store,
+        { sessionId: "sess-loop", mode: "tui" },
+        root,
+      );
+      expect(blank.continueMessage).toBeUndefined();
 
       const cont = handlePiAgentSettled(
         {

@@ -11676,9 +11676,10 @@ function handlePiAgentSettledInner(engine, store, payload, projectRoot, opts) {
     loopCount: opts?.loopCount ?? 0,
     platform: PI_PLATFORM
   });
-  if (!action?.message || !action.loop) return {};
+  const msg = typeof action?.message === "string" ? action.message.trim() : "";
+  if (!msg || !action?.loop) return {};
   return {
-    continueMessage: clipText7(action.message, MAX_HOOK_TEXT_CHARS)
+    continueMessage: clipText7(msg, MAX_HOOK_TEXT_CHARS)
   };
 }
 

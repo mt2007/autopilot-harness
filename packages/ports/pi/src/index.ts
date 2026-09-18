@@ -612,10 +612,12 @@ function handlePiAgentSettledInner(
     platform: PI_PLATFORM,
   });
 
-  // R1: no pending / non-looping → empty (extension must not inject).
-  if (!action?.message || !action.loop) return {};
+  // R1: no pending / non-looping / blank message → empty (extension must not inject).
+  const msg =
+    typeof action?.message === "string" ? action.message.trim() : "";
+  if (!msg || !action?.loop) return {};
 
   return {
-    continueMessage: clipText(action.message, MAX_HOOK_TEXT_CHARS),
+    continueMessage: clipText(msg, MAX_HOOK_TEXT_CHARS),
   };
 }
