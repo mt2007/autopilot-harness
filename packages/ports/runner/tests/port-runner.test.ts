@@ -546,6 +546,113 @@ describe("canResumeRunnerSession planning", () => {
   });
 });
 
+describe("runRunnerLoop planning-on path", () => {
+  it("loop source never imports or calls applyOn (CLI-only --on)", () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, "../src/loop.ts"),
+      "utf8",
+    );
+    expect(src).not.toMatch(/\bapplyOn\s*\(/);
+    expect(src).not.toMatch(/import\s*\{[^}]*\bapplyOn\b/);
+    expect(src).toMatch(/\bapplyRun\b/);
+    expect(src).toMatch(/planningBrief/);
+    expect(src).toMatch(/planningMessage/);
+  });
+
+  it("enters loop with planningBrief/message and always stop-ticks", async () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "review:\n  scope: executing_only\n  confirm_rounds: 1\n",
+      "utf8",
+    );
+    const store = new StateStore(root);
+    const cid = "runner:looponplan01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "v0.13-runner-on",
+    });
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    let stopTicks = 0;
+    const result = await runRunnerLoop({
+      store,
+      projectRoot: root,
+      conversationId: cid,
+      config: normalizeRunnerConfig({
+        command: "echo {prompt}",
+        max_iterations: 2,
+      }),
+      // No runSlug — CLI already applied --on; resume planning.
+      planningBrief: "ship runner --on",
+      planningMessage: "Q1: yes",
+      driver: mock,
+      stopTick: (s, r, payload, locale) => {
+        stopTicks += 1;
+        return runStopTick(s, r, payload, locale);
+      },
+    });
+    expect(result.outcome).toBe("stopped");
+    expect(result.iterations).toBe(1);
+    expect(stopTicks).toBe(1);
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]?.prompt).toMatch(/Autopilot Runner — planning/i);
+    expect(mock.calls[0]?.prompt).toContain("Track: v0.13-runner-on");
+    expect(mock.calls[0]?.prompt).toContain("ship runner --on");
+    expect(mock.calls[0]?.prompt).toContain("Q1: yes");
+    expect(store.getSession(cid)?.phase).toBe("planning");
+  });
+
+  it("--run path ignores planningBrief/message (executing prompt unchanged)", async () => {
+    const root = tmpRoot();
+    const plans = path.join(root, "plans", "loop-run-reg");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-run — R\n",
+      "utf8",
+    );
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "review:\n  scope: executing_only\n  confirm_rounds: 1\n",
+      "utf8",
+    );
+    const store = new StateStore(root);
+    const cid = stableRunnerConversationId(root);
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const result = await runRunnerLoop({
+      store,
+      projectRoot: root,
+      conversationId: cid,
+      config: normalizeRunnerConfig({
+        command: "echo {prompt}",
+        max_iterations: 1,
+      }),
+      runSlug: "loop-run-reg",
+      planningBrief: "MUST-NOT-APPEAR-BRIEF",
+      planningMessage: "MUST-NOT-APPEAR-MSG",
+      driver: mock,
+      phaseActions: { plansDir: "plans" },
+    });
+    expect(["stopped", "budget_exhausted", "completed"]).toContain(
+      result.outcome,
+    );
+    expect(result.iterations).toBeGreaterThan(0);
+    expect(mock.calls[0]?.prompt).toMatch(/Autopilot Runner — executing/i);
+    expect(mock.calls[0]?.prompt).toContain("item-run");
+    expect(mock.calls[0]?.prompt).not.toContain("MUST-NOT-APPEAR-BRIEF");
+    expect(mock.calls[0]?.prompt).not.toContain("MUST-NOT-APPEAR-MSG");
+    expect(mock.calls[0]?.prompt).not.toMatch(/Autopilot Runner — planning/i);
+  });
+});
+
 describe("runStopTick + MockDriver loop smoke", () => {
   it("runStopTick uses platform runner", () => {
     const root = tmpRoot();

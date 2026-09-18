@@ -43,7 +43,10 @@ export interface RunRunnerLoopOptions {
   projectRoot: string;
   conversationId: string;
   config: RunnerConfig;
-  /** When set, applyRun before the loop (fresh start). */
+  /**
+   * When set, applyRun before the loop (fresh `--run`).
+   * Planning `--on` is applied by the CLI only — this loop never runs the ON binder.
+   */
   runSlug?: string;
   phaseActions?: PhaseActionConfig;
   /** Override driver (tests). Default: CliDriver when command set. */
@@ -53,9 +56,9 @@ export interface RunRunnerLoopOptions {
   onPrompt?: (prompt: string, iteration: number) => void;
   /** Override Stop tick (tests). Default: runStopTick. */
   stopTick?: typeof runStopTick;
-  /** Planning first-turn: `--brief` text (not persisted). */
+  /** Planning first-turn: `--brief` text (not persisted; prompt only). */
   planningBrief?: string;
-  /** Planning first-turn / resume: `--message` user turn. */
+  /** Planning first-turn / resume: `--message` user turn (prompt only). */
   planningMessage?: string;
 }
 
