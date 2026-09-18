@@ -3,6 +3,10 @@
  * first-prompt shape; product→fix re-inject; soft verify→advance→[x];
  * budget leaves pending; resume without `--run`; empty-start; missing command;
  * needPick fail-closed; ten-way hook matrix untouched (no `runner` platform).
+ *
+ * v0.13 tests-runner-on-contract — research §8: `--on`/`--brief`/`--message`,
+ * C1–C9 + C6 split exit, create db, planning resume, re-ON, `--run` still
+ * non-zero on stopped; ten-way untouched.
  * Deeper suites: port-runner / runner-cli / runner-init-doctor.
  */
 import { spawnSync } from "node:child_process";
@@ -385,5 +389,348 @@ describe("tests-runner-contract (research §5)", () => {
     expect(src).not.toMatch(/handleRunnerStop/);
     expect(src).not.toMatch(/declaredPlatform === "runner"/);
     expect(RUNNER_PLATFORM).toBe("runner");
+  });
+});
+
+describe("tests-runner-on-contract (research §8 / C1–C9)", () => {
+  it("ten-way hook matrix stays untouched (no runner platform)", () => {
+    const src = fs.readFileSync(HOOK_ASSET, "utf8");
+    const known = src.match(
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[([\s\S]*?)\]\)/,
+    );
+    expect(known).toBeTruthy();
+    const ids = [...(known?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual([
+      "cursor",
+      "claude-code",
+      "codex",
+      "kimi-code",
+      "copilot-cli",
+      "grok-build",
+      "gemini-cli",
+      "factory-droid",
+      "hermes-agent",
+      "antigravity",
+    ]);
+    expect(ids).toHaveLength(10);
+    expect(ids).not.toContain("runner");
+    expect(src).not.toMatch(/handleRunnerStop/);
+    expect(src).not.toMatch(/declaredPlatform === "runner"/);
+  });
+
+  it("--on + --run FAIL", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      runSlug: "demo",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/Cannot combine --on|--on[\s\S]*--run/i);
+      expect(outcome.exitCode).toBe(1);
+    }
+    expect(fs.existsSync(dbPath)).toBe(false);
+  });
+
+  it("--brief without --on FAIL", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    const outcome = await startRunner({
+      projectRoot: root,
+      brief: "ship it",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toMatch(/--brief requires --on/i);
+    expect(fs.existsSync(dbPath)).toBe(false);
+  });
+
+  it("C1 --message + --run FAIL", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    writeTrack(root, "demo");
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      runSlug: "demo",
+      message: "hi",
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/Cannot combine --message and --run \(C1\)/i);
+      expect(outcome.exitCode).toBe(1);
+    }
+    expect(mock.calls.length).toBe(0);
+    expect(fs.existsSync(dbPath)).toBe(false);
+  });
+
+  it("C4 empty --message FAIL", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      message: "  ",
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/--message must be non-empty after trim \(C4\)/i);
+      expect(outcome.exitCode).toBe(1);
+    }
+    expect(mock.calls.length).toBe(0);
+    expect(fs.existsSync(dbPath)).toBe(false);
+  });
+
+  it("--on creates state.db, enters planning, brief/message in prompt, C6 exit 0", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    expect(fs.existsSync(dbPath)).toBe(false);
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      brief: "ON · v0.13-runner-on · ship planning in runner",
+      message: "Q1: prefer A",
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(fs.existsSync(dbPath)).toBe(true);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.result.outcome).toBe("stopped");
+      expect(outcome.exitCode).toBe(0);
+      expect(mock.calls[0]?.prompt).toMatch(/Autopilot Runner — planning/i);
+      expect(mock.calls[0]?.prompt).toContain("Track: v0.13-runner-on");
+      expect(mock.calls[0]?.prompt).toContain("ship planning in runner");
+      expect(mock.calls[0]?.prompt).toContain("Q1: prefer A");
+    }
+    const store = new StateStore(root);
+    try {
+      const sess = store.getSession(stableRunnerConversationId(root));
+      expect(sess?.phase).toBe("planning");
+      expect(sess?.track_id).toBe("v0.13-runner-on");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("C7 --on + --message OK (alias of planning entry)", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      message: "grill continue",
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.exitCode).toBe(0);
+      expect(mock.calls[0]?.prompt).toContain("grill continue");
+    }
+  });
+
+  it("bare resume phase=planning OK (C6 exit 0)", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: root,
+        code_root: root,
+        platform: RUNNER_PLATFORM,
+        phase: "planning",
+        armed: 0,
+        paused: 0,
+        track_id: "v0.13-runner-on",
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.exitCode).toBe(0);
+      expect(mock.calls[0]?.prompt).toMatch(/Autopilot Runner — planning/i);
+    }
+  });
+
+  it("re--on clears pending tip (C9)", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: root,
+        code_root: root,
+        platform: RUNNER_PLATFORM,
+        phase: "planning",
+        armed: 0,
+        paused: 0,
+        track_id: "_pending",
+      });
+      store.updateReviewChain(cid, {
+        pending_followup: "Review fix round 1: stale tip",
+        pending_followup_at: new Date().toISOString(),
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      message: "fresh turn",
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(mock.calls[0]?.prompt).toContain("fresh turn");
+      expect(mock.calls[0]?.prompt).not.toContain("stale tip");
+    }
+    const store2 = new StateStore(root);
+    try {
+      expect(store2.getReviewChain(cid)?.pending_followup?.trim() ?? "").toBe(
+        "",
+      );
+    } finally {
+      store2.close();
+    }
+  });
+
+  it("C2 --message on executing resume FAIL", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    writeTrack(root, "demo");
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      applyRun(store, cid, root, {
+        slug: "demo",
+        config: { plansDir: "plans" },
+        platform: RUNNER_PLATFORM,
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      message: "nope",
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(
+        /--message is only valid in planning \(C2\)/i,
+      );
+      expect(outcome.exitCode).toBe(1);
+    }
+    expect(mock.calls.length).toBe(0);
+  });
+
+  it("C5 --message with pending tip FAIL", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: root,
+        code_root: root,
+        platform: RUNNER_PLATFORM,
+        phase: "planning",
+        armed: 0,
+        paused: 0,
+        track_id: "_pending",
+      });
+      store.updateReviewChain(cid, {
+        pending_followup: "Review confirm round 1/5: tip",
+        pending_followup_at: new Date().toISOString(),
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      message: "answer",
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(
+        /--message cannot be used while a pending tip is set \(C5\)/i,
+      );
+      expect(outcome.exitCode).toBe(1);
+    }
+    expect(mock.calls.length).toBe(0);
+  });
+
+  it("C6 --run stopped/budget still non-zero", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    writeTrack(root, "demo");
+    const outcome = await startRunner({
+      projectRoot: root,
+      runSlug: "demo",
+      flags: { maxIterations: 1 },
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(["stopped", "budget_exhausted"]).toContain(outcome.result.outcome);
+      expect(outcome.exitCode).toBe(1);
+    }
+  });
+
+  it("--on while executing FAIL (no spawn)", async () => {
+    const root = tmpRoot();
+    writeConfig(root);
+    writeTrack(root, "demo");
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      applyRun(store, cid, root, {
+        slug: "demo",
+        config: { plansDir: "plans" },
+        platform: RUNNER_PLATFORM,
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toMatch(/executing|OFF|REPLAN/i);
+    expect(mock.calls.length).toBe(0);
   });
 });
