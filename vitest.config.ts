@@ -45,6 +45,10 @@ export default defineConfig({
         __dirname,
         "packages/ports/runner/src/index.ts",
       ),
+      "@autopilot-harness/port-pi": path.resolve(
+        __dirname,
+        "packages/ports/pi/src/index.ts",
+      ),
     },
   },
 });
