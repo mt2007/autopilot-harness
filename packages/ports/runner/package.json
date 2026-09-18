@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-runner",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Autopilot harness external process runner for hosts without stop-continue (CLI loop + drivers)",
   "license": "MIT",
   "repository": {

@@ -9,6 +9,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-09-18
+
+### Fixed
+
+- **Runner init / docs**: commented example `codex exec -- {prompt_file}` treated a filesystem path as tip **text** under `shell: false`; examples and config/troubleshooting now use **`{prompt}`** for text-PROMPT CLIs and clarify **`{prompt_file}`** = path the agent CLI must **read**. Troubleshooting notes paused peer session → track **not runnable** (`session purge` / RESUME in that chat).
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.12.1** public packages.
+- **Live**: Runner external loop reinject proved with a real **codex** driver (`iterations ≥ 2`, pending tip on turn 2).
+
 ## [0.12.0] — 2026-09-18
 
 ### Added

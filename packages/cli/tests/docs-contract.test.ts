@@ -1520,6 +1520,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0101).toMatch(/\.agents\/bin|shim/i);
     expect(section0101).toMatch(/live-proved|0\.10\.1/);
     expect(section0101).toMatch(/pnpm publish|pnpm pack/i);
+    const section0121 = changelogSection(log, "0.12.1");
+    expect(section0121).toMatch(/prompt_file|\{prompt\}/i);
+    expect(section0121).toMatch(/codex/i);
+    expect(section0121).toMatch(/not runnable|session purge|shell:\s*false/i);
+    expect(section0121).toMatch(/pnpm publish|pnpm pack/i);
     const section012 = changelogSection(log, "0.12.0");
     expect(section012).toMatch(/port-runner|@autopilot-harness\/port-runner/i);
     expect(section012).toMatch(/Shipped \(meta\)|Runner \(meta\)/i);
