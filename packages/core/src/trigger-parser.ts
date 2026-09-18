@@ -197,8 +197,12 @@ function matchTextTrigger(
   return null;
 }
 
-function parseSlugAndBrief(rest: string): { slug?: string; initialBrief?: string } {
-  if (!rest) return {};
+export function parseSlugAndBrief(rest: string): {
+  slug?: string;
+  initialBrief?: string;
+} {
+  // Public API: reject non-strings without throwing (private callers always passed string).
+  if (typeof rest !== "string" || !rest) return {};
   // token optional then · slug or free text
   const parts = rest.split(/\s*·\s*/);
   if (parts.length >= 2) {

@@ -7,9 +7,55 @@ import {
   applyRun,
   isSafeTrackSlug,
   MAX_SLUG_LEN,
+  parseSlugAndBrief,
   parseTrigger,
   StateStore,
 } from "../src/index.js";
+
+describe("parseSlugAndBrief", () => {
+  it("returns empty for blank rest", () => {
+    expect(parseSlugAndBrief("")).toEqual({});
+  });
+
+  it("returns empty for non-string input (public API guard)", () => {
+    expect(parseSlugAndBrief(undefined as unknown as string)).toEqual({});
+    expect(parseSlugAndBrief(null as unknown as string)).toEqual({});
+    expect(parseSlugAndBrief(1 as unknown as string)).toEqual({});
+  });
+
+  it("treats a safe slug-only rest as slug", () => {
+    expect(parseSlugAndBrief("v0.13-runner-on")).toEqual({
+      slug: "v0.13-runner-on",
+    });
+  });
+
+  it("treats unsafe single token as initialBrief", () => {
+    expect(parseSlugAndBrief("../evil")).toEqual({
+      initialBrief: "../evil",
+    });
+    expect(parseSlugAndBrief("build comments")).toEqual({
+      initialBrief: "build comments",
+    });
+  });
+
+  it("parses · slug and trailing brief", () => {
+    expect(parseSlugAndBrief("seed · v0.1-npm-release")).toEqual({
+      slug: "v0.1-npm-release",
+    });
+    expect(
+      parseSlugAndBrief("seed · v0.1-npm-release · more detail"),
+    ).toEqual({
+      slug: "v0.1-npm-release",
+      initialBrief: "more detail",
+    });
+  });
+
+  it("ignores · split when second part is not a safe slug", () => {
+    expect(parseSlugAndBrief("a · ../nope")).toEqual({
+      initialBrief: "a · ../nope",
+    });
+  });
+});
 
 describe("isSafeTrackSlug", () => {
   it("allows kebab segments and single dots between alnum", () => {

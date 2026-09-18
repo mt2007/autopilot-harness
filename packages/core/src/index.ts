@@ -145,6 +145,7 @@ export {
 
 export {
   parseTrigger,
+  parseSlugAndBrief,
   firstSubstantiveLine,
   substantivePromptBody,
   isHarnessFollowupMessage,
