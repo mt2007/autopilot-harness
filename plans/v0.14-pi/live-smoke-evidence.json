@@ -1,0 +1,23 @@
+{
+  "item": "live-pi-smoke",
+  "date": "2026-09-18",
+  "verdict": "blocked",
+  "ship014": false,
+  "surface": "interactive-tui",
+  "piVersion": "0.85.1",
+  "flags": ["--approve"],
+  "notPrintMode": true,
+  "provider": "newapi",
+  "model": "deepseek/deepseek-v4-flash-20260731",
+  "dns": "NXDOMAIN newapi.zbjt.com",
+  "disposableRepo": "/tmp/ap-pi-live-0EzhTR",
+  "runArmed": true,
+  "mode": "tui",
+  "continueCount": 0,
+  "editArm": false,
+  "agentSettled": true,
+  "extensionFollowup": false,
+  "codeEdited": 0,
+  "sessionIdFix": "ctx.sessionManager (not ExtensionAPI)",
+  "checklistChecked": false
+}

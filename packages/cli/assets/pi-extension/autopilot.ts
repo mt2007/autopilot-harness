@@ -10,12 +10,38 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+function canonicalizeRoot(raw) {
+  const abs = path.resolve(raw);
+  try {
+    return fs.realpathSync(abs);
+  } catch {
+    return abs;
+  }
+}
+
+/** Install layout only: `<project>/.pi/extensions/<file>` → project root. */
+function extensionInstallRoot() {
+  try {
+    const here = fileURLToPath(import.meta.url);
+    const extDir = path.dirname(here);
+    // Reject cache/temp copies whose `../..` happens to contain a vendor.
+    if (path.basename(extDir) !== "extensions") return "";
+    const piDir = path.dirname(extDir);
+    if (path.basename(piDir) !== ".pi") return "";
+    return canonicalizeRoot(path.dirname(piDir));
+  } catch {
+    return "";
+  }
+}
 
 function resolveProjectRoot(pi) {
+  const fromFile = extensionInstallRoot();
+  // Layout matched. Missing vendor must not hop to another cwd that has one.
+  if (fromFile) return fromFile;
   const cwd = typeof pi?.cwd === "string" && pi.cwd.trim() ? pi.cwd.trim() : "";
-  if (cwd) return path.resolve(cwd);
-  return process.cwd();
+  return canonicalizeRoot(cwd || process.cwd());
 }
 
 function vendorRuntimePath(projectRoot) {
@@ -44,40 +70,72 @@ async function loadVendor(projectRoot) {
   }
 }
 
-function sessionIds(pi) {
+/** Session id lives on the event context, not ExtensionAPI (Pi 0.85.1). */
+function sessionIds(ctx) {
   let sessionFile = null;
   let sessionId = null;
   try {
-    sessionFile = pi.sessionManager?.getSessionFile?.() ?? null;
+    sessionFile = ctx?.sessionManager?.getSessionFile?.() ?? null;
   } catch {
     sessionFile = null;
   }
   try {
-    sessionId = pi.sessionManager?.getSessionId?.() ?? null;
+    sessionId = ctx?.sessionManager?.getSessionId?.() ?? null;
   } catch {
     sessionId = null;
   }
   return { sessionFile, sessionId };
 }
 
+function eventMode(ctx) {
+  // ExtensionAPI has no mode; R10 uses ExtensionContext.mode only.
+  return ctx?.mode;
+}
+
+/** Relative tool paths are cwd-relative. Stay inside the install root. */
+export function pathResolveCwd(ctx, projectRoot) {
+  const cwd =
+    typeof ctx?.cwd === "string" && ctx.cwd.trim() ? ctx.cwd.trim() : "";
+  if (!cwd || typeof projectRoot !== "string" || !projectRoot.trim()) {
+    return projectRoot;
+  }
+  let resolved;
+  try {
+    resolved = fs.realpathSync(path.resolve(cwd));
+    if (!fs.statSync(resolved).isDirectory()) return projectRoot;
+  } catch {
+    return projectRoot;
+  }
+  if (
+    resolved === projectRoot ||
+    resolved.startsWith(projectRoot + path.sep)
+  ) {
+    return resolved;
+  }
+  return projectRoot;
+}
+
 export default function autopilotPiExtension(pi) {
+  // Fixed at load. Do not retarget from later ctx.cwd (would desync the store
+  // or attach state to a different tree that happens to contain a vendor).
   const projectRoot = resolveProjectRoot(pi);
   /** @type {Promise<{ vendor: any, store: any, engine: any } | null> | null} */
   let runtimePromise = null;
 
   function ensureRuntime() {
     if (!runtimePromise) {
+      const root = projectRoot;
       runtimePromise = (async () => {
-        const vendor = await loadVendor(projectRoot);
+        const vendor = await loadVendor(root);
         if (!vendor?.StateStore || !vendor?.createConfiguredReviewEngine) {
           return null;
         }
         let store = null;
         try {
-          store = new vendor.StateStore(projectRoot);
+          store = new vendor.StateStore(root);
           const engine = vendor.createConfiguredReviewEngine(
             store,
-            projectRoot,
+            root,
           );
           return { vendor, store, engine };
         } catch {
@@ -99,17 +157,17 @@ export default function autopilotPiExtension(pi) {
     return runtimePromise;
   }
 
-  pi.on("input", async (event) => {
+  pi.on("input", async (event, ctx) => {
     try {
       const rt = await ensureRuntime();
       if (!rt?.vendor?.handlePiInput) return;
-      const ids = sessionIds(pi);
+      const ids = sessionIds(ctx);
       const result = rt.vendor.handlePiInput(
         rt.store,
         {
           text: event?.text,
           source: event?.source,
-          mode: pi.mode,
+          mode: eventMode(ctx),
           cwd: projectRoot,
           ...ids,
         },
@@ -123,16 +181,16 @@ export default function autopilotPiExtension(pi) {
     }
   });
 
-  pi.on("before_agent_start", async (event) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     try {
       const rt = await ensureRuntime();
       if (!rt?.vendor?.handlePiBeforeAgentStart) return;
-      const ids = sessionIds(pi);
+      const ids = sessionIds(ctx);
       const result = rt.vendor.handlePiBeforeAgentStart(
         rt.store,
         {
           prompt: event?.prompt,
-          mode: pi.mode,
+          mode: eventMode(ctx),
           cwd: projectRoot,
           ...ids,
         },
@@ -149,18 +207,18 @@ export default function autopilotPiExtension(pi) {
     }
   });
 
-  pi.on("tool_result", async (event) => {
+  pi.on("tool_result", async (event, ctx) => {
     try {
       const rt = await ensureRuntime();
       if (!rt?.vendor?.handlePiToolResult) return;
-      const ids = sessionIds(pi);
+      const ids = sessionIds(ctx);
       rt.vendor.handlePiToolResult(
         rt.store,
         {
           toolName: event?.toolName,
           input: event?.input,
-          mode: pi.mode,
-          cwd: projectRoot,
+          mode: eventMode(ctx),
+          cwd: pathResolveCwd(ctx, projectRoot),
           ...ids,
         },
         projectRoot,
@@ -170,16 +228,16 @@ export default function autopilotPiExtension(pi) {
     }
   });
 
-  pi.on("agent_settled", async () => {
+  pi.on("agent_settled", async (_event, ctx) => {
     try {
       const rt = await ensureRuntime();
       if (!rt?.vendor?.handlePiAgentSettled) return;
-      const ids = sessionIds(pi);
+      const ids = sessionIds(ctx);
       const result = rt.vendor.handlePiAgentSettled(
         rt.engine,
         rt.store,
         {
-          mode: pi.mode,
+          mode: eventMode(ctx),
           cwd: projectRoot,
           ...ids,
         },

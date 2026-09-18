@@ -43,6 +43,7 @@ import {
   PI_EXTENSION_REL_PATH,
   piExtensionContainsAutopilot,
 } from "../src/init/pi-extension.js";
+import { pathResolveCwd } from "../assets/pi-extension/autopilot.ts";
 import { installInitYes } from "../src/init/install.js";
 import { runDoctor } from "../src/status-doctor.js";
 import { uninstallProject } from "../src/uninstall.js";
@@ -141,6 +142,38 @@ describe("tests-pi-contract (v0.14)", () => {
     expect(ext).toMatch(/sendUserMessage/);
     // R1: only inject when continueMessage is non-empty.
     expect(ext).toMatch(/if\s*\(\s*!continueMessage\s*\)\s*return/);
+    // R2: session id / mode are on the event context, not ExtensionAPI.
+    expect(ext).toMatch(/ctx\?\.sessionManager\?\.getSessionFile/);
+    expect(ext).toMatch(/ctx\?\.sessionManager\?\.getSessionId/);
+    expect(ext).not.toMatch(/pi\.sessionManager/);
+    expect(ext).toMatch(/pi\.on\(\s*["']input["']\s*,\s*async\s*\(\s*event\s*,\s*ctx\s*\)/);
+    expect(ext).toMatch(
+      /pi\.on\(\s*["']before_agent_start["']\s*,\s*async\s*\(\s*event\s*,\s*ctx\s*\)/,
+    );
+    expect(ext).toMatch(
+      /pi\.on\(\s*["']tool_result["']\s*,\s*async\s*\(\s*event\s*,\s*ctx\s*\)/,
+    );
+    expect(ext).toMatch(
+      /pi\.on\(\s*["']agent_settled["']\s*,\s*async\s*\(\s*_?event\s*,\s*ctx\s*\)/,
+    );
+    // Install root is the extension file's project (.. / ..), not a later cwd.
+    expect(ext).toMatch(/function extensionInstallRoot/);
+    expect(ext).toMatch(/import\.meta\.url/);
+    expect(ext).toMatch(/fileURLToPath/);
+    expect(ext).toMatch(/basename\(extDir\) !== ["']extensions["']/);
+    expect(ext).toMatch(/basename\(piDir\) !== ["']\.pi["']/);
+    expect(ext).toMatch(/if \(fromFile\) return fromFile/);
+    expect(ext).not.toMatch(/vendorPresent/);
+    expect(ext).toMatch(/ensureRuntime\s*\(\s*\)/);
+    expect(ext).toMatch(/function eventMode\s*\(\s*ctx\s*\)/);
+    expect(ext).not.toMatch(/maybeAdoptCtxRoot/);
+    expect(ext).not.toMatch(/eventMode\s*\(\s*ctx\s*,\s*pi\s*\)/);
+    expect(ext).not.toMatch(/eventRoot\s*\(/);
+    expect(ext).not.toMatch(/pi\?\.mode/);
+    // Relative write/edit paths follow ctx.cwd only when it stays in the install root.
+    expect(ext).toMatch(/function pathResolveCwd/);
+    expect(ext).toMatch(/cwd:\s*pathResolveCwd\(ctx,\s*projectRoot\)/);
+    expect(ext).toMatch(/isDirectory\(\)/);
     // R9: no blocking UI calls on continue path (comment may mention ctx.ui).
     const settledIdx = ext.search(/pi\.on\(\s*["']agent_settled["']/);
     expect(settledIdx).toBeGreaterThanOrEqual(0);
@@ -153,6 +186,30 @@ describe("tests-pi-contract (v0.14)", () => {
       expect(ext).toContain(fp);
     }
     expect(piExtensionContainsAutopilot(ext)).toBe(true);
+  });
+
+  it("pathResolveCwd stays inside the install root and rejects non-directories", () => {
+    root = tmpProject();
+    const sub = path.join(root, "pkg");
+    fs.mkdirSync(sub, { recursive: true });
+    const file = path.join(root, "note.txt");
+    fs.writeFileSync(file, "x\n");
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ap-pi-outside-"));
+    const sibling = `${root}-evil`;
+    fs.mkdirSync(sibling, { recursive: true });
+    try {
+      const realRoot = fs.realpathSync(root);
+      expect(pathResolveCwd({}, realRoot)).toBe(realRoot);
+      expect(pathResolveCwd({ cwd: "  " }, realRoot)).toBe(realRoot);
+      expect(pathResolveCwd({ cwd: sub }, realRoot)).toBe(fs.realpathSync(sub));
+      expect(pathResolveCwd({ cwd: file }, realRoot)).toBe(realRoot);
+      expect(pathResolveCwd({ cwd: outside }, realRoot)).toBe(realRoot);
+      expect(pathResolveCwd({ cwd: sibling }, realRoot)).toBe(realRoot);
+      expect(pathResolveCwd({ cwd: sub }, "")).toBe("");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+      fs.rmSync(sibling, { recursive: true, force: true });
+    }
   });
 
   it("R7: shell stamp --platform pi aborts before FSM", () => {
