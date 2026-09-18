@@ -187,6 +187,9 @@ function skillHostsFromConfigYaml(yaml: string): {
   }
   if (platformsWantInstallableHost(platforms, "antigravity")) {
     project.push(".agents");
+  } else if (platformsWantInstallableHost(platforms, "pi")) {
+    // R3: Pi shares .agents/skills with Antigravity (no duplicate host entry).
+    project.push(".agents");
   }
   return {
     project,

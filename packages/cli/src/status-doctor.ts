@@ -140,6 +140,14 @@ import {
 } from "@autopilot-harness/port-factory-droid";
 import { ANTIGRAVITY_STOP_CAP_RAISE_FOUND } from "@autopilot-harness/port-antigravity";
 import {
+  PI_EXTENSION_REL_PATH,
+  PI_SOFT_MIN_VERSION,
+  isPiVersionBelowSoftMin,
+  piExtensionContainsAutopilot,
+  probePiCliVersion,
+  readPiExtensionFile,
+} from "./init/pi-extension.js";
+import {
   ANTIGRAVITY_HOOKS_REL_PATH,
   ANTIGRAVITY_HOOK_BLOCK_NAME,
   ANTIGRAVITY_HOOK_TIMEOUT_SEC,
@@ -2524,6 +2532,67 @@ export function runDoctor(
     }
   }
 
+  const wantPi = configWantsInstallableHost(cfg.platforms, "pi");
+  if (wantPi) {
+    lines.push(
+      "WARN  Pi tip: project-local .pi/extensions load only after trust — run /trust then /reload after install/upgrade",
+    );
+    lines.push(
+      "WARN  Pi tip (R10): Autopilot surface is interactive TUI only — pi -p / JSON / print modes are unsupported host surfaces",
+    );
+    const piVer = probePiCliVersion();
+    if (!piVer) {
+      lines.push(
+        "WARN  pi CLI not found on PATH (or --version unreadable) — init does not require it (R4); soft min " +
+          PI_SOFT_MIN_VERSION,
+      );
+    } else if (isPiVersionBelowSoftMin(piVer)) {
+      lines.push(
+        `WARN  pi ${safeDisplayToken(piVer)} is below soft min ${PI_SOFT_MIN_VERSION} — upgrade Pi when possible`,
+      );
+    } else {
+      lines.push(`OK    pi ${safeDisplayToken(piVer)} (>= soft min ${PI_SOFT_MIN_VERSION})`);
+    }
+    const piPath = path.join(root, ".pi", "extensions", "autopilot.ts");
+    const piRead = readPiExtensionFile(piPath);
+    if (!piRead.ok) {
+      lines.push(
+        `FAIL  ${PI_EXTENSION_REL_PATH}: ${safeDisplayToken(piRead.error, "unreadable")} — run init --force`,
+      );
+      ok = false;
+    } else if (piRead.value == null) {
+      lines.push(
+        `FAIL  ${PI_EXTENSION_REL_PATH} missing — run init --force (or --add-platform pi)`,
+      );
+      ok = false;
+    } else if (!piExtensionContainsAutopilot(piRead.value)) {
+      lines.push(
+        `FAIL  ${PI_EXTENSION_REL_PATH} Autopilot fingerprint incomplete — run init --force`,
+      );
+      ok = false;
+    } else {
+      lines.push(`OK    ${PI_EXTENSION_REL_PATH} Autopilot fingerprint`);
+    }
+    if (wantAntigravity) {
+      lines.push(
+        "WARN  Pi + Antigravity both enabled — shared .agents/skills; Pi does not write .agents/hooks.json; expect dual-host care",
+      );
+    }
+  } else {
+    // Leftover Pi extension fingerprint when Pi is not configured.
+    const piPath = path.join(root, ".pi", "extensions", "autopilot.ts");
+    const piRead = readPiExtensionFile(piPath);
+    if (
+      piRead.ok &&
+      piRead.value != null &&
+      piExtensionContainsAutopilot(piRead.value)
+    ) {
+      lines.push(
+        `WARN  leftover ${PI_EXTENSION_REL_PATH} Autopilot fingerprint (pi not in platforms) — uninstall or add-platform pi`,
+      );
+    }
+  }
+
   const homeDir = opts.homeDir ?? os.homedir();
   if (wantCursor && hasGlobalSelfReviewHooks(homeDir)) {
     lines.push(
@@ -2601,7 +2670,7 @@ export function runDoctor(
       containRoot: root,
     });
   }
-  if (wantAntigravity) {
+  if (wantAntigravity || wantPi) {
     skillHosts.push({
       label: ".agents/skills/",
       pathFor: (name) =>

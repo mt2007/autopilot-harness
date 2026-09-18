@@ -547,6 +547,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Hermes Agent";
     case "antigravity":
       return "Antigravity";
+    case "pi":
+      return "Pi";
     case "runner":
       return "Runner";
     default: {
@@ -594,6 +596,9 @@ export function formatPostInstallOutro(
     if (id === "antigravity") {
       return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run. Hooks live in .agents/hooks.json (named autopilot-harness block; timeout 120; .agents/bin shim). After install/upgrade: reload Antigravity / start a new session (IDE tip: hooks may be silent until reload). CLI: mount the project workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`;
     }
+    if (id === "pi") {
+      return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills; shared with Antigravity) or line-start triggers.on / triggers.run. Extension: .pi/extensions/autopilot.ts (direct write; soft min 0.85.1). After install/upgrade: /trust the project then /reload. Autopilot surface is interactive TUI only (not pi -p / JSON). Under concurrency.mode: one_executor, Pi and Runner cannot both hold an armed executing session.`;
+    }
     if (id === "runner") {
       return `You're all set — set runner.command in .autopilot/config.yml (no fake default), then: autopilot-harness runner start --run <slug>. Status: autopilot-harness runner status. Under concurrency.mode: one_executor, Runner and a hook host cannot both hold an armed executing session.`;
     }
@@ -617,9 +622,10 @@ export function formatPostInstallOutro(
     ids.includes("gemini-cli") ||
     ids.includes("factory-droid") ||
     ids.includes("hermes-agent") ||
-    ids.includes("antigravity")
+    ids.includes("antigravity") ||
+    ids.includes("pi")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Gemini/Factory/Hermes/Antigravity: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Gemini/Factory/Hermes/Antigravity/Pi: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -674,6 +680,10 @@ export function formatHostActivationTips(
     } else if (id === "antigravity") {
       tips.push(
         `${host}: Autopilot writes .agents/hooks.json (named autopilot-harness block; PreInvocation+PostToolUse+Stop; timeout 120; node .agents/bin/autopilot-harness-hook.mjs shim → ../../.autopilot/bin/… via import.meta.url — not bare ../.autopilot; --platform antigravity) and .agents/skills/autopilot-* (does not write .agent/). After install/upgrade: reload Antigravity or start a new session (IDE hooks may stay silent until reload). CLI: mount the project workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0). Auto-attach ≠ Autopilot ON — still /autopilot-on or line-start triggers.on / triggers.run.`,
+      );
+    } else if (id === "pi") {
+      tips.push(
+        `${host}: Autopilot direct-writes .pi/extensions/autopilot.ts (R6; never pi install; PATH pi not required to write) loading .autopilot/bin/vendor/runtime.mjs, and shares .agents/skills/autopilot-* with Antigravity (does not write .agents/hooks.json). Soft min 0.85.1 (doctor WARN). After install/upgrade: /trust then /reload. Autopilot surface = interactive TUI only (R10: not pi -p / JSON). Activation: /autopilot-on or line-start triggers.on / triggers.run. Under one_executor, Pi + Runner cannot both hold an armed executing session.`,
       );
     } else if (id === "runner") {
       tips.push(
@@ -771,6 +781,11 @@ function hostActivationPlainLines(
           `在 ${host} 中试用 /autopilot-on（skills 在 .agents/skills）或行首 triggers.on / triggers.run。`,
           `hooks 写 .agents/hooks.json（具名 autopilot-harness；timeout 120；.agents/bin shim；不写 .agent/）。安装/升级后请 reload 或新开会话（IDE tip：未 reload 时 hooks 可能不响）。CLI 须挂项目 workspace（如 --add-dir / 打开文件夹），否则 hooks 可能不加载（loaded 0）。auto-attach ≠ Autopilot ON — 仍需 /autopilot-on 或行首触发。`,
         );
+      } else if (id === "pi") {
+        lines.push(
+          `在 ${host} 中试用 /autopilot-on（skills 在 .agents/skills，与 Antigravity 共用）或行首 triggers.on / triggers.run。`,
+          `扩展直接写入 .pi/extensions/autopilot.ts（不跑 pi install；软下限 0.85.1）。安装/升级后请 /trust 再 /reload。正式面仅为交互 TUI（不支持 pi -p / JSON）。one_executor 下 Pi 与 Runner 不能同时持有武装 executing 会话。`,
+        );
       } else if (id === "runner") {
         lines.push(
           `在 .autopilot/config.yml 设置 runner.command（无假默认），然后：autopilot-harness runner start --run <slug>。`,
@@ -831,6 +846,11 @@ function hostActivationPlainLines(
       lines.push(
         `In ${host}, try /autopilot-on (skills under .agents/skills) or line-start triggers.on / triggers.run.`,
         `Hooks are written to .agents/hooks.json (named autopilot-harness block; timeout 120; .agents/bin shim; does not write .agent/). After install/upgrade: reload or start a new session (IDE tip: hooks may stay silent until reload). CLI: mount the project workspace (e.g. --add-dir / open the folder) or hooks may not load (loaded 0). Auto-attach ≠ Autopilot ON — still run /autopilot-on or a line-start trigger.`,
+      );
+    } else if (id === "pi") {
+      lines.push(
+        `In ${host}, try /autopilot-on (skills under .agents/skills; shared with Antigravity) or line-start triggers.on / triggers.run.`,
+        `Extension: .pi/extensions/autopilot.ts (direct write; soft min 0.85.1). After install/upgrade: /trust then /reload. Autopilot surface is interactive TUI only (not pi -p / JSON). Under one_executor, Pi and Runner cannot both hold an armed executing session.`,
       );
     } else if (id === "runner") {
       lines.push(

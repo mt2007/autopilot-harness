@@ -29,6 +29,7 @@
 .agents/hooks.json
 .agents/bin/**
 .agents/skills/**
+.pi/extensions/autopilot*
 
 # Planning artifacts
 plans/**

@@ -74,6 +74,7 @@ import {
   assertPresentRealFile,
 } from "./wizard-helpers.js";
 import { skillDescriptions } from "@autopilot-harness/i18n";
+import { installPiExtension } from "./pi-extension.js";
 import {
   DEFAULT_AUTOPILOT_IGNORE_TEXT,
   loadProjectHookConfig,
@@ -1642,7 +1643,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantFactory = platformsWantInstallableHost(effectivePlatforms, "factory-droid");
     const wantHermes = platformsWantInstallableHost(effectivePlatforms, "hermes-agent");
     const wantAntigravity = platformsWantInstallableHost(effectivePlatforms, "antigravity");
+    const wantPi = platformsWantInstallableHost(effectivePlatforms, "pi");
     const wantRunner = platformsWantInstallableHost(effectivePlatforms, "runner");
+    const wantAgentsSkills = wantAntigravity || wantPi;
     if (
       !wantCursor &&
       !wantClaude &&
@@ -1654,12 +1657,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       !wantFactory &&
       !wantHermes &&
       !wantAntigravity &&
+      !wantPi &&
       !wantRunner
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, and/or runner).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, and/or runner).",
       };
     }
 
@@ -1774,6 +1778,27 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const antigravityPre = readAntigravityHooksFile(antigravityHooksPath);
       if (!antigravityPre.ok) {
         return { ok: false, error: antigravityPre.error };
+      }
+    } else if (wantPi) {
+      // Pi shares .agents/skills with Antigravity but never writes hooks.json.
+      try {
+        assertNotSymlink(agentsDir, ".agents/");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
+    if (wantPi) {
+      const piDir = path.join(projectRoot, ".pi");
+      const piExtDir = path.join(piDir, "extensions");
+      const piExtPath = path.join(piExtDir, "autopilot.ts");
+      try {
+        assertNotSymlink(piDir, ".pi/");
+        assertNotSymlink(piExtDir, ".pi/extensions/");
+        assertNotSymlink(piExtPath, ".pi/extensions/autopilot.ts");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
       }
     }
     const kimiHome = resolveKimiCodeHome();
@@ -2112,6 +2137,14 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, error: msg };
       }
+    } else if (wantPi) {
+      try {
+        assertNotSymlink(agentsDir, ".agents/");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
     }
     if (wantKimi) {
       kimiFresh = readKimiConfigToml(kimiTomlPath);
@@ -2188,7 +2221,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     // Codex / Kimi / Copilot / Grok have no Autopilot skills path — skip.
     // Gemini / Factory / Hermes / Antigravity co-install skills with hooks
     // (Gemini always `.gemini/skills` even when Antigravity is also enabled;
-    // Antigravity uses `.agents/skills`, never `.agent/`).
+    // Antigravity + Pi share `.agents/skills`, never `.agent/`; Pi does not
+    // write Antigravity hooks.json).
     try {
       if (wantCursor) {
         written.push(
@@ -2212,7 +2246,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           }),
         );
       }
-      if (wantAntigravity) {
+      if (wantAgentsSkills) {
         written.push(
           ...installSkills(templatesRoot, projectRoot, locale, ".agents"),
         );
@@ -2590,6 +2624,20 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           ok: false,
           error: `Hooks refreshed, but config.yml normalize failed: ${msg}`,
         };
+      }
+    }
+
+    // Pi extension last among host artifacts: after skills + hooks + platforms
+    // merge commit, so a failed add-platform merge cannot leave an orphan
+    // `.pi/extensions/autopilot.ts` without `pi` in config.yml.
+    if (wantPi) {
+      try {
+        const rel = installPiExtension(projectRoot, cliRoot);
+        if (!written.includes(rel)) written.push(rel);
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
       }
     }
 

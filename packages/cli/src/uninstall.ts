@@ -74,6 +74,12 @@ import {
   stripRunnerConfigTraces,
 } from "./init/platforms.js";
 import {
+  PI_EXTENSION_REL_PATH,
+  piExtensionContainsAutopilot,
+  readPiExtensionFile,
+  removePiExtension,
+} from "./init/pi-extension.js";
+import {
   AUTOPILOT_SKILL_NAMES,
   AUTOPILOT_WORKFLOW_FILES,
 } from "./init/install.js";
@@ -754,6 +760,7 @@ function projectWantsInstallableHosts(configPath: string): {
   factory: boolean;
   hermes: boolean;
   antigravity: boolean;
+  pi: boolean;
   runner: boolean;
 } {
   try {
@@ -773,6 +780,7 @@ function projectWantsInstallableHosts(configPath: string): {
       factory: configWantsInstallableHost(platforms, "factory-droid"),
       hermes: configWantsInstallableHost(platforms, "hermes-agent"),
       antigravity: configWantsInstallableHost(platforms, "antigravity"),
+      pi: configWantsInstallableHost(platforms, "pi"),
       runner: configWantsInstallableHost(platforms, "runner"),
     };
   } catch {
@@ -786,6 +794,7 @@ function projectWantsInstallableHosts(configPath: string): {
       factory: false,
       hermes: false,
       antigravity: false,
+      pi: false,
       runner: false,
     };
   }
@@ -886,12 +895,14 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       factory: wantFactory,
       hermes: wantHermes,
       antigravity: wantAntigravity,
+      pi: wantPi,
       runner: wantRunner,
     } = projectWantsInstallableHosts(configPath);
+    const wantAgentsSkills = wantAntigravity || wantPi;
     // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory/.agents trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi/Hermes use user-home config (outside project) —
-    // strip separately.
+    // strip separately. Pi shares .agents/skills with Antigravity.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
     // isRealDirectory is false for symlinks — probe with lstat so links are caught.
@@ -932,11 +943,16 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
           [factorySkillsRoot, ".factory/skills/"],
         );
       }
-      if (wantAntigravity) {
+      if (wantAgentsSkills) {
         dirs.push(
           [agentsDir, ".agents/"],
           [agentsSkillsRoot, ".agents/skills/"],
         );
+      }
+      if (wantPi) {
+        const piDir = path.join(projectRoot, ".pi");
+        const piExtDir = path.join(piDir, "extensions");
+        dirs.push([piDir, ".pi/"], [piExtDir, ".pi/extensions/"]);
       }
       for (const [dir, label] of dirs) {
         if (!pathExistsViaLstat(dir)) continue;
@@ -982,7 +998,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
             `.factory/skills/${name}`,
           );
         }
-        if (wantAntigravity) {
+        if (wantAgentsSkills) {
           assertRemovalTargetSafe(
             projectRoot,
             path.join(agentsSkillsRoot, name),
@@ -1057,7 +1073,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     // --- Cursor hooks ---
     const hooksPre = readHooksFile(hooksPath);
     if (!hooksPre.ok) {
-      return { ok: false, error: hooksPre.error };
+      throw new Error(hooksPre.error);
     }
     if (hooksContainAutopilot(hooksPre.value)) {
       found = true;
@@ -1066,7 +1082,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         // Re-read immediately before write (same TOCTOU shrink as init).
         const hooksFresh = readHooksFile(hooksPath);
         if (!hooksFresh.ok) {
-          return { ok: false, error: hooksFresh.error };
+          throw new Error(hooksFresh.error);
         }
         if (!hooksContainAutopilot(hooksFresh.value)) {
           actions.push(
@@ -1099,7 +1115,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const claudePre = readClaudeSettingsFile(claudeSettingsPath);
     if (!claudePre.ok) {
       if (wantClaude) {
-        return { ok: false, error: claudePre.error };
+        throw new Error(claudePre.error);
       }
       actions.push(
         `skip .claude/settings.json (${formatUninstallSkipDetail(claudePre.error)})`,
@@ -1162,7 +1178,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const codexPre = readCodexHooksFile(codexHooksPath);
     if (!codexPre.ok) {
       if (wantCodex) {
-        return { ok: false, error: codexPre.error };
+        throw new Error(codexPre.error);
       }
       actions.push(
         `skip .codex/hooks.json (${formatUninstallSkipDetail(codexPre.error)})`,
@@ -1221,7 +1237,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const copilotPre = readCopilotHooksFile(copilotHooksPath);
     if (!copilotPre.ok) {
       if (wantCopilot) {
-        return { ok: false, error: copilotPre.error };
+        throw new Error(copilotPre.error);
       }
       actions.push(
         `skip ${copilotLabel} (${formatUninstallSkipDetail(copilotPre.error)})`,
@@ -1281,7 +1297,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const grokPre = readGrokHooksFile(grokHooksPath);
     if (!grokPre.ok) {
       if (wantGrok) {
-        return { ok: false, error: grokPre.error };
+        throw new Error(grokPre.error);
       }
       actions.push(
         `skip ${grokLabel} (${formatUninstallSkipDetail(grokPre.error)})`,
@@ -1359,7 +1375,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const geminiPre = readGeminiSettingsFile(geminiSettingsPath);
     if (!geminiPre.ok) {
       if (wantGemini) {
-        return { ok: false, error: geminiPre.error };
+        throw new Error(geminiPre.error);
       }
       actions.push(
         `skip ${geminiLabel} (${formatUninstallSkipDetail(geminiPre.error)})`,
@@ -1440,7 +1456,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const factoryPre = readFactoryHooksFile(factoryHooksPath);
     if (!factoryPre.ok) {
       if (wantFactory) {
-        return { ok: false, error: factoryPre.error };
+        throw new Error(factoryPre.error);
       }
       actions.push(
         `skip ${factoryLabel} (${formatUninstallSkipDetail(factoryPre.error)})`,
@@ -1520,7 +1536,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const antigravityPre = readAntigravityHooksFile(antigravityHooksPath);
     if (!antigravityPre.ok) {
       if (wantAntigravity) {
-        return { ok: false, error: antigravityPre.error };
+        throw new Error(antigravityPre.error);
       }
       actions.push(
         `skip ${antigravityLabel} (${formatUninstallSkipDetail(antigravityPre.error)})`,
@@ -1616,13 +1632,53 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       );
     }
 
+    // --- Pi extension (.pi/extensions/autopilot.ts) ---
+    // R6 direct-write artifact; remove when Pi is configured or fingerprint matches.
+    {
+      const piRead = readPiExtensionFile(
+        path.join(projectRoot, ".pi", "extensions", "autopilot.ts"),
+      );
+      if (!piRead.ok) {
+        if (wantPi) {
+          throw new Error(piRead.error);
+        }
+        actions.push(
+          `skip ${PI_EXTENSION_REL_PATH} (${formatUninstallSkipDetail(piRead.error)})`,
+        );
+      } else {
+        const text = piRead.value;
+        const hasFp = text != null && piExtensionContainsAutopilot(text);
+        if ((wantPi || hasFp) && text != null) {
+          if (dryRun) {
+            found = true;
+            actions.push(`unlink ${PI_EXTENSION_REL_PATH}`);
+          } else {
+            const result = removePiExtension(projectRoot);
+            if (result.removed) {
+              found = true;
+              actions.push(`unlink ${PI_EXTENSION_REL_PATH}`);
+              removed.push(PI_EXTENSION_REL_PATH);
+            } else if (result.skipped) {
+              if (wantPi) {
+                throw new Error(result.skipped);
+              }
+              actions.push(
+                `skip ${PI_EXTENSION_REL_PATH} (${formatUninstallSkipDetail(result.skipped)})`,
+              );
+            }
+          }
+        }
+        // wantPi + already missing → silent no-op (nothing to remove).
+      }
+    }
+
     // --- Kimi Code user-home config.toml (fingerprint only; never local.toml) ---
     const kimiHome = resolveKimiCodeHome();
     const kimiTomlPath = kimiConfigTomlPath(kimiHome);
     const kimiPre = readKimiConfigToml(kimiTomlPath);
     if (!kimiPre.ok) {
       if (wantKimi) {
-        return { ok: false, error: kimiPre.error };
+        throw new Error(kimiPre.error);
       }
       actions.push(
         `skip Kimi Code config.toml (${formatUninstallSkipDetail(kimiPre.error)})`,
@@ -1693,7 +1749,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const hermesPre = readHermesConfigYaml(hermesYamlPath);
     if (!hermesPre.ok) {
       if (wantHermes) {
-        return { ok: false, error: hermesPre.error };
+        throw new Error(hermesPre.error);
       }
       actions.push(
         `skip Hermes config.yaml (${formatUninstallSkipDetail(hermesPre.error)})`,
@@ -1806,11 +1862,12 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     }
 
     // --- Antigravity skills (.agents/skills) ---
+    // Shared with Pi (R3): remove when either host is configured.
     for (const name of AUTOPILOT_SKILL_NAMES) {
       const skillDir = path.join(agentsSkillsRoot, name);
       if (!pathExistsViaLstat(skillDir)) continue;
       try {
-        if (!wantAntigravity) {
+        if (!wantAgentsSkills) {
           assertRemovalTargetSafe(
             projectRoot,
             skillDir,
@@ -1827,7 +1884,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
           actions,
         );
       } catch (err) {
-        if (wantAntigravity) throw err;
+        if (wantAgentsSkills) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .agents/skills/${name} (${formatUninstallSkipDetail(msg)})`,

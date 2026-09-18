@@ -96,6 +96,7 @@ function preflightHostSettings(
   wantFactory: boolean,
   wantHermes: boolean,
   wantAntigravity: boolean,
+  wantPi: boolean = false,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -468,6 +469,28 @@ function preflightHostSettings(
     }
   }
 
+  if (wantPi) {
+    const piDir = path.join(projectRoot, ".pi");
+    const piExtDir = path.join(piDir, "extensions");
+    const piExtPath = path.join(piExtDir, "autopilot.ts");
+    try {
+      assertNotSymlink(piDir, ".pi/");
+      assertNotSymlink(piExtDir, ".pi/extensions/");
+      assertNotSymlink(piExtPath, ".pi/extensions/autopilot.ts");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    if (!wantAntigravity) {
+      try {
+        assertNotSymlink(path.join(projectRoot, ".agents"), ".agents/");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
+  }
+
   return { ok: true };
 }
 
@@ -745,6 +768,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantFactory = configWantsInstallableHost(platforms, "factory-droid");
     const wantHermes = configWantsInstallableHost(platforms, "hermes-agent");
     const wantAntigravity = configWantsInstallableHost(platforms, "antigravity");
+    const wantPi = configWantsInstallableHost(platforms, "pi");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -798,6 +822,12 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
         `merge ${ANTIGRAVITY_HOOKS_REL_PATH} (Autopilot named block; rewrite legacy .autopilot/bin → .agents/bin shim)`,
       );
     }
+    if (wantPi) {
+      actions.push("refresh .pi/extensions/autopilot.ts (direct write; no pi install)");
+      if (!wantAntigravity) {
+        actions.push("refresh .agents/skills/autopilot-* (shared with Antigravity; no hooks.json)");
+      }
+    }
 
     if (opts.target && opts.target !== version) {
       actions.push(
@@ -818,6 +848,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantFactory,
       wantHermes,
       wantAntigravity,
+      wantPi,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

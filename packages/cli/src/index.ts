@@ -226,6 +226,21 @@ export {
   stripRunnerConfigTraces,
 } from "./init/platforms.js";
 export type { PlatformBinding, PlatformSurface } from "./init/platforms.js";
+export {
+  PI_PLATFORM,
+  PI_SOFT_MIN_VERSION,
+  PI_EXTENSION_REL_PATH,
+  PI_EXTENSION_IGNORE_PATTERN,
+  PI_EXTENSION_FINGERPRINTS,
+  resolvePiExtensionTemplate,
+  piExtensionAbsolutePath,
+  piExtensionContainsAutopilot,
+  readPiExtensionFile,
+  installPiExtension,
+  removePiExtension,
+  probePiCliVersion,
+  isPiVersionBelowSoftMin,
+} from "./init/pi-extension.js";
 export { setProjectLocale } from "./locale-set.js";
 export type {
   LocaleSetOptions,
