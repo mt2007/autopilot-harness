@@ -7,6 +7,7 @@ import {
   RUNNER_PLATFORM,
   assertRunnerCommand,
   buildFirstTurnPrompt,
+  buildPlanningFirstTurnPrompt,
   canResumeRunnerSession,
   driverResultToStopStatus,
   expandCommandTemplate,
@@ -248,6 +249,48 @@ describe("first-turn prompt", () => {
     expect(text).toContain("v0.12-runner");
     expect(text).toContain("port-runner-package");
     expect(text).toMatch(/Autopilot Runner/i);
+  });
+});
+
+describe("planning first-turn prompt", () => {
+  it("marks planning mode and includes condensed workflow", () => {
+    const text = buildPlanningFirstTurnPrompt();
+    expect(text).toMatch(/Autopilot Runner — planning/i);
+    expect(text).toContain("no product code");
+    expect(text).toMatch(/Track: \(unset/i);
+    expect(text).toMatch(/No new user message/i);
+  });
+
+  it("includes slug, brief, and message when provided", () => {
+    const text = buildPlanningFirstTurnPrompt({
+      slug: "v0.13-runner-on",
+      brief: "ship runner --on",
+      message: "all recommendations",
+    });
+    expect(text).toContain("Track: v0.13-runner-on");
+    expect(text).toContain("Initial brief:");
+    expect(text).toContain("ship runner --on");
+    expect(text).toContain("User message:");
+    expect(text).toContain("all recommendations");
+    expect(text).not.toMatch(/No new user message/i);
+  });
+
+  it("trims blank-ish fields and ignores non-strings", () => {
+    const text = buildPlanningFirstTurnPrompt({
+      slug: "  ",
+      brief: "  keep-me  ",
+      message: undefined,
+    });
+    expect(text).toMatch(/Track: \(unset/i);
+    expect(text).toContain("keep-me");
+    expect(text).toMatch(/No new user message/i);
+  });
+
+  it("treats null opts and unsafe slug as unset track", () => {
+    expect(buildPlanningFirstTurnPrompt(null)).toMatch(/Track: \(unset/i);
+    const text = buildPlanningFirstTurnPrompt({ slug: "../evil" });
+    expect(text).toMatch(/Track: \(unset/i);
+    expect(text).not.toContain("../evil");
   });
 });
 
