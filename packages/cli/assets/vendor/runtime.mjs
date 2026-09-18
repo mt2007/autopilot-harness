@@ -2097,7 +2097,7 @@ function matchTextTrigger(line, phrases) {
   return null;
 }
 function parseSlugAndBrief(rest) {
-  if (!rest) return {};
+  if (typeof rest !== "string" || !rest) return {};
   const parts = rest.split(/\s*·\s*/);
   if (parts.length >= 2) {
     const maybeSlug = parts[1].trim();
