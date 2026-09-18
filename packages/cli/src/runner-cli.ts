@@ -3,9 +3,11 @@ import path from "node:path";
 import { parseDocument } from "yaml";
 import {
   StateStore,
+  applyOn,
   applyRun,
   normalizeInProjectPlansDir,
   normalizeProjectRoot,
+  parseSlugAndBrief,
   sanitizeSessionDisplayText,
   type FollowupLocaleBundle,
   type PhaseActionConfig,
@@ -13,6 +15,7 @@ import {
 import { isLocaleCode, loadLocale } from "@autopilot-harness/i18n";
 import {
   RUNNER_PLATFORM,
+  RUNNER_RESUME_START_HINT,
   canResumeRunnerSession,
   normalizeRunnerConfig,
   resolveRunnerCwd,
@@ -333,7 +336,10 @@ export type RunnerStartOk = {
   ok: true;
   result: RunnerLoopResult;
   conversationId: string;
-  /** CLI process exit: 0 only for clean completed (done/idle). */
+  /**
+   * CLI process exit: 0 for `completed`, or `stopped` in planning-context (C6);
+   * executing / `--run` `stopped` stays 1 (0.12).
+   */
   exitCode: number;
 };
 
@@ -345,23 +351,74 @@ export type RunnerStartFail = {
 
 export type RunnerStartOutcome = RunnerStartOk | RunnerStartFail;
 
-function exitCodeForLoopResult(result: RunnerLoopResult): number {
-  // Plan: done/idle → exit 0; budget exhaust / mid-stop leave work → non-zero.
-  return result.outcome === "completed" ? 0 : 1;
+/**
+ * Map loop outcome → process exit (research §7 / C6).
+ * `planningExitZero`: snapshot at gate time (`--on` or resume while phase=planning).
+ */
+export function exitCodeForLoopResult(
+  result: RunnerLoopResult,
+  planningExitZero = false,
+): number {
+  if (result.outcome === "completed") return 0;
+  if (result.outcome === "stopped" && planningExitZero) return 0;
+  return 1;
 }
 
 /**
- * `runner start` — `--run` binds/rebinds; omit `--run` to resume pending/executing.
+ * `runner start` — `--on` planning, `--run` bind/execute, or bare resume.
  */
 export async function startRunner(opts: {
   projectRoot: string;
   /** undefined = resume; "" / whitespace = bare --run; non-empty = --run <slug> */
   runSlug?: string;
+  /** Boolean `--on` (planning-in-runner). */
+  wantOn?: boolean;
+  /** Raw `--brief` text (only with `--on`); whole string → parseSlugAndBrief. */
+  brief?: string;
+  /**
+   * `--message` user turn. `undefined` = flag omitted; present (incl. "") is gated (C4).
+   */
+  message?: string;
   conversationId?: string;
   flags?: RunnerCliFlagOverrides;
   /** Test seam — default CliDriver when command set. */
   driver?: AgentDriver;
 }): Promise<RunnerStartOutcome> {
+  const wantOn = opts.wantOn === true;
+  const wantRun = opts.runSlug !== undefined;
+  const messageProvided = opts.message !== undefined;
+  const briefProvided = opts.brief !== undefined;
+
+  // Gate order research §2 (fail-closed before spawn / store side effects where possible).
+  if (wantOn && wantRun) {
+    return {
+      ok: false,
+      exitCode: 1,
+      error: "Cannot combine --on and --run. Use one start mode.",
+    };
+  }
+  if (briefProvided && !wantOn) {
+    return {
+      ok: false,
+      exitCode: 1,
+      error: "--brief requires --on.",
+    };
+  }
+  if (messageProvided && wantRun) {
+    return {
+      ok: false,
+      exitCode: 1,
+      error: "Cannot combine --message and --run (C1).",
+    };
+  }
+  if (messageProvided && !String(opts.message ?? "").trim()) {
+    return {
+      ok: false,
+      exitCode: 1,
+      error: "--message must be non-empty after trim (C4).",
+    };
+  }
+
   const root = normalizeProjectRoot(opts.projectRoot);
   if (!root) {
     return { ok: false, exitCode: 1, error: "Invalid project root." };
@@ -393,7 +450,7 @@ export async function startRunner(opts: {
     };
   }
 
-  // Validate cwd before applyRun / resume so a bad path cannot leave a bound session.
+  // Validate cwd before applyOn / applyRun / resume so a bad path cannot leave a bound session.
   try {
     resolveRunnerCwd(root, config.cwd);
   } catch (err) {
@@ -417,11 +474,17 @@ export async function startRunner(opts: {
     };
   }
 
-  const wantRun = opts.runSlug !== undefined;
+  const parsedBrief = briefProvided
+    ? parseSlugAndBrief(String(opts.brief ?? "").trim())
+    : {};
+  const planningBrief = parsedBrief.initialBrief;
+  const planningMessage = messageProvided
+    ? String(opts.message ?? "").trim()
+    : undefined;
 
   let store: StateStore;
   try {
-    if (wantRun) {
+    if (wantOn || wantRun) {
       store = openRunnerStoreForStart(root);
     } else {
       // Resume must not create state.db as a failed-start side effect.
@@ -430,8 +493,7 @@ export async function startRunner(opts: {
         return {
           ok: false,
           exitCode: 1,
-          error:
-            "No runner session. Start with: npx @autopilot-harness/cli runner start --run <slug>",
+          error: `No runner session. Start with: ${RUNNER_RESUME_START_HINT}`,
         };
       }
       store = existing;
@@ -454,8 +516,26 @@ export async function startRunner(opts: {
     }
 
     const phaseActions: PhaseActionConfig = { plansDir };
+    /** C6: snapshot before loop (do not re-read mid-loop). */
+    let planningExitZero = false;
 
-    if (wantRun) {
+    if (wantOn) {
+      const onResult = applyOn(store, conversationId, root, {
+        platform: RUNNER_PLATFORM,
+        slug: parsedBrief.slug,
+        initialBrief: parsedBrief.initialBrief,
+      });
+      if (!onResult.ok) {
+        return {
+          ok: false,
+          exitCode: 1,
+          error: onResult.userMessage,
+        };
+      }
+      // C9: after successful --on, drop any remaining pending tip (re-ON).
+      store.clearPendingFollowup(conversationId);
+      planningExitZero = true;
+    } else if (wantRun) {
       // Bind here so needPick → exit 2 (research §8); then loop resumes session.
       const runResult = applyRun(store, conversationId, root, {
         // "" / whitespace-only → bare --run (auto-bind / needPick), not an invalid slug.
@@ -482,6 +562,31 @@ export async function startRunner(opts: {
           error: resume.message,
         };
       }
+      planningExitZero =
+        store.getSession(conversationId)?.phase === "planning";
+    }
+
+    // C2 / C5 after bind/resume so phase + pending reflect live session.
+    if (messageProvided) {
+      const livePhase = store.getSession(conversationId)?.phase ?? "";
+      if (livePhase !== "planning") {
+        return {
+          ok: false,
+          exitCode: 1,
+          error:
+            "--message is only valid in planning (C2). Use --on or resume a planning session.",
+        };
+      }
+      const pendingTip =
+        store.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
+      if (pendingTip) {
+        return {
+          ok: false,
+          exitCode: 1,
+          error:
+            "--message cannot be used while a pending tip is set (C5). Resume without --message, or --on to clear (C9).",
+        };
+      }
     }
 
     let localeBundle: FollowupLocaleBundle | undefined;
@@ -497,10 +602,12 @@ export async function startRunner(opts: {
       projectRoot: root,
       conversationId,
       config,
-      // Already applied above when wantRun — avoid double applyRun.
+      // Already applied above when wantOn / wantRun — avoid double apply.
       phaseActions,
       localeBundle,
       driver: opts.driver,
+      planningBrief,
+      planningMessage,
     });
 
     if (result.outcome === "error") {
@@ -515,7 +622,7 @@ export async function startRunner(opts: {
       ok: true,
       result,
       conversationId,
-      exitCode: exitCodeForLoopResult(result),
+      exitCode: exitCodeForLoopResult(result, planningExitZero),
     };
   } finally {
     try {
@@ -548,7 +655,7 @@ function statusLinesWithoutSession(
     `runner.max_iterations: ${cfg.maxIterations}`,
     `plans_dir: ${plansDir}`,
     "session: (none)",
-    "hint: npx @autopilot-harness/cli runner start --run <slug>",
+    `hint: ${RUNNER_RESUME_START_HINT}`,
   ];
 }
 
@@ -626,9 +733,7 @@ export function formatRunnerStatus(opts: {
 
     if (!session) {
       lines.push("session: (none)");
-      lines.push(
-        "hint: npx @autopilot-harness/cli runner start --run <slug>",
-      );
+      lines.push(`hint: ${RUNNER_RESUME_START_HINT}`);
       return { ok: true, lines };
     }
 

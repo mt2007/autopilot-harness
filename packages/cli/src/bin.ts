@@ -421,7 +421,16 @@ const runnerCmd = program
 runnerCmd
   .command("start")
   .description(
-    "Run the Autopilot loop (resume pending/executing, or --run to bind a track)",
+    "Run the Autopilot loop (--on planning, --run bind, or bare resume)",
+  )
+  .option("--on", "Start / reopen planning (creates state.db)")
+  .option(
+    "--brief <text>",
+    "Planning brief with --on only (whole string → parseSlugAndBrief)",
+  )
+  .option(
+    "--message <text>",
+    "User turn for planning (with --on or planning resume)",
   )
   .option(
     "--run [slug]",
@@ -452,6 +461,9 @@ runnerCmd
   )
   .action(
     async (opts: {
+      on?: boolean;
+      brief?: string;
+      message?: string;
       run?: string | true;
       conversation?: string;
       command?: string;
@@ -467,6 +479,9 @@ runnerCmd
         : undefined;
       const outcome = await startRunner({
         projectRoot: process.cwd(),
+        wantOn: opts.on === true,
+        brief: opts.brief,
+        message: opts.message,
         runSlug,
         conversationId: opts.conversation,
         flags: {

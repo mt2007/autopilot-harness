@@ -249,6 +249,7 @@ export {
   loadProjectRunnerSettings,
   resolveRunnerConfigForStart,
   startRunner,
+  exitCodeForLoopResult,
 } from "./runner-cli.js";
 export type {
   RunnerCliFlagOverrides,

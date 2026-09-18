@@ -13,6 +13,7 @@ import {
   loadProjectRunnerSettings,
   resolveRunnerConfigForStart,
   startRunner,
+  exitCodeForLoopResult,
 } from "../src/runner-cli.js";
 
 const tmpDirs: string[] = [];
@@ -865,5 +866,337 @@ describe("cli runner-cli helpers", () => {
     if (!outcome.ok) {
       expect(outcome.error).toMatch(/max_iterations/i);
     }
+  });
+});
+
+describe("cli runner --on / --brief / --message (C1–C9, C6)", () => {
+  it("fails --on with --run", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      runSlug: "demo",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/--on[\s\S]*--run|Cannot combine --on/i);
+      expect(outcome.exitCode).toBe(1);
+    }
+  });
+
+  it("fails --brief without --on", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const outcome = await startRunner({
+      projectRoot: root,
+      brief: "ship something",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/--brief requires --on/i);
+    }
+  });
+
+  it("fails --message with --run (C1)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const outcome = await startRunner({
+      projectRoot: root,
+      runSlug: "demo",
+      message: "hello",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/C1|--message[\s\S]*--run/i);
+    }
+  });
+
+  it("fails empty --message (C4)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      message: "   ",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/C4|non-empty/i);
+    }
+  });
+
+  it("--on creates state.db and planning stopped exits 0 (C6)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const dbPath = path.join(root, ".autopilot", "state.db");
+    expect(fs.existsSync(dbPath)).toBe(false);
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      brief: "ship runner --on",
+      flags: { command: "echo {prompt}", maxIterations: 2 },
+      driver: mock,
+    });
+    expect(fs.existsSync(dbPath)).toBe(true);
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.result.outcome).toBe("stopped");
+      expect(outcome.exitCode).toBe(0);
+      expect(mock.calls[0]?.prompt).toMatch(/Autopilot Runner — planning/i);
+      expect(mock.calls[0]?.prompt).toContain("ship runner --on");
+    }
+    const store = new StateStore(root);
+    try {
+      const cid = stableRunnerConversationId(root);
+      expect(store.getSession(cid)?.phase).toBe("planning");
+    } finally {
+      store.close();
+    }
+  });
+
+  it("--on with --message is allowed (C7) and feeds prompt", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      brief: "v0.13-runner-on",
+      message: "Q1: prefer A",
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.exitCode).toBe(0);
+      expect(mock.calls[0]?.prompt).toContain("Track: v0.13-runner-on");
+      expect(mock.calls[0]?.prompt).toContain("Q1: prefer A");
+    }
+  });
+
+  it("re--on clears pending tip (C9)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: root,
+        code_root: root,
+        platform: RUNNER_PLATFORM,
+        phase: "planning",
+        armed: 0,
+        paused: 0,
+        track_id: "_pending",
+      });
+      store.updateReviewChain(cid, {
+        pending_followup: "Review fix round 1: leftover tip",
+        pending_followup_at: new Date().toISOString(),
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      message: "continue grill",
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(mock.calls[0]?.prompt).toContain("continue grill");
+      expect(mock.calls[0]?.prompt).not.toContain("leftover tip");
+    }
+    const store2 = new StateStore(root);
+    try {
+      const tip =
+        store2.getReviewChain(cid)?.pending_followup?.trim() ?? "";
+      expect(tip).toBe("");
+    } finally {
+      store2.close();
+    }
+  });
+
+  it("fails --message on executing resume (C2)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const plans = path.join(root, "plans", "demo");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      applyRun(store, cid, root, {
+        slug: "demo",
+        config: { plansDir: "plans" },
+        platform: RUNNER_PLATFORM,
+      });
+    } finally {
+      store.close();
+    }
+    const outcome = await startRunner({
+      projectRoot: root,
+      message: "should fail",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/C2|only valid in planning/i);
+    }
+  });
+
+  it("fails --message while pending tip remains (C5)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: root,
+        code_root: root,
+        platform: RUNNER_PLATFORM,
+        phase: "planning",
+        armed: 0,
+        paused: 0,
+        track_id: "_pending",
+      });
+      store.updateReviewChain(cid, {
+        pending_followup: "Review confirm round 1/5: tip",
+        pending_followup_at: new Date().toISOString(),
+      });
+    } finally {
+      store.close();
+    }
+    const outcome = await startRunner({
+      projectRoot: root,
+      message: "answer",
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/C5|pending tip/i);
+    }
+  });
+
+  it("--run stopped/budget still exits non-zero (C6 executing path)", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const plans = path.join(root, "plans", "demo");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    const outcome = await startRunner({
+      projectRoot: root,
+      runSlug: "demo",
+      flags: { maxIterations: 1 },
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(["stopped", "budget_exhausted"]).toContain(outcome.result.outcome);
+      expect(outcome.exitCode).toBe(1);
+    }
+  });
+
+  it("fails --on while session is executing", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const plans = path.join(root, "plans", "demo");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      applyRun(store, cid, root, {
+        slug: "demo",
+        config: { plansDir: "plans" },
+        platform: RUNNER_PLATFORM,
+      });
+    } finally {
+      store.close();
+    }
+    const outcome = await startRunner({
+      projectRoot: root,
+      wantOn: true,
+      driver: new MockDriver([{ exitCode: 0 }]),
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toMatch(/executing|OFF|REPLAN|RESUME/i);
+    }
+  });
+
+  it("planning resume with --message (no --on) feeds prompt", async () => {
+    const root = tmpRoot();
+    writeMinimalConfig(root);
+    const cid = stableRunnerConversationId(root);
+    const store = new StateStore(root);
+    try {
+      store.upsertSession({
+        conversation_id: cid,
+        project_root: root,
+        code_root: root,
+        platform: RUNNER_PLATFORM,
+        phase: "planning",
+        armed: 0,
+        paused: 0,
+        track_id: "v0.13-runner-on",
+      });
+    } finally {
+      store.close();
+    }
+    const mock = new MockDriver([{ exitCode: 0 }]);
+    const outcome = await startRunner({
+      projectRoot: root,
+      message: "grill answer: B",
+      flags: { maxIterations: 2 },
+      driver: mock,
+    });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.exitCode).toBe(0);
+      expect(mock.calls[0]?.prompt).toContain("grill answer: B");
+      expect(mock.calls[0]?.prompt).toContain("Track: v0.13-runner-on");
+    }
+  });
+
+  it("exitCodeForLoopResult maps C6 planning stopped to 0", () => {
+    const base = {
+      iterations: 1,
+      conversationId: "runner:x",
+    } as const;
+    expect(
+      exitCodeForLoopResult({ ...base, outcome: "stopped" }, true),
+    ).toBe(0);
+    expect(
+      exitCodeForLoopResult({ ...base, outcome: "stopped" }, false),
+    ).toBe(1);
+    expect(
+      exitCodeForLoopResult({ ...base, outcome: "budget_exhausted" }, true),
+    ).toBe(1);
+    expect(
+      exitCodeForLoopResult({ ...base, outcome: "completed" }, false),
+    ).toBe(0);
   });
 });
