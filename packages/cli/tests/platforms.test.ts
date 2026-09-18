@@ -28,6 +28,7 @@ describe("platforms helpers", () => {
     expect(defaultSurfaceFor("codex")).toBe("cli");
     expect(defaultSurfaceFor("kimi-code")).toBe("cli");
     expect(defaultSurfaceFor("runner")).toBe("runner");
+    expect(defaultSurfaceFor("pi")).toBe("cli");
   });
 
   it("configWantsInstallableHost defaults empty installable list to Cursor", () => {

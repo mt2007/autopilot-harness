@@ -24,6 +24,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "factory-droid", surface: "cli" },
   { id: "hermes-agent", surface: "cli" },
   { id: "antigravity", surface: "cli" },
+  { id: "pi", surface: "cli" },
   { id: "runner", surface: "runner" },
 ]);
 
@@ -41,6 +42,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "factory-droid": "cli",
   "hermes-agent": "cli",
   antigravity: "cli",
+  pi: "cli",
   runner: "runner",
 });
 
@@ -184,6 +186,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "antigravity") {
     return "Antigravity (.agents/hooks.json + .agents/skills)";
+  }
+  if (id === "pi") {
+    return "Pi (.pi/extensions Autopilot; in-process; not shell hooks)";
   }
   if (id === "runner") {
     return "Runner (external loop; no hooks.json)";

@@ -89,6 +89,8 @@ const KNOWN_PLATFORMS = new Set([
   "hermes-agent",
   "antigravity",
 ]);
+/** Extension / meta hosts — must not ride the shell hook stamp path (R7). */
+const NON_SHELL_PLATFORMS = new Set(["pi", "runner"]);
 
 function parseArgs(argv) {
   const allowed = new Set([
@@ -103,7 +105,7 @@ function parseArgs(argv) {
     ...GEMINI_EVENTS,
     ...COPILOT_EVENTS,
   ]);
-  const out = { event: "beforeSubmitPrompt", platform: null };
+  const out = { event: "beforeSubmitPrompt", platform: null, rawPlatform: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--event" && argv[i + 1]) {
       const ev = String(argv[i + 1]);
@@ -116,6 +118,7 @@ function parseArgs(argv) {
       if (raw.startsWith("--")) continue;
       i += 1;
       const p = raw.trim().toLowerCase();
+      out.rawPlatform = p;
       out.platform = KNOWN_PLATFORMS.has(p) ? p : null;
     }
   }
@@ -1559,13 +1562,20 @@ let bootEvent = "beforeSubmitPrompt";
 let bootPlatform = null;
 
 async function main() {
-  const { event, platform: declaredPlatform } = parseArgs(
+  const { event, platform: declaredPlatform, rawPlatform } = parseArgs(
     process.argv.slice(2),
   );
   bootEvent = event;
   bootPlatform = declaredPlatform;
   try {
     const payload = await readStdin();
+    // R7: Pi (and Runner) are not shell KNOWN_PLATFORMS — abort before FSM so a
+    // mistaken --platform pi|runner never falls through to Cursor/Claude heuristics.
+    // Drain stdin first (same order as other cross-stamp aborts).
+    if (rawPlatform && NON_SHELL_PLATFORMS.has(rawPlatform)) {
+      writeReply("{}");
+      return;
+    }
     const hostId = resolveHostId(declaredPlatform, event);
 
     // Hermes unique events: wrong --platform must abort before vendor FSM /

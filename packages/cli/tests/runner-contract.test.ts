@@ -386,8 +386,10 @@ describe("tests-runner-contract (research §5)", () => {
     ]);
     expect(ids).toHaveLength(10);
     expect(ids).not.toContain("runner");
+    expect(ids).not.toContain("pi");
     expect(src).not.toMatch(/handleRunnerStop/);
     expect(src).not.toMatch(/declaredPlatform === "runner"/);
+    expect(src).toMatch(/NON_SHELL_PLATFORMS/);
     expect(RUNNER_PLATFORM).toBe("runner");
   });
 });
@@ -414,6 +416,7 @@ describe("tests-runner-on-contract (research §8 / C1–C9)", () => {
     ]);
     expect(ids).toHaveLength(10);
     expect(ids).not.toContain("runner");
+    expect(ids).not.toContain("pi");
     expect(src).not.toMatch(/handleRunnerStop/);
     expect(src).not.toMatch(/declaredPlatform === "runner"/);
   });

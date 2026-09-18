@@ -38,6 +38,7 @@ const REQUIRED_RELATIVE = [
   "templates/workflows/autopilot-executing.md",
   "autopilot-harness-hook.mjs",
   "antigravity-hook-shim.mjs",
+  "pi-extension/autopilot.ts",
   "vendor/runtime.mjs",
   // Keep in sync with packages/core/migrations/*.sql
   "vendor/migrations/001_initial.sql",

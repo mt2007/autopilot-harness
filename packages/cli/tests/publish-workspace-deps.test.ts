@@ -27,6 +27,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/factory-droid",
   "packages/ports/hermes-agent",
   "packages/ports/antigravity",
+  "packages/ports/pi",
   "packages/ports/runner",
 ] as const;
 

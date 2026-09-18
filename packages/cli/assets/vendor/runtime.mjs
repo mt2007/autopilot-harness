@@ -3658,10 +3658,10 @@ var ReviewEngine = class {
    * salvage again — the prior tip does not cover the new failure.
    */
   classifyCompletedOrphan(transcriptPath) {
-    const path14 = transcriptPath?.trim();
-    if (!path14) return "none";
+    const path15 = transcriptPath?.trim();
+    if (!path15) return "none";
     try {
-      const events = readTranscriptTail(path14);
+      const events = readTranscriptTail(path15);
       const errIdx = latestUnresolvedTurnEndedErrorIndex(events);
       if (errIdx < 0) return "none";
       for (let i = events.length - 1; i > errIdx; i--) {
@@ -4743,8 +4743,8 @@ var ReviewEngine = class {
       let unchecked = checklist.unchecked;
       let next = checklist.next;
       let targets = null;
-      const path14 = lockedSession.checklist_path?.trim() ?? "";
-      const onChecklistPath = isChecklistExecuting(lockedSession) && path14.length > 0;
+      const path15 = lockedSession.checklist_path?.trim() ?? "";
+      const onChecklistPath = isChecklistExecuting(lockedSession) && path15.length > 0;
       if (onChecklistPath) {
         const refreshed = this.parseSessionChecklist(lockedSession);
         if (!refreshed?.checklist) {
@@ -11316,6 +11316,371 @@ function handleStopInner6(engine, payload, opts) {
   return continueFromFollowupAction(action);
 }
 
+// ../ports/pi/src/index.ts
+import path14 from "node:path";
+var PI_PLATFORM = "pi";
+var PI_CONTINUE_CUSTOM_TYPE = "autopilot-harness";
+var PI_CONTINUE_DELIVER = {
+  deliverAs: "followUp",
+  triggerTurn: true
+};
+var PI_EDIT_TOOLS = Object.freeze(["write", "edit"]);
+var MAX_NEED_PICK_SLUGS9 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS9 = 2e3;
+var MAX_HOOK_TEXT_CHARS = 8192;
+var MAX_PI_PATH_CHARS = 4096;
+var MAX_PI_PATHS = 256;
+function clipText7(text, max = MAX_HOOK_TEXT_CHARS) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function isSafePath(p) {
+  if (!p || p.length > MAX_PI_PATH_CHARS) return false;
+  if (/[\u0000-\u001f\u007f]/.test(p)) return false;
+  return true;
+}
+function buildPiConversationId(sessionFile, sessionId) {
+  const file = typeof sessionFile === "string" && sessionFile.trim() ? sessionFile.trim() : "";
+  const id = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : "";
+  const raw = file || id;
+  if (!raw || /[\u0000-\u001f\u007f]/.test(raw)) return "";
+  return `pi:${raw}`;
+}
+function conversationIdFromPiPayload(p) {
+  return buildPiConversationId(p.sessionFile, p.sessionId);
+}
+function isPiEditTool(toolName) {
+  const n = toolName.trim();
+  return n === "write" || n === "edit";
+}
+function isPiUnsupportedAutopilotMode(mode) {
+  return mode === "print" || mode === "json";
+}
+function stampPiPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === PI_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: PI_PLATFORM
+  });
+}
+function blockReason8(userMessage, fallback) {
+  if (typeof userMessage === "string" && userMessage.trim()) {
+    return clipText7(userMessage.trim());
+  }
+  return fallback;
+}
+function buildNeedPickMessage(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim() ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS9);
+  let ctx = fromMessage || (slugs.length > 0 ? `[Autopilot] Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "[Autopilot] Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS9) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS9 - 1)}\u2026`;
+  }
+  return ctx;
+}
+function injectMessage(text) {
+  const t = text.trim();
+  if (!t) return {};
+  return { message: clipText7(t, MAX_NEED_PICK_CONTEXT_CHARS9 + 256) };
+}
+function gateMessage(userMessage, fallback) {
+  return injectMessage(blockReason8(userMessage, fallback));
+}
+function handlePiInput(store, payload, projectRoot) {
+  try {
+    return handlePiInputInner(store, payload, projectRoot);
+  } catch {
+    return {};
+  }
+}
+var handlePiUserInput = handlePiInput;
+function handlePiInputInner(store, payload, projectRoot) {
+  if (isPiUnsupportedAutopilotMode(payload.mode)) {
+    return { unsupportedMode: true };
+  }
+  const conversationId = conversationIdFromPiPayload(payload);
+  const text = typeof payload.text === "string" ? payload.text : "";
+  if (payload.source === "extension" || isHarnessFollowupMessage(text)) {
+    return { harnessOwned: true };
+  }
+  if (!conversationId) return {};
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  stampPiPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function handlePiBeforeAgentStart(store, payload, projectRoot, portConfig) {
+  try {
+    return handlePiBeforeAgentStartInner(
+      store,
+      payload,
+      projectRoot,
+      portConfig
+    );
+  } catch {
+    return {};
+  }
+}
+var handlePiSubmit = handlePiBeforeAgentStart;
+function handlePiBeforeAgentStartInner(store, payload, projectRoot, portConfig) {
+  if (isPiUnsupportedAutopilotMode(payload.mode)) return {};
+  const conversationId = conversationIdFromPiPayload(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  if (isHarnessFollowupMessage(prompt)) {
+    stampPiPlatform(store, conversationId, projectRoot);
+    return {};
+  }
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "[Autopilot] Rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger) {
+    if (trigger.kind === "off") {
+      applyOff(store, conversationId);
+      stampPiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "on") {
+      const result = applyOn(store, conversationId, projectRoot, {
+        initialBrief: trigger.initialBrief,
+        slug: trigger.slug,
+        platform: PI_PLATFORM
+      });
+      stampPiPlatform(store, conversationId, projectRoot);
+      if (!result.ok) return gateMessage(result.userMessage, gateFallback);
+      return {};
+    }
+    if (trigger.kind === "resume") {
+      const result = applyResume(store, conversationId, {
+        slug: trigger.slug
+      });
+      stampPiPlatform(store, conversationId, projectRoot);
+      if (!result.ok) return gateMessage(result.userMessage, gateFallback);
+      return {};
+    }
+    if (trigger.kind === "resume_review") {
+      applyResumeReview(store, conversationId);
+      stampPiPlatform(store, conversationId, projectRoot);
+      return {};
+    }
+    if (trigger.kind === "run") {
+      const result = applyRun(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: PI_PLATFORM
+      });
+      stampPiPlatform(store, conversationId, projectRoot);
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          return injectMessage(
+            buildNeedPickMessage(result.userMessage, result.candidates)
+          );
+        }
+        return gateMessage(result.userMessage, gateFallback);
+      }
+      return {};
+    }
+    if (trigger.kind === "replan") {
+      const result = applyReplan(store, conversationId, projectRoot, {
+        slug: trigger.slug,
+        config: actionConfig,
+        platform: PI_PLATFORM
+      });
+      stampPiPlatform(store, conversationId, projectRoot);
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          return injectMessage(
+            buildNeedPickMessage(result.userMessage, result.candidates)
+          );
+        }
+        return gateMessage(result.userMessage, gateFallback);
+      }
+      return {};
+    }
+    if (trigger.kind === "track_pick" && trigger.trackPick) {
+      const result = applyTrackPick(
+        store,
+        conversationId,
+        projectRoot,
+        trigger.trackPick,
+        { config: actionConfig, platform: PI_PLATFORM }
+      );
+      stampPiPlatform(store, conversationId, projectRoot);
+      if (!result.ok) {
+        if (isChannelANeedPick(result)) {
+          return injectMessage(
+            buildNeedPickMessage(result.userMessage, result.candidates)
+          );
+        }
+        return gateMessage(result.userMessage, gateFallback);
+      }
+      return {};
+    }
+    return {};
+  }
+  if (!isHarnessFollowupMessage(prompt)) {
+    store.clearChainPending(conversationId);
+  }
+  stampPiPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function armCodeEdited9(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      PI_PLATFORM
+    );
+  }
+  stampPiPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function filePathsFromPiToolInput(input, cwd) {
+  if (!input || typeof input !== "object") return [];
+  const raw = input.path;
+  if (typeof raw !== "string") return [];
+  let p = raw.trim();
+  if (!isSafePath(p)) return [];
+  if (!path14.isAbsolute(p)) {
+    const base = typeof cwd === "string" && cwd.trim() ? cwd.trim() : void 0;
+    if (base && isSafePath(base)) {
+      p = path14.resolve(base, p);
+    }
+  }
+  if (!isSafePath(p)) return [];
+  return [p].slice(0, MAX_PI_PATHS);
+}
+function armPaths2(store, conversationId, projectRoot, filePaths) {
+  if (filePaths.length === 0) {
+    stampPiPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of filePaths) {
+    try {
+      notePlansDirEdit(store, conversationId, projectRoot, filePath, plansDir);
+    } catch {
+    }
+    if (!isProductCodeEdit(filePath, { projectRoot })) continue;
+    if (!armed) {
+      armCodeEdited9(store, conversationId, projectRoot);
+      armed = true;
+    }
+  }
+  if (!armed) {
+    stampPiPlatform(store, conversationId, projectRoot);
+  }
+}
+function handlePiToolResult(store, payload, projectRoot) {
+  try {
+    handlePiToolResultInner(store, payload, projectRoot);
+  } catch {
+  }
+}
+var handlePiPostTool = handlePiToolResult;
+function handlePiToolResultInner(store, payload, projectRoot) {
+  const conversationId = conversationIdFromPiPayload(payload);
+  const toolName = String(payload.toolName ?? payload.tool_name ?? "").trim();
+  if (!conversationId || !isPiEditTool(toolName)) return;
+  armPaths2(
+    store,
+    conversationId,
+    projectRoot,
+    filePathsFromPiToolInput(payload.input, payload.cwd ?? projectRoot)
+  );
+}
+function handlePiAgentSettled(engine, store, payload, projectRoot, opts) {
+  try {
+    return handlePiAgentSettledInner(
+      engine,
+      store,
+      payload,
+      projectRoot,
+      opts
+    );
+  } catch {
+    return {};
+  }
+}
+var handlePiStop = handlePiAgentSettled;
+function handlePiAgentSettledInner(engine, store, payload, projectRoot, opts) {
+  if (isPiUnsupportedAutopilotMode(payload.mode)) return {};
+  const conversationId = conversationIdFromPiPayload(payload);
+  if (!conversationId) return {};
+  stampPiPlatform(store, conversationId, projectRoot);
+  const action = engine.handleStop({
+    conversationId,
+    status: opts?.status ?? "completed",
+    loopCount: opts?.loopCount ?? 0,
+    platform: PI_PLATFORM
+  });
+  if (!action?.message || !action.loop) return {};
+  return {
+    continueMessage: clipText7(action.message, MAX_HOOK_TEXT_CHARS)
+  };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -11330,8 +11695,12 @@ export {
   GROK_PLATFORM,
   HERMES_PLATFORM,
   KIMI_PLATFORM,
+  PI_CONTINUE_CUSTOM_TYPE,
+  PI_CONTINUE_DELIVER,
+  PI_PLATFORM,
   ReviewEngine,
   StateStore,
+  buildPiConversationId,
   createConfiguredReviewEngine2 as createConfiguredReviewEngine,
   getLatestSchemaVersion,
   handleAfterFileEdit,
@@ -11363,6 +11732,14 @@ export {
   handlePostToolUse3 as handleKimiPostToolUse,
   handleStop4 as handleKimiStop,
   handleUserPromptSubmit3 as handleKimiUserPromptSubmit,
+  handlePiAgentSettled,
+  handlePiBeforeAgentStart,
+  handlePiInput,
+  handlePiPostTool,
+  handlePiStop,
+  handlePiSubmit,
+  handlePiToolResult,
+  handlePiUserInput,
   handlePostToolUse,
   handleStop,
   handleStopFailure,

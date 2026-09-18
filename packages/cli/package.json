@@ -1,7 +1,7 @@
 {
   "name": "@autopilot-harness/cli",
   "version": "0.13.0",
-  "description": "Autopilot harness CLI — structured planning, checklist execution, and multi-lens self-review for Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Runner (bin: autopilot-harness)",
+  "description": "Autopilot harness CLI — structured planning, checklist execution, and multi-lens self-review for Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, and Runner (bin: autopilot-harness)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -48,6 +48,7 @@
     "@autopilot-harness/port-factory-droid": "workspace:*",
     "@autopilot-harness/port-hermes-agent": "workspace:*",
     "@autopilot-harness/port-antigravity": "workspace:*",
+    "@autopilot-harness/port-pi": "workspace:*",
     "@clack/prompts": "^0.10.0",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"
@@ -85,6 +86,7 @@
     "hermes",
     "hermes-agent",
     "antigravity",
+    "pi",
     "runner",
     "checklist",
     "code-review",

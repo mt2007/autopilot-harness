@@ -7,7 +7,7 @@
 - [x] decide-shape — `defer` **或** `port × (in-process|subprocess) × (full|degraded)`。「只标 degraded、不接线」非法。无稳定 continue → **defer**
 - [x] defer-closeout — **仅 decide=defer**：后续 port/发版项标 **cancelled**；hosts 记 Pi research/等；可选 docs+research commit；**无** 0.14 bump/publish
 - [x] port-pi-package — `@autopilot-harness/port-pi`：`handlePi*`；Submit/Edit/Stop 按 research；**R1：无 pending 不注入**；**R8：settle dirty-tree arm**；**R9：continue 禁阻塞 UI**；fail-open；harness-owned 续跑不当 ON/RUN；session id 用 research 锁死值
-- [ ] vendor-platform-wire — init 下发扩展 + vendor 入口；`INSTALLABLE_BINDINGS`；**R7：默认不进** shell `KNOWN_PLATFORMS`（矩阵「十路 shell + Pi 扩展」；仅 subprocess stamp 才 eleven-way）；交叉 abort；bundle；禁 `workspace:*` 进 publish
+- [x] vendor-platform-wire — init 下发扩展 + vendor 入口；`INSTALLABLE_BINDINGS`；**R7：默认不进** shell `KNOWN_PLATFORMS`（矩阵「十路 shell + Pi 扩展」；仅 subprocess stamp 才 eleven-way）；交叉 abort；bundle；禁 `workspace:*` 进 publish
 - [ ] init-doctor-upgrade-uninstall — **R6** 直接写 `.pi/extensions/autopilot*.ts`（**不** `pi install`）；**R4** 盖文件不要求 PATH 有 `pi`；**R3** 共用 `.agents/skills/autopilot-*`、**不**写 Antigravity hooks；trust/`/reload` wizard；symlink fail-closed；窄 ignore；doctor FAIL 缺指纹 / WARN 无 pi·版本·trust·双开·skills·one_executor·**R10 print/JSON**；`--add-platform pi`
 - [ ] tests-pi-contract — 扩展 I/O + continue + **无 pending 不注入** + dirty-arm + harness-owned + merge/指纹
 - [ ] matrix-host — **R7**「十路 shell + Pi 扩展」：Pi↔既有宿主串台 → abort；既有不红（subprocess stamp 例外才扩 eleven-way）

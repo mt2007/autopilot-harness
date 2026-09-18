@@ -2,8 +2,8 @@
  * Single ESM entry bundled into assets/vendor/runtime.mjs for project hooks.
  * Consumers get core + port-cursor + port-claude-code + port-codex +
  * port-kimi-code + port-copilot-cli + port-grok-build + port-gemini-cli +
- * port-factory-droid + port-hermes-agent + port-antigravity + i18n without
- * installing workspace packages.
+ * port-factory-droid + port-hermes-agent + port-antigravity + port-pi + i18n
+ * without installing workspace packages.
  */
 import { loadLocale } from "@autopilot-harness/i18n";
 import {
@@ -93,6 +93,21 @@ export {
   handleAntigravityStop,
   isAntigravityAllowNoop,
 } from "@autopilot-harness/port-antigravity";
+
+export {
+  PI_PLATFORM,
+  PI_CONTINUE_DELIVER,
+  PI_CONTINUE_CUSTOM_TYPE,
+  handlePiInput,
+  handlePiUserInput,
+  handlePiBeforeAgentStart,
+  handlePiSubmit,
+  handlePiToolResult,
+  handlePiPostTool,
+  handlePiAgentSettled,
+  handlePiStop,
+  buildPiConversationId,
+} from "@autopilot-harness/port-pi";
 
 /** @deprecated Prefer handleCursorStop — kept for older hook.mjs copies. */
 export { handleStop } from "@autopilot-harness/port-cursor";
