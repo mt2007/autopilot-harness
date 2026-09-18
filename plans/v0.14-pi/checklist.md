@@ -11,7 +11,7 @@
 - [x] init-doctor-upgrade-uninstall — **R6** 直接写 `.pi/extensions/autopilot*.ts`（**不** `pi install`）；**R4** 盖文件不要求 PATH 有 `pi`；**R3** 共用 `.agents/skills/autopilot-*`、**不**写 Antigravity hooks；trust/`/reload` wizard；symlink fail-closed；窄 ignore；doctor FAIL 缺指纹 / WARN 无 pi·版本·trust·双开·skills·one_executor·**R10 print/JSON**；`--add-platform pi`
 - [x] tests-pi-contract — 扩展 I/O + continue + **无 pending 不注入** + dirty-arm + harness-owned + merge/指纹
 - [x] matrix-host — **R7**「十路 shell + Pi 扩展」：Pi↔既有宿主串台 → abort；既有不红（subprocess stamp 例外才扩 eleven-way）
-- [ ] smoke-repo — `pnpm test` + typecheck（测红先修）
+- [x] smoke-repo — `pnpm test` + typecheck（测红先修）
 - [ ] live-pi-smoke — **R5** 可弃仓 **交互 TUI**（非 `pi -p`）：continue **≥1×**（力争 **≥2×**）+ edit arm；证据入本轨；**失败 → 不发 0.14**；半残 degraded 仅人闸
 - [ ] docs-pi-shipped — Pi Shipped(/degraded)；next=**OpenCode（等上游）**；路径/trust/soft min；**R10** 不支持 print/JSON；docs-contract；勿改旧 CHANGELOG 节
 - [ ] changelog-bump-0-14-0 — 公开包 **0.14.0**（**仅活链/人闸过关后**）
