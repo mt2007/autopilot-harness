@@ -17,7 +17,7 @@ import { CliDriver } from "./cli-driver.js";
 import { resolveChecklistPathInProject } from "./command-template.js";
 import type { AgentDriver } from "./driver.js";
 import { driverResultToStopStatus } from "./driver.js";
-import { buildFirstTurnPrompt } from "./first-turn-prompt.js";
+import { buildFirstTurnPrompt, buildPlanningFirstTurnPrompt } from "./first-turn-prompt.js";
 import { canResumeRunnerSession } from "./resume.js";
 import {
   runStopTick,
@@ -53,30 +53,75 @@ export interface RunRunnerLoopOptions {
   onPrompt?: (prompt: string, iteration: number) => void;
   /** Override Stop tick (tests). Default: runStopTick. */
   stopTick?: typeof runStopTick;
+  /** Planning first-turn: `--brief` text (not persisted). */
+  planningBrief?: string;
+  /** Planning first-turn / resume: `--message` user turn. */
+  planningMessage?: string;
 }
 
-function resolveInitialPrompt(
-  store: StateStore,
-  conversationId: string,
-  projectRoot: string,
+export interface ResolveInitialPromptOptions {
+  store: StateStore;
+  conversationId: string;
+  projectRoot: string;
+  planningBrief?: string;
+  planningMessage?: string;
+}
+
+/**
+ * Pick the first agent prompt for a Runner start.
+ * Priority: pending tip → planning builder → executing firstUnchecked.
+ */
+export function resolveInitialPrompt(
+  opts: ResolveInitialPromptOptions,
 ): string {
+  if (
+    !opts ||
+    typeof opts !== "object" ||
+    !opts.store ||
+    typeof opts.conversationId !== "string" ||
+    typeof opts.projectRoot !== "string"
+  ) {
+    throw new Error(
+      "Cannot build first-turn prompt: invalid resolveInitialPrompt options.",
+    );
+  }
+  const { store, conversationId, projectRoot } = opts;
   const chain = store.getReviewChain(conversationId);
   const pending = chain?.pending_followup?.trim() ?? "";
   if (pending) return pending;
 
   const session = store.getSession(conversationId);
-  const slug = session?.track_id?.trim() ?? "";
+  const phase = session?.phase ?? "";
+  const trackId = session?.track_id?.trim() ?? "";
   const root =
     normalizeProjectRoot(store.projectRoot) ??
     normalizeProjectRoot(projectRoot);
+
+  if (phase === "planning") {
+    return buildPlanningFirstTurnPrompt({
+      slug: trackId && isSafeTrackSlug(trackId) ? trackId : undefined,
+      brief: opts.planningBrief,
+      message: opts.planningMessage,
+    });
+  }
+
+  if (phase !== "executing") {
+    const phaseDisp = String(phase || "missing")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .slice(0, 32);
+    throw new Error(
+      `Cannot build first-turn prompt: session phase is "${phaseDisp}" (need planning, executing, or a pending tip).`,
+    );
+  }
+
   const checklistPath = session?.checklist_path?.trim();
-  if (!root || !slug || !checklistPath) {
+  if (!root || !trackId || !checklistPath) {
     throw new Error(
       "Cannot build first-turn prompt: missing track or checklist path.",
     );
   }
-  if (!isSafeTrackSlug(slug)) {
-    throw new Error(`Unsafe track slug in session: "${slug.slice(0, 64)}"`);
+  if (!isSafeTrackSlug(trackId)) {
+    throw new Error(`Unsafe track slug in session: "${trackId.slice(0, 64)}"`);
   }
   const abs = resolveChecklistPathInProject(root, checklistPath);
   if (!abs) {
@@ -85,9 +130,9 @@ function resolveInitialPrompt(
   const cl = parseChecklist(abs, { projectRoot: root });
   const item = firstUnchecked(cl);
   if (!item) {
-    throw new Error(`No unchecked items in track "${slug}".`);
+    throw new Error(`No unchecked items in track "${trackId}".`);
   }
-  return buildFirstTurnPrompt({ slug, item });
+  return buildFirstTurnPrompt({ slug: trackId, item });
 }
 
 /**
@@ -155,7 +200,13 @@ export async function runRunnerLoop(
 
   let prompt: string;
   try {
-    prompt = resolveInitialPrompt(opts.store, opts.conversationId, root);
+    prompt = resolveInitialPrompt({
+      store: opts.store,
+      conversationId: opts.conversationId,
+      projectRoot: root,
+      planningBrief: opts.planningBrief,
+      planningMessage: opts.planningMessage,
+    });
   } catch (err) {
     return {
       outcome: "error",

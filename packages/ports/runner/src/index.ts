@@ -67,7 +67,9 @@ export {
 
 export {
   runRunnerLoop,
+  resolveInitialPrompt,
   type RunRunnerLoopOptions,
+  type ResolveInitialPromptOptions,
   type RunnerLoopResult,
   type RunnerLoopOutcome,
 } from "./loop.js";

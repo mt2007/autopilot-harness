@@ -18,11 +18,13 @@ import {
   resolveRunnerCwd,
   runRunnerLoop,
   runStopTick,
+  resolveInitialPrompt,
   shouldContinueAfterStop,
   stableRunnerConversationId,
   tokenizeCommandTemplate,
   CliDriver,
   MockDriver,
+  type ResolveInitialPromptOptions,
 } from "../src/index.js";
 
 const tmpDirs: string[] = [];
@@ -291,6 +293,152 @@ describe("planning first-turn prompt", () => {
     const text = buildPlanningFirstTurnPrompt({ slug: "../evil" });
     expect(text).toMatch(/Track: \(unset/i);
     expect(text).not.toContain("../evil");
+  });
+});
+
+describe("resolveInitialPrompt phase branch", () => {
+  it("prefers pending tip over phase", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resolvepend01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "v0.13-runner-on",
+    });
+    store.updateReviewChain(cid, {
+      pending_followup: "Review fix round 1: pending wins",
+      pending_followup_at: new Date().toISOString(),
+    });
+    const tip = resolveInitialPrompt({
+      store,
+      conversationId: cid,
+      projectRoot: root,
+      planningBrief: "should-not-appear",
+    });
+    expect(tip).toContain("pending wins");
+    expect(tip).not.toContain("should-not-appear");
+    expect(tip).not.toMatch(/Autopilot Runner — planning/i);
+  });
+
+  it("uses planning builder when phase=planning and no pending", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resolveplan01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "v0.13-runner-on",
+    });
+    const tip = resolveInitialPrompt({
+      store,
+      conversationId: cid,
+      projectRoot: root,
+      planningBrief: "ship --on",
+      planningMessage: "Q1: yes",
+    });
+    expect(tip).toMatch(/Autopilot Runner — planning/i);
+    expect(tip).toContain("Track: v0.13-runner-on");
+    expect(tip).toContain("ship --on");
+    expect(tip).toContain("Q1: yes");
+  });
+
+  it("uses executing firstUnchecked path when phase=executing", () => {
+    const root = tmpRoot();
+    const plans = path.join(root, "plans", "exec-track");
+    fs.mkdirSync(plans, { recursive: true });
+    fs.writeFileSync(
+      path.join(plans, "checklist.md"),
+      "# c\n\n- [ ] item-a — A\n",
+      "utf8",
+    );
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resolveexec01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      track_id: "exec-track",
+      checklist_path: "plans/exec-track/checklist.md",
+    });
+    const tip = resolveInitialPrompt({
+      store,
+      conversationId: cid,
+      projectRoot: root,
+    });
+    expect(tip).toMatch(/Autopilot Runner — executing/i);
+    expect(tip).toContain("item-a");
+  });
+
+  it("throws for idle/done without pending", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resolveidle01";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "idle",
+      armed: 0,
+      paused: 0,
+    });
+    expect(() =>
+      resolveInitialPrompt({
+        store,
+        conversationId: cid,
+        projectRoot: root,
+      }),
+    ).toThrow(/phase is "idle"/i);
+  });
+
+  it("throws for invalid options", () => {
+    expect(() =>
+      resolveInitialPrompt(null as unknown as ResolveInitialPromptOptions),
+    ).toThrow(/invalid resolveInitialPrompt options/i);
+  });
+
+  it("treats _pending planning track as unset slug", () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    const store = new StateStore(root);
+    const cid = "runner:resolvependingtrack";
+    store.upsertSession({
+      conversation_id: cid,
+      project_root: root,
+      code_root: root,
+      platform: RUNNER_PLATFORM,
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "_pending",
+    });
+    const tip = resolveInitialPrompt({
+      store,
+      conversationId: cid,
+      projectRoot: root,
+    });
+    expect(tip).toMatch(/Autopilot Runner — planning/i);
+    expect(tip).toMatch(/Track: \(unset/i);
+    expect(tip).not.toContain("_pending");
   });
 });
 
