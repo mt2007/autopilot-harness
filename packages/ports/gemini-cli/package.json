@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-gemini-cli",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Autopilot harness host port for Gemini CLI hooks (BeforeAgent/AfterTool/AfterAgent; turn cap MAX_TURNS)",
   "license": "MIT",
   "repository": {

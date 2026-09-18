@@ -1558,6 +1558,20 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0101).toMatch(/\.agents\/bin|shim/i);
     expect(section0101).toMatch(/live-proved|0\.10\.1/);
     expect(section0101).toMatch(/pnpm publish|pnpm pack/i);
+    const section013 = changelogSection(log, "0.13.0");
+    expect(section013).toMatch(/--on/);
+    expect(section013).toMatch(/--brief/);
+    expect(section013).toMatch(/--message/);
+    expect(section013).toMatch(/parseSlugAndBrief/);
+    expect(section013).toMatch(
+      /C6[\s\S]{0,80}planning|planning-context[\s\S]{0,40}stopped|stopped[\s\S]{0,40}exit \*\*0\*\*/i,
+    );
+    expect(section013).toMatch(/OpenCode/);
+    expect(section013).toMatch(/1 \(next\)|remains \*\*1 \(next\)\*\*/i);
+    expect(section013).toMatch(/pnpm publish|pnpm pack/i);
+    expect(section013).toMatch(
+      /ports[\s\S]*runner[\s\S]*→\s*cli|ports \(cursor[\s\S]*runner\)/i,
+    );
     const section0121 = changelogSection(log, "0.12.1");
     expect(section0121).toMatch(/prompt_file|\{prompt\}/i);
     expect(section0121).toMatch(/codex/i);
@@ -1591,6 +1605,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/docs-antigravity-shipped/i);
     expect(unreleased).not.toMatch(/handleAntigravity/i);
     expect(unreleased).not.toMatch(/docs-runner-shipped/i);
+    expect(unreleased).not.toMatch(/docs-runner-on/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);

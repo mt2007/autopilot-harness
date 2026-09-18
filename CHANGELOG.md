@@ -9,6 +9,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-18
+
+### Added
+
+- **Runner planning-in-runner**: `npx @autopilot-harness/cli runner start --on` (boolean; opens/creates `state.db` before `applyOn`); **`--brief <text>`** only with `--on` (else **FAIL**) → exported core **`parseSlugAndBrief`** (slug / free text / `·` form); **`initialBrief` is prompt-only** (not persisted in session DB); **`--message <text>`** for grill answers / planning resume (C4 empty → **FAIL**).
+- **Gates (C1–C9)**: `--on`∧`--run` **FAIL**; C1 `--message`∧`--run` **FAIL**; C2 `--message` when phase≠planning **FAIL**; C5 `--message` while pending tip set **FAIL**; C7 `--on`∧`--message` **OK**; C9 re-`--on` clears leftover pending tip; executing→`--on` **FAIL** (no spawn; db may already exist).
+- **C6 exit**: planning-context (`--on` or bare resume while `phase=planning`) + `stopped` → process **exit 0**; **`--run` / executing** keep 0.12 semantics (`completed`→0; `stopped` / `budget_exhausted` / `error` → non-zero).
+- **Resume**: `canResumeRunnerSession` allows unpaused **`phase=planning`**; `resolveInitialPrompt` branches planning vs executing; planning first-turn prompt builder; CLI-only `applyOn` (loop never double-ON).
+- **docs-runner-on**: living docs + docs-contract flip off `--on` deferred; grill/hook honesty; **`review.scope: project`** may arm review during planning; **OpenCode** remains **1 (next)**; CHANGELOG **0.12.0** deferred wording left intact.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.13.0** public packages.
+
 ## [0.12.1] — 2026-09-18
 
 ### Fixed
