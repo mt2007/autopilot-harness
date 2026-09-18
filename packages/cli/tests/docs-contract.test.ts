@@ -283,7 +283,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /not runnable \(paused\)|paused[\s\S]{0,80}non-runnable|session purge/i,
     );
     expect(tips).toMatch(/one_executor/);
-    expect(tips).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(tips).toMatch(/--on[\s\S]{0,120}--brief|--brief[\s\S]{0,80}--on/i);
+    expect(tips).toMatch(/--message/);
+    expect(tips).toMatch(
+      /C6[\s\S]{0,80}planning|planning[\s\S]{0,40}stopped[\s\S]{0,40}exit \*\*0\*\*|planning `stopped` → exit \*\*0\*\*/i,
+    );
+    expect(tips).toMatch(
+      /not[\s\S]{0,40}stored|prompt-only|first-turn prompt only|not[\s\S]{0,40}session DB/i,
+    );
+    expect(tips).toMatch(/review\.scope:\s*project|review\.scope`:\s*`project/i);
+    expect(tips).toMatch(/hook[\s\S]{0,40}host|oral grill/i);
+    expect(tips).not.toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
     expect(tips).toMatch(/doctor[\s\S]{0,40}\*\*WARN\*\*|doctor \*\*WARN\*\*/i);
     expect(tips).toMatch(
       /Bare `runner start`[\s\S]{0,120}FAIL|nothing to resume[\s\S]{0,80}FAIL|no pending\/executing[\s\S]{0,80}FAIL/i,
@@ -487,7 +497,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(
       /prompt_mode[\s\S]{0,120}start \*\*FAIL\*\*|Invalid value → start \*\*FAIL\*\*/i,
     );
-    expect(config).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(config).toMatch(/--on[\s\S]{0,120}--brief|--brief[\s\S]{0,80}--on/i);
+    expect(config).toMatch(/--message/);
+    expect(config).toMatch(
+      /C6[\s\S]{0,80}planning|planning-context `stopped`|planning[\s\S]{0,40}stopped[\s\S]{0,40}exit \*\*0\*\*/i,
+    );
+    expect(config).toMatch(
+      /prompt-only|not[\s\S]{0,40}written into session|not[\s\S]{0,40}session DB/i,
+    );
+    expect(config).toMatch(/review\.scope:\s*project|review\.scope`:\s*`project/i);
+    expect(config).not.toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
     expect(config).toMatch(
       /needPick[\s\S]{0,80}exit 2|exit 2[\s\S]{0,40}needPick/i,
     );
@@ -601,7 +620,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Runner \(meta\)/,
     );
     expect(cliReadme).toMatch(/runner\.command/);
-    expect(cliReadme).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(cliReadme).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
+    expect(cliReadme).toMatch(/C6|planning `stopped`→0|stopped`→0/i);
+    expect(cliReadme).not.toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
     expect(cliReadme).not.toMatch(/v0\.2 ships Cursor and Claude Code/);
     expect(cliReadme).toMatch(/--platform codex|platform codex/);
     expect(cliReadme).toMatch(/kimi-code/);
@@ -651,7 +672,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/Runner \(meta\)|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/i);
     expect(body).toMatch(/runner\.command/);
-    expect(body).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
+    expect(body).toMatch(/C6|planning `stopped`→0|stopped`→0/i);
+    expect(body).not.toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
   });
 
   it("README.zh-CN ships Runner meta and keeps OpenCode next", () => {
@@ -659,7 +682,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/Runner（meta）|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/);
     expect(body).toMatch(/runner\.command/);
-    expect(body).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/);
+    expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/);
+    expect(body).toMatch(/C6|planning `stopped`→0|stopped`→0/);
+    expect(body).not.toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/);
   });
 
   it("README English keeps review.scope section markers", () => {
@@ -955,7 +980,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(hosts).toMatch(/runner\.command/);
     expect(hosts).toMatch(/one_executor/);
-    expect(hosts).toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(hosts).toMatch(/--on[\s\S]{0,120}--brief|--brief[\s\S]{0,80}--on/i);
+    expect(hosts).toMatch(/--message/);
+    expect(hosts).toMatch(
+      /C6[\s\S]{0,80}exit|planning-context[\s\S]{0,40}stopped|planning[\s\S]{0,60}exit \*\*0\*\*/i,
+    );
+    expect(hosts).toMatch(
+      /not[\s\S]{0,40}persisted|prompt only|first-turn planning prompt only/i,
+    );
+    expect(hosts).toMatch(/review\.scope:\s*project|review\.scope`:\s*`project/i);
+    expect(hosts).toMatch(/hook[\s\S]{0,40}host|oral grill/i);
+    expect(hosts).not.toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
     expect(hosts).toMatch(/max_iterations|\*\*32\*\*/);
     expect(hosts).toMatch(/ten-way/);
     expect(hosts).not.toMatch(/\beleven-way\b/i);
@@ -974,9 +1009,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /paused[\s\S]{0,80}bare or `--run`|paused[\s\S]{0,60}FAIL[\s\S]{0,40}`--run`/i,
     );
-    // Platforms blurb must not re-open the old "pending/executing ⇒ resume" gap.
+    // Platforms blurb: resume without --run covers pending/executing/planning.
     expect(hosts).toMatch(
-      /resume without `--run` when pending\/executing and \*\*not paused\*\*/i,
+      /resume without `--run` when pending\/executing(?:\/planning)? and \*\*not paused\*\*/i,
     );
     expect(hosts).not.toMatch(/doctor WARN\/FAIL/);
     expect(hosts).not.toMatch(/empty start \/ missing/);
@@ -1146,7 +1181,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /\|\s*\*\*Runner\*\* \(shipped, meta\)[\s\S]{0,400}runner\.command/,
     );
     expect(body).toMatch(/one_executor/);
-    expect(body).toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
+    expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
+    expect(body).toMatch(/C6|planning `stopped`→exit|stopped`→exit \*\*0\*\*/i);
+    expect(body).toMatch(/not[\s\S]{0,40}persisted|prompt-only/i);
+    expect(body).not.toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
     expect(body).toMatch(/handleCodex\*/);
     expect(body).toMatch(/handleKimi\*/);
     expect(body).toMatch(/handleCopilot\*/);
