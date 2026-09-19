@@ -249,6 +249,38 @@ export type {
   FactoryAutopilotEvent,
 } from "./factory-hooks-merge.js";
 export {
+  mergeDevinHooks,
+  validateDevinHooksShape,
+  hasCompleteDevinAutopilotHooks,
+  summarizeDevinAutopilotHooks,
+  stripAutopilotDevinHooks,
+  devinHooksContainAutopilot,
+  devinHooksHavePlatformStamp,
+  devinAutopilotHasOmittedOrSmallTimeout,
+  devinHooksFileIsVacant,
+  devinHooksUseProjectDirEnv,
+  devinConfigJsonContainsAutopilot,
+  autopilotDevinHookCommandLine,
+  autopilotDevinMatcherGroup,
+  DEVIN_AUTOPILOT_EVENTS,
+  DEVIN_POST_TOOL_USE_MATCHER,
+  DEVIN_HOOK_TIMEOUT_SEC,
+  DEVIN_HOOKS_REL_PATH,
+  DEVIN_CONFIG_REL_PATH,
+  DEVIN_SOFT_MIN_VERSION,
+  DEVIN_STOP_CAP_RAISE_FOUND,
+} from "./devin-hooks-merge.js";
+export type {
+  DevinHooksFile,
+  DevinMatcherGroup,
+  DevinHookHandler,
+} from "./devin-hooks-merge.js";
+export {
+  probeDevinCliVersion,
+  isParseableDevinVersion,
+  isDevinVersionBelowSoftMin,
+} from "./devin-cli.js";
+export {
   mergeAntigravityHooks,
   validateAntigravityHooksShape,
   hasCompleteAntigravityAutopilotHooks,

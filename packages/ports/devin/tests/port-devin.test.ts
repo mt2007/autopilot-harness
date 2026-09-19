@@ -11,6 +11,8 @@ import {
   DEVIN_PLATFORM,
   DEVIN_POST_TOOL_USE_MATCHER,
   DEVIN_PROJECT_DIR_ENV,
+  DEVIN_SOFT_MIN_VERSION,
+  DEVIN_STOP_CAP_RAISE_FOUND,
   devinHookCommandLine,
   filePathFromDevinEdit,
   handleDevinPostToolUse,
@@ -78,6 +80,8 @@ describe("port-devin", () => {
     expect(DEVIN_POST_TOOL_USE_MATCHER).toBe(
       "^(write|edit|apply_patch|notebook_edit)$",
     );
+    expect(DEVIN_SOFT_MIN_VERSION).toBe("3000.10.31");
+    expect(DEVIN_STOP_CAP_RAISE_FOUND).toBe(false);
     expect(isDevinEditTool("write")).toBe(true);
     expect(isDevinEditTool("edit")).toBe(true);
     expect(isDevinEditTool("apply_patch")).toBe(true);

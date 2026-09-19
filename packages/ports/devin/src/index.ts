@@ -105,6 +105,18 @@ export const DEVIN_HOOKS_REL_PATH = ".devin/hooks.v1.json";
 export const DEVIN_HOOK_TIMEOUT_SEC = 120;
 
 /**
+ * Soft min from research probe (3000.10.31). Below → doctor WARN.
+ * Unparseable version → tip to trust the live CLI; do not invent a lower floor.
+ */
+export const DEVIN_SOFT_MIN_VERSION = "3000.10.31";
+
+/**
+ * Public research: no documented numeric Stop-continue hard-cap / raise knob.
+ * Live smoke decides full vs degraded.
+ */
+export const DEVIN_STOP_CAP_RAISE_FOUND = false;
+
+/**
  * Anchored PostToolUse matcher. `"edit"` alone is a substring and also
  * matches names that merely contain `edit`. `exec` is intentionally absent
  * (dirty-arm on Stop, never a Post block).

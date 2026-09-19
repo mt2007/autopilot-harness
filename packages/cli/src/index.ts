@@ -113,6 +113,29 @@ export {
   HERMES_HOOK_TIMEOUT_SEC,
   HERMES_MAX_VERIFY_NUDGES,
   HERMES_CONFIG_REL_PATH,
+  mergeDevinHooks,
+  validateDevinHooksShape,
+  hasCompleteDevinAutopilotHooks,
+  summarizeDevinAutopilotHooks,
+  stripAutopilotDevinHooks,
+  devinHooksContainAutopilot,
+  devinHooksHavePlatformStamp,
+  devinAutopilotHasOmittedOrSmallTimeout,
+  devinHooksFileIsVacant,
+  devinHooksUseProjectDirEnv,
+  devinConfigJsonContainsAutopilot,
+  autopilotDevinHookCommandLine,
+  autopilotDevinMatcherGroup,
+  DEVIN_AUTOPILOT_EVENTS,
+  DEVIN_POST_TOOL_USE_MATCHER,
+  DEVIN_HOOK_TIMEOUT_SEC,
+  DEVIN_HOOKS_REL_PATH,
+  DEVIN_CONFIG_REL_PATH,
+  DEVIN_SOFT_MIN_VERSION,
+  DEVIN_STOP_CAP_RAISE_FOUND,
+  probeDevinCliVersion,
+  isParseableDevinVersion,
+  isDevinVersionBelowSoftMin,
 } from "./init/install.js";
 export type { InitYesOptions, InitResult, HooksFile } from "./init/types.js";
 export type {
@@ -151,6 +174,11 @@ export type {
   HermesAutopilotEvent,
   HermesConfigFile,
 } from "./init/hermes-hooks-merge.js";
+export type {
+  DevinHooksFile,
+  DevinMatcherGroup,
+  DevinHookHandler,
+} from "./init/devin-hooks-merge.js";
 export type { PreflightResult } from "./init/install.js";
 export { PACKAGE_VERSION } from "./init/types.js";
 export { formatStatus, runDoctor, readPinVersion, readStaleAfterHours, hasGlobalSelfReviewHooks } from "./status-doctor.js";

@@ -47,6 +47,14 @@ import {
   FACTORY_HOOKS_REL_PATH,
 } from "./init/factory-hooks-merge.js";
 import {
+  stripAutopilotDevinHooks,
+  devinHooksContainAutopilot,
+  devinHooksFileIsVacant,
+  validateDevinHooksShape,
+  type DevinHooksFile,
+  DEVIN_HOOKS_REL_PATH,
+} from "./init/devin-hooks-merge.js";
+import {
   stripAutopilotAntigravityHooks,
   antigravityHooksContainAutopilot,
   antigravityHooksFileIsVacant,
@@ -563,6 +571,63 @@ function readFactoryHooksFile(
   }
 }
 
+function readDevinHooksFile(
+  hooksPath: string,
+):
+  | { ok: true; value: DevinHooksFile | null }
+  | { ok: false; error: string } {
+  const label = DEVIN_HOOKS_REL_PATH;
+  try {
+    assertNotSymlink(hooksPath, label);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+  try {
+    const st = fs.lstatSync(hooksPath);
+    if (st.isSymbolicLink()) {
+      return {
+        ok: false,
+        error: `${label} is a symlink; refusing to open`,
+      };
+    }
+    if (!st.isFile()) {
+      return {
+        ok: false,
+        error: `${label} exists and is not a regular file; refusing to uninstall`,
+      };
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot access ${label}: ${msg}` };
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      hooksPath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      label,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${label} is not a JSON object; fix or remove it before uninstall.`,
+      };
+    }
+    const file = parsed as DevinHooksFile;
+    const shape = validateDevinHooksShape(file);
+    if (shape) return { ok: false, error: `${label}: ${shape}` };
+    return { ok: true, value: file };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${label}: ${msg}` };
+  }
+}
+
 function readAntigravityHooksFile(
   hooksPath: string,
 ):
@@ -762,6 +827,7 @@ function projectWantsInstallableHosts(configPath: string): {
   antigravity: boolean;
   pi: boolean;
   runner: boolean;
+  devin: boolean;
 } {
   try {
     const yaml = readUntrustedUtf8File(
@@ -782,6 +848,7 @@ function projectWantsInstallableHosts(configPath: string): {
       antigravity: configWantsInstallableHost(platforms, "antigravity"),
       pi: configWantsInstallableHost(platforms, "pi"),
       runner: configWantsInstallableHost(platforms, "runner"),
+      devin: configWantsInstallableHost(platforms, "devin"),
     };
   } catch {
     return {
@@ -796,6 +863,7 @@ function projectWantsInstallableHosts(configPath: string): {
       antigravity: false,
       pi: false,
       runner: false,
+      devin: false,
     };
   }
 }
@@ -878,6 +946,9 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const factoryDir = path.join(projectRoot, ".factory");
     const factoryHooksPath = path.join(factoryDir, "hooks.json");
     const factorySkillsRoot = path.join(factoryDir, "skills");
+    const devinDir = path.join(projectRoot, ".devin");
+    const devinHooksPath = path.join(devinDir, "hooks.v1.json");
+    const devinSkillsRoot = path.join(devinDir, "skills");
     const agentsDir = path.join(projectRoot, ".agents");
     const antigravityHooksPath = path.join(agentsDir, "hooks.json");
     const agentsSkillsRoot = path.join(agentsDir, "skills");
@@ -897,9 +968,10 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       antigravity: wantAntigravity,
       pi: wantPi,
       runner: wantRunner,
+      devin: wantDevin,
     } = projectWantsInstallableHosts(configPath);
     const wantAgentsSkills = wantAntigravity || wantPi;
-    // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory/.agents trees when config declares
+    // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory/.devin/.agents trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi/Hermes use user-home config (outside project) —
     // strip separately. Pi shares .agents/skills with Antigravity.
@@ -941,6 +1013,12 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         dirs.push(
           [factoryDir, ".factory/"],
           [factorySkillsRoot, ".factory/skills/"],
+        );
+      }
+      if (wantDevin) {
+        dirs.push(
+          [devinDir, ".devin/"],
+          [devinSkillsRoot, ".devin/skills/"],
         );
       }
       if (wantAgentsSkills) {
@@ -996,6 +1074,13 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
             projectRoot,
             path.join(factorySkillsRoot, name),
             `.factory/skills/${name}`,
+          );
+        }
+        if (wantDevin) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(devinSkillsRoot, name),
+            `.devin/skills/${name}`,
           );
         }
         if (wantAgentsSkills) {
@@ -1529,6 +1614,86 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
     }
 
+    // --- Devin CLI hooks (.devin/hooks.v1.json) ---
+    // Top-level events; fingerprint strip only; keep siblings under .devin/.
+    // Vacant after strip → unlink hooks.v1.json only. Never touch config.json.
+    const devinLabel = DEVIN_HOOKS_REL_PATH;
+    const devinPre = readDevinHooksFile(devinHooksPath);
+    if (!devinPre.ok) {
+      if (wantDevin) {
+        throw new Error(devinPre.error);
+      }
+      actions.push(
+        `skip ${devinLabel} (${formatUninstallSkipDetail(devinPre.error)})`,
+      );
+    } else if (devinHooksContainAutopilot(devinPre.value)) {
+      const stripDevinHooks = (): void => {
+        assertNotSymlink(devinDir, ".devin/");
+        assertNotSymlink(devinHooksPath, devinLabel);
+        if (dryRun) {
+          found = true;
+          const preview =
+            devinPre.value != null
+              ? stripAutopilotDevinHooks(devinPre.value)
+              : null;
+          if (devinHooksFileIsVacant(preview)) {
+            actions.push(`unlink empty ${devinLabel}`);
+          } else {
+            actions.push(`strip Autopilot entries from ${devinLabel}`);
+          }
+          return;
+        }
+        const devinFresh = readDevinHooksFile(devinHooksPath);
+        if (!devinFresh.ok) {
+          throw new Error(devinFresh.error);
+        }
+        const freshFile = devinFresh.value;
+        if (
+          freshFile == null ||
+          !devinHooksContainAutopilot(freshFile)
+        ) {
+          found = true;
+          actions.push(`strip Autopilot entries from ${devinLabel}`);
+          actions.push(
+            `${devinLabel} no longer has Autopilot entries (skipped write)`,
+          );
+          return;
+        }
+        const stripped = stripAutopilotDevinHooks(freshFile);
+        if (devinHooksFileIsVacant(stripped)) {
+          assertRealpathInside(projectRoot, devinHooksPath, devinLabel);
+          fs.unlinkSync(devinHooksPath);
+          found = true;
+          hooksStripped = true;
+          actions.push(`unlink empty ${devinLabel}`);
+          removed.push(path.relative(projectRoot, devinHooksPath));
+          return;
+        }
+        writeJsonAtomic(
+          devinHooksPath,
+          JSON.stringify(stripped, null, 2) + "\n",
+          projectRoot,
+          devinLabel,
+        );
+        found = true;
+        hooksStripped = true;
+        actions.push(`strip Autopilot entries from ${devinLabel}`);
+        removed.push(
+          path.relative(projectRoot, devinHooksPath) + " (Autopilot entries)",
+        );
+      };
+
+      try {
+        stripDevinHooks();
+      } catch (err) {
+        if (wantDevin) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip ${devinLabel} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
     // --- Antigravity hooks (.agents/hooks.json) ---
     // Named autopilot-harness block; keep foreign named blocks / siblings.
     // Vacant after strip → unlink hooks.json only. Never touch .agent/.
@@ -1948,6 +2113,36 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .factory/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Devin skills (.devin/skills) ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(devinSkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        if (!wantDevin) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.devin/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.devin/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantDevin) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .devin/skills/${name} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

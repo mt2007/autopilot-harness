@@ -46,6 +46,11 @@ import {
   FACTORY_HOOKS_REL_PATH,
 } from "./init/factory-hooks-merge.js";
 import {
+  validateDevinHooksShape,
+  type DevinHooksFile,
+  DEVIN_HOOKS_REL_PATH,
+} from "./init/devin-hooks-merge.js";
+import {
   validateAntigravityHooksShape,
   type AntigravityHooksFile,
   ANTIGRAVITY_HOOKS_REL_PATH,
@@ -97,6 +102,7 @@ function preflightHostSettings(
   wantHermes: boolean,
   wantAntigravity: boolean,
   wantPi: boolean = false,
+  wantDevin: boolean = false,
 ): { ok: true } | { ok: false; error: string } {
   if (wantCursor) {
     const hooksPath = path.join(projectRoot, ".cursor", "hooks.json");
@@ -365,6 +371,40 @@ function preflightHostSettings(
         return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
       }
       // Missing hooks.json is OK — force refresh will create it.
+    }
+  }
+
+  if (wantDevin) {
+    const hooksPath = path.join(projectRoot, ".devin", "hooks.v1.json");
+    try {
+      assertNotSymlink(path.join(projectRoot, ".devin"), ".devin/");
+      assertNotSymlink(hooksPath, DEVIN_HOOKS_REL_PATH);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: msg };
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        hooksPath,
+        MAX_UNTRUSTED_TEXT_BYTES,
+        DEVIN_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          error: `${hooksPath} is not a JSON object; fix or remove it before upgrade.`,
+        };
+      }
+      const shape = validateDevinHooksShape(parsed as DevinHooksFile);
+      if (shape) return { ok: false, error: `${hooksPath}: ${shape}` };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: `Cannot read ${hooksPath}: ${msg}` };
+      }
+      // Missing hooks.v1.json is OK — force refresh will create it.
     }
   }
 
@@ -769,6 +809,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     const wantHermes = configWantsInstallableHost(platforms, "hermes-agent");
     const wantAntigravity = configWantsInstallableHost(platforms, "antigravity");
     const wantPi = configWantsInstallableHost(platforms, "pi");
+    const wantDevin = configWantsInstallableHost(platforms, "devin");
     if (wantCursor) {
       actions.push("refresh .cursor/skills/autopilot-*");
       actions.push("merge .cursor/hooks.json (Autopilot entries)");
@@ -807,6 +848,12 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       actions.push("refresh .factory/skills/autopilot-*");
       actions.push(
         `merge ${FACTORY_HOOKS_REL_PATH} (Autopilot entries)`,
+      );
+    }
+    if (wantDevin) {
+      actions.push("refresh .devin/skills/autopilot-*");
+      actions.push(
+        `merge ${DEVIN_HOOKS_REL_PATH} (Autopilot entries; not config.json)`,
       );
     }
     if (wantHermes) {
@@ -849,6 +896,7 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       wantHermes,
       wantAntigravity,
       wantPi,
+      wantDevin,
     );
     if (!hostPre.ok) {
       return { ok: false, error: hostPre.error };

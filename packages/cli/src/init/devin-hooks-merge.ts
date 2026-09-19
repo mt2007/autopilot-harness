@@ -9,19 +9,30 @@ import {
   DEVIN_AUTOPILOT_EVENTS,
   DEVIN_HOOK_TIMEOUT_SEC,
   DEVIN_POST_TOOL_USE_MATCHER,
+  DEVIN_SOFT_MIN_VERSION,
+  DEVIN_STOP_CAP_RAISE_FOUND,
   devinHookCommandLine,
   type DevinHookEvent,
 } from "@autopilot-harness/port-devin";
-import { isAutopilotCommand } from "./hooks-merge.js";
+import {
+  HOOK_PLATFORM_DEVIN,
+  commandHasPlatformStamp,
+  isAutopilotCommand,
+} from "./hooks-merge.js";
 
 export {
   DEVIN_AUTOPILOT_EVENTS,
   DEVIN_HOOK_TIMEOUT_SEC,
   DEVIN_POST_TOOL_USE_MATCHER,
+  DEVIN_SOFT_MIN_VERSION,
+  DEVIN_STOP_CAP_RAISE_FOUND,
 };
 
 /** Project hooks file. Do not write `.devin/config.json`. */
 export const DEVIN_HOOKS_REL_PATH = [".devin", "hooks.v1.json"].join("/");
+
+/** Never written by Autopilot; doctor WARNs if it still lists Autopilot hooks. */
+export const DEVIN_CONFIG_REL_PATH = [".devin", "config.json"].join("/");
 
 export interface DevinHookHandler {
   type?: string;
@@ -187,6 +198,9 @@ function nestedHasAutopilot(value: unknown, depth = 0): boolean {
     if (key === "command" || key === "hooks" || isUnsafeKey(key)) continue;
     // Skip matcher / timeout / type scalars — not command lines.
     if (key === "matcher" || key === "timeout" || key === "type") continue;
+    // Object string fields (description / notes) are prose. Bare command
+    // strings still count when they appear as array entries.
+    if (typeof child === "string") continue;
     if (nestedHasAutopilot(child, depth + 1)) return true;
   }
   return false;
@@ -222,7 +236,14 @@ export function validateDevinHooksShape(file: DevinHooksFile): string | null {
         return `hooks file ${safeKeyLabel(key)} must be an array of matcher groups.`;
       }
       // Misplaced Autopilot flat handler under a non-event key — fail-closed.
-      if (nestedHasAutopilot(value)) {
+      // Bare strings (e.g. description mentioning the hook filename) are not
+      // fingerprints — same bar as Factory / devinHooksContainAutopilot.
+      if (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        nestedHasAutopilot(value)
+      ) {
         return `hooks file ${safeKeyLabel(key)} Autopilot handler must be under a top-level event array.`;
       }
       continue;
@@ -298,4 +319,218 @@ export function mergeDevinHooks(existing: DevinHooksFile | null): DevinHooksFile
     base[event] = stripped;
   }
   return base;
+}
+
+/**
+ * Remove Autopilot Devin hook handlers; keep foreign hooks.
+ * Does not delete the file — caller unlinks when {@link devinHooksFileIsVacant}.
+ */
+export function stripAutopilotDevinHooks(
+  existing: DevinHooksFile,
+): DevinHooksFile {
+  const shapeError = validateDevinHooksShape(existing);
+  if (shapeError) {
+    throw new Error(shapeError);
+  }
+
+  const base: DevinHooksFile = Object.create(null);
+  for (const [key, value] of Object.entries(existing)) {
+    if (isUnsafeKey(key)) continue;
+    base[key] = value;
+  }
+
+  for (const [key, value] of Object.entries(base)) {
+    if (isUnsafeKey(key) || key === "hooks") continue;
+    if (!Array.isArray(value)) continue;
+    const kept = stripAutopilotFromGroups(value as DevinMatcherGroup[]);
+    if (kept.length === 0) {
+      delete base[key];
+    } else {
+      base[key] = kept;
+    }
+  }
+
+  return base;
+}
+
+/** True when strip left nothing worth keeping — uninstall should unlink the file. */
+export function devinHooksFileIsVacant(file: DevinHooksFile | null): boolean {
+  if (!file || typeof file !== "object" || Array.isArray(file)) return true;
+  for (const [key, value] of Object.entries(file)) {
+    if (isUnsafeKey(key)) continue;
+    if (key === "hooks") {
+      if (value == null) continue;
+      if (typeof value === "object" && !Array.isArray(value)) {
+        if (Object.keys(value as object).length === 0) continue;
+        return false;
+      }
+      return false;
+    }
+    if (value == null) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    if (Array.isArray(value)) return false;
+    if (value !== undefined) return false;
+  }
+  return true;
+}
+
+export function devinHooksContainAutopilot(
+  file: DevinHooksFile | null,
+): boolean {
+  if (!file || typeof file !== "object" || Array.isArray(file)) {
+    return false;
+  }
+  for (const [key, value] of Object.entries(file)) {
+    if (key === "hooks") {
+      // Nested wrap bag only (array/scalar wraps are shape errors on merge).
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        if (nestedHasAutopilot(value)) return true;
+      }
+      continue;
+    }
+    if (Array.isArray(value)) {
+      if (value.some((item) => nestedHasAutopilot(item))) return true;
+      continue;
+    }
+    // Stranded flat Autopilot object outside event arrays (validate rejects).
+    // Bare top-level strings are not fingerprints (avoid description false positives).
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      nestedHasAutopilot(value)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function summarizeDevinAutopilotHooks(file: DevinHooksFile): {
+  missingEvents: string[];
+  duplicates: number;
+} {
+  const missingEvents: string[] = [];
+  let duplicates = 0;
+  for (const event of DEVIN_AUTOPILOT_EVENTS) {
+    const groups = Array.isArray(file[event])
+      ? (file[event] as DevinMatcherGroup[])
+      : [];
+    let n = 0;
+    for (const g of groups) {
+      if (!g || typeof g !== "object" || Array.isArray(g)) continue;
+      if (isAutopilotCommand(g.command)) n += 1;
+      const hooks = Array.isArray(g.hooks) ? g.hooks : [];
+      n += hooks.filter((h) => isAutopilotCommand(h?.command)).length;
+    }
+    if (n === 0) missingEvents.push(event);
+    if (n > 1) duplicates += n - 1;
+  }
+  return { missingEvents, duplicates };
+}
+
+export function hasCompleteDevinAutopilotHooks(file: DevinHooksFile): boolean {
+  const { missingEvents, duplicates } = summarizeDevinAutopilotHooks(file);
+  return missingEvents.length === 0 && duplicates === 0;
+}
+
+/** True when every Autopilot Devin command stamps `--platform devin`. */
+export function devinHooksHavePlatformStamp(file: DevinHooksFile): boolean {
+  let seen = 0;
+  for (const event of DEVIN_AUTOPILOT_EVENTS) {
+    const groups = Array.isArray(file[event])
+      ? (file[event] as DevinMatcherGroup[])
+      : [];
+    for (const g of groups) {
+      if (!g || typeof g !== "object" || Array.isArray(g)) continue;
+      if (isAutopilotCommand(g.command)) {
+        seen += 1;
+        if (!commandHasPlatformStamp(g.command, HOOK_PLATFORM_DEVIN)) {
+          return false;
+        }
+      }
+      const hooks = Array.isArray(g.hooks) ? g.hooks : [];
+      for (const h of hooks) {
+        if (!isAutopilotCommand(h?.command)) continue;
+        seen += 1;
+        if (!commandHasPlatformStamp(h.command, HOOK_PLATFORM_DEVIN)) {
+          return false;
+        }
+      }
+    }
+  }
+  return seen > 0;
+}
+
+/**
+ * True when any Autopilot Devin handler omits timeout or sets timeout &lt; 120.
+ */
+export function devinAutopilotHasOmittedOrSmallTimeout(
+  file: DevinHooksFile,
+): boolean {
+  for (const event of DEVIN_AUTOPILOT_EVENTS) {
+    const groups = Array.isArray(file[event])
+      ? (file[event] as DevinMatcherGroup[])
+      : [];
+    for (const g of groups) {
+      if (!g || typeof g !== "object" || Array.isArray(g)) continue;
+      const handlers: DevinHookHandler[] = [];
+      if (isAutopilotCommand(g.command)) {
+        handlers.push(g as DevinHookHandler);
+      }
+      if (Array.isArray(g.hooks)) handlers.push(...g.hooks);
+      for (const h of handlers) {
+        if (!h || typeof h !== "object" || Array.isArray(h)) continue;
+        if (!isAutopilotCommand(h?.command)) continue;
+        if (h.timeout == null) return true;
+        if (
+          typeof h.timeout === "number" &&
+          Number.isFinite(h.timeout) &&
+          h.timeout < DEVIN_HOOK_TIMEOUT_SEC
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/** True when every Autopilot command embeds `$DEVIN_PROJECT_DIR`. */
+export function devinHooksUseProjectDirEnv(file: DevinHooksFile): boolean {
+  let seen = 0;
+  for (const event of DEVIN_AUTOPILOT_EVENTS) {
+    const groups = Array.isArray(file[event])
+      ? (file[event] as DevinMatcherGroup[])
+      : [];
+    for (const g of groups) {
+      if (!g || typeof g !== "object" || Array.isArray(g)) continue;
+      const cmds: string[] = [];
+      if (typeof g.command === "string") cmds.push(g.command);
+      if (Array.isArray(g.hooks)) {
+        for (const h of g.hooks) {
+          if (typeof h?.command === "string") cmds.push(h.command);
+        }
+      }
+      for (const cmd of cmds) {
+        if (!isAutopilotCommand(cmd)) continue;
+        seen += 1;
+        if (!cmd.includes("$DEVIN_PROJECT_DIR")) return false;
+      }
+    }
+  }
+  return seen > 0;
+}
+
+/**
+ * Best-effort: Autopilot under `.devin/config.json` nested `hooks`.
+ * Autopilot never writes this file; doctor WARNs only.
+ */
+export function devinConfigJsonContainsAutopilot(settings: unknown): boolean {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return false;
+  }
+  const o = settings as Record<string, unknown>;
+  if (o.hooks == null) return false;
+  return nestedHasAutopilot(o.hooks);
 }

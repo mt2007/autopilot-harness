@@ -120,6 +120,27 @@ import {
   type FactoryHooksFile,
 } from "./init/factory-hooks-merge.js";
 import {
+  DEVIN_CONFIG_REL_PATH,
+  DEVIN_HOOKS_REL_PATH,
+  DEVIN_HOOK_TIMEOUT_SEC,
+  DEVIN_SOFT_MIN_VERSION,
+  DEVIN_STOP_CAP_RAISE_FOUND,
+  devinAutopilotHasOmittedOrSmallTimeout,
+  devinConfigJsonContainsAutopilot,
+  devinHooksContainAutopilot,
+  devinHooksHavePlatformStamp,
+  devinHooksUseProjectDirEnv,
+  hasCompleteDevinAutopilotHooks,
+  summarizeDevinAutopilotHooks,
+  validateDevinHooksShape,
+  type DevinHooksFile,
+} from "./init/devin-hooks-merge.js";
+import {
+  isDevinVersionBelowSoftMin,
+  isParseableDevinVersion,
+  probeDevinCliVersion,
+} from "./init/devin-cli.js";
+import {
   COPILOT_STOP_CAP_RAISE_FOUND,
   COPILOT_STOP_CONSECUTIVE_BLOCK_CAP,
 } from "@autopilot-harness/port-copilot-cli";
@@ -497,6 +518,50 @@ function projectHasFactoryAutopilotFingerprint(projectRoot: string): boolean {
     path.join(projectRoot, ".factory", "hooks", "hooks.json"),
     FACTORY_LEGACY_HOOKS_REL_PATH,
   );
+}
+
+/**
+ * Best-effort: leftover Devin Autopilot residue on disk.
+ * Valid hooks.v1.json is uninstallable. Invalid shape is not — uninstall
+ * soft-skips and add-platform refuses. config.json Autopilot is never stripped.
+ */
+function projectDevinAutopilotResidue(projectRoot: string): {
+  hooksStrippable: boolean;
+  hooksBlocked: boolean;
+  configJson: boolean;
+} {
+  let hooksStrippable = false;
+  let hooksBlocked = false;
+  let configJson = false;
+  try {
+    const raw = readUntrustedUtf8File(
+      path.join(projectRoot, ".devin", "hooks.v1.json"),
+      MAX_CONFIG_BYTES,
+      DEVIN_HOOKS_REL_PATH,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const file = parsed as DevinHooksFile;
+      if (devinHooksContainAutopilot(file)) {
+        if (validateDevinHooksShape(file)) hooksBlocked = true;
+        else hooksStrippable = true;
+      }
+    }
+  } catch {
+    /* missing/unreadable */
+  }
+  try {
+    const raw = readUntrustedUtf8File(
+      path.join(projectRoot, ".devin", "config.json"),
+      MAX_CONFIG_BYTES,
+      DEVIN_CONFIG_REL_PATH,
+    );
+    const parsed: unknown = JSON.parse(raw);
+    configJson = devinConfigJsonContainsAutopilot(parsed);
+  } catch {
+    /* missing/unreadable */
+  }
+  return { hooksStrippable, hooksBlocked, configJson };
 }
 
 /** Best-effort Autopilot fingerprint in a Factory hooks.json-shaped file. */
@@ -1835,6 +1900,201 @@ export function runDoctor(
     }
   }
 
+  const wantDevin = configWantsInstallableHost(cfg.platforms, "devin");
+  if (wantDevin) {
+    const devinHooksPath = path.join(root, ".devin", "hooks.v1.json");
+    if (!DEVIN_STOP_CAP_RAISE_FOUND) {
+      lines.push(
+        "WARN  Devin CLI Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs or degraded until live proves multi under stop_hook_active",
+      );
+    }
+    lines.push(
+      "WARN  Devin CLI: review hooks in /hooks after install or upgrade, then start a new session",
+    );
+    lines.push(
+      "WARN  Devin tip: Autopilot surface is interactive CLI — Stop-under-`-p` / print is unproven (not a FAIL)",
+    );
+    lines.push(
+      "WARN  Devin tip: CLI only — Desktop not tested; same .devin/ files may be readable there (not a FAIL)",
+    );
+    if (process.env.DEVIN_SANDBOX) {
+      lines.push(
+        "WARN  DEVIN_SANDBOX is set — sandbox wraps exec-tool processes; whether Autopilot hook children can write .autopilot/ is unproven",
+      );
+    }
+    const devinVer = probeDevinCliVersion();
+    if (!devinVer) {
+      lines.push(
+        "WARN  devin CLI not found on PATH (or --version unreadable) — soft min " +
+          DEVIN_SOFT_MIN_VERSION,
+      );
+    } else if (!isParseableDevinVersion(devinVer)) {
+      lines.push(
+        `WARN  devin version unparseable (${safeDisplayToken(devinVer)}) — trust the live CLI; soft min ${DEVIN_SOFT_MIN_VERSION}`,
+      );
+    } else if (isDevinVersionBelowSoftMin(devinVer)) {
+      lines.push(
+        `WARN  devin ${safeDisplayToken(devinVer)} is below soft min ${DEVIN_SOFT_MIN_VERSION} — upgrade Devin when possible`,
+      );
+    } else {
+      lines.push(
+        `OK    devin ${safeDisplayToken(devinVer)} (>= soft min ${DEVIN_SOFT_MIN_VERSION})`,
+      );
+    }
+    try {
+      const raw = readUntrustedUtf8File(
+        devinHooksPath,
+        MAX_CONFIG_BYTES,
+        DEVIN_HOOKS_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        lines.push(`FAIL  ${DEVIN_HOOKS_REL_PATH} is not a JSON object`);
+        ok = false;
+      } else {
+        const file = parsed as DevinHooksFile;
+        const shapeError = validateDevinHooksShape(file);
+        if (shapeError) {
+          lines.push(
+            `FAIL  ${DEVIN_HOOKS_REL_PATH}: ${safeDisplayToken(shapeError, "invalid shape")}`,
+          );
+          ok = false;
+        } else {
+          const { missingEvents, duplicates } =
+            summarizeDevinAutopilotHooks(file);
+          const badTimeout = devinAutopilotHasOmittedOrSmallTimeout(file);
+          const hasStamp = devinHooksHavePlatformStamp(file);
+          const usesProjectDir = devinHooksUseProjectDirEnv(file);
+          if (missingEvents.length > 0) {
+            lines.push(
+              `FAIL  ${DEVIN_HOOKS_REL_PATH} missing Autopilot for: ${missingEvents.join(", ")} — run init --force`,
+            );
+            ok = false;
+          }
+          if (duplicates > 0) {
+            lines.push(
+              `WARN  ${DEVIN_HOOKS_REL_PATH} has ${duplicates} duplicate Autopilot entr(y/ies)`,
+            );
+          }
+          if (badTimeout) {
+            lines.push(
+              `WARN  Autopilot Devin hook timeout below ${DEVIN_HOOK_TIMEOUT_SEC} (or omitted) — run upgrade`,
+            );
+          }
+          if (missingEvents.length === 0 && !hasStamp) {
+            lines.push(
+              "WARN  Autopilot Devin hooks missing --platform devin — run upgrade",
+            );
+          }
+          if (missingEvents.length === 0 && !usesProjectDir) {
+            lines.push(
+              "WARN  Autopilot Devin hooks missing $DEVIN_PROJECT_DIR — run upgrade (hook cwd ≠ project root)",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
+            duplicates === 0 &&
+            !badTimeout &&
+            hasStamp &&
+            usesProjectDir &&
+            hasCompleteDevinAutopilotHooks(file)
+          ) {
+            lines.push(`OK    ${DEVIN_HOOKS_REL_PATH} Autopilot entries`);
+          }
+        }
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === "ENOENT") {
+        lines.push(`FAIL  ${DEVIN_HOOKS_REL_PATH} missing`);
+        ok = false;
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        lines.push(
+          `FAIL  ${DEVIN_HOOKS_REL_PATH} unreadable (${safeDisplayToken(msg, "error")})`,
+        );
+        ok = false;
+      }
+    }
+
+    // Misplaced Autopilot under .devin/config.json (Autopilot never writes this).
+    try {
+      const raw = readUntrustedUtf8File(
+        path.join(root, ".devin", "config.json"),
+        MAX_CONFIG_BYTES,
+        DEVIN_CONFIG_REL_PATH,
+      );
+      const parsed: unknown = JSON.parse(raw);
+      if (devinConfigJsonContainsAutopilot(parsed)) {
+        lines.push(
+          `WARN  ${DEVIN_CONFIG_REL_PATH} hooks still list Autopilot — move to ${DEVIN_HOOKS_REL_PATH} (Autopilot does not write config.json hooks)`,
+        );
+      }
+    } catch {
+      /* missing/unreadable — ignore */
+    }
+
+    // Skills dual-open: Autopilot under both .devin/skills and .agents/skills.
+    // Real file inside the project only — a symlink escape is not dual-open.
+    let hasDevinSkills = false;
+    let hasAgentsSkills = false;
+    const skillInProject = (skillPath: string): boolean => {
+      const st = fs.lstatSync(skillPath);
+      if (st.isSymbolicLink() || !st.isFile()) return false;
+      assertRealpathInside(root, skillPath, skillPath);
+      return true;
+    };
+    for (const name of SKILL_NAMES) {
+      try {
+        if (
+          skillInProject(path.join(root, ".devin", "skills", name, "SKILL.md"))
+        ) {
+          hasDevinSkills = true;
+        }
+      } catch {
+        /* missing / escape */
+      }
+      try {
+        if (
+          skillInProject(path.join(root, ".agents", "skills", name, "SKILL.md"))
+        ) {
+          hasAgentsSkills = true;
+        }
+      } catch {
+        /* missing / escape */
+      }
+    }
+    if (hasDevinSkills && hasAgentsSkills) {
+      lines.push(
+        "WARN  Autopilot skills under both .devin/skills and .agents/skills — dual discovery; prefer .devin/skills for Devin (Autopilot does not write .agents by default)",
+      );
+    }
+  } else {
+    // When Claude is also enabled, the dual-fingerprint block below names the
+    // residue more accurately (config.json is not uninstallable).
+    const residue = projectDevinAutopilotResidue(root);
+    if (!wantClaude) {
+      if (residue.hooksBlocked) {
+        lines.push(
+          `WARN  leftover ${DEVIN_HOOKS_REL_PATH} Autopilot is an invalid shape (devin not in platforms) — uninstall and add-platform will not strip it; fix the file manually`,
+        );
+      }
+      if (residue.hooksStrippable && residue.configJson) {
+        lines.push(
+          `WARN  leftover Devin Autopilot in ${DEVIN_HOOKS_REL_PATH} and ${DEVIN_CONFIG_REL_PATH} (devin not in platforms) — uninstall strips hooks.v1.json only; remove config.json Autopilot manually or add-platform devin`,
+        );
+      } else if (residue.hooksStrippable) {
+        lines.push(
+          `WARN  leftover ${DEVIN_HOOKS_REL_PATH} Autopilot fingerprint (devin not in platforms) — uninstall or add-platform devin`,
+        );
+      } else if (residue.configJson) {
+        lines.push(
+          `WARN  leftover ${DEVIN_CONFIG_REL_PATH} Autopilot hooks (devin not in platforms) — Autopilot does not strip config.json; remove manually or add-platform devin`,
+        );
+      }
+    }
+  }
+
   const wantHermes = configWantsInstallableHost(cfg.platforms, "hermes-agent");
   if (wantHermes) {
     const injectHermesHome = opts.hermesHome;
@@ -2340,6 +2600,89 @@ export function runDoctor(
     }
   }
 
+  // Dual Devin + Claude Autopilot fingerprints (config and/or on-disk residue).
+  // Devin read_config_from.claude defaults true — both fingerprints can fire.
+  // Uninstall strips hooks.v1.json only — never config.json Autopilot.
+  const devinResidueWhenIdle = wantDevin
+    ? { hooksStrippable: false, hooksBlocked: false, configJson: false }
+    : projectDevinAutopilotResidue(root);
+  const devinLeftoverFp =
+    devinResidueWhenIdle.hooksStrippable ||
+    devinResidueWhenIdle.hooksBlocked ||
+    devinResidueWhenIdle.configJson;
+  if (wantDevin && wantClaude) {
+    lines.push(
+      "WARN  Devin CLI + Claude Code both enabled — dual Autopilot fingerprints; prefer one host or expect Stop routing care",
+    );
+  } else {
+    let claudeFpVsDevin = false;
+    if (!wantClaude) {
+      try {
+        const raw = readUntrustedUtf8File(
+          path.join(root, ".claude", "settings.json"),
+          MAX_CONFIG_BYTES,
+          ".claude/settings.json",
+        );
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          claudeFpVsDevin = claudeSettingsContainAutopilot(
+            parsed as ClaudeSettingsFile,
+          );
+        }
+      } catch {
+        /* missing/unreadable leftover — ignore */
+      }
+    }
+    if (wantDevin && claudeFpVsDevin) {
+      lines.push(
+        "WARN  Claude Autopilot hooks present while Devin CLI is enabled — dual fingerprints; uninstall Claude hooks or expect Stop routing care",
+      );
+    }
+    if (wantClaude && devinLeftoverFp) {
+      const blocked = devinResidueWhenIdle.hooksBlocked;
+      const strippable = devinResidueWhenIdle.hooksStrippable;
+      const cfg = devinResidueWhenIdle.configJson;
+      if (blocked && !strippable && !cfg) {
+        lines.push(
+          `WARN  ${DEVIN_HOOKS_REL_PATH} Autopilot is an invalid shape while Claude Code is enabled — dual fingerprints; uninstall will not strip it; fix the file manually or expect Stop routing care`,
+        );
+      } else if (cfg && !strippable && !blocked) {
+        lines.push(
+          `WARN  ${DEVIN_CONFIG_REL_PATH} Autopilot hooks present while Claude Code is enabled — dual fingerprints; remove config.json Autopilot manually (uninstall does not strip it) or expect Stop routing care`,
+        );
+      } else if (cfg && strippable) {
+        lines.push(
+          "WARN  Devin Autopilot residue (hooks.v1.json + config.json) while Claude Code is enabled — dual fingerprints; uninstall strips hooks.v1.json only; remove config.json Autopilot manually or expect Stop routing care",
+        );
+      } else if (cfg && blocked) {
+        lines.push(
+          "WARN  Devin Autopilot residue while Claude Code is enabled — dual fingerprints; invalid hooks.v1.json shape is not stripped by uninstall; remove config.json Autopilot manually or expect Stop routing care",
+        );
+      } else {
+        lines.push(
+          "WARN  Devin Autopilot hooks present while Claude Code is enabled — dual fingerprints; uninstall Devin or expect Stop routing care",
+        );
+      }
+    }
+    if (!wantDevin && !wantClaude && devinLeftoverFp && claudeFpVsDevin) {
+      if (devinResidueWhenIdle.hooksBlocked && !devinResidueWhenIdle.hooksStrippable) {
+        const configNote = devinResidueWhenIdle.configJson
+          ? "remove config.json Autopilot manually; "
+          : "";
+        lines.push(
+          `WARN  Devin + Claude Autopilot fingerprints both present on disk — dual fingerprints; invalid hooks.v1.json shape is not stripped by uninstall; ${configNote}expect Stop routing care`,
+        );
+      } else {
+        const configNote = devinResidueWhenIdle.configJson
+          ? "config.json Autopilot must be removed manually; "
+          : "";
+        lines.push(
+          `WARN  Devin + Claude Autopilot fingerprints both present on disk — dual fingerprints; uninstall leftovers; ${configNote}expect Stop routing care`,
+        );
+      }
+    }
+  }
+
   // Dual Hermes + Claude Autopilot fingerprints (config and/or on-disk residue).
   const hermesInjectHome = opts.hermesHome;
   const hermesProbeHome =
@@ -2691,6 +3034,14 @@ export function runDoctor(
       label: ".factory/skills/",
       pathFor: (name) =>
         path.join(root, ".factory", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantDevin) {
+    skillHosts.push({
+      label: ".devin/skills/",
+      pathFor: (name) =>
+        path.join(root, ".devin", "skills", name, "SKILL.md"),
       containRoot: root,
     });
   }
