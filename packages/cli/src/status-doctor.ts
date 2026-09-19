@@ -1905,7 +1905,7 @@ export function runDoctor(
     const devinHooksPath = path.join(root, ".devin", "hooks.v1.json");
     if (!DEVIN_STOP_CAP_RAISE_FOUND) {
       lines.push(
-        "WARN  Devin CLI Stop-continue: no documented raise/hard-cap (research) — expect mid-chain cutoffs or degraded until live proves multi under stop_hook_active",
+        "WARN  Devin CLI Stop-continue: no documented raise/hard-cap (research) — interactive CLI live continue ≥1× proved; no numeric cap",
       );
     }
     lines.push(

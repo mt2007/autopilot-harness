@@ -255,7 +255,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /### Hermes Agent[\s\S]*Allow \/ hard-stop = \*\*`\{\}`\*\*/i,
     );
     expect(tips).toMatch(
-      /including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Pi \/ Runner/i,
+      /including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Devin \/ Pi \/ Runner/i,
     );
     expect(tips).toMatch(/### Antigravity/);
     expect(tips).toMatch(/decision:"continue"|decision:continue/);
@@ -266,6 +266,26 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/--add-dir|CLI workspace|loaded 0/i);
     expect(tips).toMatch(/auto-attach|Auto-attach/);
     expect(tips).toMatch(/live-proved|0\.10\.1|shim|--add-dir/i);
+    expect(tips).toMatch(/### Devin CLI/);
+    expect(tips).toMatch(/DEVIN_PROJECT_DIR|\.devin\/hooks\.v1\.json/);
+    expect(tips).toMatch(/3000\.10\.31/);
+    expect(tips).toMatch(/CLI only|not Desktop/i);
+    expect(tips).toMatch(/Stop dirty-arm|ignores[\s\S]{0,24}exec|exec[\s\S]{0,40}Stop dirty-arm/i);
+    expect(tips).toMatch(
+      /### Devin CLI(?:(?!\n### )[\s\S])*leftover(?:(?!\n### )[\s\S]){0,240}not in `platforms`/i,
+    );
+    expect(tips).toMatch(
+      /### Devin CLI(?:(?!\n### )[\s\S])*≥1× proved/i,
+    );
+    expect(tips).toMatch(
+      /### Devin CLI(?:(?!\n### )[\s\S])*hostile env/i,
+    );
+    expect(tips).toMatch(
+      /### Devin CLI(?:(?!\n### )[\s\S])*timeout omit/i,
+    );
+    expect(tips).not.toMatch(
+      /### Devin CLI(?:(?!\n### )[\s\S])*(?:live Stop-continue unproven|live continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*|\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded)|Desktop supported/i,
+    );
     expect(tips).toMatch(/### Pi/);
     expect(tips).toMatch(/\.pi\/extensions\/autopilot\.ts|\.pi\/extensions/);
     expect(tips).toMatch(/0\.85\.1/);
@@ -343,7 +363,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /before[\s\S]{0,40}store[\s\S]{0,80}state\.db|do \*\*not\*\* create an empty `state\.db`/i,
     );
     expect(tips).not.toMatch(/doctor WARN\/FAIL/);
-    expect(tips).not.toMatch(/eleventh hook|eleven-way/i);
+    expect(tips).toMatch(/eleven-way/i);
+    expect(tips).not.toMatch(/eleventh hook/i);
     // Dual default: missing/invalid → executing_only; fresh init → project
     expect(tips).toMatch(/Missing \/ invalid[\s\S]*executing_only/i);
     expect(tips).toMatch(/Fresh `init` writes \*\*`project`\*\*/);
@@ -369,9 +390,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
     expect(config).toMatch(/project-wide|whole project/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity, and\/or Devin CLI/i,
     );
-    expect(config).toMatch(/ten-way dispatch/i);
+    expect(config).toMatch(/eleven-way dispatch/i);
+    expect(config).toMatch(/Devin[\s\S]{0,80}\.devin\/hooks\.v1\.json|`\.devin\/hooks\.v1\.json`/);
+    expect(config).toMatch(/leftover fingerprint when `devin` not in `platforms`|leftover[\s\S]{0,80}devin not in `platforms`/i);
     expect(config).not.toMatch(/\bnine-way dispatch\b/i);
     expect(config).not.toMatch(/\beight-way dispatch\b/i);
     expect(config).not.toMatch(/\bseven-way dispatch\b/i);
@@ -380,7 +403,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).not.toMatch(/\bquaternary dispatch\b/);
     expect(config).not.toMatch(/\bternary dispatch\b/);
     expect(config).toMatch(
-      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid \+ Hermes Agent \+ Antigravity \+ Pi \+ Runner build/,
+      /Cursor \+ Claude Code \+ Codex \+ Kimi Code \+ Copilot CLI \+ Grok Build CLI \+ Gemini CLI \+ Factory Droid \+ Hermes Agent \+ Antigravity \+ Devin CLI \+ Pi \+ Runner build/,
     );
     expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
     expect(config).toMatch(/Stop consecutive ≤8|Copilot.*≤8/i);
@@ -390,10 +413,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(config).toMatch(/does \*\*not\*\* clamp `confirm_rounds`|does not clamp confirm_rounds/i);
     expect(config).toMatch(
-      /Gemini \/ Factory \/ Hermes \/ Antigravity \/ Pi \/ Runner sessions|Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Pi \/ Runner sessions|Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Pi \/ Runner/i,
+      /Gemini \/ Factory \/ Hermes \/ Antigravity \/ Devin \/ Pi \/ Runner sessions|Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Devin \/ Pi \/ Runner sessions|Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity \/ Devin \/ Pi \/ Runner/i,
     );
     expect(config).toMatch(
-      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, \*\*Factory Droid\*\*, \*\*Hermes Agent\*\*, \*\*Antigravity\*\*, \*\*Pi\*\*, or \*\*Runner\*\*/,
+      /nor do \*\*Grok Build CLI\*\*, \*\*Gemini CLI\*\*, \*\*Factory Droid\*\*, \*\*Hermes Agent\*\*, \*\*Antigravity\*\*, \*\*Devin CLI\*\*, \*\*Pi\*\*, or \*\*Runner\*\*/,
     );
     expect(config).toMatch(
       /missing\/incomplete \*\*FAIL\*\*|Copilot[\s\S]*FAIL[\s\S]*WARN/i,
@@ -426,7 +449,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(
       /## Related[\s\S]*Hermes|## Related[\s\S]*pre_verify continue live-proved/i,
     );
-    expect(config).toMatch(/ten-way dispatch/i);
+    expect(config).toMatch(/eleven-way dispatch/i);
     expect(config).toMatch(
       /\|\s*\*\*`doctor`\*\*[^\n]*Antigravity[^\n]*\.agents\/hooks\.json[^\n]*FAIL/i,
     );
@@ -492,7 +515,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/Edit hook[\s\S]*review\.scope` \+ `artifacts\.plans_dir/i);
     expect(config).toMatch(/init TUI can offer a custom path/i);
     expect(config).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity, and\/or Devin CLI/i,
     );
     expect(config).toMatch(/and\/or Runner|Runner.*surface: runner/i);
     expect(config).toMatch(/## Runner/);
@@ -640,7 +663,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
     expect(cliReadme).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, and Runner \(meta\)/,
+      /Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, Devin CLI, and Runner \(meta\)/,
     );
     expect(cliReadme).toMatch(/runner\.command/);
     expect(cliReadme).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
@@ -663,17 +686,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toMatch(/Pi[\s\S]{0,80}Shipped|Shipped[\s\S]{0,120}≥1× proved|live Stop-continue ≥1× proved/i);
     expect(cliReadme).toMatch(/never[\s\S]{0,24}pi install/i);
     expect(cliReadme).not.toMatch(/run `pi install`|npx pi install/i);
-    expect(cliReadme).toMatch(/KNOWN_PLATFORMS|ten-way shell \+ Pi/i);
-    expect(cliReadme).toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/i);
-    expect(cliReadme).toMatch(/OpenCode[\s\S]{0,80}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/i);
+    expect(cliReadme).toMatch(/KNOWN_PLATFORMS|eleven-way shell \+ Pi/i);
+    expect(cliReadme).toMatch(/Devin CLI[\s\S]{0,120}\*\*Shipped\*\*|Devin CLI[\s\S]{0,160}≥1× proved/i);
     expect(cliReadme).toMatch(
       /Devin CLI[\s\S]{0,120}CLI only[\s\S]{0,40}not Desktop/i,
     );
-    // Ban old OpenCode-as-next house phrases only — loose `OpenCode…1 (next)` false-fails on honest "Not **1 (next)**".
-    expect(cliReadme).not.toMatch(
-      /OpenCode[\s\S]{0,80}remains \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,40}is \*\*1 \(next\)\*\*/i,
-    );
-    expect(cliReadme).not.toMatch(/wait upstream/i);
+    expect(cliReadme).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,40}OpenCode/i);
+    expect(cliReadme).toMatch(/wait upstream/i);
+    expect(cliReadme).not.toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/i);
+    expect(cliReadme).not.toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/i);
     expect(cliReadme).toMatch(/\.agents|decision:continue|degraded/i);
     expect(cliReadme).toMatch(/auto-attach ≠ Autopilot ON|auto-attach ≠ ON/i);
     expect(cliReadme).toMatch(/HERMES_HOME|hermes hooks doctor/i);
@@ -709,7 +730,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     }
   });
 
-  it("README English ships Runner meta, Pi Shipped, and keeps Devin CLI next", () => {
+  it("README English ships Runner meta, Pi + Devin Shipped, OpenCode next", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
     expect(body).toMatch(/Runner \(meta\)|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× proved/i);
@@ -722,24 +743,24 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/0\.85\.1/);
     expect(body).toMatch(/pi -p|R10|interactive TUI only/i);
     expect(body).toMatch(/init --platform pi/);
-    expect(body).toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/i);
-    expect(body).toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/i);
+    expect(body).toMatch(/Devin CLI[\s\S]{0,120}\*\*Shipped\*\*|Devin CLI[\s\S]{0,160}≥1× proved/i);
     expect(body).toMatch(
       /Devin CLI[\s\S]{0,120}CLI only[\s\S]{0,40}not Desktop/i,
     );
-    // Ban old OpenCode-as-next house phrases only — loose `OpenCode…1 (next)` false-fails on honest "Not **1 (next)**".
-    expect(body).not.toMatch(
-      /OpenCode[\s\S]{0,80}remains \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,40}is \*\*1 \(next\)\*\*/i,
-    );
-    // Living roadmap flipped — do not resurrect OpenCode "wait upstream" here (CHANGELOG history is separate).
-    expect(body).not.toMatch(/wait upstream/i);
+    expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,40}OpenCode/i);
+    expect(body).toMatch(/wait upstream/i);
+    expect(body).not.toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/i);
+    expect(body).not.toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/i);
+    expect(body).toMatch(/init --platform devin/);
+    expect(body).toMatch(/port-devin/);
+    expect(body).toMatch(/DEVIN_PROJECT_DIR|\.devin\/hooks\.v1\.json/);
     expect(body).toMatch(/runner\.command/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
     expect(body).toMatch(/C6|planning `stopped`→0|stopped`→0/i);
     expect(body).not.toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
   });
 
-  it("README.zh-CN ships Runner meta, Pi Shipped, and keeps Devin CLI next", () => {
+  it("README.zh-CN ships Runner meta, Pi + Devin Shipped, OpenCode next", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
     expect(body).toMatch(/Runner（meta）|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× 已证/);
@@ -749,15 +770,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/0\.85\.1/);
     expect(body).toMatch(/init --platform pi/);
-    expect(body).toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/);
-    expect(body).toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/);
+    expect(body).toMatch(/Devin CLI[\s\S]{0,120}\*\*Shipped\*\*|Devin CLI[\s\S]{0,160}≥1× 已证/);
     expect(body).toMatch(/Devin CLI[\s\S]{0,120}不测 Desktop/);
-    // Ban old OpenCode-as-next house phrases only — loose `OpenCode…1 (next)` false-fails on honest "Not **1 (next)**".
-    expect(body).not.toMatch(
-      /OpenCode[\s\S]{0,40}仍为路线图 \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,40}为路线图 \*\*1 \(next\)\*\*/,
-    );
-    // Living roadmap flipped — do not resurrect OpenCode 「等上游」here (CHANGELOG history is separate).
-    expect(body).not.toMatch(/等上游/);
+    expect(body).toMatch(/OpenCode[\s\S]{0,40}1 \(next\)|1 \(next\)[\s\S]{0,40}OpenCode/);
+    expect(body).toMatch(/等上游/);
+    expect(body).not.toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/);
+    expect(body).not.toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/);
+    expect(body).toMatch(/init --platform devin/);
     expect(body).toMatch(/进程内扩展，非 shell hook stamp|非 shell hook stamp/);
     expect(body).toMatch(/runner\.command/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/);
@@ -1026,6 +1045,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/handleAntigravityPostToolUse|handleAntigravityStop/);
     expect(hosts).toMatch(/handlePiInput|handlePi\*/);
     expect(hosts).toMatch(/handlePiBeforeAgentStart|handlePiToolResult|handlePiAgentSettled/);
+    expect(hosts).toMatch(/handleDevinUserPromptSubmit|handleDevin\*/);
+    expect(hosts).toMatch(/handleDevinPostToolUse|handleDevinStop/);
     expect(hosts).toMatch(/apply_patch/);
     expect(hosts).toMatch(/\/hooks/);
     expect(hosts).toMatch(/triggers\.on/);
@@ -1036,7 +1057,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/host-plan-bridge\.md/);
     expect(hosts).toMatch(/## Roadmap \(not shipped\)/);
     expect(hosts).toMatch(/GitHub Copilot CLI/);
-    expect(hosts).toMatch(/ten-way/);
+    expect(hosts).toMatch(/eleven-way/);
+    expect(hosts).not.toMatch(/\bten-way\b/);
     expect(hosts).not.toMatch(/\bnine-way\b/);
     expect(hosts).not.toMatch(/\beight-way\b/);
     expect(hosts).not.toMatch(/\bseven-way\b/);
@@ -1045,10 +1067,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).not.toMatch(
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Kimi Code\*\*/,
     );
-    expect(hosts).toMatch(
-      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Devin CLI\*\*\s*\|\s*Medium–High\s*\|/,
-    );
     expect(hosts).not.toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Devin CLI\*\*/,
+    );
+    expect(hosts).toMatch(
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*OpenCode\*\*/,
     );
     // Same-line ban: the why-cell is ~430 chars; an 80-char window from the first
@@ -1056,21 +1078,19 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).not.toMatch(
       /^[^\n]*\*\*Devin CLI\*\*[^\n]*Research \/ low/im,
     );
-    // Living hosts flipped — do not resurrect OpenCode "wait upstream" here (CHANGELOG history is separate).
-    expect(hosts).not.toMatch(/wait upstream/i);
-    expect(hosts).not.toMatch(
-      /OpenCode[\s\S]{0,200}keep as \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,80}remains \*\*1 \(next\)\*\*/i,
-    );
+    expect(hosts).toMatch(/wait upstream/i);
     expect(hosts).toMatch(/\.devin\/hooks\.v1\.json/);
-    expect(hosts).toMatch(/do \*\*not\*\* reuse the Claude port fingerprint/i);
-    // Related living doc (config) must mirror the roadmap flip — not only hosts/README.
+    expect(hosts).toMatch(/DEVIN_PROJECT_DIR/);
+    expect(hosts).toMatch(/do \*\*not\*\* reuse Claude|Independent fingerprint/i);
+    // Related living doc (config) must mirror the shipped roadmap — not only hosts/README.
     const configRelated = fs.readFileSync(
       path.join(repoRoot, "docs/config.md"),
       "utf8",
     );
-    expect(configRelated).toMatch(/next=Devin CLI/);
-    expect(configRelated).toMatch(/OpenCode = Parked \/ skip/);
-    expect(configRelated).not.toMatch(/next=OpenCode|wait upstream/i);
+    expect(configRelated).toMatch(/OpenCode = 1 \(next\)/);
+    expect(configRelated).toMatch(/wait upstream/i);
+    expect(configRelated).not.toMatch(/next=Devin CLI/);
+    expect(configRelated).not.toMatch(/OpenCode = Parked \/ skip/);
     expect(hosts).toMatch(/Kimi Code \| \*\*Shipped\*\* \(degraded Stop≤1\/turn\)/);
     expect(hosts).toMatch(
       /GitHub Copilot CLI \| \*\*Shipped\*\* \(degraded Stop consecutive ≤8\)/,
@@ -1093,6 +1113,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /Pi \| \*\*Shipped\*\* \(in-process|Pi \| \*\*Shipped\*\*/,
     );
+    expect(hosts).toMatch(
+      /Devin CLI \| \*\*Shipped\*\*/,
+    );
     // Same-line ban: matrix row ~1500 chars; summary is `| Pi |` not `**Pi**`.
     // Prefix `(degraded` — house style is `**Shipped** (degraded — …)` / `(degraded Stop…)`, not `(degraded)`.
     // Include both unproven phrasings + edit-arm (parity with troubleshooting).
@@ -1105,15 +1128,26 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/0\.85\.1/);
     expect(hosts).toMatch(/\.pi\/extensions/);
     expect(hosts).toMatch(/R10|pi -p|interactive TUI only/i);
-    // Fit cell is the status. A 160-window from the first "OpenCode" hits the intro
-    // ("OpenCode is Parked") and never checks this row.
+    // Devin status row (not roadmap). Same-line bans for degraded/unproven.
     expect(hosts).toMatch(
-      /^\|\s*—\s*\|\s*\*\*OpenCode\*\*\s*\|\s*Parked \/ skip\s*\|/m,
+      /\|\s*\*\*Devin CLI\*\*\s*\|\s*\*\*Shipped\*\*/,
     );
-    // Anchor the roadmap row, not the intro. First "Devin CLI" is ~21 chars from
-    // "CLI only", so a 500-window matches the short sentence and skips the table cell.
+    expect(hosts).not.toMatch(
+      /^[^\n]*\*\*Devin CLI\*\*[^\n]*(?:live Stop-continue unproven|live continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*|\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded)/im,
+    );
+    expect(hosts).toMatch(/3000\.10\.31/);
+    expect(hosts).toMatch(/\.devin\/skills/);
+    expect(hosts).toMatch(/Stop dirty-arm|ignores[\s\S]{0,24}exec|exec[\s\S]{0,40}Stop dirty-arm/i);
+    expect(hosts).toMatch(/leftover fingerprint when `devin` not in `platforms`/i);
     expect(hosts).toMatch(
-      /^\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Devin CLI\*\*[^\n]*CLI only[^\n]*not Desktop[^\n]*not cloud[^\n]*not Cascade/im,
+      /\|\s*\*\*Devin CLI\*\*[\s\S]{0,1800}hostile env/i,
+    );
+    // OpenCode restored as 1 (next) wait upstream after Devin shipped.
+    expect(hosts).toMatch(
+      /^\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*OpenCode\*\*[^\n]*wait upstream/im,
+    );
+    expect(hosts).not.toMatch(
+      /^\|\s*—\s*\|\s*\*\*OpenCode\*\*\s*\|\s*Parked \/ skip\s*\|/m,
     );
     expect(hosts).toMatch(
       /Runner \| \*\*Shipped \(meta\)\*\*|Runner \| \*\*Shipped\*\* \(meta\)/,
@@ -1132,8 +1166,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/hook[\s\S]{0,40}host|oral grill/i);
     expect(hosts).not.toMatch(/--on[\s\S]{0,80}deferred|deferred[\s\S]{0,40}--on/i);
     expect(hosts).toMatch(/max_iterations|\*\*32\*\*/);
-    expect(hosts).toMatch(/ten-way/);
-    expect(hosts).not.toMatch(/\beleven-way\b/i);
+    expect(hosts).toMatch(/eleven-way/);
+    expect(hosts).not.toMatch(/\bten-way\b/);
     expect(hosts).not.toMatch(/eleventh hook/i);
     // Doctor empty-command is WARN-only; start FAIL is separate.
     // Bare start with nothing to resume FAILs without a doctor line.
@@ -1300,7 +1334,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
     );
     expect(body).toMatch(
-      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity/i,
+      /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity, and\/or Devin CLI/i,
     );
     expect(body).toMatch(/and\/or Runner|Runner.*surface: runner/i);
     expect(body).toMatch(/ports\/claude-code/);
@@ -1312,18 +1346,22 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/ports\/factory-droid/);
     expect(body).toMatch(/ports\/antigravity/);
     expect(body).toMatch(/ports\/pi/);
+    expect(body).toMatch(/ports\/devin/);
     expect(body).toMatch(/ports\/runner/);
     expect(body).toMatch(/antigravity`\/`cli|antigravity\/cli/);
     expect(body).toMatch(/pi`\/`cli|pi\/cli/);
     expect(body).toMatch(/runner`\/`runner|runner\/runner/);
     expect(body).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Pi/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Devin, and Pi/,
     );
     expect(body).toMatch(
       /\|\s*\*\*Runner\*\* \(shipped, meta\)[\s\S]{0,400}runner\.command/,
     );
     expect(body).toMatch(
       /\|\s*\*\*Pi\*\* \(shipped\)[\s\S]{0,400}0\.85\.1/,
+    );
+    expect(body).toMatch(
+      /\|\s*\*\*Devin CLI\*\* \(shipped\)[\s\S]{0,400}DEVIN_PROJECT_DIR/,
     );
     expect(body).toMatch(/one_executor/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
@@ -1339,7 +1377,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/handleHermes\*/);
     expect(body).toMatch(/handleAntigravity\*/);
     expect(body).toMatch(/handlePi\*/);
-    expect(body).toMatch(/ten-way/);
+    expect(body).toMatch(/handleDevin\*/);
+    expect(body).toMatch(/eleven-way/);
+    expect(body).not.toMatch(/\bten-way\b/);
     expect(body).not.toMatch(/\bnine-way\b/);
     expect(body).not.toMatch(/\beight-way\b/);
     expect(body).not.toMatch(/\bseven-way\b/);
@@ -1766,7 +1806,30 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(section012).toMatch(/pnpm publish|pnpm pack/i);
     expect(log).not.toMatch(/## \[0\.11(\.\d+)?\]/);
+    const section015 = changelogSection(log, "0.15.0");
+    expect(section015).toMatch(/docs-devin-shipped/i);
+    expect(section015).toMatch(/@autopilot-harness\/port-devin/);
+    expect(section015).toMatch(/handleDevin\*/);
+    expect(section015).toMatch(/\.devin\/hooks\.v1\.json/);
+    expect(section015).toMatch(/DEVIN_PROJECT_DIR/);
+    expect(section015).toMatch(/soft min[\s\S]{0,24}≥3000\.10\.31/i);
+    expect(section015).toMatch(/live Stop-continue[\s\S]{0,24}≥1× proved/i);
+    expect(section015).toMatch(/marked \*\*Shipped\*\* \(full\)/);
+    expect(section015).not.toMatch(/Shipped \(degraded\)/);
+    expect(section015).toMatch(
+      /OpenCode[\s\S]{0,80}1 \(next\)[\s\S]{0,40}wait upstream/i,
+    );
+    expect(section015).toMatch(/eleven-way/);
+    expect(section015).toMatch(/CLI only[\s\S]{0,40}not Desktop|not Desktop/i);
+    expect(section015).toMatch(/packages\/ports\/devin\/package\.json/);
+    expect(section015).toMatch(/pnpm publish/);
+    expect(section015).toMatch(/pnpm pack/);
+    expect(section015).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).not.toMatch(/docs-devin-shipped/i);
+    expect(unreleased).not.toMatch(/handleDevin/i);
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);
     expect(unreleased).not.toMatch(/handleCopilot/i);
     expect(unreleased).not.toMatch(/docs-kimi-shipped/i);
@@ -1926,6 +1989,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(piPkg.description).toMatch(/Pi/i);
     expect(piPkg.description).toMatch(/agent_settled|before_agent_start|tool_result/i);
     expect(piPkg.description).not.toMatch(/Coming v0\.14\b/);
+    const devinPkg = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, "packages/ports/devin/package.json"),
+        "utf8",
+      ),
+    ) as { description?: string; private?: boolean; publishConfig?: { access?: string } };
+    expect(devinPkg.private).not.toBe(true);
+    expect(devinPkg.publishConfig?.access).toBe("public");
+    expect(devinPkg.description).toMatch(/Devin CLI/i);
+    expect(devinPkg.description).toMatch(/CLI only|not Desktop/i);
+    expect(devinPkg.description).not.toMatch(/Coming v0\.15\b/);
     const runnerPkg = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, "packages/ports/runner/package.json"),

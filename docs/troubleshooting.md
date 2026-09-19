@@ -49,7 +49,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 
 Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degraded** port (do **not** expect confirm×5):
 
-- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity / Pi / Runner in the same config).
+- Prefer `review.confirm_rounds: 1` (fresh init with installable `kimi-code` writes `1`; the hook **clamps** effective rounds to `1` **project-wide**, including Cursor / Claude / Codex / Copilot / Grok / Gemini / Factory / Hermes / Antigravity / Devin / Pi / Runner in the same config).
 - Autopilot merges user-home `$KIMI_CODE_HOME/config.toml` (default `~/.kimi-code`; **not** legacy `~/.kimi`; **never** `local.toml`); Autopilot hook timeout **≥120s**. That file is **machine-wide** for the Kimi home — `init`/`uninstall` rewrite the Autopilot fingerprint block (cwd-relative hook command). **Trust:** only `init`/`upgrade`/`uninstall` from projects you trust — they mutate that user-home file. Treat `$KIMI_CODE_HOME` as a **trusted** path.
 - Hook command is **cwd-relative** (`node .autopilot/bin/autopilot-harness-hook.mjs …`) — open/instrument the **project root** so Kimi’s cwd resolves the intended vendor binary (not another tree’s `.autopilot/`).
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
@@ -182,9 +182,24 @@ Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Cl
 - Gemini skills (if enabled): always **`.gemini/skills/autopilot-*`** even when Antigravity is also enabled — run **`/trust`** + **`/skills reload`**. Dual Antigravity+Gemini: both trees get `autopilot-*`.
 - `doctor` **FAIL**s when `.agents/hooks.json` is missing / incomplete; WARNs missing `.agents/bin` shim (or legacy `.autopilot/bin`), timeout/cap/IDE+CLI workspace / missing skills / auto-attach tip.
 
+### Devin CLI
+
+**Devin CLI** is **Shipped** (**interactive CLI live Stop-continue ≥1× proved** + edit arm). **CLI only** — **do not** claim Desktop / cloud Devin / Cascade supported.
+
+- Hooks: project **`.devin/hooks.v1.json` only** (top-level events; timeout **120**; **UserPromptSubmit** + **PostToolUse** + **Stop**); **does not write `.devin/config.json` hooks**.
+- Stock command: `node "$DEVIN_PROJECT_DIR"/.autopilot/bin/autopilot-harness-hook.mjs --platform devin --event …` (**`$DEVIN_PROJECT_DIR` required** — host cwd ≠ repo root; **must be the instrumented project root** — wrong/hostile env runs another tree).
+- Stop continue = **`{ decision:"block", reason }`** (allow path **zero-byte stdout**; fail-open **exit 0**). `stop_hook_active` / `stopHookActive` boolean `true` → `loopCount ≥ 1`.
+- PostToolUse: anchored matcher `^(write|edit|apply_patch|notebook_edit)$` arms review; Post **ignores** `exec` (never blocks); **`exec` edits via Stop dirty-arm**.
+- Skills: **`.devin/skills/autopilot-*`** (`triggers: [user]`; always write here; doctor WARNs dual with `.agents/skills`).
+- Soft min Devin **≥3000.10.31** (doctor WARN when missing/below).
+- After install/upgrade: check **`/hooks`**, then open a **new session**.
+- Init/upgrade **refuse symlink** `.devin/` / hooks (**fail-closed**). Independent fingerprint — **do not** reuse Claude.
+- Doctor **FAIL**s missing/incomplete fingerprint; WARNs timeout omit/&lt;120, no documented Stop raise/hard-cap, `/hooks`+reload, missing `$DEVIN_PROJECT_DIR`, Devin+Claude dual fingerprints, skills dual-open, **`-p` unproven** (interactive CLI is the formal surface), Desktop tip (not FAIL); WARNs leftover `.devin/hooks.v1.json` fingerprint when `devin` is not in `platforms`.
+- Live: interactive CLI continue **≥1×** proved + edit arm yes (`plans/v0.15-devin/live-smoke-evidence.md`); aim ≥2× optional; **not** Desktop.
+
 ### Pi
 
-**Pi** is **Shipped** (**interactive TUI live Stop-continue ≥1× proved**). Autopilot is an **in-process** TypeScript extension (not a shell `--platform pi` stamp — dispatch stays **ten-way shell + Pi extension**).
+**Pi** is **Shipped** (**interactive TUI live Stop-continue ≥1× proved**). Autopilot is an **in-process** TypeScript extension (not a shell `--platform pi` stamp — dispatch stays **eleven-way shell + Pi extension**).
 
 - Extension: project **`.pi/extensions/autopilot.ts`** (init **direct-writes**; **never** `pi install`; PATH `pi` not required to write) loading **`.autopilot/bin/vendor/runtime.mjs`**.
 - Events: **`input`** / **`before_agent_start`** (ON/RUN) / **`tool_result`** (`write`\|`edit` + dirty-arm) / **`agent_settled`** continue via **`sendMessage` + `followUp` + `triggerTurn`** (**R1:** inject only when pending followup).
@@ -198,7 +213,7 @@ Antigravity Stop continue uses **`{ decision:"continue", reason }`** (**not** Cl
 
 ### Runner
 
-**Runner** is **Shipped (meta)** — external CLI loop (`npx @autopilot-harness/cli runner start|status`), outside the ten-way `--platform` hook stamp set (dispatch stays **ten-way**). Planning-in-runner: **`runner start --on`** (optional **`--brief`** / **`--message`**); full oral grill is still better on a **hook** host.
+**Runner** is **Shipped (meta)** — external CLI loop (`npx @autopilot-harness/cli runner start|status`), outside the eleven-way `--platform` hook stamp set (dispatch stays **eleven-way**). Planning-in-runner: **`runner start --on`** (optional **`--brief`** / **`--message`**); full oral grill is still better on a **hook** host.
 
 - Set **`runner.command`** in `.autopilot/config.yml` (template may use `{prompt}` / `{prompt_file}`). **`{prompt_file}`** expands to a **file path** (CLI must read it); for `codex exec` / similar “PROMPT is text” CLIs use **`{prompt}`**. Treat command + `runner.env` as **trusted project config** (spawn with `shell: false`; `cwd` must stay in-project). Init writes **no** fake default — blank → `runner start` **FAIL**; `doctor` **WARN**s (not FAIL).
 - **`--on` / `--brief` / `--message`:** `--brief` requires `--on`; `--on`∧`--run` and `--message`∧`--run` **FAIL**; empty `--message` **FAIL** (C4); `--message` only in planning (C2) and not while a pending tip is set (C5); re-`--on` clears leftover tip (C9). **`--brief`** text is **not** stored in session DB (first-turn prompt only). **C6:** planning `stopped` → exit **0**; `--run`/executing `stopped` → non-zero.

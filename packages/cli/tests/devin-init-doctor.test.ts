@@ -178,6 +178,8 @@ describe("devin init / add-platform / doctor / uninstall", () => {
     expect(okText).toMatch(/WARN\s+Devin tip:.*`-p`/i);
     expect(okText).toMatch(/WARN\s+Devin tip: CLI only — Desktop not tested/i);
     expect(okText).toMatch(/WARN\s+Devin CLI Stop-continue: no documented/i);
+    expect(okText).toMatch(/≥1× proved/);
+    expect(okText).not.toMatch(/degraded until live/i);
     expect(okText).not.toMatch(/FAIL\s+.*Desktop/i);
 
     fs.unlinkSync(path.join(root, ".devin", "hooks.v1.json"));

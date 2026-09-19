@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-09-19
+
+### Added
+
+- **Devin CLI host port** (`@autopilot-harness/port-devin`): project **`.devin/hooks.v1.json` only** (top-level events; timeout **120**; **UserPromptSubmit** + **PostToolUse** anchored `^(write|edit|apply_patch|notebook_edit)$` (Post **ignores** `exec`; **`exec` edits via Stop dirty-arm**); **Stop**); **does not write `.devin/config.json` hooks**. Stock command: `node "$DEVIN_PROJECT_DIR"/.autopilot/bin/autopilot-harness-hook.mjs --platform devin --event …` (**`$DEVIN_PROJECT_DIR` required**). Stop continue = **`{ decision:"block", reason }`** (allow path **zero-byte stdout**; fail-open **exit 0**). `stop_hook_active` / `stopHookActive` boolean `true` → `loopCount ≥ 1`. Skills: **`.devin/skills/autopilot-*`** (`triggers: [user]`). Soft min Devin **≥3000.10.31**. Aliased `handleDevin*` exports.
+- **Init / upgrade / uninstall / doctor** for Devin: installable `surface:cli`; symlink / non-file → doctor **FAIL**; WARNs no documented Stop raise/hard-cap, **`/hooks` + new session**, Devin+Claude dual fingerprints, skills dual-open, **`-p` unproven**, Desktop tip (not FAIL), leftover fingerprint when `devin` not in `platforms`; `--add-platform devin`. Default `.autopilotignore` includes **`.devin/hooks.v1.json`** + **`.devin/skills/**`**.
+- **Matrix**: Devin joins shell `KNOWN_PLATFORMS` — dispatch is **eleven-way shell + Pi extension**; cross-fire abort with existing hosts.
+- **docs-devin-shipped**: Devin CLI marked **Shipped** (full) after interactive CLI live Stop-continue **≥1× proved** + edit arm; **CLI only** — not Desktop / cloud Devin / Cascade; **OpenCode** restored as **1 (next)** (wait upstream); docs-contract pins Shipped / eleven-way / `$DEVIN_PROJECT_DIR` / skills / soft min / not Desktop; public package matrix includes `packages/ports/devin/package.json`.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.15.0** public packages.
+
 ## [0.14.0] — 2026-09-19
 
 ### Added
