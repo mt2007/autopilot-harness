@@ -13,7 +13,7 @@
 - [x] tests-devin-contract — I/O + continue + loopCount + dirty-arm + harness-owned + **merge sibling** + 指纹 + skills 路径
 - [x] matrix-host — eleven-way：Devin↔既有串台 → abort；既有不红
 - [x] smoke-repo — `pnpm test` + typecheck
-- [ ] live-devin-smoke — 可弃仓、无 Claude hooks、交互 CLI（非 `-p`，除非 research 证明能跑）。**≥1× + edit arm = 发版硬闸**。失败不发；半残 → degraded+人闸。免费额度只做短链。不测 Desktop
+- [x] live-devin-smoke — 可弃仓、无 Claude hooks、交互 CLI（非 `-p`，除非 research 证明能跑）。**≥1× + edit arm = 发版硬闸**。失败不发；半残 → degraded+人闸。免费额度只做短链。不测 Desktop
 - [ ] docs-devin-shipped — **CLI** Shipped 或 degraded；**不写 Desktop 已支持**；此时才写 **eleven-way**；路径/cap/`DEVIN_PROJECT_DIR`/skills；docs-contract；CHANGELOG **`[0.15.0]`**
 - [ ] changelog-bump-0-15-0 — 公开包 **0.15.0**（仅过关后）
 - [ ] local-npm-pack-assert — pack；无 `workspace:*`
