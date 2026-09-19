@@ -5,7 +5,7 @@
 - [x] docs-roadmap-flip — OpenCode→**Parked/skip**；Devin→**`1 (next)`**（Fit **Medium–High**；可 port；活链闸；勿 Claude 指纹）；去掉「无本地 hook / Research-low」；README(+zh-CN)/hosts；**docs-contract**；**仍写 ten-way**（eleven-way 留给 shipped）；勿改旧 CHANGELOG 节
 - [x] research-devin-hooks — ≤60m → `research-devin-hooks.md`：软下限（已见 **3000.10.31**）；UPS `prompt`；锚定 matcher + exec dirty-arm；continue=`decision:block`+`reason`；allow 形态；`session_id`；`stop_hook_active`→loopCount；合并 sibling；双载；skills；`$DEVIN_PROJECT_DIR`；timeout；`-p`；**sandbox 是否拦 hook**；**子 agent Stop 是否共用**（共用则只处理当前 `session_id`）；排除 Desktop 活链 / 云端 / Cascade
 - [x] human-env-confirm — **已满足**：`devin 3000.10.31`、已登录、免费额度。RUN 落证据。无 CLI 才 defer。不做 Desktop 环境闸
-- [ ] decide-shape — `defer` **或** `port × (subprocess|in-process) × (full|degraded)`。「只标 degraded、不接线」非法。无稳定 continue → **defer**
+- [x] decide-shape — `defer` **或** `port × (subprocess|in-process) × (full|degraded)`。「只标 degraded、不接线」非法。无稳定 continue → **defer**
 - [ ] defer-closeout — **仅 decide=defer**：后续 port/发版 **cancelled**；保留 docs 翻盘；**无** 0.15 bump
 - [ ] port-devin-package — `handleDevin*`；UPS+Post+Stop；Stop `block`+`reason`；`stop_hook_active`→loopCount；Post 锚定 matcher+dirty-arm **永不 block**；harness-owned 不当 ON/RUN；fail-open **exit 0**；独立 fingerprint
 - [ ] vendor-platform-wire — hooks + `.devin/skills`；vendor；`INSTALLABLE_BINDINGS`；**eleven-way**（仅本项及之后）；交叉 abort；bundle；禁 `workspace:*`
