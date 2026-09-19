@@ -17,7 +17,7 @@
 - [x] changelog-bump-0-14-0 — 公开包 **0.14.0**（**仅活链/人闸过关后**）
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
 - [x] commit-local — conventional；勿 push/tag/publish
-- [ ] human-gate-confirm — 「同意发 0.14.0」；未达标停发；半残须显式认 degraded
+- [x] human-gate-confirm — 「同意发 0.14.0」；未达标停发；半残须显式认 degraded
 - [ ] push-tag-release — push/tag/GH Release `v0.14.0`
 - [ ] npm-publish-pnpm — 仅 `pnpm publish`
 - [ ] pin-upgrade-repo — pin → 0.14.0
