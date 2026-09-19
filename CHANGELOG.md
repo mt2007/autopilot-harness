@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-09-19
+
+### Added
+
+- **Pi host port** (`@autopilot-harness/port-pi`): in-process TypeScript extension under **`.pi/extensions/autopilot.ts`** (R6 direct write; **never** `pi install`; PATH `pi` not required to write) loading **`.autopilot/bin/vendor/runtime.mjs`**; events **`input`** / **`before_agent_start`** (ON/RUN) / **`tool_result`** (`write`\|`edit` + dirty-arm) / **`agent_settled`** continue via **`sendMessage` + `followUp` + `triggerTurn`** (**R1:** inject only when pending followup; **R9:** no blocking `ctx.ui`); session id **`pi:<sessionFile ?? sessionId>`** from event **`ctx.sessionManager`**.
+- **Init / upgrade / uninstall / doctor** for Pi: installable `surface:cli`; symlink / non-file → doctor **FAIL**; WARNs soft min Pi **≥0.85.1**, **`/trust` then `/reload`**, **R10** interactive TUI only (**not** `pi -p` / JSON / print), leftover fingerprint when `pi` not in `platforms`, shared-skills dual with Antigravity, Runner+Pi under **`one_executor`**; skills **share** Antigravity **`.agents/skills/autopilot-*`** (does **not** write Antigravity `hooks.json`); `--add-platform pi`.
+- **Matrix**: Pi is **not** in shell `KNOWN_PLATFORMS` — dispatch stays **ten-way shell + Pi extension**; shell `--platform pi|runner` aborts before FSM; aliased `handlePi*` exports + cross-fire abort with existing hosts.
+- **docs-pi-shipped**: Pi marked **Shipped** (full) after interactive TUI live Stop-continue **≥1× proved** + edit arm; **OpenCode** remains **1 (next)** (wait upstream); docs-contract pins Shipped / R10 / soft min / paths / wait-upstream proximity; public package matrix includes `packages/ports/pi/package.json`.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.14.0** public packages.
+
 ## [0.13.0] — 2026-09-18
 
 ### Added

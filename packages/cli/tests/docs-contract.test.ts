@@ -1653,6 +1653,36 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0101).toMatch(/\.agents\/bin|shim/i);
     expect(section0101).toMatch(/live-proved|0\.10\.1/);
     expect(section0101).toMatch(/pnpm publish|pnpm pack/i);
+    const section014 = changelogSection(log, "0.14.0");
+    expect(section014).toMatch(/docs-pi-shipped/i);
+    expect(section014).toMatch(/@autopilot-harness\/port-pi/);
+    expect(section014).toMatch(/handlePi\*/);
+    expect(section014).toMatch(/\.pi\/extensions/);
+    expect(section014).toMatch(/never[\s\S]{0,24}pi install/i);
+    // Soft min claim — bare ≥0.85.1 / bare 0.85.1 alone are not enough.
+    expect(section014).toMatch(/soft min[\s\S]{0,24}≥0\.85\.1/i);
+    // Split R10 surface markers — OR alone lets any one phrase cover for the others.
+    expect(section014).toMatch(/R10/);
+    expect(section014).toMatch(/pi -p/);
+    expect(section014).toMatch(/interactive TUI only/i);
+    expect(section014).toMatch(/live Stop-continue[\s\S]{0,24}≥1× proved/i);
+    // House phrase is "marked **Shipped** (full)" — OR alone lets either half drift.
+    expect(section014).toMatch(/marked \*\*Shipped\*\* \(full\)/);
+    expect(section014).not.toMatch(/Shipped \(degraded\)/);
+    // House order: OpenCode … 1 (next) … wait upstream (multi-alt OR lets rank/wait reorder away).
+    expect(section014).toMatch(
+      /OpenCode[\s\S]{0,80}1 \(next\)[\s\S]{0,40}wait upstream/i,
+    );
+    expect(section014).toMatch(/ten-way shell \+ Pi extension/);
+    // House negation — bare KNOWN_PLATFORMS / loose "not…KNOWN" can false-pass.
+    expect(section014).toMatch(/Pi is \*\*not\*\* in shell `KNOWN_PLATFORMS`/);
+    expect(section014).toMatch(/packages\/ports\/pi\/package\.json/);
+    expect(section014).toMatch(/pnpm publish/);
+    expect(section014).toMatch(/pnpm pack/);
+    // Exact publish order paren (arrow OR alone allows wrong/missing port names).
+    expect(section014).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, runner\)/,
+    );
     const section013 = changelogSection(log, "0.13.0");
     expect(section013).toMatch(/--on/);
     expect(section013).toMatch(/--brief/);
@@ -1701,6 +1731,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/handleAntigravity/i);
     expect(unreleased).not.toMatch(/docs-runner-shipped/i);
     expect(unreleased).not.toMatch(/docs-runner-on/i);
+    expect(unreleased).not.toMatch(/docs-pi-shipped/i);
+    expect(unreleased).not.toMatch(/handlePi/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
@@ -1735,7 +1767,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, and Runner/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, and Runner/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),

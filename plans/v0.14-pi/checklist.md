@@ -14,7 +14,7 @@
 - [x] smoke-repo — `pnpm test` + typecheck（测红先修）
 - [x] live-pi-smoke — **RETRY**（replan：模型链路已通）。**R5** 可弃仓 **交互 TUI**（非 `pi -p`）：continue **≥1×**（力争 **≥2×**）+ edit arm；更新 `live-smoke-evidence.md`（覆盖/追加先前 blocked 记录）；**失败 → 不发 0.14**；半残 degraded **仅人闸**；通过 → 按 **full Shipped** 写 docs（勿停在 degraded）
 - [x] docs-pi-shipped — 按活链结果：`Shipped`（full）或 `Shipped (degraded)`；next=**OpenCode（等上游）**；路径/trust/soft min；**R10** 不支持 print/JSON；docs-contract；勿改旧 CHANGELOG 节；若 working tree 已写 degraded，活链过关后改写为 full
-- [ ] changelog-bump-0-14-0 — 公开包 **0.14.0**（**仅活链/人闸过关后**）
+- [x] changelog-bump-0-14-0 — 公开包 **0.14.0**（**仅活链/人闸过关后**）
 - [ ] local-npm-pack-assert — pack；无 `workspace:*`
 - [ ] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 「同意发 0.14.0」；未达标停发；半残须显式认 degraded

@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-hermes-agent",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Autopilot harness host port for Hermes Agent shell hooks (pre_llm_call context inject; post_tool_call dirty-arm; pre_verify decision:block+reason; soft min Hermes ≥0.21.3)",
   "license": "MIT",
   "repository": {

@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-antigravity",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Autopilot harness host port for Google Antigravity hooks (PreInvocation injectSteps; PostToolUse arm; Stop decision:continue+reason; fullyIdle fail-open)",
   "license": "MIT",
   "repository": {
