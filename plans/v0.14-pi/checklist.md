@@ -16,7 +16,7 @@
 - [x] docs-pi-shipped — 按活链结果：`Shipped`（full）或 `Shipped (degraded)`；next=**OpenCode（等上游）**；路径/trust/soft min；**R10** 不支持 print/JSON；docs-contract；勿改旧 CHANGELOG 节；若 working tree 已写 degraded，活链过关后改写为 full
 - [x] changelog-bump-0-14-0 — 公开包 **0.14.0**（**仅活链/人闸过关后**）
 - [x] local-npm-pack-assert — pack；无 `workspace:*`
-- [ ] commit-local — conventional；勿 push/tag/publish
+- [x] commit-local — conventional；勿 push/tag/publish
 - [ ] human-gate-confirm — 「同意发 0.14.0」；未达标停发；半残须显式认 degraded
 - [ ] push-tag-release — push/tag/GH Release `v0.14.0`
 - [ ] npm-publish-pnpm — 仅 `pnpm publish`
