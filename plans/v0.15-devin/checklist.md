@@ -10,7 +10,7 @@
 - [x] port-devin-package — `handleDevin*`；UPS+Post+Stop；Stop `block`+`reason`；`stop_hook_active`→loopCount；Post 锚定 matcher+dirty-arm **永不 block**；harness-owned 不当 ON/RUN；fail-open **exit 0**；独立 fingerprint
 - [x] vendor-platform-wire — hooks + `.devin/skills`；vendor；`INSTALLABLE_BINDINGS`；**eleven-way**（仅本项及之后）；交叉 abort；bundle；禁 `workspace:*`
 - [x] init-doctor-upgrade-uninstall — 合并 `.devin/hooks.v1.json`；不写 `config.json` hooks；skills 只 `.devin/skills`；ignore hooks+skills；timeout 120；`$DEVIN_PROJECT_DIR`；symlink fail-closed；doctor FAIL 缺指纹 / WARN timeout·cap·`/hooks`·Devin+Claude·残留·无 CLI·one_executor·skills 双开·`-p`；`--add-platform devin`。**不**把 Desktop 提示当 FAIL
-- [ ] tests-devin-contract — I/O + continue + loopCount + dirty-arm + harness-owned + **merge sibling** + 指纹 + skills 路径
+- [x] tests-devin-contract — I/O + continue + loopCount + dirty-arm + harness-owned + **merge sibling** + 指纹 + skills 路径
 - [ ] matrix-host — eleven-way：Devin↔既有串台 → abort；既有不红
 - [ ] smoke-repo — `pnpm test` + typecheck
 - [ ] live-devin-smoke — 可弃仓、无 Claude hooks、交互 CLI（非 `-p`，除非 research 证明能跑）。**≥1× + edit arm = 发版硬闸**。失败不发；半残 → degraded+人闸。免费额度只做短链。不测 Desktop
