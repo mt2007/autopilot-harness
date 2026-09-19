@@ -664,7 +664,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toMatch(/never[\s\S]{0,24}pi install/i);
     expect(cliReadme).not.toMatch(/run `pi install`|npx pi install/i);
     expect(cliReadme).toMatch(/KNOWN_PLATFORMS|ten-way shell \+ Pi/i);
-    expect(cliReadme).toMatch(/OpenCode[\s\S]{0,80}wait upstream|wait upstream[\s\S]{0,40}OpenCode/i);
+    expect(cliReadme).toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/i);
+    expect(cliReadme).toMatch(/OpenCode[\s\S]{0,80}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/i);
+    expect(cliReadme).toMatch(
+      /Devin CLI[\s\S]{0,120}CLI only[\s\S]{0,40}not Desktop/i,
+    );
+    // Ban old OpenCode-as-next house phrases only — loose `OpenCode…1 (next)` false-fails on honest "Not **1 (next)**".
+    expect(cliReadme).not.toMatch(
+      /OpenCode[\s\S]{0,80}remains \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,40}is \*\*1 \(next\)\*\*/i,
+    );
+    expect(cliReadme).not.toMatch(/wait upstream/i);
     expect(cliReadme).toMatch(/\.agents|decision:continue|degraded/i);
     expect(cliReadme).toMatch(/auto-attach ≠ Autopilot ON|auto-attach ≠ ON/i);
     expect(cliReadme).toMatch(/HERMES_HOME|hermes hooks doctor/i);
@@ -700,7 +709,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     }
   });
 
-  it("README English ships Runner meta, Pi Shipped, and keeps OpenCode next", () => {
+  it("README English ships Runner meta, Pi Shipped, and keeps Devin CLI next", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
     expect(body).toMatch(/Runner \(meta\)|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× proved/i);
@@ -713,18 +722,24 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/0\.85\.1/);
     expect(body).toMatch(/pi -p|R10|interactive TUI only/i);
     expect(body).toMatch(/init --platform pi/);
-    expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/i);
-    // Bound "wait upstream" to OpenCode — bare /wait upstream/i passes on an empty/wrong host note.
+    expect(body).toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/i);
+    expect(body).toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/i);
     expect(body).toMatch(
-      /OpenCode[\s\S]{0,80}wait upstream|wait upstream[\s\S]{0,40}OpenCode/i,
+      /Devin CLI[\s\S]{0,120}CLI only[\s\S]{0,40}not Desktop/i,
     );
+    // Ban old OpenCode-as-next house phrases only — loose `OpenCode…1 (next)` false-fails on honest "Not **1 (next)**".
+    expect(body).not.toMatch(
+      /OpenCode[\s\S]{0,80}remains \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,40}is \*\*1 \(next\)\*\*/i,
+    );
+    // Living roadmap flipped — do not resurrect OpenCode "wait upstream" here (CHANGELOG history is separate).
+    expect(body).not.toMatch(/wait upstream/i);
     expect(body).toMatch(/runner\.command/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
     expect(body).toMatch(/C6|planning `stopped`→0|stopped`→0/i);
     expect(body).not.toMatch(/--on[\s\S]{0,40}deferred|deferred[\s\S]{0,40}--on/i);
   });
 
-  it("README.zh-CN ships Runner meta, Pi Shipped, and keeps OpenCode next", () => {
+  it("README.zh-CN ships Runner meta, Pi Shipped, and keeps Devin CLI next", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
     expect(body).toMatch(/Runner（meta）|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× 已证/);
@@ -734,9 +749,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/0\.85\.1/);
     expect(body).toMatch(/init --platform pi/);
-    expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/);
-    // Bound 「等上游」to OpenCode — bare /等上游/ passes if the phrase drifts off OpenCode.
-    expect(body).toMatch(/OpenCode[\s\S]{0,80}等上游|等上游[\s\S]{0,40}OpenCode/);
+    expect(body).toMatch(/Devin CLI[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}Devin CLI/);
+    expect(body).toMatch(/OpenCode[\s\S]{0,40}Parked \/ skip|Parked \/ skip[\s\S]{0,40}OpenCode/);
+    expect(body).toMatch(/Devin CLI[\s\S]{0,120}不测 Desktop/);
+    // Ban old OpenCode-as-next house phrases only — loose `OpenCode…1 (next)` false-fails on honest "Not **1 (next)**".
+    expect(body).not.toMatch(
+      /OpenCode[\s\S]{0,40}仍为路线图 \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,40}为路线图 \*\*1 \(next\)\*\*/,
+    );
+    // Living roadmap flipped — do not resurrect OpenCode 「等上游」here (CHANGELOG history is separate).
+    expect(body).not.toMatch(/等上游/);
     expect(body).toMatch(/进程内扩展，非 shell hook stamp|非 shell hook stamp/);
     expect(body).toMatch(/runner\.command/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/);
@@ -1025,8 +1046,31 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Kimi Code\*\*/,
     );
     expect(hosts).toMatch(
+      /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Devin CLI\*\*\s*\|\s*Medium–High\s*\|/,
+    );
+    expect(hosts).not.toMatch(
       /\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*OpenCode\*\*/,
     );
+    // Same-line ban: the why-cell is ~430 chars; an 80-char window from the first
+    // "Devin CLI" (the short intro) never reaches "Research / low" restored on the row.
+    expect(hosts).not.toMatch(
+      /^[^\n]*\*\*Devin CLI\*\*[^\n]*Research \/ low/im,
+    );
+    // Living hosts flipped — do not resurrect OpenCode "wait upstream" here (CHANGELOG history is separate).
+    expect(hosts).not.toMatch(/wait upstream/i);
+    expect(hosts).not.toMatch(
+      /OpenCode[\s\S]{0,200}keep as \*\*1 \(next\)\*\*|OpenCode[\s\S]{0,80}remains \*\*1 \(next\)\*\*/i,
+    );
+    expect(hosts).toMatch(/\.devin\/hooks\.v1\.json/);
+    expect(hosts).toMatch(/do \*\*not\*\* reuse the Claude port fingerprint/i);
+    // Related living doc (config) must mirror the roadmap flip — not only hosts/README.
+    const configRelated = fs.readFileSync(
+      path.join(repoRoot, "docs/config.md"),
+      "utf8",
+    );
+    expect(configRelated).toMatch(/next=Devin CLI/);
+    expect(configRelated).toMatch(/OpenCode = Parked \/ skip/);
+    expect(configRelated).not.toMatch(/next=OpenCode|wait upstream/i);
     expect(hosts).toMatch(/Kimi Code \| \*\*Shipped\*\* \(degraded Stop≤1\/turn\)/);
     expect(hosts).toMatch(
       /GitHub Copilot CLI \| \*\*Shipped\*\* \(degraded Stop consecutive ≤8\)/,
@@ -1061,8 +1105,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/0\.85\.1/);
     expect(hosts).toMatch(/\.pi\/extensions/);
     expect(hosts).toMatch(/R10|pi -p|interactive TUI only/i);
+    // Fit cell is the status. A 160-window from the first "OpenCode" hits the intro
+    // ("OpenCode is Parked") and never checks this row.
     expect(hosts).toMatch(
-      /OpenCode[\s\S]{0,80}wait upstream|wait upstream[\s\S]{0,40}OpenCode/i,
+      /^\|\s*—\s*\|\s*\*\*OpenCode\*\*\s*\|\s*Parked \/ skip\s*\|/m,
+    );
+    // Anchor the roadmap row, not the intro. First "Devin CLI" is ~21 chars from
+    // "CLI only", so a 500-window matches the short sentence and skips the table cell.
+    expect(hosts).toMatch(
+      /^\|\s*\*\*1 \(next\)\*\*\s*\|\s*\*\*Devin CLI\*\*[^\n]*CLI only[^\n]*not Desktop[^\n]*not cloud[^\n]*not Cascade/im,
     );
     expect(hosts).toMatch(
       /Runner \| \*\*Shipped \(meta\)\*\*|Runner \| \*\*Shipped\*\* \(meta\)/,
