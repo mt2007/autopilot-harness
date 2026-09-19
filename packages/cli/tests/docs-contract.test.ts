@@ -272,11 +272,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/\/trust[\s\S]{0,40}\/reload|\/trust` then `\/reload/);
     expect(tips).toMatch(/R10|pi -p|JSON \/ print|interactive TUI only/i);
     expect(tips).toMatch(/Shipped[\s\S]{0,80}≥1× proved|live Stop-continue ≥1× proved|continue \*\*≥1×\*\* proved/i);
+    // Section-scoped ban — Pi body is ~1570 chars; a 1200 window misses the Live/leftover tail.
     expect(tips).not.toMatch(
-      /### Pi[\s\S]{0,1200}(?:live Stop-continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*|Shipped \(degraded)/i,
+      /### Pi(?:(?!\n### )[\s\S])*(?:live Stop-continue unproven|live continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*|\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded)/i,
     );
+    // Leftover tip must stay inside the Pi section (not a later host's leftover).
     expect(tips).toMatch(
-      /### Pi[\s\S]*?leftover[\s\S]{0,240}not in `platforms`/i,
+      /### Pi(?:(?!\n### )[\s\S])*leftover(?:(?!\n### )[\s\S]){0,240}not in `platforms`/i,
     );
     expect(tips).toMatch(/### Runner/);
     expect(tips).toMatch(/runner\.command/);
@@ -654,10 +656,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toMatch(/hermes-agent/);
     expect(cliReadme).toMatch(/antigravity/);
     expect(cliReadme).toMatch(/--platform pi|platform pi/);
-    expect(cliReadme).toMatch(/\.pi\/extensions|0\.85\.1|R10|pi -p/i);
+    expect(cliReadme).toMatch(/\.pi\/extensions/);
+    expect(cliReadme).toMatch(/0\.85\.1/);
+    expect(cliReadme).toMatch(/R10/);
+    expect(cliReadme).toMatch(/pi -p/);
     expect(cliReadme).toMatch(/Pi[\s\S]{0,80}Shipped|Shipped[\s\S]{0,120}≥1× proved|live Stop-continue ≥1× proved/i);
-    expect(cliReadme).toMatch(/never[\s\S]{0,20}pi install|pi install/i);
+    expect(cliReadme).toMatch(/never[\s\S]{0,24}pi install/i);
+    expect(cliReadme).not.toMatch(/run `pi install`|npx pi install/i);
     expect(cliReadme).toMatch(/KNOWN_PLATFORMS|ten-way shell \+ Pi/i);
+    expect(cliReadme).toMatch(/OpenCode[\s\S]{0,80}wait upstream|wait upstream[\s\S]{0,40}OpenCode/i);
     expect(cliReadme).toMatch(/\.agents|decision:continue|degraded/i);
     expect(cliReadme).toMatch(/auto-attach ≠ Autopilot ON|auto-attach ≠ ON/i);
     expect(cliReadme).toMatch(/HERMES_HOME|hermes hooks doctor/i);
@@ -697,8 +704,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
     expect(body).toMatch(/Runner \(meta\)|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× proved/i);
+    // Same-line ban — intro Pi→EOL is ~1500 chars; a 160 window misses status drifted to the line tail.
     expect(body).not.toMatch(
-      /Pi[\s\S]{0,160}(?:Shipped \(degraded\)|live Stop-continue unproven|live continue unproven)/i,
+      /^[^\n]*\bPi\b[^\n]*(?:\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded|live Stop-continue unproven|live continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*)/im,
     );
     expect(body).not.toMatch(/Antigravity \/ Pi \(shipped hooks/i);
     expect(body).toMatch(/in-process, not a shell hook stamp|not a shell hook stamp/i);
@@ -706,6 +714,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/pi -p|R10|interactive TUI only/i);
     expect(body).toMatch(/init --platform pi/);
     expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/i);
+    // Bound "wait upstream" to OpenCode — bare /wait upstream/i passes on an empty/wrong host note.
+    expect(body).toMatch(
+      /OpenCode[\s\S]{0,80}wait upstream|wait upstream[\s\S]{0,40}OpenCode/i,
+    );
     expect(body).toMatch(/runner\.command/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
     expect(body).toMatch(/C6|planning `stopped`→0|stopped`→0/i);
@@ -716,12 +728,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
     expect(body).toMatch(/Runner（meta）|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× 已证/);
+    // Same-line ban — zh intro Pi→EOL is ~1200 chars; a 160 window misses status at the line tail.
     expect(body).not.toMatch(
-      /Pi[\s\S]{0,160}(?:Shipped \(degraded\)|活链 Stop-continue 未证|活链 continue 未证)/,
+      /^[^\n]*\bPi\b[^\n]*(?:\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded|活链 Stop-continue 未证|活链 continue 未证|continue \*\*0×\*\*|edit arm \*\*not observed\*\*)/im,
     );
     expect(body).toMatch(/0\.85\.1/);
     expect(body).toMatch(/init --platform pi/);
     expect(body).toMatch(/OpenCode[\s\S]{0,80}1 \(next\)|1 \(next\)[\s\S]{0,80}OpenCode/);
+    // Bound 「等上游」to OpenCode — bare /等上游/ passes if the phrase drifts off OpenCode.
+    expect(body).toMatch(/OpenCode[\s\S]{0,80}等上游|等上游[\s\S]{0,40}OpenCode/);
     expect(body).toMatch(/进程内扩展，非 shell hook stamp|非 shell hook stamp/);
     expect(body).toMatch(/runner\.command/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/);
@@ -1034,9 +1049,21 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /Pi \| \*\*Shipped\*\* \(in-process|Pi \| \*\*Shipped\*\*/,
     );
+    // Same-line ban: matrix row ~1500 chars; summary is `| Pi |` not `**Pi**`.
+    // Prefix `(degraded` — house style is `**Shipped** (degraded — …)` / `(degraded Stop…)`, not `(degraded)`.
+    // Include both unproven phrasings + edit-arm (parity with troubleshooting).
+    expect(hosts).not.toMatch(
+      /^[^\n]*\*\*Pi\*\*[^\n]*(?:live Stop-continue unproven|live continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*|\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded)/im,
+    );
+    expect(hosts).not.toMatch(
+      /^\| Pi \|[^\n]*(?:live Stop-continue unproven|live continue unproven|continue \*\*0×\*\*|edit arm \*\*not observed\*\*|\*\*Shipped\*\*\s*\(degraded|Shipped \(degraded)/im,
+    );
     expect(hosts).toMatch(/0\.85\.1/);
     expect(hosts).toMatch(/\.pi\/extensions/);
     expect(hosts).toMatch(/R10|pi -p|interactive TUI only/i);
+    expect(hosts).toMatch(
+      /OpenCode[\s\S]{0,80}wait upstream|wait upstream[\s\S]{0,40}OpenCode/i,
+    );
     expect(hosts).toMatch(
       /Runner \| \*\*Shipped \(meta\)\*\*|Runner \| \*\*Shipped\*\* \(meta\)/,
     );
@@ -1245,7 +1272,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       /\|\s*\*\*Runner\*\* \(shipped, meta\)[\s\S]{0,400}runner\.command/,
     );
     expect(body).toMatch(
-      /\|\s*\*\*Pi\*\* \(shipped\)[\s\S]{0,400}0\.85\.1|\|\s*\*\*Pi\*\* \(shipped\)/,
+      /\|\s*\*\*Pi\*\* \(shipped\)[\s\S]{0,400}0\.85\.1/,
     );
     expect(body).toMatch(/one_executor/);
     expect(body).toMatch(/--on[\s\S]{0,80}--brief|--brief[\s\S]{0,40}--message/i);
