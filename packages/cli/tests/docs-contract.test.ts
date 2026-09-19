@@ -1881,13 +1881,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(rootPkg.private).toBe(true);
     expect(rootPkg.version).toBe(PACKAGE_VERSION);
     expect(rootPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, and Runner/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, Devin, and Runner/,
     );
     const cliPkg = JSON.parse(
       fs.readFileSync(path.join(repoRoot, "packages/cli/package.json"), "utf8"),
     ) as { description?: string; keywords?: string[] };
     expect(cliPkg.description).toMatch(
-      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, and Runner/,
+      /Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, Devin, and Runner/,
     );
     expect(cliPkg.keywords).toEqual(
       expect.arrayContaining([
@@ -1902,6 +1902,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
         "hermes-agent",
         "antigravity",
         "pi",
+        "devin",
         "runner",
       ]),
     );

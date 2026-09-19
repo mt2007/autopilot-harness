@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-copilot-cli",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Autopilot harness host port for GitHub Copilot CLI hooks (degraded Stop consecutive ≤8 unless raise found)",
   "license": "MIT",
   "repository": {
