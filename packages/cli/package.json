@@ -49,6 +49,7 @@
     "@autopilot-harness/port-hermes-agent": "workspace:*",
     "@autopilot-harness/port-antigravity": "workspace:*",
     "@autopilot-harness/port-pi": "workspace:*",
+    "@autopilot-harness/port-devin": "workspace:*",
     "@clack/prompts": "^0.10.0",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"

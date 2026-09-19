@@ -25,6 +25,7 @@ export const INSTALLABLE_BINDINGS: readonly PlatformBinding[] = Object.freeze([
   { id: "hermes-agent", surface: "cli" },
   { id: "antigravity", surface: "cli" },
   { id: "pi", surface: "cli" },
+  { id: "devin", surface: "cli" },
   { id: "runner", surface: "runner" },
 ]);
 
@@ -43,6 +44,7 @@ const DEFAULT_SURFACE_BY_ID: Readonly<Record<string, string>> = Object.freeze({
   "hermes-agent": "cli",
   antigravity: "cli",
   pi: "cli",
+  devin: "cli",
   runner: "runner",
 });
 
@@ -189,6 +191,9 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
   }
   if (id === "pi") {
     return "Pi (.pi/extensions Autopilot; in-process; not shell hooks)";
+  }
+  if (id === "devin") {
+    return "Devin CLI (.devin/hooks.v1.json + .devin/skills)";
   }
   if (id === "runner") {
     return "Runner (external loop; no hooks.json)";

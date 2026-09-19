@@ -1,5 +1,5 @@
 /**
- * v0.14 vendor-platform-wire — INSTALLABLE pi/cli; vendor exports; R7 ten-way
+ * v0.14 vendor-platform-wire — INSTALLABLE pi/cli; vendor exports; R7 eleven-way
  * shell (no pi in KNOWN_PLATFORMS); non-shell stamp abort; extension asset;
  * workspace:* publish list includes port-pi.
  */
@@ -36,14 +36,15 @@ describe("vendor-platform-wire (pi)", () => {
     expect(PI_PLATFORM).toBe("pi");
   });
 
-  it("R7: shell KNOWN_PLATFORMS stays ten-way without pi", () => {
+  it("R7: shell KNOWN_PLATFORMS is eleven-way without pi", () => {
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     const known = src.match(
       /KNOWN_PLATFORMS\s*=\s*new Set\(\[([\s\S]*?)\]\)/,
     );
     expect(known).toBeTruthy();
     const ids = [...(known?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    expect(ids).toHaveLength(10);
+    expect(ids).toHaveLength(11);
+    expect(ids).toContain("devin");
     expect(ids).not.toContain("pi");
     expect(ids).not.toContain("runner");
     expect(src).toMatch(/NON_SHELL_PLATFORMS/);

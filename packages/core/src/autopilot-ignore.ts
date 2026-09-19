@@ -34,6 +34,8 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .agents/bin/**
 .agents/skills/**
 .pi/extensions/autopilot*
+.devin/hooks.v1.json
+.devin/skills/**
 
 # Planning artifacts
 plans/**

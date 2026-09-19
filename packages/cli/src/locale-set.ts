@@ -18,7 +18,7 @@ import {
   writeFileReplaceSync,
 } from "./read-untrusted-file.js";
 import { resolveTemplatesRoot as resolveTemplatesRootFromCli } from "./template-paths.js";
-import { applyFactorySkillFrontmatter } from "./init/install.js";
+import { applyFactorySkillFrontmatter, applyDevinSkillFrontmatter } from "./init/install.js";
 import { readConfigPlatformsOrThrow } from "./init/config-merge.js";
 import { platformsWantInstallableHost } from "./init/platforms.js";
 import { resolveHermesHome } from "./init/hermes-hooks-merge.js";
@@ -165,7 +165,8 @@ type HostSkillsParent =
   | ".claude"
   | ".agents"
   | ".gemini"
-  | ".factory";
+  | ".factory"
+  | ".devin";
 
 function skillHostsFromConfigYaml(yaml: string): {
   project: HostSkillsParent[];
@@ -184,6 +185,9 @@ function skillHostsFromConfigYaml(yaml: string): {
   }
   if (platformsWantInstallableHost(platforms, "factory-droid")) {
     project.push(".factory");
+  }
+  if (platformsWantInstallableHost(platforms, "devin")) {
+    project.push(".devin");
   }
   if (platformsWantInstallableHost(platforms, "antigravity")) {
     project.push(".agents");
@@ -231,6 +235,9 @@ function rewriteProjectSkills(
     );
     if (hostSkillsParent === ".factory") {
       body = applyFactorySkillFrontmatter(body);
+    }
+    if (hostSkillsParent === ".devin") {
+      body = applyDevinSkillFrontmatter(body);
     }
     writeFileAtomic(dest, body, projectRoot, `${skillsLabel}${name}/`);
     written.push(path.relative(projectRoot, dest));

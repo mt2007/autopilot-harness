@@ -28,6 +28,7 @@ const PACKAGES_WITH_WORKSPACE_DEPS = [
   "packages/ports/hermes-agent",
   "packages/ports/antigravity",
   "packages/ports/pi",
+  "packages/ports/devin",
   "packages/ports/runner",
 ] as const;
 

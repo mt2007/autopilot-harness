@@ -41,6 +41,9 @@ importers:
       '@autopilot-harness/port-cursor':
         specifier: workspace:*
         version: link:../ports/cursor
+      '@autopilot-harness/port-devin':
+        specifier: workspace:*
+        version: link:../ports/devin
       '@autopilot-harness/port-factory-droid':
         specifier: workspace:*
         version: link:../ports/factory-droid

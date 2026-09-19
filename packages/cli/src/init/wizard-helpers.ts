@@ -549,6 +549,8 @@ export function formatHostDisplayName(platform: string): string {
       return "Antigravity";
     case "pi":
       return "Pi";
+    case "devin":
+      return "Devin CLI";
     case "runner":
       return "Runner";
     default: {
@@ -599,6 +601,9 @@ export function formatPostInstallOutro(
     if (id === "pi") {
       return `You're all set — in ${name}, try /autopilot-on (skills under .agents/skills; shared with Antigravity) or line-start triggers.on / triggers.run. Extension: .pi/extensions/autopilot.ts (direct write; soft min 0.85.1). After install/upgrade: /trust the project then /reload. Autopilot surface is interactive TUI only (not pi -p / JSON). Under concurrency.mode: one_executor, Pi and Runner cannot both hold an armed executing session.`;
     }
+    if (id === "devin") {
+      return `You're all set — in ${name}, try /autopilot-on (skills under .devin/skills) or line-start triggers.on / triggers.run. Hooks live in .devin/hooks.v1.json (timeout 120; commands use $DEVIN_PROJECT_DIR; not .devin/config.json). After install/upgrade: check /hooks, then start a new session. CLI only — not Desktop.`;
+    }
     if (id === "runner") {
       return `You're all set — set runner.command in .autopilot/config.yml (no fake default), then: autopilot-harness runner start --run <slug>. Status: autopilot-harness runner status. Under concurrency.mode: one_executor, Runner and a hook host cannot both hold an armed executing session.`;
     }
@@ -623,9 +628,10 @@ export function formatPostInstallOutro(
     ids.includes("factory-droid") ||
     ids.includes("hermes-agent") ||
     ids.includes("antigravity") ||
-    ids.includes("pi")
+    ids.includes("pi") ||
+    ids.includes("devin")
   ) {
-    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Gemini/Factory/Hermes/Antigravity/Pi: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
+    return `You're all set — try /autopilot-on in ${names} (Codex/Kimi/Copilot/Grok: line-start triggers.on / triggers.run; Gemini/Factory/Hermes/Antigravity/Pi/Devin: slash skills + line-start; Kimi: confirm_rounds: 1 + Stop≤1/turn).`;
   }
   return `You're all set — try /autopilot-on in ${names}.`;
 }
@@ -684,6 +690,10 @@ export function formatHostActivationTips(
     } else if (id === "pi") {
       tips.push(
         `${host}: Autopilot direct-writes .pi/extensions/autopilot.ts (R6; never pi install; PATH pi not required to write) loading .autopilot/bin/vendor/runtime.mjs, and shares .agents/skills/autopilot-* with Antigravity (does not write .agents/hooks.json). Soft min 0.85.1 (doctor WARN). After install/upgrade: /trust then /reload. Autopilot surface = interactive TUI only (R10: not pi -p / JSON). Activation: /autopilot-on or line-start triggers.on / triggers.run. Under one_executor, Pi + Runner cannot both hold an armed executing session.`,
+      );
+    } else if (id === "devin") {
+      tips.push(
+        `${host}: Autopilot writes .devin/hooks.v1.json (top-level events; timeout 120; UPS+PostToolUse+Stop; commands use $DEVIN_PROJECT_DIR; does not write .devin/config.json hooks) and .devin/skills/autopilot-* (triggers: [user]). After install/upgrade: check /hooks, then start a new session. Activation: /autopilot-on or line-start triggers.on / triggers.run. CLI only — not Desktop.`,
       );
     } else if (id === "runner") {
       tips.push(
@@ -786,6 +796,11 @@ function hostActivationPlainLines(
           `在 ${host} 中试用 /autopilot-on（skills 在 .agents/skills，与 Antigravity 共用）或行首 triggers.on / triggers.run。`,
           `扩展直接写入 .pi/extensions/autopilot.ts（不跑 pi install；软下限 0.85.1）。安装/升级后请 /trust 再 /reload。正式面仅为交互 TUI（不支持 pi -p / JSON）。one_executor 下 Pi 与 Runner 不能同时持有武装 executing 会话。`,
         );
+      } else if (id === "devin") {
+        lines.push(
+          `在 ${host} 中试用 /autopilot-on（skills 在 .devin/skills）或行首 triggers.on / triggers.run。`,
+          `hooks 写 .devin/hooks.v1.json（顶层 event；timeout 120；命令用 $DEVIN_PROJECT_DIR；不写 .devin/config.json hooks）；skills 含 triggers: [user]。安装/升级后请查看 /hooks 并新开会话。仅 CLI — 不测 Desktop。`,
+        );
       } else if (id === "runner") {
         lines.push(
           `在 .autopilot/config.yml 设置 runner.command（无假默认），然后：autopilot-harness runner start --run <slug>。`,
@@ -852,6 +867,11 @@ function hostActivationPlainLines(
         `In ${host}, try /autopilot-on (skills under .agents/skills; shared with Antigravity) or line-start triggers.on / triggers.run.`,
         `Extension: .pi/extensions/autopilot.ts (direct write; soft min 0.85.1). After install/upgrade: /trust then /reload. Autopilot surface is interactive TUI only (not pi -p / JSON). Under one_executor, Pi and Runner cannot both hold an armed executing session.`,
       );
+    } else if (id === "devin") {
+      lines.push(
+        `In ${host}, try /autopilot-on (skills under .devin/skills) or line-start triggers.on / triggers.run.`,
+        `Hooks are written to .devin/hooks.v1.json (top-level events; timeout 120; commands use $DEVIN_PROJECT_DIR; does not write .devin/config.json hooks); skills use triggers: [user]. After install/upgrade: check /hooks, then start a new session. CLI only — not Desktop.`,
+      );
     } else if (id === "runner") {
       lines.push(
         `Set runner.command in .autopilot/config.yml (no fake default), then: autopilot-harness runner start --run <slug>.`,
@@ -905,6 +925,14 @@ function hostActivationDocLines(
         "`.factory/skills/autopilot-*`",
       )
       .replaceAll(".factory/skills", "`.factory/skills`")
+      .replaceAll(".devin/hooks.v1.json", "`.devin/hooks.v1.json`")
+      .replaceAll(
+        ".devin/skills/autopilot-*",
+        "`.devin/skills/autopilot-*`",
+      )
+      .replaceAll(".devin/skills", "`.devin/skills`")
+      .replaceAll(".devin/config.json", "`.devin/config.json`")
+      .replaceAll("$DEVIN_PROJECT_DIR", "`$DEVIN_PROJECT_DIR`")
       .replaceAll(".agents/hooks.json", "`.agents/hooks.json`")
       // Longer skills path before the directory prefix (avoid `` `.agents/skills`/autopilot-* ``).
       .replaceAll(

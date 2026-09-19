@@ -188,7 +188,7 @@ describe("factory contract matrix", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     expect(src).toMatch(
-      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,\s*"hermes-agent"\s*,\s*"antigravity"\s*,?\s*\]\)/,
+      /KNOWN_PLATFORMS\s*=\s*new Set\(\[\s*"cursor"\s*,\s*"claude-code"\s*,\s*"codex"\s*,\s*"kimi-code"\s*,\s*"copilot-cli"\s*,\s*"grok-build"\s*,\s*"gemini-cli"\s*,\s*"factory-droid"\s*,\s*"hermes-agent"\s*,\s*"antigravity"\s*,\s*"devin"\s*,?\s*\]\)/,
     );
     expect(src).toMatch(
       /FACTORY_EVENTS\s*=\s*new Set\(\[\s*"UserPromptSubmit"\s*,\s*"PostToolUse"\s*,\s*"Stop"\s*,?\s*\]\)/,

@@ -364,7 +364,7 @@ describe("tests-runner-contract (research §5)", () => {
     }
   });
 
-  it("shipped hook asset stays ten-way — no runner platform in KNOWN_PLATFORMS", () => {
+  it("shipped hook asset is eleven-way — no runner platform in KNOWN_PLATFORMS", () => {
     expect(fs.existsSync(HOOK_ASSET)).toBe(true);
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     const known = src.match(
@@ -383,8 +383,9 @@ describe("tests-runner-contract (research §5)", () => {
       "factory-droid",
       "hermes-agent",
       "antigravity",
+      "devin",
     ]);
-    expect(ids).toHaveLength(10);
+    expect(ids).toHaveLength(11);
     expect(ids).not.toContain("runner");
     expect(ids).not.toContain("pi");
     expect(src).not.toMatch(/handleRunnerStop/);
@@ -395,7 +396,7 @@ describe("tests-runner-contract (research §5)", () => {
 });
 
 describe("tests-runner-on-contract (research §8 / C1–C9)", () => {
-  it("ten-way hook matrix stays untouched (no runner platform)", () => {
+  it("eleven-way hook matrix includes no runner (no runner platform)", () => {
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     const known = src.match(
       /KNOWN_PLATFORMS\s*=\s*new Set\(\[([\s\S]*?)\]\)/,
@@ -413,8 +414,9 @@ describe("tests-runner-on-contract (research §8 / C1–C9)", () => {
       "factory-droid",
       "hermes-agent",
       "antigravity",
+      "devin",
     ]);
-    expect(ids).toHaveLength(10);
+    expect(ids).toHaveLength(11);
     expect(ids).not.toContain("runner");
     expect(ids).not.toContain("pi");
     expect(src).not.toMatch(/handleRunnerStop/);

@@ -1,10 +1,11 @@
 /**
- * v0.14 matrix-host — R7 「十路 shell + Pi 扩展」:
- * - shell `KNOWN_PLATFORMS` stays ten-way (no `pi` / no `runner`)
+ * v0.14 matrix-host — R7 「十路 shell + Pi 扩展」(+ v0.15 hook stamp list has Devin):
+ * - shell `KNOWN_PLATFORMS` is eleven-way (includes `devin`; no `pi` / no `runner`)
  * - `--platform pi|runner` aborts before FSM (JSON `{}`)
  * - Pi stamp must not mutate existing host sessions / open state.db on abort
  * - prior ten shell hosts do not go red when Pi extension is also installed
- * Subprocess stamp was not chosen — do **not** expand to eleven-way shell.
+ * - this suite still installs the prior ten shell hosts + Pi; Devin matrix coverage
+ *   lands in v0.15 `matrix-host`
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -350,15 +351,15 @@ describe("ten-shell + Pi extension matrix (R7)", () => {
     expect(outsideAfter.ino).toBe(outsideBefore.ino);
   });
 
-  it("R7: shipped hook stays ten-way shell; NON_SHELL has pi+runner; vendor R1 trim present", () => {
+  it("R7: shipped hook is eleven-way shell (+devin); NON_SHELL has pi+runner; vendor R1 trim present", () => {
     const src = fs.readFileSync(HOOK_ASSET, "utf8");
     const known = src.match(
       /KNOWN_PLATFORMS\s*=\s*new Set\(\[([\s\S]*?)\]\)/,
     );
     expect(known).toBeTruthy();
     const ids = [...(known?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    expect(ids).toHaveLength(10);
-    expect(new Set(ids)).toEqual(new Set(SHELL_HOSTS));
+    expect(ids).toHaveLength(11);
+    expect(ids).toEqual([...SHELL_HOSTS, "devin"]);
     expect(ids).not.toContain("pi");
     expect(ids).not.toContain("runner");
     expect(src).toMatch(

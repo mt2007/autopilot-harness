@@ -30,6 +30,8 @@
 .agents/bin/**
 .agents/skills/**
 .pi/extensions/autopilot*
+.devin/hooks.v1.json
+.devin/skills/**
 
 # Planning artifacts
 plans/**

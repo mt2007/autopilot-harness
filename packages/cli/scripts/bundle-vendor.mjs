@@ -2,7 +2,8 @@
 /**
  * Bundle core + port-cursor + port-claude-code + port-codex + port-kimi-code +
  * port-copilot-cli + port-grok-build + port-gemini-cli + port-factory-droid +
- * port-hermes-agent + port-antigravity + port-pi into assets/vendor/runtime.mjs
+ * port-hermes-agent + port-antigravity + port-pi + port-devin into
+ * assets/vendor/runtime.mjs
  * for project hooks / Pi in-process extension. Also copies migration SQL beside
  * the bundle (migrate.ts resolves relative paths).
  */
@@ -123,6 +124,14 @@ await esbuild.build({
       "packages",
       "ports",
       "pi",
+      "src",
+      "index.ts",
+    ),
+    "@autopilot-harness/port-devin": path.join(
+      repoRoot,
+      "packages",
+      "ports",
+      "devin",
       "src",
       "index.ts",
     ),

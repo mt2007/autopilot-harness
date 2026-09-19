@@ -138,6 +138,18 @@ describe("isAutopilotIgnoredPath", () => {
     ).toBe(true);
     expect(
       isAutopilotIgnoredPath(
+        ".devin/hooks.v1.json",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
+        ".devin/skills/autopilot-on/SKILL.md",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
         ".agents/bin/autopilot-harness-hook.mjs",
         DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
       ),

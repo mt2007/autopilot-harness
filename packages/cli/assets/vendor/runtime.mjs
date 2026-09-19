@@ -2439,6 +2439,8 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 .agents/bin/**
 .agents/skills/**
 .pi/extensions/autopilot*
+.devin/hooks.v1.json
+.devin/skills/**
 
 # Planning artifacts
 plans/**
@@ -11683,6 +11685,377 @@ function handlePiAgentSettledInner(engine, store, payload, projectRoot, opts) {
   };
 }
 
+// ../ports/devin/src/index.ts
+var DEVIN_PLATFORM = "devin";
+var DEVIN_POST_TOOL_USE_MATCHER = "^(write|edit|apply_patch|notebook_edit)$";
+var DEVIN_EDIT_TOOL_RE = new RegExp(DEVIN_POST_TOOL_USE_MATCHER);
+var MAX_NEED_PICK_SLUGS10 = 40;
+var MAX_NEED_PICK_CONTEXT_CHARS10 = 2e3;
+var MAX_HOOK_TEXT_CHARS2 = 8192;
+var MAX_TOOL_INPUT_JSON_CHARS = 1048576;
+var PATH_KEYS = [
+  "file_path",
+  "filePath",
+  "path",
+  "notebook_path",
+  "notebookPath",
+  "target_file",
+  "targetFile"
+];
+function loopCountFromDevinStopHookActive(payload) {
+  if (!payload || typeof payload !== "object") return 0;
+  return payload.stop_hook_active === true || payload.stopHookActive === true ? 1 : 0;
+}
+function isDevinEditTool(toolName) {
+  if (typeof toolName !== "string") return false;
+  return DEVIN_EDIT_TOOL_RE.test(toolName.trim());
+}
+function sessionIdOnly(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  for (const raw of [payload.session_id, payload.sessionId]) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) continue;
+    return trimmed;
+  }
+  return "";
+}
+function clipText8(text, max = MAX_HOOK_TEXT_CHARS2) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}\u2026`;
+}
+function blockReason9(message, fallback) {
+  const text = typeof message === "string" ? message.trim() : "";
+  return clipText8(text || fallback);
+}
+function firstNonBlankString(...values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+function toolNameOf(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  return firstNonBlankString(payload.tool_name, payload.toolName);
+}
+function asToolInputObject(value) {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string") return null;
+  if (value.length > MAX_TOOL_INPUT_JSON_CHARS) return null;
+  const text = value.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+function pathText(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed || /[\u0000-\u001f\u007f]/.test(trimmed)) return "";
+  return trimmed;
+}
+function objectHasPath(input) {
+  return PATH_KEYS.some((key) => pathText(input[key]).length > 0);
+}
+function toolInputObject7(payload) {
+  const snake = asToolInputObject(payload.tool_input);
+  const camel = asToolInputObject(payload.toolInput);
+  if (snake && objectHasPath(snake)) return snake;
+  if (camel && objectHasPath(camel)) return camel;
+  return snake ?? camel;
+}
+function pathsFromToolInput(input) {
+  const out = [];
+  for (const key of PATH_KEYS) {
+    const filePath = pathText(input[key]);
+    if (!filePath || out.includes(filePath)) continue;
+    out.push(filePath);
+  }
+  return out;
+}
+function editPaths(payload) {
+  if (!payload || typeof payload !== "object") return [];
+  if (!isDevinEditTool(toolNameOf(payload))) return [];
+  const input = toolInputObject7(payload);
+  if (!input) return [];
+  return pathsFromToolInput(input);
+}
+function allowNeedPick(userMessage, candidates) {
+  const fromMessage = typeof userMessage === "string" && userMessage.trim().length > 0 ? userMessage.trim() : "";
+  const slugs = [
+    ...new Set(
+      (candidates ?? []).map((c) => c && typeof c.slug === "string" ? c.slug.trim() : "").filter((s) => s.length > 0 && isSafeTrackSlug(s))
+    )
+  ].slice(0, MAX_NEED_PICK_SLUGS10);
+  let ctx = fromMessage || (slugs.length > 0 ? `Select a plan to execute:
+
+${slugs.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+Reply with a number or /autopilot-run <slug>.` : "Select a plan to execute. Reply with a number or /autopilot-run <slug>.");
+  if (ctx.length > MAX_NEED_PICK_CONTEXT_CHARS10) {
+    ctx = `${ctx.slice(0, MAX_NEED_PICK_CONTEXT_CHARS10 - 1)}\u2026`;
+  }
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: ctx
+    }
+  };
+}
+function blockSubmit4(message, fallback) {
+  return { decision: "block", reason: blockReason9(message, fallback) };
+}
+function stampDevinPlatform(store, conversationId, projectRoot) {
+  const session = store.getSession(conversationId);
+  if (!session || session.platform === DEVIN_PLATFORM) return;
+  store.upsertSession({
+    conversation_id: conversationId,
+    project_root: session.project_root || projectRoot,
+    code_root: session.code_root || projectRoot,
+    platform: DEVIN_PLATFORM
+  });
+}
+function armCodeEdited10(store, conversationId, projectRoot) {
+  const cfg = loadProjectReviewConfig(projectRoot);
+  if (cfg.reviewScope === "project") {
+    ensureAmbientReviewSession(
+      store,
+      conversationId,
+      projectRoot,
+      cfg.reviewScope,
+      DEVIN_PLATFORM
+    );
+  }
+  stampDevinPlatform(store, conversationId, projectRoot);
+  const session = store.getSession(conversationId);
+  const checklistPath = session?.checklist_path?.trim() ?? "";
+  let checklistSnap = null;
+  if (checklistPath) {
+    try {
+      checklistSnap = parseChecklist(checklistPath, { projectRoot });
+    } catch {
+    }
+  }
+  store.markCodeEdited(conversationId, (chain) => {
+    const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+    if (checklistSnap) {
+      if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+        return fromPending;
+      }
+      return firstUnchecked(checklistSnap)?.id ?? null;
+    }
+    return fromPending;
+  });
+}
+function handleDevinUserPromptSubmit(store, payload, projectRoot, portConfig) {
+  try {
+    return handleDevinUserPromptSubmitInner(
+      store,
+      payload,
+      projectRoot,
+      portConfig
+    );
+  } catch {
+    return {};
+  }
+}
+function handleDevinUserPromptSubmitInner(store, payload, projectRoot, portConfig) {
+  const conversationId = sessionIdOnly(payload);
+  if (!conversationId) return {};
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+  if (isHarnessFollowupMessage(prompt)) {
+    stampDevinPlatform(store, conversationId, projectRoot);
+    return {};
+  }
+  try {
+    store.clearPendingFollowupIf(
+      conversationId,
+      isRecoverOrStuckFollowupMessage
+    );
+  } catch {
+  }
+  const session = store.getSession(conversationId);
+  const hookCfg = loadProjectHookConfig(projectRoot);
+  const trigger = parseTrigger({
+    prompt,
+    conversationId,
+    projectRoot,
+    pendingAction: session?.pending_action,
+    triggers: hookCfg.triggers
+  });
+  const actionConfig = {
+    ...portConfig?.phaseActions,
+    plansDir: portConfig?.phaseActions?.plansDir ?? hookCfg.plansDir
+  };
+  const gateFallback = "Autopilot rejected this prompt. Check `npx autopilot-harness status`.";
+  if (trigger?.kind === "off") {
+    applyOff(store, conversationId);
+    stampDevinPlatform(store, conversationId, projectRoot);
+    return {};
+  }
+  if (trigger?.kind === "on") {
+    const result = applyOn(store, conversationId, projectRoot, {
+      initialBrief: trigger.initialBrief,
+      slug: trigger.slug,
+      platform: DEVIN_PLATFORM
+    });
+    stampDevinPlatform(store, conversationId, projectRoot);
+    if (!result.ok) return blockSubmit4(result.userMessage, gateFallback);
+    return {};
+  }
+  if (trigger?.kind === "resume") {
+    const result = applyResume(store, conversationId, { slug: trigger.slug });
+    stampDevinPlatform(store, conversationId, projectRoot);
+    if (!result.ok) return blockSubmit4(result.userMessage, gateFallback);
+    return {};
+  }
+  if (trigger?.kind === "resume_review") {
+    applyResumeReview(store, conversationId);
+    stampDevinPlatform(store, conversationId, projectRoot);
+    return {};
+  }
+  if (trigger?.kind === "run") {
+    const result = applyRun(store, conversationId, projectRoot, {
+      slug: trigger.slug,
+      config: actionConfig,
+      platform: DEVIN_PLATFORM
+    });
+    stampDevinPlatform(store, conversationId, projectRoot);
+    if (!result.ok) {
+      if (isChannelANeedPick(result)) {
+        return allowNeedPick(result.userMessage, result.candidates);
+      }
+      return blockSubmit4(result.userMessage, gateFallback);
+    }
+    return {};
+  }
+  if (trigger?.kind === "replan") {
+    const result = applyReplan(store, conversationId, projectRoot, {
+      slug: trigger.slug,
+      config: actionConfig,
+      platform: DEVIN_PLATFORM
+    });
+    stampDevinPlatform(store, conversationId, projectRoot);
+    if (!result.ok) {
+      if (isChannelANeedPick(result)) {
+        return allowNeedPick(result.userMessage, result.candidates);
+      }
+      return blockSubmit4(result.userMessage, gateFallback);
+    }
+    return {};
+  }
+  if (trigger?.kind === "track_pick" && trigger.trackPick) {
+    const result = applyTrackPick(
+      store,
+      conversationId,
+      projectRoot,
+      trigger.trackPick,
+      { config: actionConfig, platform: DEVIN_PLATFORM }
+    );
+    stampDevinPlatform(store, conversationId, projectRoot);
+    if (!result.ok) {
+      if (isChannelANeedPick(result)) {
+        return allowNeedPick(result.userMessage, result.candidates);
+      }
+      return blockSubmit4(result.userMessage, gateFallback);
+    }
+    return {};
+  }
+  store.clearChainPending(conversationId);
+  stampDevinPlatform(store, conversationId, projectRoot);
+  return {};
+}
+function handleDevinPostToolUse(store, payload, projectRoot) {
+  try {
+    handleDevinPostToolUseInner(store, payload, projectRoot);
+  } catch {
+  }
+}
+function handleDevinPostToolUseInner(store, payload, projectRoot) {
+  if (!payload || typeof payload !== "object") return;
+  const conversationId = sessionIdOnly(payload);
+  const toolName = toolNameOf(payload);
+  if (!conversationId || !isDevinEditTool(toolName)) return;
+  const paths = editPaths(payload);
+  if (paths.length === 0) {
+    stampDevinPlatform(store, conversationId, projectRoot);
+    return;
+  }
+  let plansDir;
+  try {
+    plansDir = loadProjectHookConfig(projectRoot).plansDir;
+  } catch {
+    plansDir = void 0;
+  }
+  let armed = false;
+  for (const filePath of paths) {
+    try {
+      notePlansDirEdit(
+        store,
+        conversationId,
+        projectRoot,
+        filePath,
+        plansDir
+      );
+    } catch {
+    }
+    if (armed || !isProductCodeEdit(filePath, { projectRoot })) continue;
+    armCodeEdited10(store, conversationId, projectRoot);
+    armed = true;
+  }
+  if (!armed) stampDevinPlatform(store, conversationId, projectRoot);
+}
+function normalizeDevinStopStatus(payload, opts) {
+  const statusRaw = String(payload?.status ?? "").toLowerCase().trim();
+  if (statusRaw === "aborted" || statusRaw === "cancelled" || statusRaw === "canceled" || opts?.status === "aborted") {
+    return "aborted";
+  }
+  if (statusRaw === "error" || statusRaw === "failed" || opts?.status === "error") {
+    return "error";
+  }
+  return "completed";
+}
+function handleDevinStop(engine, payload, opts) {
+  try {
+    return handleDevinStopInner(engine, payload, opts);
+  } catch {
+    return {};
+  }
+}
+function handleDevinStopInner(engine, payload, opts) {
+  const conversationId = sessionIdOnly(payload);
+  if (!conversationId) return {};
+  const transcriptTrimmed = firstNonBlankString(
+    payload.transcript_path,
+    payload.transcriptPath
+  );
+  const transcriptPath = transcriptTrimmed && !/[\u0000-\u001f\u007f]/.test(transcriptTrimmed) ? transcriptTrimmed : void 0;
+  const action = engine.handleStop({
+    conversationId,
+    status: normalizeDevinStopStatus(payload, opts),
+    loopCount: loopCountFromDevinStopHookActive(payload),
+    transcriptPath,
+    platform: DEVIN_PLATFORM
+  });
+  if (!action?.message) return {};
+  const reason = blockReason9(action.message, "Autopilot followup");
+  if (!action.loop) {
+    return { continue: false, stopReason: reason };
+  }
+  return { decision: "block", reason };
+}
+
 // src/vendor-entry.ts
 function createConfiguredReviewEngine2(store, projectRoot) {
   const cfg = loadProjectReviewConfig(projectRoot);
@@ -11692,6 +12065,7 @@ function createConfiguredReviewEngine2(store, projectRoot) {
 export {
   ANTIGRAVITY_PLATFORM,
   COPILOT_PLATFORM,
+  DEVIN_PLATFORM,
   FACTORY_PLATFORM,
   GEMINI_PLATFORM,
   GROK_PLATFORM,
@@ -11719,6 +12093,9 @@ export {
   handleUserPromptSubmit4 as handleCopilotUserPromptSubmit,
   handleUserPromptTransformed as handleCopilotUserPromptTransformed,
   handleStop as handleCursorStop,
+  handleDevinPostToolUse,
+  handleDevinStop,
+  handleDevinUserPromptSubmit,
   handlePostToolUse7 as handleFactoryPostToolUse,
   handleStop8 as handleFactoryStop,
   handleUserPromptSubmit7 as handleFactoryUserPromptSubmit,

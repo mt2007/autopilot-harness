@@ -35,6 +35,11 @@ import {
   type FactoryHooksFile,
 } from "./factory-hooks-merge.js";
 import {
+  mergeDevinHooks,
+  validateDevinHooksShape,
+  type DevinHooksFile,
+} from "./devin-hooks-merge.js";
+import {
   mergeAntigravityHooks,
   validateAntigravityHooksShape,
   type AntigravityHooksFile,
@@ -570,6 +575,10 @@ type FactoryHooksRead =
   | { ok: true; value: FactoryHooksFile | null }
   | { ok: false; error: string };
 
+type DevinHooksRead =
+  | { ok: true; value: DevinHooksFile | null }
+  | { ok: false; error: string };
+
 type AntigravityHooksRead =
   | { ok: true; value: AntigravityHooksFile | null }
   | { ok: false; error: string };
@@ -864,6 +873,45 @@ function readFactoryHooksFile(filePath: string): FactoryHooksRead {
   }
 }
 
+/** Read `.devin/hooks.v1.json`; refuse to clobber an existing unreadable file. */
+function readDevinHooksFile(filePath: string): DevinHooksRead {
+  let raw: string;
+  try {
+    raw = readUntrustedUtf8File(
+      filePath,
+      MAX_UNTRUSTED_TEXT_BYTES,
+      ".devin/hooks.v1.json",
+    );
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { ok: true, value: null };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cannot read ${filePath}: ${msg}` };
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${filePath} is not a JSON object; fix or remove it before init.`,
+      };
+    }
+    const obj = parsed as DevinHooksFile;
+    const shapeError = validateDevinHooksShape(obj);
+    if (shapeError) {
+      return { ok: false, error: `${filePath}: ${shapeError}` };
+    }
+    return { ok: true, value: obj };
+  } catch {
+    return {
+      ok: false,
+      error: `${filePath} is not valid JSON; fix or remove it before init.`,
+    };
+  }
+}
+
 /** Read `.agents/hooks.json`; refuse to clobber an existing unreadable file. */
 function readAntigravityHooksFile(filePath: string): AntigravityHooksRead {
   let raw: string;
@@ -1102,12 +1150,57 @@ export function applyFactorySkillFrontmatter(body: string): string {
   return `---\n${fm}\ndisable-model-invocation: true\n---\n${rest}`;
 }
 
+/**
+ * Devin skills stay user-invoked. Default triggers include `model`, which
+ * would let the host call `/autopilot-*` without a user command.
+ */
+export function applyDevinSkillFrontmatter(body: string): string {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(body);
+  if (!match) {
+    throw new Error(
+      "Devin skill template is missing a closed YAML frontmatter block",
+    );
+  }
+  let fm = match[1]!;
+  const rest = body.slice(match[0].length);
+  // Already a single user-only flow line — keep body intact (CRLF / order).
+  // Any other triggers line (scalar `model`, a second list, a block) must be rewritten.
+  const triggerLines = fm
+    .split(/\r?\n/)
+    .filter((line) => /^triggers\s*:/.test(line));
+  if (
+    triggerLines.length === 1 &&
+    /^triggers\s*:\s*\[\s*user\s*\]\s*$/.test(triggerLines[0] ?? "")
+  ) {
+    return body;
+  }
+  // Drop flow `triggers: […]` and block `triggers:` + indented list items.
+  const lines = fm.split(/\r?\n/);
+  const kept: string[] = [];
+  let skippingBlockList = false;
+  for (const line of lines) {
+    if (/^triggers\s*:/.test(line)) {
+      const after = line.replace(/^triggers\s*:/, "").trim();
+      skippingBlockList = after === "" || after === "|" || after === ">";
+      continue;
+    }
+    if (skippingBlockList) {
+      if (line.trim() === "" || /^\s/.test(line)) continue;
+      skippingBlockList = false;
+    }
+    kept.push(line);
+  }
+  fm = kept.join("\n").replace(/\n+$/g, "");
+  return `---\n${fm}\ntriggers: [user]\n---\n${rest}`;
+}
+
 type HostSkillsParent =
   | ".cursor"
   | ".claude"
   | ".agents"
   | ".gemini"
-  | ".factory";
+  | ".factory"
+  | ".devin";
 
 function resolveInstallPlatforms(opts: InitYesOptions): PlatformBinding[] {
   if (opts.platforms && opts.platforms.length > 0) {
@@ -1164,7 +1257,7 @@ function installSkills(
   locale: InitLocale,
   /** Host skills root relative to project, e.g. `.cursor` or `.gemini`. */
   hostSkillsParent: HostSkillsParent,
-  opts?: { factoryFrontmatter?: boolean },
+  opts?: { factoryFrontmatter?: boolean; devinFrontmatter?: boolean },
 ): string[] {
   const written: string[] = [];
   const descriptions = skillDescriptions(locale);
@@ -1193,6 +1286,9 @@ function installSkills(
     );
     if (opts?.factoryFrontmatter) {
       body = applyFactorySkillFrontmatter(body);
+    }
+    if (opts?.devinFrontmatter) {
+      body = applyDevinSkillFrontmatter(body);
     }
     const dest = path.join(destDir, "SKILL.md");
     assertNotSymlink(dest, `${skillsLabel}${name}/SKILL.md`);
@@ -1471,6 +1567,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
   const geminiSettingsPath = path.join(geminiDir, "settings.json");
   const factoryDir = path.join(projectRoot, ".factory");
   const factoryHooksPath = path.join(factoryDir, "hooks.json");
+  const devinDir = path.join(projectRoot, ".devin");
+  const devinHooksPath = path.join(devinDir, "hooks.v1.json");
   const agentsDir = path.join(projectRoot, ".agents");
   const antigravityHooksPath = path.join(agentsDir, "hooks.json");
   const mergePlatforms = Boolean(opts.mergePlatforms);
@@ -1644,6 +1742,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantHermes = platformsWantInstallableHost(effectivePlatforms, "hermes-agent");
     const wantAntigravity = platformsWantInstallableHost(effectivePlatforms, "antigravity");
     const wantPi = platformsWantInstallableHost(effectivePlatforms, "pi");
+    const wantDevin = platformsWantInstallableHost(effectivePlatforms, "devin");
     const wantRunner = platformsWantInstallableHost(effectivePlatforms, "runner");
     const wantAgentsSkills = wantAntigravity || wantPi;
     if (
@@ -1658,12 +1757,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       !wantHermes &&
       !wantAntigravity &&
       !wantPi &&
+      !wantDevin &&
       !wantRunner
     ) {
       return {
         ok: false,
         error:
-          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, and/or runner).",
+          "No installable host platform to wire (need cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, and/or runner).",
       };
     }
 
@@ -1765,6 +1865,19 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       const factoryPre = readFactoryHooksFile(factoryHooksPath);
       if (!factoryPre.ok) {
         return { ok: false, error: factoryPre.error };
+      }
+    }
+    if (wantDevin) {
+      try {
+        assertNotSymlink(devinDir, ".devin/");
+        assertNotSymlink(devinHooksPath, ".devin/hooks.v1.json");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+      const devinPre = readDevinHooksFile(devinHooksPath);
+      if (!devinPre.ok) {
+        return { ok: false, error: devinPre.error };
       }
     }
     if (wantAntigravity) {
@@ -2007,6 +2120,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let grokFresh: GrokHooksRead | null = null;
     let geminiFresh: GeminiSettingsRead | null = null;
     let factoryFresh: FactoryHooksRead | null = null;
+    let devinFresh: DevinHooksRead | null = null;
     let antigravityFresh: AntigravityHooksRead | null = null;
     let kimiFresh: ReturnType<typeof readKimiConfigToml> | null = null;
     let hermesFresh: ReturnType<typeof readHermesConfigYaml> | null = null;
@@ -2123,6 +2237,21 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         return { ok: false, error: msg };
       }
     }
+    if (wantDevin) {
+      devinFresh = readDevinHooksFile(devinHooksPath);
+      if (!devinFresh.ok) {
+        rollbackFreshConfig();
+        return { ok: false, error: devinFresh.error };
+      }
+      try {
+        assertNotSymlink(devinDir, ".devin/");
+        assertNotSymlink(devinHooksPath, ".devin/hooks.v1.json");
+      } catch (err) {
+        rollbackFreshConfig();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg };
+      }
+    }
     if (wantAntigravity) {
       antigravityFresh = readAntigravityHooksFile(antigravityHooksPath);
       if (!antigravityFresh.ok) {
@@ -2202,6 +2331,9 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (wantFactory && factoryFresh?.ok) {
         mergeFactoryHooks(factoryFresh.value);
       }
+      if (wantDevin && devinFresh?.ok) {
+        mergeDevinHooks(devinFresh.value);
+      }
       if (wantAntigravity && antigravityFresh?.ok) {
         mergeAntigravityHooks(antigravityFresh.value);
       }
@@ -2219,10 +2351,10 @@ export function installInitYes(opts: InitYesOptions): InitResult {
 
     // Host skills only after settings preflight + merge dry-run succeeded.
     // Codex / Kimi / Copilot / Grok have no Autopilot skills path — skip.
-    // Gemini / Factory / Hermes / Antigravity co-install skills with hooks
+    // Gemini / Factory / Hermes / Antigravity / Devin co-install skills with hooks
     // (Gemini always `.gemini/skills` even when Antigravity is also enabled;
     // Antigravity + Pi share `.agents/skills`, never `.agent/`; Pi does not
-    // write Antigravity hooks.json).
+    // write Antigravity hooks.json; Devin always `.devin/skills`, never `.agents`).
     try {
       if (wantCursor) {
         written.push(
@@ -2243,6 +2375,13 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         written.push(
           ...installSkills(templatesRoot, projectRoot, locale, ".factory", {
             factoryFrontmatter: true,
+          }),
+        );
+      }
+      if (wantDevin) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".devin", {
+            devinFrontmatter: true,
           }),
         );
       }
@@ -2270,6 +2409,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     let mergedGrok: ReturnType<typeof mergeGrokHooks> | null = null;
     let mergedGemini: ReturnType<typeof mergeGeminiSettings> | null = null;
     let mergedFactory: ReturnType<typeof mergeFactoryHooks> | null = null;
+    let mergedDevin: ReturnType<typeof mergeDevinHooks> | null = null;
     let mergedAntigravity: ReturnType<typeof mergeAntigravityHooks> | null =
       null;
     let mergedKimi: string | null = null;
@@ -2352,6 +2492,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         assertNotSymlink(factoryDir, ".factory/");
         assertNotSymlink(factoryHooksPath, ".factory/hooks.json");
         mergedFactory = mergeFactoryHooks(factoryFinal.value);
+      }
+      if (wantDevin) {
+        const devinFinal = readDevinHooksFile(devinHooksPath);
+        if (!devinFinal.ok) {
+          rollbackFreshConfig();
+          return { ok: false, error: devinFinal.error };
+        }
+        assertNotSymlink(devinDir, ".devin/");
+        assertNotSymlink(devinHooksPath, ".devin/hooks.v1.json");
+        mergedDevin = mergeDevinHooks(devinFinal.value);
       }
       if (wantAntigravity) {
         const antigravityFinal = readAntigravityHooksFile(antigravityHooksPath);
@@ -2473,6 +2623,18 @@ export function installInitYes(opts: InitYesOptions): InitResult {
         ".factory/",
       );
       written.push(path.relative(projectRoot, factoryHooksPath));
+    }
+
+    if (mergedDevin) {
+      mkdirRealDirSync(devinDir, ".devin/", projectRoot);
+      assertRealpathInside(projectRoot, devinDir, ".devin/");
+      writeFileAtomic(
+        devinHooksPath,
+        JSON.stringify(mergedDevin, null, 2) + "\n",
+        projectRoot,
+        ".devin/",
+      );
+      written.push(path.relative(projectRoot, devinHooksPath));
     }
 
     if (mergedAntigravity) {

@@ -17,12 +17,15 @@
  *   Factory Droid: UserPromptSubmit | PostToolUse | Stop (Claude-shaped; empty allow stdout)
  *   Hermes Agent: pre_llm_call | post_tool_call | pre_verify (context inject; never block Post)
  *   Antigravity: PreInvocation | PostToolUse | Stop (injectSteps; decision:continue+reason)
+ *   Devin CLI: UserPromptSubmit | PostToolUse | Stop (decision:block+reason; exit 0;
+ *     empty stdout is allow — never exit 2)
  *
- * Dispatch is explicit ten-way via --platform
+ * Dispatch is explicit eleven-way via --platform
  * (cursor | claude-code | codex | kimi-code | copilot-cli | grok-build | gemini-cli |
- * factory-droid | hermes-agent | antigravity). Shared PascalCase event names must NOT imply
- * Claude when platform is codex, kimi-code, copilot-cli, grok-build, gemini-cli,
- * factory-droid, hermes-agent, or antigravity. Copilot camelCase, Gemini
+ * factory-droid | hermes-agent | antigravity | devin). Pi and Runner stay off this
+ * list. Shared PascalCase event names must NOT imply Claude when platform is
+ * codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid,
+ * hermes-agent, antigravity, or devin. Copilot camelCase, Gemini
  * BeforeAgent/AfterTool/AfterAgent, Hermes snake_case, and Antigravity PreInvocation
  * are routed by stamp + event only.
  */
@@ -57,6 +60,8 @@ const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const KIMI_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const GROK_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 const FACTORY_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
+/** Devin CLI shares Pascal names; routed by --platform devin only. */
+const DEVIN_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
 /** Hermes Agent shell events (snake_case; unique — never share Pascal Stop). */
 const HERMES_EVENTS = new Set(["pre_llm_call", "post_tool_call", "pre_verify"]);
 /**
@@ -88,6 +93,7 @@ const KNOWN_PLATFORMS = new Set([
   "factory-droid",
   "hermes-agent",
   "antigravity",
+  "devin",
 ]);
 /** Extension / meta hosts — must not ride the shell hook stamp path (R7). */
 const NON_SHELL_PLATFORMS = new Set(["pi", "runner"]);
@@ -100,6 +106,7 @@ function parseArgs(argv) {
     ...KIMI_EVENTS,
     ...GROK_EVENTS,
     ...FACTORY_EVENTS,
+    ...DEVIN_EVENTS,
     ...HERMES_EVENTS,
     ...ANTIGRAVITY_EVENTS,
     ...GEMINI_EVENTS,
@@ -133,8 +140,8 @@ function isClaudeEvent(event) {
  * Resolve host id: stamped --platform wins; legacy installs fall back to
  * event-name heuristics (Claude-shaped events → claude-code, else cursor).
  * Never map PascalCase events to Claude when --platform is codex, kimi-code,
- * copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, or
- * antigravity. Copilot camelCase / Gemini BeforeAgent/AfterTool/AfterAgent /
+ * copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent,
+ * antigravity, or devin. Copilot camelCase / Gemini BeforeAgent/AfterTool/AfterAgent /
  * Hermes snake_case / Antigravity PreInvocation without a stamp still need a host.
  */
 function resolveHostId(declaredPlatform, event) {
@@ -148,7 +155,8 @@ function resolveHostId(declaredPlatform, event) {
     declaredPlatform === "gemini-cli" ||
     declaredPlatform === "factory-droid" ||
     declaredPlatform === "hermes-agent" ||
-    declaredPlatform === "antigravity"
+    declaredPlatform === "antigravity" ||
+    declaredPlatform === "devin"
   ) {
     return declaredPlatform;
   }
@@ -281,6 +289,9 @@ async function loadHostPortPackage(hostId) {
   if (hostId === "antigravity") {
     return loadPortPackage("@autopilot-harness/port-antigravity");
   }
+  if (hostId === "devin") {
+    return loadPortPackage("@autopilot-harness/port-devin");
+  }
   return loadPortPackage("@autopilot-harness/port-cursor");
 }
 
@@ -290,6 +301,7 @@ async function loadHostPortPackage(hostId) {
  * - Claude/Codex UserPromptSubmit → {} (allow; no decision:block)
  * - Kimi Code → bare exit 0 (no stdout; avoid appending `{}` to context)
  * - Factory Droid → zero-byte stdout (never stringify `{}`)
+ * - Devin CLI → zero-byte stdout, exit 0 (empty allow; never exit 2)
  * - other events → {}
  */
 function failOpen(event, platform = bootPlatform) {
@@ -301,7 +313,7 @@ function failOpen(event, platform = bootPlatform) {
     replied = true;
     return;
   }
-  if (platform === "factory-droid") {
+  if (platform === "factory-droid" || platform === "devin") {
     writeReply("");
     return;
   }
@@ -582,6 +594,72 @@ function writeFactoryReply(result) {
 }
 
 /**
+ * Devin stdout: empty allow (exit 0); Stop continue is decision:block+reason;
+ * deliver-once is continue:false. Never exit 2. Never stringify bare `{}`.
+ * UPS inject is opt-in (`allowInject: true`); Stop must pass `allowInject: false`
+ * (or omit — default denies inject).
+ */
+function writeDevinReply(result, opts = {}) {
+  const allowInject = opts.allowInject === true;
+  if (isFactoryEmptyStdoutResult(result)) {
+    writeReply("");
+    return;
+  }
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    writeReply("");
+    return;
+  }
+  if (result.continue === false) {
+    const stopReason = clipFactoryStdio(
+      typeof result.stopReason === "string" ? result.stopReason.trim() : "",
+    );
+    writeReply(
+      JSON.stringify(
+        stopReason.length > 0
+          ? { continue: false, stopReason }
+          : { continue: false },
+      ),
+    );
+    return;
+  }
+  // Control-plane block must beat inject — even when reason is empty/scrubbed
+  // (fail-open silence, never UPS-shaped additionalContext).
+  if (result.decision === "block") {
+    const reason = clipFactoryStdio(
+      typeof result.reason === "string" ? result.reason.trim() : "",
+    );
+    if (reason.length > 0) {
+      writeReply(JSON.stringify({ decision: "block", reason }));
+      return;
+    }
+    writeReply("");
+    return;
+  }
+  if (allowInject) {
+    const hso = result.hookSpecificOutput;
+    if (hso && typeof hso === "object" && !Array.isArray(hso)) {
+      const ctx = clipFactoryStdio(
+        typeof hso.additionalContext === "string"
+          ? hso.additionalContext.trim()
+          : "",
+      );
+      if (ctx.length > 0) {
+        writeReply(
+          JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "UserPromptSubmit",
+              additionalContext: ctx,
+            },
+          }),
+        );
+        return;
+      }
+    }
+  }
+  writeReply("");
+}
+
+/**
  * Kimi Code I/O: exit 0 + optional stdout (UPS needPick), exit 2 + stderr
  * (gate / Stop continue). Never JSON-encode KimiHookResult for the host.
  * Stop must not emit stdout — Kimi may append exit-0 stdout to context.
@@ -715,7 +793,9 @@ function codexStopHandler(port) {
     typeof port.handleHermesPreVerify !== "function" &&
     port.HERMES_PLATFORM !== "hermes-agent" &&
     typeof port.handleAntigravityStop !== "function" &&
-    port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
   ) {
     return port.handleStop;
   }
@@ -747,7 +827,9 @@ function kimiStopHandler(port) {
     typeof port.handleHermesPreVerify !== "function" &&
     port.HERMES_PLATFORM !== "hermes-agent" &&
     typeof port.handleAntigravityStop !== "function" &&
-    port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
   ) {
     return port.handleStop;
   }
@@ -779,7 +861,9 @@ function copilotStopHandler(port) {
     typeof port.handleHermesPreVerify !== "function" &&
     port.HERMES_PLATFORM !== "hermes-agent" &&
     typeof port.handleAntigravityStop !== "function" &&
-    port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
   ) {
     return port.handleStop;
   }
@@ -812,7 +896,9 @@ function grokStopHandler(port) {
     typeof port.handleHermesPreVerify !== "function" &&
     port.HERMES_PLATFORM !== "hermes-agent" &&
     typeof port.handleAntigravityStop !== "function" &&
-    port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
   ) {
     return port.handleStop;
   }
@@ -845,7 +931,9 @@ function geminiStopHandler(port) {
     typeof port.handleHermesPreVerify !== "function" &&
     port.HERMES_PLATFORM !== "hermes-agent" &&
     typeof port.handleAntigravityStop !== "function" &&
-    port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
   ) {
     return port.handleStop;
   }
@@ -878,7 +966,9 @@ function factoryStopHandler(port) {
     typeof port.handleHermesPreVerify !== "function" &&
     port.HERMES_PLATFORM !== "hermes-agent" &&
     typeof port.handleAntigravityStop !== "function" &&
-    port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
   ) {
     return port.handleStop;
   }
@@ -911,7 +1001,44 @@ function antigravityStopHandler(port) {
     port.GROK_PLATFORM !== "grok-build" &&
     port.GEMINI_PLATFORM !== "gemini-cli" &&
     port.FACTORY_PLATFORM !== "factory-droid" &&
-    port.HERMES_PLATFORM !== "hermes-agent"
+    port.HERMES_PLATFORM !== "hermes-agent" &&
+    typeof port.handleDevinStop !== "function" &&
+    port.DEVIN_PLATFORM !== "devin"
+  ) {
+    return port.handleStop;
+  }
+  return undefined;
+}
+
+/**
+ * Devin Stop: prefer aliased vendor export. Package-only uses handleStop only
+ * when DEVIN_PLATFORM is stamped and no other host stop alias is present.
+ */
+function devinStopHandler(port) {
+  if (typeof port.handleDevinStop === "function") {
+    return port.handleDevinStop;
+  }
+  if (
+    port.DEVIN_PLATFORM === "devin" &&
+    typeof port.handleStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function" &&
+    typeof port.handleStopFailure !== "function" &&
+    typeof port.handleClaudeStop !== "function" &&
+    typeof port.handleCodexStop !== "function" &&
+    typeof port.handleKimiStop !== "function" &&
+    typeof port.handleCopilotStop !== "function" &&
+    typeof port.handleGrokStop !== "function" &&
+    typeof port.handleGeminiStop !== "function" &&
+    typeof port.handleFactoryStop !== "function" &&
+    typeof port.handleHermesPreVerify !== "function" &&
+    port.KIMI_PLATFORM !== "kimi-code" &&
+    port.COPILOT_PLATFORM !== "copilot-cli" &&
+    port.GROK_PLATFORM !== "grok-build" &&
+    port.GEMINI_PLATFORM !== "gemini-cli" &&
+    port.FACTORY_PLATFORM !== "factory-droid" &&
+    port.HERMES_PLATFORM !== "hermes-agent" &&
+    typeof port.handleAntigravityStop !== "function" &&
+    port.ANTIGRAVITY_PLATFORM !== "antigravity"
   ) {
     return port.handleStop;
   }
@@ -957,7 +1084,9 @@ function hostPortReady(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     );
   }
   if (hostId === "gemini-cli") {
@@ -978,7 +1107,9 @@ function hostPortReady(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     );
   }
   if (hostId === "factory-droid") {
@@ -999,7 +1130,9 @@ function hostPortReady(hostId, port) {
       port.GEMINI_PLATFORM !== "gemini-cli" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     );
   }
   if (hostId === "hermes-agent") {
@@ -1016,6 +1149,29 @@ function hostPortReady(hostId, port) {
       typeof port.handlePreInvocation === "function"
     );
   }
+  if (hostId === "devin") {
+    if (typeof port.handleDevinUserPromptSubmit === "function") return true;
+    return (
+      port.DEVIN_PLATFORM === "devin" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid" &&
+      port.HERMES_PLATFORM !== "hermes-agent" &&
+      typeof port.handleAntigravityStop !== "function" &&
+      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+    );
+  }
   if (hostId === "codex") {
     if (typeof port.handleCodexUserPromptSubmit === "function") return true;
     return (
@@ -1029,7 +1185,9 @@ function hostPortReady(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     );
   }
   // Claude: vendor alias or package-only (StopFailure fingerprint).
@@ -1070,7 +1228,9 @@ function resolveUserPromptSubmit(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -1096,7 +1256,9 @@ function resolveUserPromptSubmit(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -1122,7 +1284,9 @@ function resolveUserPromptSubmit(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -1148,7 +1312,9 @@ function resolveUserPromptSubmit(hostId, port) {
       port.GEMINI_PLATFORM !== "gemini-cli" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handleUserPromptSubmit;
     }
@@ -1163,6 +1329,36 @@ function resolveUserPromptSubmit(hostId, port) {
       typeof port.handleUserPromptSubmit === "function" &&
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleClaudeStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid" &&
+      port.HERMES_PLATFORM !== "hermes-agent" &&
+      typeof port.handleAntigravityStop !== "function" &&
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
+    ) {
+      return port.handleUserPromptSubmit;
+    }
+    return undefined;
+  }
+  if (hostId === "devin") {
+    if (typeof port.handleDevinUserPromptSubmit === "function") {
+      return port.handleDevinUserPromptSubmit;
+    }
+    if (
+      port.DEVIN_PLATFORM === "devin" &&
+      typeof port.handleUserPromptSubmit === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
       port.GROK_PLATFORM !== "grok-build" &&
@@ -1212,7 +1408,9 @@ function resolvePostToolUse(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handlePostToolUse;
     }
@@ -1238,7 +1436,9 @@ function resolvePostToolUse(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handlePostToolUse;
     }
@@ -1264,7 +1464,9 @@ function resolvePostToolUse(hostId, port) {
       port.FACTORY_PLATFORM !== "factory-droid" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handlePostToolUse;
     }
@@ -1290,7 +1492,9 @@ function resolvePostToolUse(hostId, port) {
       port.GEMINI_PLATFORM !== "gemini-cli" &&
       port.HERMES_PLATFORM !== "hermes-agent" &&
       typeof port.handleAntigravityStop !== "function" &&
-      port.ANTIGRAVITY_PLATFORM !== "antigravity"
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handlePostToolUse;
     }
@@ -1317,7 +1521,9 @@ function resolvePostToolUse(hostId, port) {
       port.GROK_PLATFORM !== "grok-build" &&
       port.GEMINI_PLATFORM !== "gemini-cli" &&
       port.FACTORY_PLATFORM !== "factory-droid" &&
-      port.HERMES_PLATFORM !== "hermes-agent"
+      port.HERMES_PLATFORM !== "hermes-agent" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
     ) {
       return port.handlePostToolUse;
     }
@@ -1331,6 +1537,36 @@ function resolvePostToolUse(hostId, port) {
       typeof port.handlePostToolUse === "function" &&
       typeof port.handleStopFailure !== "function" &&
       typeof port.handleClaudeStop !== "function" &&
+      port.KIMI_PLATFORM !== "kimi-code" &&
+      port.COPILOT_PLATFORM !== "copilot-cli" &&
+      port.GROK_PLATFORM !== "grok-build" &&
+      port.GEMINI_PLATFORM !== "gemini-cli" &&
+      port.FACTORY_PLATFORM !== "factory-droid" &&
+      port.HERMES_PLATFORM !== "hermes-agent" &&
+      typeof port.handleAntigravityStop !== "function" &&
+      port.ANTIGRAVITY_PLATFORM !== "antigravity" &&
+      typeof port.handleDevinStop !== "function" &&
+      port.DEVIN_PLATFORM !== "devin"
+    ) {
+      return port.handlePostToolUse;
+    }
+    return undefined;
+  }
+  if (hostId === "devin") {
+    if (typeof port.handleDevinPostToolUse === "function") {
+      return port.handleDevinPostToolUse;
+    }
+    if (
+      port.DEVIN_PLATFORM === "devin" &&
+      typeof port.handlePostToolUse === "function" &&
+      typeof port.handleClaudeStop !== "function" &&
+      typeof port.handleStopFailure !== "function" &&
+      typeof port.handleCodexStop !== "function" &&
+      typeof port.handleKimiStop !== "function" &&
+      typeof port.handleCopilotStop !== "function" &&
+      typeof port.handleGrokStop !== "function" &&
+      typeof port.handleGeminiStop !== "function" &&
+      typeof port.handleFactoryStop !== "function" &&
       port.KIMI_PLATFORM !== "kimi-code" &&
       port.COPILOT_PLATFORM !== "copilot-cli" &&
       port.GROK_PLATFORM !== "grok-build" &&
@@ -1454,6 +1690,7 @@ function resolveStopHostId(declaredPlatform, payload, event) {
   if (declaredPlatform === "factory-droid") return "factory-droid";
   if (declaredPlatform === "hermes-agent") return "hermes-agent";
   if (declaredPlatform === "antigravity") return "antigravity";
+  if (declaredPlatform === "devin") return "devin";
   if (declaredPlatform === "claude-code") return "claude-code";
   const hookName = String(
     payload?.hook_event_name ?? payload?.hookEventName ?? "",
@@ -1577,6 +1814,13 @@ async function main() {
       return;
     }
     const hostId = resolveHostId(declaredPlatform, event);
+
+    // Devin stamp on a non-Devin event aborts before vendor / state.db.
+    // Empty stdout + exit 0 is allow; never fall through to Claude heuristics.
+    if (hostId === "devin" && !DEVIN_EVENTS.has(event)) {
+      writeReply("");
+      return;
+    }
 
     // Hermes unique events: wrong --platform must abort before vendor FSM /
     // state.db open (checklist: 错 stamp abort 在副作用前).
@@ -1777,6 +2021,10 @@ async function main() {
           writeFactoryReply(result);
           return;
         }
+        if (hostId === "devin") {
+          writeDevinReply(result, { allowInject: true });
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
@@ -1830,7 +2078,7 @@ async function main() {
           writeKimiReply({ exitCode: 0 });
           return;
         }
-        if (hostId === "factory-droid") {
+        if (hostId === "factory-droid" || hostId === "devin") {
           writeReply("");
           return;
         }
@@ -1990,6 +2238,14 @@ async function main() {
             );
             if (antigravityPort) stopFn = antigravityStopHandler(antigravityPort);
           }
+        } else if (stopHost === "devin") {
+          stopFn = devinStopHandler(port);
+          if (typeof stopFn !== "function") {
+            const devinPort = await loadPortPackage(
+              "@autopilot-harness/port-devin",
+            );
+            if (devinPort) stopFn = devinStopHandler(devinPort);
+          }
         } else {
           stopFn = claudeStopHandler(port);
           if (typeof stopFn !== "function") {
@@ -2087,6 +2343,14 @@ async function main() {
           writeAntigravityReply(result, port, { allowContinue: true });
           return;
         }
+        if (stopHost === "devin" || declaredPlatform === "devin") {
+          if (stopHost === "cursor") {
+            writeReply("");
+            return;
+          }
+          writeDevinReply(result, { allowInject: false });
+          return;
+        }
         writeReply(JSON.stringify(result ?? {}));
         return;
       }
@@ -2100,7 +2364,8 @@ async function main() {
           hostId === "gemini-cli" ||
           hostId === "factory-droid" ||
           hostId === "hermes-agent" ||
-          hostId === "antigravity"
+          hostId === "antigravity" ||
+          hostId === "devin"
         ) {
           failOpen(event, hostId);
           return;
