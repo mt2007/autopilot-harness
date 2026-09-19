@@ -21,4 +21,4 @@
 - [x] human-gate-confirm — 「同意发 0.15.0」；半残须显式认 degraded
 - [x] push-tag-release — push/tag/GH Release `v0.15.0`
 - [x] npm-publish-pnpm — 仅 `pnpm publish`
-- [ ] pin-upgrade-repo — pin → 0.15.0
+- [x] pin-upgrade-repo — pin → 0.15.0
