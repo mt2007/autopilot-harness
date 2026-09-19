@@ -1,0 +1,54 @@
+{
+  "name": "@autopilot-harness/port-devin",
+  "version": "0.14.0",
+  "description": "Autopilot harness host port for Devin CLI hooks (subprocess; Stop decision:block+reason; anchored PostToolUse matcher; independent --platform devin fingerprint). CLI only — not Desktop, cloud, or Cascade.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mt2007/autopilot-harness.git",
+    "directory": "packages/ports/devin"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness#readme",
+  "bugs": {
+    "url": "https://github.com/mt2007/autopilot-harness/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@autopilot-harness/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "mt2007 (https://github.com/mt2007)",
+  "keywords": [
+    "autopilot",
+    "harness",
+    "agent",
+    "ai",
+    "devin",
+    "devin-cli",
+    "checklist",
+    "code-review"
+  ]
+}
