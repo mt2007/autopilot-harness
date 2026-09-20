@@ -1252,6 +1252,28 @@ describe("interactive init (scripted prompts)", () => {
     expect(answers!.locale).toBe("zh-CN");
   });
 
+  it("host multiselect message names arrows, Space, and Enter", async () => {
+    root = tmpProject();
+    let message = "";
+    const prompts = scriptedPrompts({
+      confirms: [true],
+      selects: ["en"],
+    });
+    prompts.multiselect = async (opts) => {
+      message = opts.message;
+      return Symbol("cancel");
+    };
+    const answers = await collectWizardAnswers({
+      projectRoot: root,
+      prompts,
+    });
+    expect(answers).toBeNull();
+    expect(message).toMatch(/Which agent hosts/);
+    expect(message).toContain("↑↓");
+    expect(message).toMatch(/\bSpace\b/);
+    expect(message).toMatch(/\bEnter\b/);
+  });
+
   it("collectWizardAnswers happy path", async () => {
     root = tmpProject();
     const answers = await collectWizardAnswers({

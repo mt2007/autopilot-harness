@@ -323,7 +323,8 @@ export async function collectWizardAnswers(
     return hostOptions[0] ? [hostOptions[0].value] : [];
   })();
   const selectedHosts = await p.multiselect<string>({
-    message: "Which agent hosts should Autopilot install for? (multi-select)",
+    message:
+      "Which agent hosts should Autopilot install for? (↑↓ move, Space toggle, Enter confirm)",
     options: hostOptions.map((o) => ({
       value: o.value,
       label: o.label,
