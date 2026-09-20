@@ -239,6 +239,12 @@ describe("copilot init wiring", () => {
     expect(formatHostActivationTips("copilot-cli").join("\n")).toMatch(
       /\.github\/hooks\/autopilot-harness\.json/,
     );
+    expect(formatHostActivationTips("copilot-cli").join("\n")).toMatch(
+      /\.github\/skills\/autopilot-\*/,
+    );
+    expect(formatHostActivationTips("copilot-cli").join("\n")).not.toMatch(
+      /no Autopilot skills/,
+    );
     expect(formatPostInstallOutro("copilot-cli")).toMatch(/triggers\.on/);
 
     // Quickstart markdown must not split `.github/hooks/...` when wrapping `/hooks`.

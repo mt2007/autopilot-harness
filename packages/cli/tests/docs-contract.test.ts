@@ -165,6 +165,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/### Kimi Code/);
     expect(tips).toMatch(/Stop≤1\/turn|≤1\/turn/);
     expect(tips).toMatch(/~\/\.kimi-code|KIMI_CODE_HOME/);
+    expect(tips).toMatch(/`\/skill:autopilot-on`/);
+    expect(tips).toMatch(/\.agents\/skills\/autopilot-\*/);
+    expect(tips).toMatch(/\.github\/skills\/autopilot-\*/);
+    expect(tips).toMatch(/\.grok\/skills\/autopilot-\*/);
+    expect(tips).not.toMatch(/Codex \/ Kimi \/ Copilot \/ Grok have no Autopilot skills path/);
     expect(tips).toMatch(/project-wide|whole project/i);
     expect(tips).toMatch(
       /Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity|including Cursor \/ Claude \/ Codex \/ Copilot \/ Grok \/ Gemini \/ Factory \/ Hermes \/ Antigravity/i,
@@ -389,6 +394,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/clamps[\s\S]*1|clamp[\s\S]*1/i);
     expect(config).toMatch(/do \*\*not\*\* expect confirm×5|do not expect confirm×5/i);
     expect(config).toMatch(/project-wide|whole project/i);
+    expect(config).toMatch(/`\/skill:autopilot-on`/);
+    expect(config).toMatch(/Prefer host skills \*\*and\*\* line-start/);
+    expect(config).toMatch(/`\.github\/skills`/);
+    expect(config).toMatch(/`\.grok\/skills`/);
     expect(config).toMatch(
       /installs Cursor, Claude Code, Codex, Kimi Code, Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, and\/or Antigravity, and\/or Devin CLI/i,
     );
@@ -408,7 +417,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/Kimi Code user-home `config\.toml`|Stop≤1\/turn WARN/);
     expect(config).toMatch(/Stop consecutive ≤8|Copilot.*≤8/i);
     expect(config).toMatch(/Stop ≤8\/turn|Grok.*≤8\/turn/i);
-    expect(config).toMatch(
+    expect(config).not.toMatch(
       /Codex \/ Kimi Code \/ Copilot CLI \/ Grok Build CLI P0/,
     );
     expect(config).toMatch(/does \*\*not\*\* clamp `confirm_rounds`|does not clamp confirm_rounds/i);
@@ -961,6 +970,22 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(hosts).toMatch(
       /\|\s*\*\*Grok Build CLI\*\*\s*\|\s*\*\*Shipped\*\*/,
+    );
+    // Skills paths table: four hosts install Autopilot skills (P0 = skills + line-start).
+    expect(hosts).toMatch(
+      /\|\s*\*\*Codex\*\*\s*\|\s*`\.codex\/hooks\.json`\s*\|\s*\*\*shares `\.agents\/skills\/autopilot-\*`\*\*/,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Kimi Code\*\*[\s\S]{0,200}`\/skill:autopilot-on`/,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*GitHub Copilot CLI\*\*[\s\S]{0,120}`\.github\/skills\/autopilot-\*`/,
+    );
+    expect(hosts).toMatch(
+      /\|\s*\*\*Grok Build CLI\*\*[\s\S]{0,120}`\.grok\/skills\/autopilot-\*`/,
+    );
+    expect(hosts).not.toMatch(
+      /Codex \/ Kimi \/ Copilot \/ Grok \| host hooks \| \*\*no\*\* Autopilot skills path/,
     );
     expect(hosts).toMatch(
       /\|\s*\*\*Gemini CLI\*\*\s*\|\s*\*\*Shipped\*\*/,

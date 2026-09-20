@@ -348,6 +348,9 @@ describe("kimi init wiring", () => {
     expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
       /Stop-continue|1\/turn/,
     );
+    expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
+      /\/skill:autopilot-on/,
+    );
     expect(formatPostInstallOutro("kimi-code")).toMatch(/triggers\.on/);
   });
 

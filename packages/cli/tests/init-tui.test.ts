@@ -370,10 +370,16 @@ dist/
       /\.codex\/hooks\.json/,
     );
     expect(formatHostActivationTips("codex").join("\n")).toMatch(
+      /\.agents\/skills\/autopilot-\*/,
+    );
+    expect(formatHostActivationTips("codex").join("\n")).toMatch(
       /triggers\.on/,
     );
     expect(formatHostActivationTips("codex").join("\n")).toMatch(
       /triggers\.run/,
+    );
+    expect(formatHostActivationTips("codex").join("\n")).not.toMatch(
+      /no Autopilot skills/,
     );
     expect(formatPostInstallOutro("codex")).toMatch(/triggers\.on/);
     expect(formatPostInstallOutro("codex")).toMatch(/triggers\.run/);
@@ -452,6 +458,15 @@ dist/
     expect(formatPostInstallOutro("kimi-code")).toMatch(/confirm_rounds:\s*1/);
     expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
       /\$KIMI_CODE_HOME|~\/\.kimi-code/,
+    );
+    expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
+      /\/skill:autopilot-on/,
+    );
+    expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
+      /\.agents\/skills\/autopilot-\*/,
+    );
+    expect(formatHostActivationTips("kimi-code").join("\n")).not.toMatch(
+      /no Autopilot skills/,
     );
     // Hostile platform ids must not leak C0 controls into terminal tips.
     expect(formatHostDisplayName("cur\nsor")).toBe("Cursor");

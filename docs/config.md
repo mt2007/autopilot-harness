@@ -70,7 +70,7 @@ Aliases accepted for scope: `project`, `always`, and `all` all map to **`project
 
 ## Triggers
 
-Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills where the host discovers them: Cursor / Claude Code (`.cursor` / `.claude`); **Codex / Kimi Code** share **`.agents/skills`** with Antigravity/Pi; **Copilot CLI** → **`.github/skills`**; **Grok Build CLI** → **`.grok/skills`**; Gemini / Factory / Hermes / Devin under their host trees / no default `AGENTS.md`. **Codex / Kimi Code / Copilot CLI / Grok Build CLI P0** still use line-start `triggers.on` / `triggers.run` (typed `/autopilot-*` still parses).
+Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer host skills **and** line-start: Cursor / Claude Code (`.cursor` / `.claude`); **Codex** → shared **`.agents/skills`** (slash `/autopilot-*` or line-start); **Kimi Code** → shared **`.agents/skills`** (invoke **`/skill:autopilot-on`** — not a Cursor-style `/autopilot-on` UI — or line-start); **Copilot CLI** → **`.github/skills`**; **Grok Build CLI** → **`.grok/skills`**; Gemini / Factory / Hermes / Devin under their host trees / no default `AGENTS.md`. Typed `/autopilot-*` still parses via the submit hook where the host sends the user message.
 
 | Key | Role |
 |-----|------|

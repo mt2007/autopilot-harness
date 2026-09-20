@@ -657,19 +657,19 @@ export function formatHostActivationTips(
       );
     } else if (id === "codex") {
       tips.push(
-        `${host}: Autopilot wires .codex/hooks.json only (does not edit config.toml hooks). Trust project hooks via /hooks after install or upgrade. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills; typed /autopilot-* still parses).`,
+        `${host}: Autopilot wires .codex/hooks.json only (does not edit config.toml hooks) and .agents/skills/autopilot-* (shared with Antigravity/Pi/Kimi). Trust project hooks via /hooks after install or upgrade. P0 activation is /autopilot-* or line-start triggers.on / triggers.run (typed /autopilot-* still parses).`,
       );
     } else if (id === "kimi-code") {
       tips.push(
-        `${host}: Autopilot merges [[hooks]] into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml). Timeout ≥120s. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md). Prefer confirm_rounds: 1 — host Stop-continue hard-capped at 1/turn.`,
+        `${host}: Autopilot merges [[hooks]] into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml) and shares .agents/skills/autopilot-* (with Antigravity/Pi/Codex). Timeout ≥120s. P0 activation is /skill:autopilot-on (host skill UI; not Cursor-style /autopilot-on) or line-start triggers.on / triggers.run (typed /autopilot-* still parses). Prefer confirm_rounds: 1 — host Stop-continue hard-capped at 1/turn.`,
       );
     } else if (id === "copilot-cli") {
       tips.push(
-        `${host}: Autopilot writes .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120; UPS+Transform+postToolUse+agentStop). P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md). Restart Copilot CLI after install or upgrade.`,
+        `${host}: Autopilot writes .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120; UPS+Transform+postToolUse+agentStop) and .github/skills/autopilot-*. P0 activation is /autopilot-* or line-start triggers.on / triggers.run (typed /autopilot-* still parses). Restart Copilot CLI after install or upgrade.`,
       );
     } else if (id === "grok-build") {
       tips.push(
-        `${host}: Autopilot writes .grok/hooks/autopilot-harness.json only (Codex-shaped; timeout 120; UPS+PostToolUse+Stop). Trust via /hooks-trust or --trust after install or upgrade. P0 activation is line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md).`,
+        `${host}: Autopilot writes .grok/hooks/autopilot-harness.json only (Codex-shaped; timeout 120; UPS+PostToolUse+Stop) and .grok/skills/autopilot-*. Trust via /hooks-trust or --trust after install or upgrade. P0 activation is /autopilot-* or line-start triggers.on / triggers.run (typed /autopilot-* still parses).`,
       );
     } else if (id === "gemini-cli") {
       tips.push(
@@ -753,22 +753,22 @@ function hostActivationPlainLines(
         );
       } else if (id === "codex") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills；手打 slash 仍可解析）。`,
+          `在 ${host} 中试用 /autopilot-*（skills 在 .agents/skills，与 Antigravity/Pi/Kimi 共用）或行首 triggers.on / triggers.run（手打 slash 仍可解析）。`,
           `hooks 仅写 .codex/hooks.json；安装/升级后请用 /hooks 信任；不改 config.toml hooks。`,
         );
       } else if (id === "kimi-code") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `在 ${host} 中试用 /skill:autopilot-on（宿主 skill UI；非 Cursor 式 /autopilot-on；skills 在 .agents/skills）或行首 triggers.on / triggers.run（手打 /autopilot-* 仍可解析）。`,
           `hooks 合并进 $KIMI_CODE_HOME/config.toml（默认 ~/.kimi-code；不写 local.toml）。推荐 confirm_rounds: 1（Stop-continue 硬顶 1/turn）。`,
         );
       } else if (id === "copilot-cli") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `在 ${host} 中试用 /autopilot-*（skills 在 .github/skills）或行首 triggers.on / triggers.run（手打 slash 仍可解析）。`,
           `hooks 写入 .github/hooks/autopilot-harness.json（bash+powershell；timeoutSec ≥120）。安装/升级后请重启 Copilot CLI。`,
         );
       } else if (id === "grok-build") {
         lines.push(
-          `在 ${host} 中优先用 triggers.on / triggers.run 行首短语（无 Autopilot skills/AGENTS.md；手打 slash 仍可解析）。`,
+          `在 ${host} 中试用 /autopilot-*（skills 在 .grok/skills）或行首 triggers.on / triggers.run（手打 slash 仍可解析）。`,
           `hooks 仅写 .grok/hooks/autopilot-harness.json（timeout 120）。安装/升级后请用 /hooks-trust 或 --trust 信任。`,
         );
       } else if (id === "gemini-cli") {
@@ -824,22 +824,22 @@ function hostActivationPlainLines(
       );
     } else if (id === "codex") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills path; typed slash still parses).`,
+        `In ${host}, try /autopilot-* (skills under .agents/skills; shared with Antigravity/Pi/Kimi) or line-start triggers.on / triggers.run (typed slash still parses).`,
         `Hooks are written to .codex/hooks.json only; trust via /hooks after install/upgrade; config.toml hooks are left untouched.`,
       );
     } else if (id === "kimi-code") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `In ${host}, try /skill:autopilot-on (host skill UI; not Cursor-style /autopilot-on; skills under .agents/skills) or line-start triggers.on / triggers.run (typed /autopilot-* still parses).`,
         `Hooks merge into $KIMI_CODE_HOME/config.toml (default ~/.kimi-code; does not write local.toml). Prefer confirm_rounds: 1 — Stop-continue hard-capped at 1/turn.`,
       );
     } else if (id === "copilot-cli") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `In ${host}, try /autopilot-* (skills under .github/skills) or line-start triggers.on / triggers.run (typed slash still parses).`,
         `Hooks are written to .github/hooks/autopilot-harness.json (bash+powershell; timeoutSec ≥120). Restart Copilot CLI after install or upgrade.`,
       );
     } else if (id === "grok-build") {
       lines.push(
-        `In ${host}, prefer line-start triggers.on / triggers.run (no Autopilot skills/AGENTS.md; typed slash still parses).`,
+        `In ${host}, try /autopilot-* (skills under .grok/skills) or line-start triggers.on / triggers.run (typed slash still parses).`,
         `Hooks are written to .grok/hooks/autopilot-harness.json only (timeout 120). Trust via /hooks-trust or --trust after install or upgrade.`,
       );
     } else if (id === "gemini-cli") {

@@ -344,6 +344,12 @@ describe("grok init wiring", () => {
     expect(formatHostActivationTips("grok-build").join("\n")).toMatch(
       /\.grok\/hooks\/autopilot-harness\.json/,
     );
+    expect(formatHostActivationTips("grok-build").join("\n")).toMatch(
+      /\.grok\/skills\/autopilot-\*/,
+    );
+    expect(formatHostActivationTips("grok-build").join("\n")).not.toMatch(
+      /no Autopilot skills/,
+    );
     expect(formatPostInstallOutro("grok-build")).toMatch(/hooks-trust|--trust/);
 
     const qs = fs.readFileSync(

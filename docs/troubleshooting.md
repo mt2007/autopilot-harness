@@ -11,7 +11,7 @@ node /path/to/autopilot-harness/packages/cli/dist/bin.js doctor
 ## Skills / hooks do not appear
 
 1. Reload the host window (`Developer: Reload Window` in Cursor; restart / new session in Claude Code, Codex, Kimi Code, **Copilot CLI**, **Grok Build CLI**, **Gemini CLI**, **Factory Droid**, **Hermes Agent**, **Antigravity**, or **Pi**) or start a **new** Agent chat.
-2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, Hermes **`$HERMES_HOME/config.yaml`**, Antigravity **`.agents/hooks.json`**, or Pi **`.pi/extensions/autopilot.ts`**) and skills under the project skills path where applicable (`.cursor/skills/` / `.claude/skills/` / **`.agents/skills/`** / **`.gemini/skills/`** / **`.factory/skills/`** / **`$HERMES_HOME/skills/`** — Codex / Kimi / Copilot / Grok have no Autopilot skills path; Pi **shares** Antigravity **`.agents/skills`**).
+2. Confirm `init` / `upgrade` wrote hooks under the host config (e.g. `.cursor/hooks.json`, `.claude/settings.json`, `.codex/hooks.json`, Kimi Code user-home `config.toml`, Copilot `.github/hooks/autopilot-harness.json`, Grok `.grok/hooks/autopilot-harness.json`, Gemini `.gemini/settings.json`, Factory `.factory/hooks.json`, Hermes **`$HERMES_HOME/config.yaml`**, Antigravity **`.agents/hooks.json`**, or Pi **`.pi/extensions/autopilot.ts`**) and skills under the project skills path (`.cursor/skills/` / `.claude/skills/` / **`.agents/skills/`** for Codex/Kimi/Antigravity/Pi / **`.github/skills/`** for Copilot / **`.grok/skills/`** for Grok / **`.gemini/skills/`** / **`.factory/skills/`** / **`$HERMES_HOME/skills/`**).
 3. Re-run `doctor`; fix FAIL lines before chasing WARN noise.
 
 ## Self-review stops mid-chain
@@ -43,7 +43,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 - `doctor` WARNs when Codex is enabled but Autopilot entries are missing, when `timeout` is set and **&lt; 120s**, and reminds **`/hooks` trust** (re-trust after hook definition changes).
 - Stop continue shape is `{ decision: "block", reason }` — hard-stop may use `continue: false`; never `continue: false` to keep the chain going.
 - Dual/triple-host: `npx @autopilot-harness/cli init --yes --add-platform codex`.
-- P0 activation is **line-start** `triggers.on` / `triggers.run` (no Autopilot Codex skills; no default `AGENTS.md`; typed slash still parses).
+- P0 activation is **slash `/autopilot-*` or line-start** `triggers.on` / `triggers.run` (skills under **`.agents/skills/autopilot-*`**; no default `AGENTS.md`; typed slash still parses).
 
 ### Kimi Code
 
@@ -55,34 +55,34 @@ Kimi Code **hard-caps Stop-continue at ≤1/turn** — Autopilot ships a **degra
 - `doctor` **FAIL**s when Kimi home / `config.toml` is a **symlink** or otherwise unreadable; WARNs for missing Autopilot entries, timeout &lt; 120s, Stop≤1/turn policy, and legacy `~/.kimi` without a Kimi Code home; reminds `/hooks` trust/reload when offered.
 - Stop continue is **exit 2 + stderr** (not Claude JSON).
 - Multi-host: `npx @autopilot-harness/cli init --yes --add-platform kimi-code` (expect confirm clamp to 1 afterward).
-- P0 activation is **line-start** `triggers.on` / `triggers.run` (no Autopilot Kimi skills; no default `AGENTS.md`; typed slash still parses).
+- P0 activation is **`/skill:autopilot-on`** (and sibling `/skill:autopilot-*`) **or line-start** `triggers.on` / `triggers.run` (skills under **`.agents/skills/autopilot-*`**; no default `AGENTS.md`; typed slash still parses via the submit hook).
 
 ### GitHub Copilot CLI
 
 Copilot CLI **hard-caps consecutive `agentStop` `decision:"block"` at ≤8** (no raise/disable found) — Autopilot ships a **degraded** port:
 
 - Expect mid-chain cutoffs on long confirm streaks. When the host cuts off, Autopilot may leave a **pending followup** in DB — continue with `/autopilot-resume` (or line-start RESUME) and/or a human nudge; do not assume Cursor/Claude long-RUN parity.
-- Autopilot writes project `.github/hooks/autopilot-harness.json` (camelCase events; **bash+powershell**; timeoutSec **≥120**; `userPromptSubmitted` + `userPromptTransformed` + `postToolUse` + `agentStop`). Default `.autopilotignore` includes `.github/hooks/**`.
+- Autopilot writes project `.github/hooks/autopilot-harness.json` (camelCase events; **bash+powershell**; timeoutSec **≥120**; `userPromptSubmitted` + `userPromptTransformed` + `postToolUse` + `agentStop`). Default `.autopilotignore` includes `.github/hooks/**` + `.github/skills/**`.
 - **`userPromptSubmitted` stdout is ignored** by the host — needPick / busy / hard errors use **`userPromptTransformed`** (`modifiedTransformedPrompt`). Stop continue = `{ decision:"block", reason }`; hard-stop `{}`.
-- **Does not** clamp `confirm_rounds` (unlike Kimi). Does **not** install Autopilot skills / `AGENTS.md`. Does **not** wire `preToolUse` / SubagentStop / `postToolUseFailure`.
+- **Does not** clamp `confirm_rounds` (unlike Kimi). Installs Autopilot skills under **`.github/skills/autopilot-*`** (no default `AGENTS.md`). Does **not** wire `preToolUse` / SubagentStop / `postToolUseFailure`.
 - **Restart Copilot CLI** after `init` / `upgrade` so hooks reload.
 - `doctor` **FAIL**s when `.github/hooks/autopilot-harness.json` is missing / unreadable / invalid shape, or Autopilot events are incomplete; WARNs for timeoutSec &lt; 120 (or omitted), Stop consecutive ≤8 policy, missing `--platform copilot-cli`, **Restart Copilot CLI**, and **Claude Code + Copilot CLI** dual fingerprints (both enabled or leftover hooks on disk).
 - Multi-host: `npx @autopilot-harness/cli init --yes --add-platform copilot-cli`.
-- P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
+- P0 activation is **slash `/autopilot-*` or line-start** `triggers.on` / `triggers.run` (skills under **`.github/skills/autopilot-*`**; typed slash still parses).
 
 ### Grok Build CLI
 
 Grok Build CLI **hard-caps Stop-continue at ≤8/turn** (counter **resets each user turn**; no raise found) — Autopilot ships a **degraded** port (do **not** copy Copilot’s consecutive model):
 
 - Expect mid-chain cutoffs on long confirm streaks. When the host cuts off, Autopilot may leave a **pending followup** — continue with `/autopilot-resume` (or line-start RESUME) and/or a human nudge.
-- Autopilot writes project `.grok/hooks/autopilot-harness.json` only (Codex-shaped; **timeout 120** always; UPS + PostToolUse + Stop; **omit matcher** on UPS/Stop). Default `.autopilotignore` includes `.grok/hooks/**`.
+- Autopilot writes project `.grok/hooks/autopilot-harness.json` only (Codex-shaped; **timeout 120** always; UPS + PostToolUse + Stop; **omit matcher** on UPS/Stop). Default `.autopilotignore` includes `.grok/hooks/**` + `.grok/skills/**`.
 - Stop continue = **`{ decision:"block", reason }` only** (no Stop `additionalContext` continue — would double-burn the 8). UPS allowing stdout is discarded — needPick / busy / hard errors use **UPS `decision:block` + reason** (re-submit with slug).
-- **Does not** clamp `confirm_rounds`. Does **not** install Autopilot skills / `AGENTS.md`. Does **not** wire PreToolUse / SubagentStop / StopFailure.
+- **Does not** clamp `confirm_rounds`. Installs Autopilot skills under **`.grok/skills/autopilot-*`** (no default `AGENTS.md`). Does **not** wire PreToolUse / SubagentStop / StopFailure.
 - **Trust** via `/hooks-trust` or `--trust` after `init` / `upgrade`; **reload / new session** after hook changes.
 - Optional tip: if Grok also loads Claude/Cursor hooks via `compat.*.hooks`, set those to `false` in user config (Autopilot does **not** auto-edit `~/.grok/config.toml`).
 - `doctor` **FAIL**s when `.grok/hooks/autopilot-harness.json` is missing / unreadable / invalid / incomplete; WARNs for timeout omitted or &lt; 120, **Stop ≤8/turn**, missing `--platform grok-build`, **trust**, reload/new session, and **Grok+Claude and/or Grok+Cursor** multi-fingerprints (both enabled or leftover hooks on disk).
 - Multi-host: `npx @autopilot-harness/cli init --yes --add-platform grok-build`.
-- P0 activation is **line-start** `triggers.on` / `triggers.run` (typed slash still parses).
+- P0 activation is **slash `/autopilot-*` or line-start** `triggers.on` / `triggers.run` (skills under **`.grok/skills/autopilot-*`**; typed slash still parses).
 
 ### Gemini CLI
 
