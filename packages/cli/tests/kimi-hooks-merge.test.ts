@@ -459,9 +459,11 @@ timeout = 5
       "utf8",
     );
     expect(qs).toMatch(/--platform kimi-code/);
-    expect(qs).toMatch(/Preferred: in Kimi Code, line-start `Autopilot ON`/);
-    expect(qs).toMatch(/Preferred: line-start `Autopilot RUN`/);
-    expect(qs).not.toMatch(/Preferred: in Kimi Code, `\/autopilot-on`/);
+    expect(qs).toMatch(/Preferred: in Kimi Code, `\/skill:autopilot-on`/);
+    expect(qs).toMatch(/skills under `\.agents\/skills`/);
+    expect(qs).toMatch(/line-start `Autopilot ON`/);
+    expect(qs).toMatch(/line-start `Autopilot RUN`/);
+    expect(qs).not.toMatch(/no Autopilot skills/);
     expect(qs).not.toMatch(/`autopilot-run` skill:/);
     expect(qs).toMatch(/confirm_rounds/);
     expect(qs).toMatch(/\$KIMI_CODE_HOME|~\/\.kimi-code/);

@@ -299,12 +299,13 @@ dist/
       expect(qs).toMatch(/triggers\.run/);
       expect(qs).toMatch(/\.codex\/hooks\.json/);
       expect(qs).toMatch(/`\/hooks`/);
-      // P0 invariant: line-start preferred over slash; no Autopilot skills path.
-      expect(qs).toMatch(/Preferred: in Codex, line-start `Autopilot ON`/);
-      expect(qs).toMatch(/Preferred: line-start `Autopilot RUN`/);
-      expect(qs).not.toMatch(/Preferred: in Codex, `\/autopilot-on`/);
+      // P0 invariant (R10): skills + line-start (not line-start-only / no-skills).
+      expect(qs).toMatch(/Preferred: in Codex, `\/autopilot-on`/);
+      expect(qs).toMatch(/skills under `\.agents\/skills`/);
+      expect(qs).toMatch(/line-start `Autopilot ON`/);
+      expect(qs).toMatch(/line-start `Autopilot RUN`/);
+      expect(qs).not.toMatch(/no Autopilot skills/);
       expect(qs).not.toMatch(/`autopilot-run` skill:/);
-      expect(qs).toMatch(/no Autopilot skills path on Codex|no Autopilot skills UI/);
     } finally {
       fs.rmSync(rootCodex, { recursive: true, force: true });
     }
@@ -314,14 +315,96 @@ dist/
       const rel = writeQuickstart(rootKimi, "en", "plans", "kimi-code");
       const qs = fs.readFileSync(path.join(rootKimi, rel!), "utf8");
       expect(qs).toMatch(/--platform kimi-code/);
-      expect(qs).toMatch(/Preferred: in Kimi Code, line-start `Autopilot ON`/);
-      expect(qs).toMatch(/Preferred: line-start `Autopilot RUN`/);
-      expect(qs).not.toMatch(/Preferred: in Kimi Code, `\/autopilot-on`/);
+      expect(qs).toMatch(/Preferred: in Kimi Code, `\/skill:autopilot-on`/);
+      expect(qs).toMatch(/skills under `\.agents\/skills`/);
+      expect(qs).toMatch(/line-start `Autopilot ON`/);
+      expect(qs).toMatch(/line-start `Autopilot RUN`/);
+      expect(qs).not.toMatch(/no Autopilot skills/);
       expect(qs).not.toMatch(/`autopilot-run` skill:/);
       expect(qs).toMatch(/confirm_rounds/);
       expect(qs).toMatch(/\$KIMI_CODE_HOME|~\/\.kimi-code/);
     } finally {
       fs.rmSync(rootKimi, { recursive: true, force: true });
+    }
+
+    const rootKimiZh = tmpProject();
+    try {
+      const rel = writeQuickstart(rootKimiZh, "zh-CN", "plans", "kimi-code");
+      const qs = fs.readFileSync(path.join(rootKimiZh, rel!), "utf8");
+      expect(qs).toMatch(/--platform kimi-code/);
+      expect(qs).toMatch(/`\/skill:autopilot-on`/);
+      expect(qs).toMatch(/skills 在 `\.agents\/skills`/);
+      expect(qs).toMatch(/行首 `Autopilot ON`/);
+      expect(qs).toMatch(/`\/skill:autopilot-run`/);
+      expect(qs).not.toMatch(/无 Autopilot skills/);
+      expect(qs).toMatch(/confirm_rounds/);
+    } finally {
+      fs.rmSync(rootKimiZh, { recursive: true, force: true });
+    }
+
+    const rootCodexZh = tmpProject();
+    try {
+      const rel = writeQuickstart(rootCodexZh, "zh-CN", "plans", "codex");
+      const qs = fs.readFileSync(path.join(rootCodexZh, rel!), "utf8");
+      expect(qs).toMatch(/--platform codex/);
+      expect(qs).toMatch(/`\/autopilot-on`（skills 在 `\.agents\/skills`）/);
+      expect(qs).toMatch(/行首 `Autopilot ON`/);
+      expect(qs).not.toMatch(/无 Autopilot skills/);
+    } finally {
+      fs.rmSync(rootCodexZh, { recursive: true, force: true });
+    }
+
+    const rootCopilot = tmpProject();
+    try {
+      const rel = writeQuickstart(rootCopilot, "en", "plans", "copilot-cli");
+      const qs = fs.readFileSync(path.join(rootCopilot, rel!), "utf8");
+      expect(qs).toMatch(/--platform copilot-cli/);
+      expect(qs).toMatch(/Preferred: in GitHub Copilot CLI, `\/autopilot-on`/);
+      expect(qs).toMatch(/skills under `\.github\/skills`/);
+      expect(qs).toMatch(/line-start `Autopilot ON`/);
+      expect(qs).not.toMatch(/no Autopilot skills/);
+    } finally {
+      fs.rmSync(rootCopilot, { recursive: true, force: true });
+    }
+
+    const rootCopilotZh = tmpProject();
+    try {
+      const rel = writeQuickstart(
+        rootCopilotZh,
+        "zh-CN",
+        "plans",
+        "copilot-cli",
+      );
+      const qs = fs.readFileSync(path.join(rootCopilotZh, rel!), "utf8");
+      expect(qs).toMatch(/skills 在 `\.github\/skills`/);
+      expect(qs).toMatch(/行首 `Autopilot ON`/);
+      expect(qs).not.toMatch(/无 Autopilot skills/);
+    } finally {
+      fs.rmSync(rootCopilotZh, { recursive: true, force: true });
+    }
+
+    const rootGrok = tmpProject();
+    try {
+      const rel = writeQuickstart(rootGrok, "en", "plans", "grok-build");
+      const qs = fs.readFileSync(path.join(rootGrok, rel!), "utf8");
+      expect(qs).toMatch(/--platform grok-build/);
+      expect(qs).toMatch(/Preferred: in Grok Build, `\/autopilot-on`/);
+      expect(qs).toMatch(/skills under `\.grok\/skills`/);
+      expect(qs).toMatch(/line-start `Autopilot ON`/);
+      expect(qs).not.toMatch(/no Autopilot skills/);
+    } finally {
+      fs.rmSync(rootGrok, { recursive: true, force: true });
+    }
+
+    const rootGrokZh = tmpProject();
+    try {
+      const rel = writeQuickstart(rootGrokZh, "zh-CN", "plans", "grok-build");
+      const qs = fs.readFileSync(path.join(rootGrokZh, rel!), "utf8");
+      expect(qs).toMatch(/skills 在 `\.grok\/skills`/);
+      expect(qs).toMatch(/行首 `Autopilot ON`/);
+      expect(qs).not.toMatch(/无 Autopilot skills/);
+    } finally {
+      fs.rmSync(rootGrokZh, { recursive: true, force: true });
     }
 
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
@@ -390,7 +473,23 @@ dist/
     expect(formatPostInstallOutro("codex")).toMatch(/triggers\.on/);
     expect(formatPostInstallOutro("codex")).toMatch(/triggers\.run/);
     expect(formatPostInstallOutro("codex")).toMatch(/\/hooks/);
+    expect(formatPostInstallOutro("codex")).toMatch(/\/autopilot-on/);
+    expect(formatPostInstallOutro("codex")).toMatch(
+      /skills under \.agents\/skills/,
+    );
+    expect(formatPostInstallOutro("codex")).not.toMatch(
+      /use line-start triggers\.on/,
+    );
     expect(formatPostInstallOutro(["cursor", "codex"])).toMatch(/triggers\.run/);
+    expect(formatPostInstallOutro(["cursor", "codex"])).toMatch(
+      /Codex\/Copilot\/Grok: skills \+ line-start/,
+    );
+    expect(formatPostInstallOutro(["codex", "kimi-code"])).toMatch(
+      /Kimi: \/skill:autopilot-on \+ line-start/,
+    );
+    expect(formatPostInstallOutro(["codex", "kimi-code"])).not.toMatch(
+      /Codex\/Kimi\/Copilot\/Grok: line-start/,
+    );
     const footer = formatPostInstallFooter("cursor").join("\n");
     expect(footer).toMatch(/You're all set/);
     expect(footer).toMatch(/Reload Window/);
@@ -409,59 +508,108 @@ dist/
     const codexSheet = formatCheatSheet("en", "cmd", "plans", "codex").join(
       "\n",
     );
-    expect(codexSheet).toMatch(/Preferred: in Codex, line-start Autopilot ON/);
-    expect(codexSheet).toMatch(/Preferred: line-start Autopilot RUN/);
-    expect(codexSheet).not.toMatch(/Preferred: in Codex, \/autopilot-on/);
+    expect(codexSheet).toMatch(/Preferred: in Codex, \/autopilot-on/);
+    expect(codexSheet).toMatch(/skills \+ line-start Autopilot ON/);
+    expect(codexSheet).toMatch(/skills \+ line-start Autopilot RUN/);
+    expect(codexSheet).not.toMatch(/no Autopilot skills/);
+    expect(codexSheet).not.toMatch(
+      /Preferred: in Codex, line-start Autopilot ON/,
+    );
     expect(
       formatCheatSheet("zh-CN", "cmd", "plans", "codex").join("\n"),
-    ).toMatch(/行首 Autopilot ON/);
+    ).toMatch(/skills \+ 行首 Autopilot ON/);
     const kimiSheet = formatCheatSheet("en", "cmd", "plans", "kimi-code").join(
       "\n",
     );
-    expect(kimiSheet).toMatch(/Preferred: in Kimi Code, line-start Autopilot ON/);
-    expect(kimiSheet).toMatch(/Preferred: line-start Autopilot RUN/);
+    expect(kimiSheet).toMatch(/Preferred: in Kimi Code, \/skill:autopilot-on/);
+    expect(kimiSheet).toMatch(/\/skill:autopilot-run/);
+    expect(kimiSheet).toMatch(/Also:\s+line-start Autopilot RUN/);
     expect(kimiSheet).toMatch(/confirm_rounds/);
-    expect(kimiSheet).not.toMatch(/Preferred: in Kimi Code, \/autopilot-on/);
+    expect(kimiSheet).not.toMatch(/no Autopilot skills/);
+    expect(kimiSheet).not.toMatch(
+      /Preferred: in Kimi Code, line-start Autopilot ON/,
+    );
+    // Single-host Kimi: no duplicate Kimi: side tip (Preferred already uses /skill:).
+    expect(kimiSheet).not.toMatch(
+      /Kimi Code:\s+\/skill:autopilot-on \+ line-start/,
+    );
+    const kimiSheetZh = formatCheatSheet(
+      "zh-CN",
+      "cmd",
+      "plans",
+      "kimi-code",
+    ).join("\n");
+    expect(kimiSheetZh).toMatch(/推荐：在 Kimi Code 中 \/skill:autopilot-on/);
+    expect(kimiSheetZh).toMatch(/\/skill:autopilot-run/);
+    expect(kimiSheetZh).toMatch(/也可：行首 Autopilot RUN/);
+    expect(kimiSheetZh).not.toMatch(/无 Autopilot skills/);
+    expect(kimiSheetZh).not.toMatch(
+      /Kimi Code：\/skill:autopilot-on \+ 行首/,
+    );
     const dualSheet = formatCheatSheet("en", "cmd", "plans", [
       "cursor",
       "codex",
     ]).join("\n");
     expect(dualSheet).toMatch(/Preferred: in Cursor \/ Codex, \/autopilot-on/);
-    expect(dualSheet).toMatch(/Codex:\s+prefer line-start Autopilot ON/);
-    expect(dualSheet).toMatch(/Codex:\s+prefer line-start Autopilot RUN/);
+    expect(dualSheet).toMatch(/Codex:\s+skills \+ line-start Autopilot ON/);
+    expect(dualSheet).toMatch(/Codex:\s+skills \+ line-start Autopilot RUN/);
     const dualKimi = formatCheatSheet("en", "cmd", "plans", [
       "cursor",
       "kimi-code",
     ]).join("\n");
-    expect(dualKimi).toMatch(/Kimi Code:\s+prefer line-start Autopilot ON/);
+    expect(dualKimi).toMatch(
+      /Kimi Code:\s+\/skill:autopilot-on \+ line-start Autopilot ON/,
+    );
     expect(dualKimi).toMatch(/confirm_rounds/);
     const dualLineStart = formatCheatSheet("en", "cmd", "plans", [
       "codex",
       "kimi-code",
     ]).join("\n");
     expect(dualLineStart).toMatch(
-      /Preferred: in Codex \/ Kimi Code, line-start Autopilot ON/,
-    );
-    expect(dualLineStart).toMatch(/Preferred: line-start Autopilot RUN/);
-    expect(dualLineStart).not.toMatch(
       /Preferred: in Codex \/ Kimi Code, \/autopilot-on/,
     );
-    expect(dualLineStart).not.toMatch(/Codex:\s+prefer line-start/);
+    expect(dualLineStart).toMatch(/Codex:\s+skills \+ line-start Autopilot ON/);
+    expect(dualLineStart).toMatch(
+      /Kimi Code:\s+\/skill:autopilot-on \+ line-start Autopilot ON/,
+    );
+    expect(dualLineStart).not.toMatch(
+      /Preferred: in Codex \/ Kimi Code, line-start Autopilot ON/,
+    );
     const dupCodex = formatCheatSheet("en", "cmd", "plans", [
       "codex",
       "CODEX",
       "codex",
     ]).join("\n");
-    expect(dupCodex).toMatch(/Preferred: in Codex, line-start Autopilot ON/);
+    expect(dupCodex).toMatch(/Preferred: in Codex, \/autopilot-on/);
     expect(dupCodex).not.toMatch(/Codex \/ Codex/);
-    expect(dupCodex).not.toMatch(/Preferred: in Codex, \/autopilot-on/);
+    expect(dupCodex).not.toMatch(/no Autopilot skills/);
     expect(formatPostInstallOutro(["codex", "CODEX", "codex"])).toMatch(
-      /in Codex, use line-start/,
+      /skills under \.agents\/skills/,
+    );
+    expect(formatPostInstallOutro(["codex", "CODEX", "codex"])).toMatch(
+      /line-start triggers\.on/,
     );
     expect(formatPostInstallOutro(["codex", "CODEX", "codex"])).not.toMatch(
       /Codex, Codex/,
     );
     expect(formatPostInstallOutro("kimi-code")).toMatch(/confirm_rounds:\s*1/);
+    expect(formatPostInstallOutro("kimi-code")).toMatch(/\/skill:autopilot-on/);
+    expect(formatPostInstallOutro("kimi-code")).toMatch(
+      /\.agents\/skills/,
+    );
+    expect(formatPostInstallOutro("copilot-cli")).toMatch(/\.github\/skills/);
+    expect(formatPostInstallOutro("copilot-cli")).toMatch(/line-start triggers/);
+    expect(formatPostInstallOutro("copilot-cli")).not.toMatch(
+      /no Autopilot skills/,
+    );
+    expect(formatPostInstallOutro("grok-build")).toMatch(/\.grok\/skills/);
+    expect(formatPostInstallOutro("grok-build")).toMatch(/line-start triggers/);
+    expect(formatCheatSheet("en", "cmd", "plans", "copilot-cli").join("\n")).toMatch(
+      /skills \+ line-start Autopilot ON/,
+    );
+    expect(formatCheatSheet("en", "cmd", "plans", "grok-build").join("\n")).toMatch(
+      /skills \+ line-start Autopilot ON/,
+    );
     expect(formatHostActivationTips("kimi-code").join("\n")).toMatch(
       /\$KIMI_CODE_HOME|~\/\.kimi-code/,
     );
