@@ -11,9 +11,23 @@ Autopilot does **not** guarantee bug-free software. It raises confidence that wo
 From the app you want to instrument (`cwd` = that project):
 
 ```bash
-npx @autopilot-harness/cli init --platform cursor --yes
-# or: --platform claude-code | --platform codex | --platform kimi-code | --platform copilot-cli | --platform grok-build | --platform gemini-cli | --platform factory-droid | --platform hermes-agent | --platform antigravity | --platform pi | --platform devin
-# multi-host: init --yes --add-platform <id>
+npx @autopilot-harness/cli init --yes
+# Default host = Cursor. Commented `--platform` lines are alternatives; `--add-platform` only after first install.
+# Or pick a host explicitly:
+# npx @autopilot-harness/cli init --platform cursor --yes
+# npx @autopilot-harness/cli init --platform claude-code --yes
+# npx @autopilot-harness/cli init --platform codex --yes
+# npx @autopilot-harness/cli init --platform kimi-code --yes
+# npx @autopilot-harness/cli init --platform copilot-cli --yes
+# npx @autopilot-harness/cli init --platform grok-build --yes
+# npx @autopilot-harness/cli init --platform gemini-cli --yes
+# npx @autopilot-harness/cli init --platform factory-droid --yes
+# npx @autopilot-harness/cli init --platform hermes-agent --yes
+# npx @autopilot-harness/cli init --platform antigravity --yes
+# npx @autopilot-harness/cli init --platform pi --yes
+# npx @autopilot-harness/cli init --platform devin --yes
+# multi-host later (example; requires prior init):
+npx @autopilot-harness/cli init --yes --add-platform claude-code
 ```
 
 Interactive TUI (platform still defaults to cursor):

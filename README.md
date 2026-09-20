@@ -98,7 +98,9 @@ Prefer the scoped package (not a bare `npx autopilot-harness` name). Commands us
 
 ```bash
 cd /path/to/your-app
-# Cursor (IDE hooks)
+# Default host (Cursor IDE hooks). Host `--platform` lines below are alternatives — run one; `--add-platform` only after first install
+npx @autopilot-harness/cli init --yes
+# or pick a host explicitly
 npx @autopilot-harness/cli init --platform cursor --yes
 # or Claude Code (hooks shared across terminal + IDE)
 npx @autopilot-harness/cli init --platform claude-code --yes
@@ -123,7 +125,7 @@ npx @autopilot-harness/cli init --platform pi --yes
 # or Devin CLI (`.devin/hooks.v1.json` + `.devin/skills`; `$DEVIN_PROJECT_DIR`; CLI only — not Desktop; live continue ≥1× proved)
 npx @autopilot-harness/cli init --platform devin --yes
 # multi-host: after first init, add another without full re-init
-# npx @autopilot-harness/cli init --yes --add-platform claude-code
+npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
 # npx @autopilot-harness/cli init --yes --add-platform kimi-code
 # npx @autopilot-harness/cli init --yes --add-platform copilot-cli

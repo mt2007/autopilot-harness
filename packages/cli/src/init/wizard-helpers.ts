@@ -1324,6 +1324,7 @@ export function formatCheatSheet(
       "",
       "── 生效提示 ─────────────────────────────",
       ...hostActivationPlainLines(locale, ids).map((l) => `  ${l}`),
+      `  事后加平台：${cliCommand} init --yes --add-platform <id>（须先完成 init）`,
       "",
       `  详细：docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
     ];
@@ -1374,6 +1375,7 @@ export function formatCheatSheet(
     "",
     "── After install ────────────────────────",
     ...hostActivationPlainLines(locale, ids).map((l) => `  ${l}`),
+    `  Later: ${cliCommand} init --yes --add-platform <id> (requires prior init)`,
     "",
     `  See: docs/autopilot/quickstart.md · ${plansLabel}/README.md`,
   ];

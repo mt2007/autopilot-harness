@@ -606,18 +606,45 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(en).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(en).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
     expect(en).toContain(`not bare \`npx ${CLI_NAME}\``);
+    // Bare init --yes first; --platform next; --add-platform visible.
+    expect(en).toMatch(
+      /cd \/path\/to\/your-app\n# Default host[\s\S]*?npx @autopilot-harness\/cli init --yes\n# or pick a host explicitly\nnpx @autopilot-harness\/cli init --platform cursor --yes/,
+    );
+    expect(en).toMatch(
+      /\n(?!#)npx @autopilot-harness\/cli init --yes --add-platform claude-code\n/,
+    );
     expect(en).not.toMatch(/Today \(not on public npm yet\)/);
     expect(en).not.toMatch(/After npm publish/);
     expect(zh).toMatch(/\*\*安装\*\*/);
     expect(zh).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(zh).toContain(`npx ${NPM_PACKAGE_NAME} upgrade --dry-run`);
     expect(zh).toContain(`裸 \`npx ${CLI_NAME}\``);
+    expect(zh).toMatch(
+      /cd \/path\/to\/your-app\n# 默认宿主[\s\S]*?下方 `--platform` 行均为备选[\s\S]*?npx @autopilot-harness\/cli init --yes\n# 或显式指定宿主\nnpx @autopilot-harness\/cli init --platform cursor --yes/,
+    );
+    expect(zh).toMatch(
+      /\n(?!#)npx @autopilot-harness\/cli init --yes --add-platform claude-code\n/,
+    );
     expect(zh).not.toMatch(/今天（尚未上公共 npm）/);
     expect(zh).not.toMatch(/发布到 npm 之后/);
     for (const body of [en, zh]) {
+      const bareAt = body.indexOf(
+        "npx @autopilot-harness/cli init --yes\n",
+      );
+      const platformAt = body.indexOf(
+        "npx @autopilot-harness/cli init --platform cursor --yes",
+      );
+      const addAt = body.indexOf(
+        "npx @autopilot-harness/cli init --yes --add-platform claude-code",
+      );
+      expect(bareAt).toBeGreaterThanOrEqual(0);
+      expect(platformAt).toBeGreaterThan(bareAt);
+      expect(addAt).toBeGreaterThan(platformAt);
       expect(body).toMatch(/--platform kimi-code|platform kimi-code/);
       expect(body).toMatch(/Stop≤1\/turn|≤1\/turn/);
       expect(body).toMatch(/--add-platform kimi-code/);
+      expect(body).not.toMatch(/--add-platform destin\b/);
+      expect(body).not.toMatch(/--platform destin\b/);
       expect(body).toMatch(/--platform copilot-cli|platform copilot-cli/);
       expect(body).toMatch(/Stop consecutive ≤8/);
       expect(body).toMatch(/--add-platform copilot-cli/);
@@ -668,6 +695,28 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(cliReadme).toContain(`# ${NPM_PACKAGE_NAME}`);
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} init`);
+    expect(cliReadme).toMatch(
+      /npx @autopilot-harness\/cli init --yes\n# Default host = Cursor\. Commented/,
+    );
+    expect(cliReadme).toMatch(
+      /\n(?!#)npx @autopilot-harness\/cli init --yes --add-platform claude-code\n/,
+    );
+    {
+      const bareAt = cliReadme.indexOf(
+        "npx @autopilot-harness/cli init --yes\n",
+      );
+      const platformAt = cliReadme.indexOf(
+        "# npx @autopilot-harness/cli init --platform cursor --yes",
+      );
+      const addAt = cliReadme.indexOf(
+        "npx @autopilot-harness/cli init --yes --add-platform claude-code",
+      );
+      expect(bareAt).toBeGreaterThanOrEqual(0);
+      expect(platformAt).toBeGreaterThan(bareAt);
+      expect(addAt).toBeGreaterThan(platformAt);
+    }
+    expect(cliReadme).not.toMatch(/--add-platform destin\b/);
+    expect(cliReadme).not.toMatch(/--platform destin\b/);
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(cliReadme).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
     expect(cliReadme).toMatch(/Node\.js 22\+/);
@@ -816,6 +865,27 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/FACTORY_PROJECT_DIR/);
     expect(body).toMatch(/### Install/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
+    expect(body).toMatch(
+      /cd \/path\/to\/your-app\n# Default host[\s\S]*?npx @autopilot-harness\/cli init --yes\n# or pick a host explicitly\nnpx @autopilot-harness\/cli init --platform cursor --yes/,
+    );
+    expect(body).toMatch(
+      /\n(?!#)npx @autopilot-harness\/cli init --yes --add-platform claude-code\n/,
+    );
+    {
+      const bareAt = body.indexOf("npx @autopilot-harness/cli init --yes\n");
+      const platformAt = body.indexOf(
+        "npx @autopilot-harness/cli init --platform cursor --yes",
+      );
+      const addAt = body.indexOf(
+        "npx @autopilot-harness/cli init --yes --add-platform claude-code",
+      );
+      expect(bareAt).toBeGreaterThanOrEqual(0);
+      expect(platformAt).toBeGreaterThan(bareAt);
+      expect(addAt).toBeGreaterThan(platformAt);
+    }
+    // Guard against the destin/devin typo in install fences.
+    expect(body).not.toMatch(/--add-platform destin\b/);
+    expect(body).not.toMatch(/--platform destin\b/);
     expect(body).toMatch(/host-plan-bridge\.md/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} status`);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME} doctor`);
@@ -888,6 +958,26 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
 
   it("README.zh-CN keeps review.scope section and npm publish path", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
+    expect(body).toMatch(
+      /cd \/path\/to\/your-app\n# 默认宿主[\s\S]*?下方 `--platform` 行均为备选[\s\S]*?npx @autopilot-harness\/cli init --yes\n# 或显式指定宿主\nnpx @autopilot-harness\/cli init --platform cursor --yes/,
+    );
+    expect(body).toMatch(
+      /\n(?!#)npx @autopilot-harness\/cli init --yes --add-platform claude-code\n/,
+    );
+    {
+      const bareAt = body.indexOf("npx @autopilot-harness/cli init --yes\n");
+      const platformAt = body.indexOf(
+        "npx @autopilot-harness/cli init --platform cursor --yes",
+      );
+      const addAt = body.indexOf(
+        "npx @autopilot-harness/cli init --yes --add-platform claude-code",
+      );
+      expect(bareAt).toBeGreaterThanOrEqual(0);
+      expect(platformAt).toBeGreaterThan(bareAt);
+      expect(addAt).toBeGreaterThan(platformAt);
+    }
+    expect(body).not.toMatch(/--add-platform destin\b/);
+    expect(body).not.toMatch(/--platform destin\b/);
     expect(body).toMatch(/何时跑自审/);
     expect(body).toMatch(/review\.scope/);
     expect(body).toMatch(/\*\*`project`\*\*（默认）/);

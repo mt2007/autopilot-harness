@@ -339,11 +339,17 @@ dist/
     expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
       /After install/,
     );
+    expect(formatCheatSheet("en", "autopilot-harness").join("\n")).toMatch(
+      /Later: autopilot-harness init --yes --add-platform <id> \(requires prior init\)/,
+    );
     expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
       /locale set en/,
     );
     expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
       /生效提示/,
+    );
+    expect(formatCheatSheet("zh-CN", "autopilot-harness").join("\n")).toMatch(
+      /事后加平台：autopilot-harness init --yes --add-platform <id>（须先完成 init）/,
     );
   });
 

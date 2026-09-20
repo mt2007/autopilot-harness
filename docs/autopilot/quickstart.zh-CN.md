@@ -75,7 +75,9 @@ CLI 包：`@autopilot-harness/cli`（bin：`autopilot-harness`）。
 
 ```bash
 cd /path/to/your-app
-# Cursor（IDE hooks）
+# 默认宿主（Cursor IDE hooks）。下方 `--platform` 行均为备选 — 任选一条；`--add-platform` 仅在首次 init 之后
+npx @autopilot-harness/cli init --yes
+# 或显式指定宿主
 npx @autopilot-harness/cli init --platform cursor --yes
 # 或 Claude Code（hooks 在终端与 IDE 共用；surface: cli ≠ 仅 CLI）
 npx @autopilot-harness/cli init --platform claude-code --yes
@@ -96,7 +98,7 @@ npx @autopilot-harness/cli init --platform hermes-agent --yes
 # 或 Antigravity（`.agents/hooks.json` + `.agents/skills` + `.agents/bin` shim；Stop `decision:continue`；0.10.1 活链已证）
 npx @autopilot-harness/cli init --platform antigravity --yes
 # 第一个宿主装好后再加：
-# npx @autopilot-harness/cli init --yes --add-platform claude-code
+npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
 # npx @autopilot-harness/cli init --yes --add-platform kimi-code
 # npx @autopilot-harness/cli init --yes --add-platform copilot-cli

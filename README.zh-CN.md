@@ -100,7 +100,9 @@ Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、
 
 ```bash
 cd /path/to/your-app
-# Cursor（IDE hooks）
+# 默认宿主（Cursor IDE hooks）。下方 `--platform` 行均为备选 — 任选一条；`--add-platform` 仅在首次 init 之后
+npx @autopilot-harness/cli init --yes
+# 或显式指定宿主
 npx @autopilot-harness/cli init --platform cursor --yes
 # 或 Claude Code（hooks 在终端与 IDE 共用）
 npx @autopilot-harness/cli init --platform claude-code --yes
@@ -125,7 +127,7 @@ npx @autopilot-harness/cli init --platform pi --yes
 # 或 Devin CLI（`.devin/hooks.v1.json` + `.devin/skills`；`$DEVIN_PROJECT_DIR`；仅 CLI — 不测 Desktop；活链 continue ≥1× 已证）
 npx @autopilot-harness/cli init --platform devin --yes
 # 多宿主：第一个 init 之后再加（不必整仓重装）
-# npx @autopilot-harness/cli init --yes --add-platform claude-code
+npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
 # npx @autopilot-harness/cli init --yes --add-platform kimi-code
 # npx @autopilot-harness/cli init --yes --add-platform copilot-cli
@@ -135,6 +137,7 @@ npx @autopilot-harness/cli init --platform devin --yes
 # npx @autopilot-harness/cli init --yes --add-platform hermes-agent
 # npx @autopilot-harness/cli init --yes --add-platform antigravity
 # npx @autopilot-harness/cli init --yes --add-platform pi
+# npx @autopilot-harness/cli init --yes --add-platform devin
 npx @autopilot-harness/cli status
 npx @autopilot-harness/cli doctor
 ```

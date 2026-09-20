@@ -75,7 +75,9 @@ CLI package: `@autopilot-harness/cli` (bin: `autopilot-harness`).
 
 ```bash
 cd /path/to/your-app
-# Cursor (IDE hooks)
+# Default host (Cursor IDE hooks). Host `--platform` lines below are alternatives — run one; `--add-platform` only after first install
+npx @autopilot-harness/cli init --yes
+# or pick a host explicitly
 npx @autopilot-harness/cli init --platform cursor --yes
 # or Claude Code (hooks shared across terminal + IDE; surface: cli ≠ CLI-only)
 npx @autopilot-harness/cli init --platform claude-code --yes
@@ -96,7 +98,7 @@ npx @autopilot-harness/cli init --platform hermes-agent --yes
 # or Antigravity (`.agents/hooks.json` + `.agents/skills` + `.agents/bin` shim; Stop `decision:continue`; live-proved in 0.10.1)
 npx @autopilot-harness/cli init --platform antigravity --yes
 # multi-host after the first install:
-# npx @autopilot-harness/cli init --yes --add-platform claude-code
+npx @autopilot-harness/cli init --yes --add-platform claude-code
 # npx @autopilot-harness/cli init --yes --add-platform codex
 # npx @autopilot-harness/cli init --yes --add-platform kimi-code
 # npx @autopilot-harness/cli init --yes --add-platform copilot-cli
