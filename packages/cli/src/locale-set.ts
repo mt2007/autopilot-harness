@@ -20,7 +20,7 @@ import {
 import { resolveTemplatesRoot as resolveTemplatesRootFromCli } from "./template-paths.js";
 import { applyFactorySkillFrontmatter, applyDevinSkillFrontmatter } from "./init/install.js";
 import { readConfigPlatformsOrThrow } from "./init/config-merge.js";
-import { platformsWantAgentsSkills, platformsWantInstallableHost, type HostSkillsParent } from "./init/platforms.js";
+import { platformsWantAgentsSkills, platformsWantInstallableHost, hostSkillsWantDisableModelInvocation, type HostSkillsParent } from "./init/platforms.js";
 import { resolveHermesHome } from "./init/hermes-hooks-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -228,7 +228,7 @@ function rewriteProjectSkills(
       ),
       descriptions[name] ?? name,
     );
-    if (hostSkillsParent === ".factory") {
+    if (hostSkillsWantDisableModelInvocation(hostSkillsParent)) {
       body = applyFactorySkillFrontmatter(body);
     }
     if (hostSkillsParent === ".devin") {

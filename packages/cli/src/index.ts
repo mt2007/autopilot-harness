@@ -239,6 +239,7 @@ export {
   configWantsInstallableHost,
   platformsWantAgentsSkills,
   platformsWantInstallableHost,
+  hostSkillsWantDisableModelInvocation,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
   ensureRunnerConfigKeys,

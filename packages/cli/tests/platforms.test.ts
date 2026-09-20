@@ -6,6 +6,7 @@ import {
   configWantsInstallableHost,
   platformsWantAgentsSkills,
   platformsWantInstallableHost,
+  hostSkillsWantDisableModelInvocation,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
   formatBindingOptionLabel,
@@ -192,11 +193,17 @@ describe("platforms helpers", () => {
       /hooks shared: terminal \+ IDE/,
     );
     expect(formatBindingOptionLabel({ id: "codex", surface: "cli" })).toMatch(
-      /Codex \(CLI hooks\.json\)/,
+      /Codex \(CLI hooks\.json \+ \.agents\/skills\)/,
     );
     expect(
       formatBindingOptionLabel({ id: "kimi-code", surface: "cli" }),
-    ).toMatch(/Kimi Code.*config\.toml/);
+    ).toMatch(/Kimi Code.*config\.toml.*\.agents\/skills/);
+    expect(
+      formatBindingOptionLabel({ id: "copilot-cli", surface: "cli" }),
+    ).toMatch(/\.github\/hooks \+ \.github\/skills/);
+    expect(
+      formatBindingOptionLabel({ id: "grok-build", surface: "cli" }),
+    ).toMatch(/\.grok\/hooks \+ \.grok\/skills/);
     expect(
       formatBindingOptionLabel({ id: "gemini-cli", surface: "cli" }),
     ).toMatch(/\.gemini\/settings\.json \+ \.gemini\/skills/);
@@ -208,6 +215,14 @@ describe("platforms helpers", () => {
     ).toMatch(
       /\$HERMES_HOME\/config\.yaml \+ \$HERMES_HOME\/skills/,
     );
+    expect(hostSkillsWantDisableModelInvocation(".factory")).toBe(true);
+    expect(hostSkillsWantDisableModelInvocation(".grok")).toBe(true);
+    expect(hostSkillsWantDisableModelInvocation(".github")).toBe(true);
+    expect(hostSkillsWantDisableModelInvocation(".agents")).toBe(true);
+    expect(hostSkillsWantDisableModelInvocation(".cursor")).toBe(false);
+    expect(hostSkillsWantDisableModelInvocation(".claude")).toBe(false);
+    expect(hostSkillsWantDisableModelInvocation(".gemini")).toBe(false);
+    expect(hostSkillsWantDisableModelInvocation(".devin")).toBe(false);
   });
 
   it("caps platforms list length and does not drop existing for new adds", () => {

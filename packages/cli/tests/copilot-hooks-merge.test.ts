@@ -215,6 +215,12 @@ describe("copilot init wiring", () => {
         path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
       ),
     ).toBe(true);
+    expect(
+      fs.readFileSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toMatch(/^disable-model-invocation:\s*true$/m);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");

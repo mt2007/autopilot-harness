@@ -441,6 +441,12 @@ describe("antigravity init wiring", () => {
         fs.existsSync(path.join(root, ".agents", "skills", name, "SKILL.md")),
       ).toBe(true);
     }
+    expect(
+      fs.readFileSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toMatch(/^disable-model-invocation:\s*true$/m);
     expect(fs.existsSync(path.join(root, ".agent"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);

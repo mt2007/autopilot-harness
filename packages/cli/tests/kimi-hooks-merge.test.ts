@@ -327,6 +327,12 @@ describe("kimi init wiring", () => {
         path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
       ),
     ).toBe(true);
+    expect(
+      fs.readFileSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toMatch(/^disable-model-invocation:\s*true$/m);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

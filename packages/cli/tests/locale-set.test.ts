@@ -501,6 +501,7 @@ describe("locale set", () => {
       "utf8",
     );
     expect(skill).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(skill).not.toMatch(/^disable-model-invocation:/m);
     const config = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),
       "utf8",
@@ -639,6 +640,12 @@ describe("locale set", () => {
       ),
     ).toContain(skillDescription("zh-CN", "autopilot-on"));
     expect(
+      fs.readFileSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toMatch(/^disable-model-invocation:\s*true$/m);
+    expect(
       fs.readFileSync(path.join(root, ".autopilot", "config.yml"), "utf8"),
     ).toMatch(/locale:\s*zh-CN/);
   });
@@ -667,6 +674,12 @@ describe("locale set", () => {
           "utf8",
         ),
       ).toContain(skillDescription("zh-CN", "autopilot-on"));
+      expect(
+        fs.readFileSync(
+          path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+          "utf8",
+        ),
+      ).toMatch(/^disable-model-invocation:\s*true$/m);
       expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.KIMI_CODE_HOME;
@@ -695,6 +708,12 @@ describe("locale set", () => {
         "utf8",
       ),
     ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(
+      fs.readFileSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toMatch(/^disable-model-invocation:\s*true$/m);
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
   });
 
@@ -718,6 +737,12 @@ describe("locale set", () => {
         "utf8",
       ),
     ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(
+      fs.readFileSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toMatch(/^disable-model-invocation:\s*true$/m);
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
   });
 

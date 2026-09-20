@@ -145,6 +145,22 @@ export type HostSkillsParent =
   | ".grok";
 
 /**
+ * Hosts that stamp `disable-model-invocation: true` on Autopilot SKILL.md
+ * (Factory / Grok / Copilot / shared `.agents`). Install and locale-set must
+ * stay aligned.
+ */
+export function hostSkillsWantDisableModelInvocation(
+  parent: HostSkillsParent,
+): boolean {
+  return (
+    parent === ".factory" ||
+    parent === ".grok" ||
+    parent === ".github" ||
+    parent === ".agents"
+  );
+}
+
+/**
  * Whether Autopilot should write/share project `.agents/skills/autopilot-*`.
  * Shared by Antigravity, Pi, Codex, and Kimi Code (write once when any is enabled).
  */
@@ -221,16 +237,16 @@ export function formatBindingOptionLabel(b: PlatformBinding): string {
     return "Claude Code (hooks shared: terminal + IDE)";
   }
   if (id === "codex") {
-    return "Codex (CLI hooks.json)";
+    return "Codex (CLI hooks.json + .agents/skills)";
   }
   if (id === "kimi-code") {
-    return "Kimi Code (user-home config.toml hooks)";
+    return "Kimi Code (user-home config.toml hooks + .agents/skills)";
   }
   if (id === "copilot-cli") {
-    return "GitHub Copilot CLI (.github/hooks)";
+    return "GitHub Copilot CLI (.github/hooks + .github/skills)";
   }
   if (id === "grok-build") {
-    return "Grok Build CLI (.grok/hooks)";
+    return "Grok Build CLI (.grok/hooks + .grok/skills)";
   }
   if (id === "gemini-cli") {
     return "Gemini CLI (.gemini/settings.json + .gemini/skills)";

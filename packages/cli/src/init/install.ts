@@ -98,6 +98,7 @@ import {
   normalizeBinding,
   platformsWantInstallableHost,
   wantAgentsSkillsFromFlags,
+  hostSkillsWantDisableModelInvocation,
   type HostSkillsParent,
   primaryBinding,
   type PlatformBinding,
@@ -1160,15 +1161,17 @@ function renderSkill(template: string, description: string): string {
 }
 
 /**
- * Factory thin adapt (research): keep shared body; set
- * `disable-model-invocation: true` so slash `/autopilot-*` stays user-invocable
- * (default) while discouraging model auto-pick (auto-attach ≠ ON).
+ * Thin adapt for hosts that honor (or ignore) `disable-model-invocation`:
+ * keep shared body; set `disable-model-invocation: true` so slash `/autopilot-*`
+ * stays user-invocable (default) while discouraging model auto-pick
+ * (auto-attach ≠ ON). Used for Factory, Grok, Copilot, and shared `.agents`
+ * (Antigravity / Pi / Codex / Kimi).
  */
 export function applyFactorySkillFrontmatter(body: string): string {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/.exec(body);
   if (!match) {
     throw new Error(
-      "Factory skill template is missing a closed YAML frontmatter block",
+      "Skill template is missing a closed YAML frontmatter block",
     );
   }
   let fm = match[1]!;
@@ -1283,7 +1286,7 @@ function installSkills(
   locale: InitLocale,
   /** Host skills root relative to project, e.g. `.cursor` or `.gemini`. */
   hostSkillsParent: HostSkillsParent,
-  opts?: { factoryFrontmatter?: boolean; devinFrontmatter?: boolean },
+  opts?: { devinFrontmatter?: boolean },
 ): string[] {
   const written: string[] = [];
   const descriptions = skillDescriptions(locale);
@@ -1310,7 +1313,7 @@ function installSkills(
       ),
       descriptions[name] ?? name,
     );
-    if (opts?.factoryFrontmatter) {
+    if (hostSkillsWantDisableModelInvocation(hostSkillsParent)) {
       body = applyFactorySkillFrontmatter(body);
     }
     if (opts?.devinFrontmatter) {
@@ -2404,9 +2407,7 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       }
       if (wantFactory) {
         written.push(
-          ...installSkills(templatesRoot, projectRoot, locale, ".factory", {
-            factoryFrontmatter: true,
-          }),
+          ...installSkills(templatesRoot, projectRoot, locale, ".factory"),
         );
       }
       if (wantDevin) {
