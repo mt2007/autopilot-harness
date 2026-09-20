@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import { stripAutopilotHooks } from "../src/init/hooks-merge.js";
 import type { HooksFile } from "../src/init/types.js";
 import { uninstallProject } from "../src/uninstall.js";
@@ -987,5 +987,47 @@ describe("uninstallProject", () => {
         path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
       ),
     ).toBe(false);
+  });
+
+  it("Cursor-only uninstall strips leftover Copilot/Grok/Agents Autopilot skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    // Plant leftover Autopilot skills from prior Copilot/Grok/Codex|Kimi enablement.
+    for (const parent of [".github", ".grok", ".agents"] as const) {
+      for (const name of AUTOPILOT_SKILL_NAMES) {
+        const skillDir = path.join(root, parent, "skills", name);
+        fs.mkdirSync(skillDir, { recursive: true });
+        fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# leftover\n", "utf8");
+      }
+      const foreign = path.join(root, parent, "skills", "other-skill");
+      fs.mkdirSync(foreign, { recursive: true });
+      fs.writeFileSync(path.join(foreign, "SKILL.md"), "# keep\n", "utf8");
+    }
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    for (const parent of [".github", ".grok", ".agents", ".cursor"] as const) {
+      for (const name of AUTOPILOT_SKILL_NAMES) {
+        expect(
+          fs.existsSync(path.join(root, parent, "skills", name)),
+        ).toBe(false);
+      }
+    }
+    for (const parent of [".github", ".grok", ".agents"] as const) {
+      expect(
+        fs.existsSync(
+          path.join(root, parent, "skills", "other-skill", "SKILL.md"),
+        ),
+      ).toBe(true);
+    }
   });
 });

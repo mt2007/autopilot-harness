@@ -16,7 +16,7 @@ import {
   summarizeCopilotAutopilotHooks,
   validateCopilotHooksShape,
 } from "../src/init/copilot-hooks-merge.js";
-import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import { uninstallProject } from "../src/uninstall.js";
 import {
   formatHostActivationTips,
@@ -285,6 +285,14 @@ describe("copilot init wiring", () => {
     );
     expect(cfg).toMatch(/id:\s*cursor/);
     expect(cfg).toMatch(/id:\s*copilot-cli/);
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      expect(
+        fs.existsSync(path.join(root, ".github", "skills", name, "SKILL.md")),
+      ).toBe(true);
+      expect(
+        fs.existsSync(path.join(root, ".cursor", "skills", name, "SKILL.md")),
+      ).toBe(true);
+    }
   });
 
   it("fingerprint uninstall strips Autopilot Copilot hooks and keeps foreign", () => {

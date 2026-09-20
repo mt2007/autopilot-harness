@@ -26,7 +26,7 @@ import {
   autopilotHookCommandLine,
   HOOK_PLATFORM_KIMI_CODE,
 } from "../src/init/hooks-merge.js";
-import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import { defaultConfigYaml } from "../src/init/default-config.js";
 import {
   formatHostActivationTips,
@@ -380,6 +380,14 @@ describe("kimi init wiring", () => {
     );
     expect(cfg).toMatch(/id:\s*cursor/);
     expect(cfg).toMatch(/id:\s*kimi-code/);
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      expect(
+        fs.existsSync(path.join(root, ".agents", "skills", name, "SKILL.md")),
+      ).toBe(true);
+      expect(
+        fs.existsSync(path.join(root, ".cursor", "skills", name, "SKILL.md")),
+      ).toBe(true);
+    }
   });
 
   it("--force refreshes kimi toml without stacking or dropping foreign hooks", () => {

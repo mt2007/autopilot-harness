@@ -458,6 +458,8 @@ describe("devin init / add-platform / doctor / uninstall", () => {
     expect(joined).toMatch(
       /WARN\s+Autopilot skills under both \.devin\/skills and \.agents\/skills/i,
     );
+    expect(joined).toMatch(/Antigravity\/Pi\/Codex\/Kimi/);
+    expect(joined).not.toMatch(/does not write \.agents by default/i);
   });
 
   it("doctor WARNs config.json Autopilot hooks residual", () => {

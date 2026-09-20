@@ -853,7 +853,7 @@ MUTATED_FACTORY
     expect(fs.existsSync(path.join(root, ".agent"))).toBe(false);
   });
 
-  it("upgrade merges missing .gemini/skills/**, .factory/skills/**, and .agents/skills/** into .autopilotignore", () => {
+  it("upgrade merges missing host skills ignore patterns into .autopilotignore", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-ignore-up-"));
     expect(
       installInitYes({
@@ -882,6 +882,8 @@ MUTATED_FACTORY
     expect(before).not.toMatch(/\.gemini\/skills\/\*\*/);
     expect(before).not.toMatch(/\.factory\/skills\/\*\*/);
     expect(before).not.toMatch(/\.agents\/skills\/\*\*/);
+    expect(before).not.toMatch(/\.github\/skills\/\*\*/);
+    expect(before).not.toMatch(/\.grok\/skills\/\*\*/);
 
     const r = upgradeProject({ projectRoot: root, dryRun: false });
     expect(r.ok).toBe(true);
@@ -891,6 +893,8 @@ MUTATED_FACTORY
     expect(after).toMatch(/\.factory\/skills\/\*\*/);
     expect(after).toMatch(/\.agents\/skills\/\*\*/);
     expect(after).toMatch(/\.agents\/bin\/\*\*/);
+    expect(after).toMatch(/\.github\/skills\/\*\*/);
+    expect(after).toMatch(/\.grok\/skills\/\*\*/);
     expectAllSkills(root, ".gemini");
     expectNoSkills(root, ".factory");
     expectNoSkills(root, ".agents");

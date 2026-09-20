@@ -18,7 +18,7 @@ import {
   summarizeGrokAutopilotHooks,
   validateGrokHooksShape,
 } from "../src/init/grok-hooks-merge.js";
-import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import { uninstallProject } from "../src/uninstall.js";
 import {
   formatHostActivationTips,
@@ -388,6 +388,14 @@ describe("grok init wiring", () => {
     );
     expect(cfg).toMatch(/id:\s*cursor/);
     expect(cfg).toMatch(/id:\s*grok-build/);
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      expect(
+        fs.existsSync(path.join(root, ".grok", "skills", name, "SKILL.md")),
+      ).toBe(true);
+      expect(
+        fs.existsSync(path.join(root, ".cursor", "skills", name, "SKILL.md")),
+      ).toBe(true);
+    }
   });
 
   it("fingerprint uninstall unlinks vacant Grok hooks file; keeps siblings", () => {
