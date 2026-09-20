@@ -833,7 +833,7 @@ review:
     expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(true);
   });
 
-  it("dry-run lists Codex hooks action when codex is enabled (no skills)", () => {
+  it("dry-run lists Codex hooks + .agents skills when codex is enabled", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -849,6 +849,7 @@ review:
     if (!r.ok) return;
     expect(r.actions.some((a) => /\.codex\/hooks\.json/i.test(a))).toBe(true);
     expect(r.actions.some((a) => /\.codex\/skills/i.test(a))).toBe(false);
+    expect(r.actions.some((a) => /\.agents\/skills/i.test(a))).toBe(true);
     expect(r.actions.some((a) => /\.cursor\/hooks\.json/i.test(a))).toBe(false);
   });
 
@@ -973,7 +974,7 @@ review:
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
-  it("dry-run lists Kimi config.toml action when kimi-code is enabled (no skills)", () => {
+  it("dry-run lists Kimi config.toml + .agents skills when kimi-code is enabled", () => {
     root = tmpProject();
     const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-up-dry-"));
     const prev = process.env.KIMI_CODE_HOME;
@@ -996,6 +997,7 @@ review:
       ).toBe(true);
       expect(r.actions.some((a) => /\.codex\/skills/i.test(a))).toBe(false);
       expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
+      expect(r.actions.some((a) => /\.agents\/skills/i.test(a))).toBe(true);
     } finally {
       if (prev === undefined) delete process.env.KIMI_CODE_HOME;
       else process.env.KIMI_CODE_HOME = prev;
@@ -1035,7 +1037,7 @@ review:
     }
   });
 
-  it("dry-run lists Copilot hooks action when copilot-cli is enabled (no skills)", () => {
+  it("dry-run lists Copilot hooks + .github skills when copilot-cli is enabled", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -1052,6 +1054,7 @@ review:
     expect(
       r.actions.some((a) => /\.github\/hooks\/autopilot-harness\.json/i.test(a)),
     ).toBe(true);
+    expect(r.actions.some((a) => /\.github\/skills/i.test(a))).toBe(true);
     expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
     expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
   });
@@ -1201,7 +1204,7 @@ review:
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
-  it("dry-run lists Grok hooks action when grok-build is enabled (no skills)", () => {
+  it("dry-run lists Grok hooks + .grok skills when grok-build is enabled", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -1218,6 +1221,7 @@ review:
     expect(
       r.actions.some((a) => /\.grok\/hooks\/autopilot-harness\.json/i.test(a)),
     ).toBe(true);
+    expect(r.actions.some((a) => /\.grok\/skills/i.test(a))).toBe(true);
     expect(r.actions.some((a) => /\.cursor\/skills/i.test(a))).toBe(false);
     expect(r.actions.some((a) => /\.claude\/skills/i.test(a))).toBe(false);
   });

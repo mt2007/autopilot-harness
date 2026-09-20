@@ -385,10 +385,16 @@ describe("copilot contract matrix", () => {
       "utf8",
     );
     expect(ignore).toMatch(/\.github\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.github\/skills\/\*\*/);
 
     const hooksPath = path.join(root, ".github", "hooks", "autopilot-harness.json");
     expect(fs.existsSync(hooksPath)).toBe(true);
     expect(COPILOT_HOOKS_REL_PATH).toBe(".github/hooks/autopilot-harness.json");
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
 
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(true);
@@ -405,7 +411,7 @@ describe("copilot contract matrix", () => {
     );
   });
 
-  it("add-platform copilot-cli keeps Cursor hooks and wires Copilot file (no skills)", () => {
+  it("add-platform copilot-cli keeps Cursor hooks and wires Copilot file + skills", () => {
     root = tmpProject();
     expect(
       installInitYes({
@@ -455,7 +461,11 @@ describe("copilot contract matrix", () => {
     );
 
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(true);
-    expect(fs.existsSync(path.join(root, ".github", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const cfg = fs.readFileSync(

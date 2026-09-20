@@ -131,6 +131,61 @@ export function platformsWantInstallableHost(
 }
 
 /**
+ * Project skills parent dirs Autopilot may write under `…/skills/autopilot-*`.
+ * Hermes uses `$HERMES_HOME/skills` instead (not in this union).
+ */
+export type HostSkillsParent =
+  | ".cursor"
+  | ".claude"
+  | ".agents"
+  | ".gemini"
+  | ".factory"
+  | ".devin"
+  | ".github"
+  | ".grok";
+
+/**
+ * Whether Autopilot should write/share project `.agents/skills/autopilot-*`.
+ * Shared by Antigravity, Pi, Codex, and Kimi Code (write once when any is enabled).
+ */
+export function platformsWantAgentsSkills(
+  platforms: readonly PlatformBinding[],
+): boolean {
+  return (
+    platformsWantInstallableHost(platforms, "antigravity") ||
+    platformsWantInstallableHost(platforms, "pi") ||
+    platformsWantInstallableHost(platforms, "codex") ||
+    platformsWantInstallableHost(platforms, "kimi-code")
+  );
+}
+
+/**
+ * Doctor/upgrade dry-run helper for `.agents/skills`.
+ * Uses {@link configWantsInstallableHost} per host (empty list → Cursor-only,
+ * so this stays false — Cursor skills live under `.cursor/skills`).
+ */
+export function configWantsAgentsSkills(
+  platforms: readonly PlatformBinding[],
+): boolean {
+  return (
+    configWantsInstallableHost(platforms, "antigravity") ||
+    configWantsInstallableHost(platforms, "pi") ||
+    configWantsInstallableHost(platforms, "codex") ||
+    configWantsInstallableHost(platforms, "kimi-code")
+  );
+}
+
+/** Boolean-flag form for install/uninstall call sites that already computed wants. */
+export function wantAgentsSkillsFromFlags(flags: {
+  antigravity: boolean;
+  pi: boolean;
+  codex: boolean;
+  kimi: boolean;
+}): boolean {
+  return flags.antigravity || flags.pi || flags.codex || flags.kimi;
+}
+
+/**
  * Effective primary host: first installable binding in list order, else first
  * entry, else Cursor IDE. Used for status/upgrade hints — not written back as
  * top-level `platform`/`surface` scalars.

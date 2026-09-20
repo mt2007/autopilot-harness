@@ -96,7 +96,19 @@ describe("isAutopilotIgnoredPath", () => {
     ).toBe(true);
     expect(
       isAutopilotIgnoredPath(
+        ".github/skills/autopilot-on/SKILL.md",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
         ".grok/hooks/autopilot-harness.json",
+        DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
+      ),
+    ).toBe(true);
+    expect(
+      isAutopilotIgnoredPath(
+        ".grok/skills/autopilot-on/SKILL.md",
         DEFAULT_AUTOPILOT_IGNORE_PATTERNS,
       ),
     ).toBe(true);

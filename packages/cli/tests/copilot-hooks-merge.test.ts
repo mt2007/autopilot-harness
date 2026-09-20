@@ -182,7 +182,7 @@ describe("copilot init wiring", () => {
     root = "";
   });
 
-  it("init --platform copilot-cli writes dual-OS hooks and skip skills", () => {
+  it("init --platform copilot-cli writes dual-OS hooks and .github skills", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-copilot-init-"));
     const r = installInitYes({
       projectRoot: root,
@@ -210,10 +210,16 @@ describe("copilot init wiring", () => {
 
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".claude", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.github\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.github\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

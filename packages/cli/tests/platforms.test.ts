@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
+  configWantsAgentsSkills,
   configWantsInstallableHost,
+  platformsWantAgentsSkills,
   platformsWantInstallableHost,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
@@ -15,6 +17,7 @@ import {
   parsePlatformBindingsFromConfig,
   parsePlatformsCliList,
   readConfigInstallHints,
+  wantAgentsSkillsFromFlags,
 } from "../src/index.js";
 import { readConfigPlatformsOrThrow } from "../src/init/config-merge.js";
 
@@ -59,6 +62,48 @@ describe("platforms helpers", () => {
         "claude-code",
       ),
     ).toBe(true);
+  });
+
+  it("platformsWantAgentsSkills and configWantsAgentsSkills cover shared hosts", () => {
+    expect(platformsWantAgentsSkills([])).toBe(false);
+    expect(configWantsAgentsSkills([])).toBe(false);
+    expect(
+      platformsWantAgentsSkills([{ id: "codex", surface: "cli" }]),
+    ).toBe(true);
+    expect(configWantsAgentsSkills([{ id: "codex", surface: "cli" }])).toBe(
+      true,
+    );
+    expect(
+      platformsWantAgentsSkills([{ id: "kimi-code", surface: "cli" }]),
+    ).toBe(true);
+    expect(
+      platformsWantAgentsSkills([{ id: "kimi-code", surface: "ide" }]),
+    ).toBe(false);
+    expect(
+      platformsWantAgentsSkills([{ id: "antigravity", surface: "cli" }]),
+    ).toBe(true);
+    expect(platformsWantAgentsSkills([{ id: "pi", surface: "cli" }])).toBe(
+      true,
+    );
+    expect(
+      platformsWantAgentsSkills([{ id: "copilot-cli", surface: "cli" }]),
+    ).toBe(false);
+    expect(
+      wantAgentsSkillsFromFlags({
+        antigravity: false,
+        pi: false,
+        codex: true,
+        kimi: false,
+      }),
+    ).toBe(true);
+    expect(
+      wantAgentsSkillsFromFlags({
+        antigravity: false,
+        pi: false,
+        codex: false,
+        kimi: false,
+      }),
+    ).toBe(false);
   });
 
   it("platformsWantInstallableHost does not fall back to Cursor", () => {

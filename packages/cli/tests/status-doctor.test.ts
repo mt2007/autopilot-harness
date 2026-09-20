@@ -1724,6 +1724,7 @@ describe("runDoctor", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(/OK\s+\.codex\/hooks\.json Autopilot entries/);
+    expect(joined).toMatch(/OK\s+skills \(5\)/);
     expect(joined).toMatch(/\/hooks trust/i);
     expect(joined).toMatch(/re-trust/i);
     expect(joined).not.toMatch(/FAIL\s+\.codex\/hooks\.json missing/i);
@@ -1913,6 +1914,7 @@ describe("runDoctor", () => {
       expect(ok).toBe(true);
       const joined = lines.join("\n");
       expect(joined).toMatch(/OK\s+Kimi Code config\.toml Autopilot entries/);
+      expect(joined).toMatch(/OK\s+skills \(5\)/);
       expect(joined).toMatch(/Stop-continue.*≤1|≤1\/turn/i);
       expect(joined).toMatch(/confirm_rounds:\s*1/);
       expect(joined).toMatch(/\/hooks/i);
@@ -2353,6 +2355,7 @@ describe("runDoctor", () => {
     expect(joined).toMatch(
       /OK\s+\.github\/hooks\/autopilot-harness\.json Autopilot entries/,
     );
+    expect(joined).toMatch(/OK\s+skills \(5\)/);
     expect(joined).toMatch(/Stop-continue consecutive block cap ≤8/i);
     expect(joined).toMatch(/Restart Copilot CLI/i);
     expect(joined).not.toMatch(
@@ -2727,6 +2730,7 @@ describe("runDoctor", () => {
     expect(joined).toMatch(
       /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
     );
+    expect(joined).toMatch(/OK\s+skills \(5\)/);
     expect(joined).toMatch(/Stop-continue per-turn block cap ≤8/i);
     expect(joined).toMatch(/hooks-trust|--trust/i);
     expect(joined).toMatch(/Reload Grok Build|new session/i);

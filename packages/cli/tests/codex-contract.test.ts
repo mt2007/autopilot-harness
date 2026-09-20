@@ -312,6 +312,11 @@ describe("codex contract matrix", () => {
     expect(codex).toMatch(/--platform codex/);
     expect(codex).not.toMatch(/"timeout"\s*:/);
     expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

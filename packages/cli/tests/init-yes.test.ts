@@ -441,7 +441,7 @@ describe("init --yes install", () => {
     expect(config).toMatch(/surface:\s*cli/);
   });
 
-  it("inits codex with .codex/hooks.json matcher, no timeout, no skills/AGENTS.md", () => {
+  it("inits codex with .codex/hooks.json matcher, no timeout, Autopilot skills under .agents", () => {
     root = tmpProject();
     const result = installInitYes({
       projectRoot: root,
@@ -465,8 +465,13 @@ describe("init --yes install", () => {
     expect(json).toMatch(/--event Stop/);
     expect(json).not.toMatch(/StopFailure/);
     expect(json).not.toMatch(/"timeout"/);
-    // Stable skills dirs only — Codex does not get Autopilot skills.
+    // Codex Autopilot skills live under shared .agents/skills (not .codex/skills).
     expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(false);
     // Never touch config.toml hooks representation.
@@ -517,6 +522,11 @@ describe("init --yes install", () => {
     );
     expect(JSON.stringify(codexHooks.hooks)).toMatch(/--platform codex/);
     expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
 
     const config = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

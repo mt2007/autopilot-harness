@@ -21,7 +21,9 @@
 .claude/**
 .codex/**
 .github/hooks/**
+.github/skills/**
 .grok/hooks/**
+.grok/skills/**
 .gemini/settings.json
 .gemini/skills/**
 .factory/hooks.json

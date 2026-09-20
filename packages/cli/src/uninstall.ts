@@ -80,6 +80,7 @@ import { readConfigInstallHints } from "./init/config-merge.js";
 import {
   configWantsInstallableHost,
   stripRunnerConfigTraces,
+  wantAgentsSkillsFromFlags,
 } from "./init/platforms.js";
 import {
   PI_EXTENSION_REL_PATH,
@@ -933,12 +934,14 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
     const codexHooksPath = path.join(codexDir, "hooks.json");
     const githubDir = path.join(projectRoot, ".github");
     const githubHooksDir = path.join(githubDir, "hooks");
+    const githubSkillsRoot = path.join(githubDir, "skills");
     const copilotHooksPath = path.join(
       githubHooksDir,
       "autopilot-harness.json",
     );
     const grokDir = path.join(projectRoot, ".grok");
     const grokHooksDir = path.join(grokDir, "hooks");
+    const grokSkillsRoot = path.join(grokDir, "skills");
     const grokHooksPath = path.join(grokHooksDir, "autopilot-harness.json");
     const geminiDir = path.join(projectRoot, ".gemini");
     const geminiSettingsPath = path.join(geminiDir, "settings.json");
@@ -970,11 +973,16 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       runner: wantRunner,
       devin: wantDevin,
     } = projectWantsInstallableHosts(configPath);
-    const wantAgentsSkills = wantAntigravity || wantPi;
+    const wantAgentsSkills = wantAgentsSkillsFromFlags({
+      antigravity: wantAntigravity,
+      pi: wantPi,
+      codex: wantCodex,
+      kimi: wantKimi,
+    });
     // Only fail-closed on .claude/.codex/.github/.grok/.gemini/.factory/.devin/.agents trees when config declares
     // that host. Leftover Cursor-only host dirs must not block uninstall —
     // soft-skip below. Kimi/Hermes use user-home config (outside project) —
-    // strip separately. Pi shares .agents/skills with Antigravity.
+    // strip separately. .agents/skills shared by Antigravity/Pi/Codex/Kimi.
 
     // Refuse symlink-swapped host dirs before any mutate/rm (escape + partial-strip).
     // isRealDirectory is false for symlinks — probe with lstat so links are caught.
@@ -998,10 +1006,15 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         dirs.push(
           [githubDir, ".github/"],
           [githubHooksDir, ".github/hooks/"],
+          [githubSkillsRoot, ".github/skills/"],
         );
       }
       if (wantGrok) {
-        dirs.push([grokDir, ".grok/"], [grokHooksDir, ".grok/hooks/"]);
+        dirs.push(
+          [grokDir, ".grok/"],
+          [grokHooksDir, ".grok/hooks/"],
+          [grokSkillsRoot, ".grok/skills/"],
+        );
       }
       if (wantGemini) {
         dirs.push(
@@ -1060,6 +1073,20 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
             projectRoot,
             path.join(claudeSkillsRoot, name),
             `.claude/skills/${name}`,
+          );
+        }
+        if (wantCopilot) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(githubSkillsRoot, name),
+            `.github/skills/${name}`,
+          );
+        }
+        if (wantGrok) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            path.join(grokSkillsRoot, name),
+            `.grok/skills/${name}`,
           );
         }
         if (wantGemini) {
@@ -2026,8 +2053,7 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
       }
     }
 
-    // --- Antigravity skills (.agents/skills) ---
-    // Shared with Pi (R3): remove when either host is configured.
+    // --- Shared .agents/skills (Antigravity / Pi / Codex / Kimi) ---
     for (const name of AUTOPILOT_SKILL_NAMES) {
       const skillDir = path.join(agentsSkillsRoot, name);
       if (!pathExistsViaLstat(skillDir)) continue;
@@ -2053,6 +2079,66 @@ export function uninstallProject(opts: UninstallOptions): UninstallResult {
         const msg = err instanceof Error ? err.message : String(err);
         actions.push(
           `skip .agents/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Copilot skills (.github/skills) ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(githubSkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        if (!wantCopilot) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.github/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.github/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantCopilot) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .github/skills/${name} (${formatUninstallSkipDetail(msg)})`,
+        );
+      }
+    }
+
+    // --- Grok skills (.grok/skills) ---
+    for (const name of AUTOPILOT_SKILL_NAMES) {
+      const skillDir = path.join(grokSkillsRoot, name);
+      if (!pathExistsViaLstat(skillDir)) continue;
+      try {
+        if (!wantGrok) {
+          assertRemovalTargetSafe(
+            projectRoot,
+            skillDir,
+            `.grok/skills/${name}`,
+          );
+        }
+        found = true;
+        safeRemovePath(
+          projectRoot,
+          skillDir,
+          `.grok/skills/${name}`,
+          removed,
+          dryRun,
+          actions,
+        );
+      } catch (err) {
+        if (wantGrok) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        actions.push(
+          `skip .grok/skills/${name} (${formatUninstallSkipDetail(msg)})`,
         );
       }
     }

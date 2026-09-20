@@ -13,6 +13,7 @@ import {
 import { parseDocument } from "yaml";
 import {
   formatPlatformsDisplay,
+  configWantsAgentsSkills,
   configWantsInstallableHost,
   hasInstallableHookHost,
   parsePlatformBindingsFromConfig,
@@ -2066,7 +2067,7 @@ export function runDoctor(
     }
     if (hasDevinSkills && hasAgentsSkills) {
       lines.push(
-        "WARN  Autopilot skills under both .devin/skills and .agents/skills — dual discovery; prefer .devin/skills for Devin (Autopilot does not write .agents by default)",
+        "WARN  Autopilot skills under both .devin/skills and .agents/skills — dual discovery; prefer .devin/skills for Devin (`.agents/skills` is also used by Antigravity/Pi/Codex/Kimi)",
       );
     }
   } else {
@@ -3013,11 +3014,27 @@ export function runDoctor(
       containRoot: root,
     });
   }
-  if (wantAntigravity || wantPi) {
+  if (configWantsAgentsSkills(cfg.platforms)) {
     skillHosts.push({
       label: ".agents/skills/",
       pathFor: (name) =>
         path.join(root, ".agents", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantCopilot) {
+    skillHosts.push({
+      label: ".github/skills/",
+      pathFor: (name) =>
+        path.join(root, ".github", "skills", name, "SKILL.md"),
+      containRoot: root,
+    });
+  }
+  if (wantGrok) {
+    skillHosts.push({
+      label: ".grok/skills/",
+      pathFor: (name) =>
+        path.join(root, ".grok", "skills", name, "SKILL.md"),
       containRoot: root,
     });
   }

@@ -378,6 +378,7 @@ describe("grok contract matrix", () => {
       "utf8",
     );
     expect(ignore).toMatch(/\.grok\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.grok\/skills\/\*\*/);
     expect(GROK_HOOKS_REL_PATH).toBe(".grok/hooks/autopilot-harness.json");
     expect(fs.existsSync(path.join(root, ".cursor", "hooks.json"))).toBe(true);
     const cursor = JSON.parse(
@@ -393,7 +394,11 @@ describe("grok contract matrix", () => {
       ),
     ).toBe(true);
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(true);
-    expect(fs.existsSync(path.join(root, ".grok", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const cfg = fs.readFileSync(

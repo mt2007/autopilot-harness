@@ -70,7 +70,7 @@ Aliases accepted for scope: `project`, `always`, and `all` all map to **`project
 
 ## Triggers
 
-Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills in Cursor or Claude Code. **Codex / Kimi Code / Copilot CLI / Grok Build CLI P0** have no Autopilot skills path; **Gemini / Factory / Hermes / Antigravity / Pi** install Autopilot skills under their host trees (Pi **shares** Antigravity **`.agents/skills`**) / no default `AGENTS.md`; use line-start `triggers.on` / `triggers.run` (typed `/autopilot-*` still parses).
+Init seeds bilingual stock phrases under `triggers.*` (aligned with `DEFAULT_TRIGGERS`); `locale set` rewrites those lists in **config.yml** when they still match stock/legacy (custom lists are preserved). Prefer `/autopilot-*` skills where the host discovers them: Cursor / Claude Code (`.cursor` / `.claude`); **Codex / Kimi Code** share **`.agents/skills`** with Antigravity/Pi; **Copilot CLI** → **`.github/skills`**; **Grok Build CLI** → **`.grok/skills`**; Gemini / Factory / Hermes / Devin under their host trees / no default `AGENTS.md`. **Codex / Kimi Code / Copilot CLI / Grok Build CLI P0** still use line-start `triggers.on` / `triggers.run` (typed `/autopilot-*` still parses).
 
 | Key | Role |
 |-----|------|
@@ -98,7 +98,7 @@ CLI: `runner start` (**`--on`** planning; **`--run [slug]`** execute; bare resum
 
 | File | Role |
 |------|------|
-| **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `.cursor/**`, `.claude/**`, `.codex/**`, `.github/hooks/**`, `.grok/hooks/**`, `.gemini/settings.json`, `.gemini/skills/**`, `.factory/hooks.json`, `.factory/skills/**`, `.agents/hooks.json`, `.agents/skills/**`, `.pi/extensions/autopilot*`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
+| **`.autopilotignore`** | Gitignore-style globs: matching edits do **not** count as product code (do not open fix→confirm). Missing file → built-in defaults (`plans/**`, `.autopilot/**`, `.cursor/**`, `.claude/**`, `.codex/**`, `.github/hooks/**`, `.github/skills/**`, `.grok/hooks/**`, `.grok/skills/**`, `.gemini/settings.json`, `.gemini/skills/**`, `.factory/hooks.json`, `.factory/skills/**`, `.agents/hooks.json`, `.agents/skills/**`, `.pi/extensions/autopilot*`, `node_modules/**`, …). Does **not** change `git status` / `git diff`. |
 | **`.gitignore`** | Untracked ignored paths are also skipped as product code; **tracked** files still count even if listed in `.gitignore`. |
 
 On completed stop, Autopilot also treats **git-dirty product paths** (vs HEAD / untracked product files) as code edits even when the host never fired `afterFileEdit` (e.g. Shell writes) — same `.autopilotignore` / untracked-gitignore filters. See [Troubleshooting](./troubleshooting.md#edited-code-but-no-self-review).

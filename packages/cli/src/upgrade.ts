@@ -821,22 +821,18 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
       );
     }
     if (wantCodex) {
-      actions.push("merge .codex/hooks.json (Autopilot entries; no skills)");
+      actions.push("merge .codex/hooks.json (Autopilot entries)");
     }
     if (wantKimi) {
-      actions.push(
-        "merge $KIMI_CODE_HOME/config.toml Autopilot [[hooks]] (no skills)",
-      );
+      actions.push("merge $KIMI_CODE_HOME/config.toml Autopilot [[hooks]]");
     }
     if (wantCopilot) {
-      actions.push(
-        `merge ${COPILOT_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
-      );
+      actions.push(`merge ${COPILOT_HOOKS_REL_PATH} (Autopilot entries)`);
+      actions.push("refresh .github/skills/autopilot-*");
     }
     if (wantGrok) {
-      actions.push(
-        `merge ${GROK_HOOKS_REL_PATH} (Autopilot entries; no skills)`,
-      );
+      actions.push(`merge ${GROK_HOOKS_REL_PATH} (Autopilot entries)`);
+      actions.push("refresh .grok/skills/autopilot-*");
     }
     if (wantGemini) {
       actions.push("refresh .gemini/skills/autopilot-*");
@@ -872,8 +868,14 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     if (wantPi) {
       actions.push("refresh .pi/extensions/autopilot.ts (direct write; no pi install)");
       if (!wantAntigravity) {
-        actions.push("refresh .agents/skills/autopilot-* (shared with Antigravity; no hooks.json)");
+        actions.push(
+          "refresh .agents/skills/autopilot-* (shared; Pi does not write hooks.json)",
+        );
       }
+    }
+    // Codex/Kimi share `.agents/skills` — one refresh when neither Antigravity nor Pi owns it.
+    if ((wantCodex || wantKimi) && !wantAntigravity && !wantPi) {
+      actions.push("refresh .agents/skills/autopilot-*");
     }
 
     if (opts.target && opts.target !== version) {

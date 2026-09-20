@@ -633,8 +633,92 @@ describe("locale set", () => {
     if (!r.ok) return;
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
     expect(
+      fs.readFileSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(
       fs.readFileSync(path.join(root, ".autopilot", "config.yml"), "utf8"),
     ).toMatch(/locale:\s*zh-CN/);
+  });
+
+  it("Kimi-only locale set rewrites .agents/skills and does not plant .cursor/skills", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-locale-kimi-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(
+        fs.readFileSync(
+          path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+          "utf8",
+        ),
+      ).toContain(skillDescription("zh-CN", "autopilot-on"));
+      expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("Copilot-only locale set rewrites .github/skills and does not plant .cursor/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      fs.readFileSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
+  });
+
+  it("Grok-only locale set rewrites .grok/skills and does not plant .cursor/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const r = setProjectLocale({ projectRoot: root, locale: "zh-CN" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      fs.readFileSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain(skillDescription("zh-CN", "autopilot-on"));
+    expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
   });
 
   it("Claude-only locale set rewrites .claude/skills and does not plant .cursor/skills", () => {

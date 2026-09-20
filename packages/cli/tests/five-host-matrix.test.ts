@@ -235,10 +235,21 @@ describe("five-host Copilot cross-fire matrix", () => {
         expect(h.matcher).toBeUndefined();
       }
     }
-    expect(fs.existsSync(path.join(root, ".github", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.github\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.github\/skills\/\*\*/);
+    expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

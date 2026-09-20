@@ -322,6 +322,11 @@ describe("kimi init wiring", () => {
     expect(fs.existsSync(path.join(kimiHome, "local.toml"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".kimi-code"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

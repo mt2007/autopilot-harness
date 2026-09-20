@@ -366,6 +366,84 @@ body
     }
   });
 
+  it("Codex/Copilot/Grok symlink skills root fail-closed on init", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-codex-sym-"));
+    const agentsDir = path.join(root, ".agents");
+    fs.mkdirSync(agentsDir, { recursive: true });
+    const outsideC = fs.mkdtempSync(
+      path.join(os.tmpdir(), "ap-skills-codex-out-"),
+    );
+    try {
+      fs.symlinkSync(outsideC, path.join(agentsDir, "skills"));
+      const bad = installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.error).toMatch(/symlink/i);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+    } finally {
+      fs.rmSync(outsideC, { recursive: true, force: true });
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    root = "";
+
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-copilot-sym-"));
+    const githubDir = path.join(root, ".github");
+    fs.mkdirSync(githubDir, { recursive: true });
+    const outsideP = fs.mkdtempSync(
+      path.join(os.tmpdir(), "ap-skills-copilot-out-"),
+    );
+    try {
+      fs.symlinkSync(outsideP, path.join(githubDir, "skills"));
+      const bad = installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.error).toMatch(/symlink/i);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+    } finally {
+      fs.rmSync(outsideP, { recursive: true, force: true });
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+    root = "";
+
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-grok-sym-"));
+    const grokDir = path.join(root, ".grok");
+    fs.mkdirSync(grokDir, { recursive: true });
+    const outsideG = fs.mkdtempSync(
+      path.join(os.tmpdir(), "ap-skills-grok-out-"),
+    );
+    try {
+      fs.symlinkSync(outsideG, path.join(grokDir, "skills"));
+      const bad = installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.error).toMatch(/symlink/i);
+      expect(fs.existsSync(path.join(root, ".autopilot", "config.yml"))).toBe(
+        false,
+      );
+    } finally {
+      fs.rmSync(outsideG, { recursive: true, force: true });
+    }
+  });
+
   it("Gemini/Factory/Antigravity skills root as a file fail-closed on init", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-gem-file-"));
     const geminiDir = path.join(root, ".gemini");
@@ -929,5 +1007,62 @@ MUTATED_FACTORY
     expectNoSkills(root, ".factory");
     expectNoSkills(root, ".agents");
     expect(fs.existsSync(path.join(root, ".agent"))).toBe(false);
+  });
+
+  it("upgrade restores missing Autopilot skills for Codex/Copilot/Grok", () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-up-missing-codex-"));
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const agentsOn = path.join(root, ".agents", "skills", "autopilot-on");
+    fs.rmSync(agentsOn, { recursive: true, force: true });
+    expect(fs.existsSync(path.join(agentsOn, "SKILL.md"))).toBe(false);
+    const codexUp = upgradeProject({ projectRoot: root, dryRun: false });
+    expect(codexUp.ok).toBe(true);
+    if (!codexUp.ok) return;
+    expectAllSkills(root, ".agents");
+    expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+
+    fs.rmSync(root, { recursive: true, force: true });
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-up-missing-copilot-"));
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const githubOn = path.join(root, ".github", "skills", "autopilot-on");
+    fs.rmSync(githubOn, { recursive: true, force: true });
+    const copilotUp = upgradeProject({ projectRoot: root, dryRun: false });
+    expect(copilotUp.ok).toBe(true);
+    if (!copilotUp.ok) return;
+    expectAllSkills(root, ".github");
+
+    fs.rmSync(root, { recursive: true, force: true });
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-skills-up-missing-grok-"));
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const grokOn = path.join(root, ".grok", "skills", "autopilot-on");
+    fs.rmSync(grokOn, { recursive: true, force: true });
+    const grokUp = upgradeProject({ projectRoot: root, dryRun: false });
+    expect(grokUp.ok).toBe(true);
+    if (!grokUp.ok) return;
+    expectAllSkills(root, ".grok");
   });
 });

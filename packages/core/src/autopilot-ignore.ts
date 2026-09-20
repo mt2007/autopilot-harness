@@ -25,7 +25,9 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .claude/**
 .codex/**
 .github/hooks/**
+.github/skills/**
 .grok/hooks/**
+.grok/skills/**
 .gemini/settings.json
 .gemini/skills/**
 .factory/hooks.json

@@ -20,7 +20,7 @@ import {
 import { resolveTemplatesRoot as resolveTemplatesRootFromCli } from "./template-paths.js";
 import { applyFactorySkillFrontmatter, applyDevinSkillFrontmatter } from "./init/install.js";
 import { readConfigPlatformsOrThrow } from "./init/config-merge.js";
-import { platformsWantInstallableHost } from "./init/platforms.js";
+import { platformsWantAgentsSkills, platformsWantInstallableHost, type HostSkillsParent } from "./init/platforms.js";
 import { resolveHermesHome } from "./init/hermes-hooks-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -160,14 +160,6 @@ function plainStringList(node: unknown): string[] | null {
   return out;
 }
 
-type HostSkillsParent =
-  | ".cursor"
-  | ".claude"
-  | ".agents"
-  | ".gemini"
-  | ".factory"
-  | ".devin";
-
 function skillHostsFromConfigYaml(yaml: string): {
   project: HostSkillsParent[];
   hermes: boolean;
@@ -180,6 +172,12 @@ function skillHostsFromConfigYaml(yaml: string): {
   if (platformsWantInstallableHost(platforms, "claude-code")) {
     project.push(".claude");
   }
+  if (platformsWantInstallableHost(platforms, "copilot-cli")) {
+    project.push(".github");
+  }
+  if (platformsWantInstallableHost(platforms, "grok-build")) {
+    project.push(".grok");
+  }
   if (platformsWantInstallableHost(platforms, "gemini-cli")) {
     project.push(".gemini");
   }
@@ -189,10 +187,7 @@ function skillHostsFromConfigYaml(yaml: string): {
   if (platformsWantInstallableHost(platforms, "devin")) {
     project.push(".devin");
   }
-  if (platformsWantInstallableHost(platforms, "antigravity")) {
-    project.push(".agents");
-  } else if (platformsWantInstallableHost(platforms, "pi")) {
-    // R3: Pi shares .agents/skills with Antigravity (no duplicate host entry).
+  if (platformsWantAgentsSkills(platforms)) {
     project.push(".agents");
   }
   return {

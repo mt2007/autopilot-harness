@@ -662,6 +662,11 @@ describe("uninstallProject", () => {
     expect(JSON.stringify(after)).not.toMatch(/autopilot-harness-hook\.mjs/);
     expect(JSON.stringify(after)).toMatch(/echo keep-codex/);
     expect(fs.existsSync(path.join(root, ".codex", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
   });
 
   it("Cursor-only uninstall strips in-project leftover Codex Autopilot hooks", () => {
@@ -857,6 +862,33 @@ describe("uninstallProject", () => {
     fs.rmSync(outside, { recursive: true, force: true });
   });
 
+  it("Codex-only uninstall fails closed when .agents/skills is a symlink", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "ah-agents-want-"));
+    const skillsPath = path.join(root, ".agents", "skills");
+    // Preserve a skill leaf outside so a write-through would be detectable.
+    fs.cpSync(skillsPath, path.join(outside, "skills"), { recursive: true });
+    fs.rmSync(skillsPath, { recursive: true, force: true });
+    fs.symlinkSync(path.join(outside, "skills"), skillsPath);
+
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/\.agents/i);
+    expect(
+      fs.existsSync(path.join(outside, "skills", "autopilot-on", "SKILL.md")),
+    ).toBe(true);
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
   it("uninstalls Kimi Autopilot hooks and keeps foreign [[hooks]]", () => {
     root = tmpProject();
     const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-kimi-un-"));
@@ -888,10 +920,72 @@ describe("uninstallProject", () => {
       expect(after).not.toMatch(/autopilot-harness-hook\.mjs/);
       expect(after).toMatch(/echo keep-kimi/);
       expect(fs.existsSync(path.join(kimiHome, "local.toml"))).toBe(false);
+      expect(
+        fs.existsSync(
+          path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+        ),
+      ).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.KIMI_CODE_HOME;
       else process.env.KIMI_CODE_HOME = prev;
       fs.rmSync(kimiHome, { recursive: true, force: true });
     }
+  });
+
+  it("uninstalls Copilot hooks and .github/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
+    const hooks = fs.readFileSync(
+      path.join(root, ".github", "hooks", "autopilot-harness.json"),
+      "utf8",
+    );
+    expect(hooks).not.toMatch(/autopilot-harness-hook\.mjs/);
+  });
+
+  it("uninstalls Grok hooks and .grok/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
+    const r = uninstallProject({ projectRoot: root });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(
+      fs.existsSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(false);
   });
 });

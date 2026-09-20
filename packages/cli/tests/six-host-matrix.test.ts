@@ -235,12 +235,28 @@ describe("six-host Grok cross-fire matrix", () => {
       expect(h?.command).toMatch(/--platform grok-build/);
       expect(h?.command).toMatch(new RegExp(`--event ${event}(?:\\s|$)`));
     }
-    expect(fs.existsSync(path.join(root, ".grok", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".github", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(root, ".agents", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.github\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.github\/skills\/\*\*/);
     expect(ignore).toMatch(/\.grok\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.grok\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

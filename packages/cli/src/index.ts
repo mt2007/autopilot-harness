@@ -235,7 +235,9 @@ export {
   MAX_PLATFORM_BINDINGS,
   applyPlatformsToConfigYaml,
   assertInstallablePlatforms,
+  configWantsAgentsSkills,
   configWantsInstallableHost,
+  platformsWantAgentsSkills,
   platformsWantInstallableHost,
   configYamlHasLegacyHostScalars,
   defaultSurfaceFor,
@@ -252,8 +254,13 @@ export {
   primaryBinding,
   sanitizePlatformId,
   stripRunnerConfigTraces,
+  wantAgentsSkillsFromFlags,
 } from "./init/platforms.js";
-export type { PlatformBinding, PlatformSurface } from "./init/platforms.js";
+export type {
+  HostSkillsParent,
+  PlatformBinding,
+  PlatformSurface,
+} from "./init/platforms.js";
 export {
   PI_PLATFORM,
   PI_SOFT_MIN_VERSION,

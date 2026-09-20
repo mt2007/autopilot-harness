@@ -288,7 +288,7 @@ describe("grok init wiring", () => {
     root = "";
   });
 
-  it("init --platform grok-build writes Codex-shaped hooks and skip skills", () => {
+  it("init --platform grok-build writes Codex-shaped hooks and .grok skills", () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "ap-grok-init-"));
     const r = installInitYes({
       projectRoot: root,
@@ -316,10 +316,16 @@ describe("grok init wiring", () => {
 
     expect(fs.existsSync(path.join(root, ".cursor", "skills"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".claude", "skills"))).toBe(false);
+    expect(
+      fs.existsSync(
+        path.join(root, ".grok", "skills", "autopilot-on", "SKILL.md"),
+      ),
+    ).toBe(true);
     expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
 
     const ignore = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(ignore).toMatch(/\.grok\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.grok\/skills\/\*\*/);
 
     const cfg = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

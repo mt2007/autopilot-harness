@@ -97,6 +97,8 @@ import {
   mergedIncludesAllRequested,
   normalizeBinding,
   platformsWantInstallableHost,
+  wantAgentsSkillsFromFlags,
+  type HostSkillsParent,
   primaryBinding,
   type PlatformBinding,
 } from "./platforms.js";
@@ -1226,14 +1228,6 @@ export function applyDevinSkillFrontmatter(body: string): string {
   return `---\n${fm}\ntriggers: [user]\n---\n${rest}`;
 }
 
-type HostSkillsParent =
-  | ".cursor"
-  | ".claude"
-  | ".agents"
-  | ".gemini"
-  | ".factory"
-  | ".devin";
-
 function resolveInstallPlatforms(opts: InitYesOptions): PlatformBinding[] {
   if (opts.platforms && opts.platforms.length > 0) {
     return mergePlatformBindings([], opts.platforms);
@@ -1547,10 +1541,11 @@ export function preflightForceRefresh(projectRoot: string): PreflightResult {
  * Non-interactive init (`--yes`). Writes .autopilot + host hooks/skills
  * (`.cursor/hooks.json` and/or `.claude/settings.json` and/or `.codex/hooks.json`
  * and/or Kimi `$KIMI_CODE_HOME/config.toml` and/or
- * `.github/hooks/autopilot-harness.json` and/or `.grok/hooks/autopilot-harness.json`
- * and/or `.gemini/settings.json` and/or `.factory/hooks.json` and/or
- * `.agents/hooks.json` (+ `.agents/skills`) and/or Gemini/Factory/Hermes skills
- * per platforms). Does not write Codex
+ * `.github/hooks/autopilot-harness.json` (+ `.github/skills`) and/or
+ * `.grok/hooks/autopilot-harness.json` (+ `.grok/skills`) and/or
+ * `.gemini/settings.json` and/or `.factory/hooks.json` and/or
+ * `.agents/hooks.json` and/or shared `.agents/skills` for Antigravity/Pi/Codex/Kimi
+ * and/or Gemini/Factory/Hermes/Devin skills per platforms). Does not write Codex
  * `config.toml` hooks, Kimi `local.toml`, or `AGENTS.md`.
  * `--force` refreshes hook/skills/pin/hooks merge but does **not** overwrite
  * an existing config.yml, except when `mergePlatforms` / `--add-platform`
@@ -1776,7 +1771,12 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     const wantPi = platformsWantInstallableHost(effectivePlatforms, "pi");
     const wantDevin = platformsWantInstallableHost(effectivePlatforms, "devin");
     const wantRunner = platformsWantInstallableHost(effectivePlatforms, "runner");
-    const wantAgentsSkills = wantAntigravity || wantPi;
+    const wantAgentsSkills = wantAgentsSkillsFromFlags({
+      antigravity: wantAntigravity,
+      pi: wantPi,
+      codex: wantCodex,
+      kimi: wantKimi,
+    });
     if (
       !wantCursor &&
       !wantClaude &&
@@ -1924,8 +1924,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
       if (!antigravityPre.ok) {
         return { ok: false, error: antigravityPre.error };
       }
-    } else if (wantPi) {
-      // Pi shares .agents/skills with Antigravity but never writes hooks.json.
+    } else if (wantAgentsSkills) {
+      // Pi / Codex / Kimi share .agents/skills (no hooks.json from these hosts).
       try {
         assertNotSymlink(agentsDir, ".agents/");
       } catch (err) {
@@ -2382,11 +2382,10 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     }
 
     // Host skills only after settings preflight + merge dry-run succeeded.
-    // Codex / Kimi / Copilot / Grok have no Autopilot skills path — skip.
-    // Gemini / Factory / Hermes / Antigravity / Devin co-install skills with hooks
-    // (Gemini always `.gemini/skills` even when Antigravity is also enabled;
-    // Antigravity + Pi share `.agents/skills`, never `.agent/`; Pi does not
-    // write Antigravity hooks.json; Devin always `.devin/skills`, never `.agents`).
+    // Write skills for each enabled host: Codex/Kimi → `.agents/skills`
+    // (shared with Antigravity/Pi); Copilot → `.github/skills`; Grok → `.grok/skills`.
+    // Runner has no skills. Gemini / Factory / Hermes / Devin keep their own trees;
+    // never `.agent/`.
     try {
       if (wantCursor) {
         written.push(
@@ -2415,6 +2414,16 @@ export function installInitYes(opts: InitYesOptions): InitResult {
           ...installSkills(templatesRoot, projectRoot, locale, ".devin", {
             devinFrontmatter: true,
           }),
+        );
+      }
+      if (wantCopilot) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".github"),
+        );
+      }
+      if (wantGrok) {
+        written.push(
+          ...installSkills(templatesRoot, projectRoot, locale, ".grok"),
         );
       }
       if (wantAgentsSkills) {
