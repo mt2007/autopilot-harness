@@ -2034,7 +2034,25 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section015).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section016 = changelogSection(log, "0.16.0");
+    expect(section016).toMatch(/\.agents\/skills/);
+    expect(section016).toMatch(/\.github\/skills/);
+    expect(section016).toMatch(/\.grok\/skills/);
+    expect(section016).toMatch(/wantAgentsSkills/);
+    expect(section016).toMatch(/skillHosts/);
+    expect(section016).toMatch(/disable-model-invocation/);
+    expect(section016).toMatch(/\.github\/skills\/\*\*/);
+    expect(section016).toMatch(/\.grok\/skills\/\*\*/);
+    expect(section016).toMatch(/\/skill:autopilot-on/);
+    expect(section016).toMatch(/init --yes|bare `init --yes`/i);
+    expect(section016).toMatch(/Space|↑↓/);
+    expect(section016).toMatch(/pnpm publish/);
+    expect(section016).toMatch(/pnpm pack/);
+    expect(section016).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).not.toMatch(/wantAgentsSkills/);
     expect(unreleased).not.toMatch(/docs-devin-shipped/i);
     expect(unreleased).not.toMatch(/handleDevin/i);
     expect(unreleased).not.toMatch(/docs-copilot-shipped/i);

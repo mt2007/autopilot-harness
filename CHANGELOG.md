@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-09-20
+
+### Added
+
+- **Host Autopilot skills for Codex / Kimi Code / Copilot CLI / Grok Build**: Codex + Kimi share project **`.agents/skills/autopilot-*`**; Copilot writes **`.github/skills/autopilot-*`**; Grok writes **`.grok/skills/autopilot-*`**. Shared install/uninstall/locale/upgrade predicate **`wantAgentsSkills`** = Antigravity \| Pi \| **Codex \| Kimi**. Doctor **`skillHosts`** follows the same matrix. Grok (and peers that accept it) stamp **`disable-model-invocation: true`**. Binding labels include skills paths.
+- **Default `.autopilotignore`**: template + core `DEFAULT_AUTOPILOT_IGNORE_TEXT` (+ vendored runtime) include **`.github/skills/**`** and **`.grok/skills/**`** alongside existing hooks globs.
+
+### Changed
+
+- **P0 activation copy** for the four hosts: Autopilot skills **and** line-start `triggers.on` / `triggers.run` (Kimi invoke **`/skill:autopilot-on`** / **`/skill:autopilot-run`** — not Cursor-style slash UI). Docs (hosts / config / troubleshooting / wizard / README / quickstart) drop 「no Autopilot skills」 for those hosts.
+- **Init UX**: bare `init --yes` first in README/quickstart; `--platform` next; `--add-platform` visible; cheat sheet tip to add a platform later. Host multiselect message names **↑↓ / Space / Enter**.
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.16.0** public packages.
+
 ## [0.15.0] — 2026-09-19
 
 ### Added
