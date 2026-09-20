@@ -4716,3 +4716,198 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
   });
 
 });
+
+describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
+  let root: string;
+  afterEach(() => {
+    if (root && fs.existsSync(root)) {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("OKs Codex skills under .agents/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+  });
+
+  it("WARNs missing Codex skills when Codex enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "codex",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".agents", "skills"), {
+      recursive: true,
+      force: true,
+    });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+5 skill\(s\) missing under \.agents\/skills\//i,
+    );
+    expect(joined).not.toMatch(/OK\s+skills/);
+  });
+
+  it("OKs Copilot skills under .github/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+  });
+
+  it("WARNs missing Copilot skills when Copilot enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "copilot-cli",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".github", "skills"), {
+      recursive: true,
+      force: true,
+    });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+5 skill\(s\) missing under \.github\/skills\//i,
+    );
+    expect(joined).not.toMatch(/OK\s+skills/);
+  });
+
+  it("OKs Grok skills under .grok/skills", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+  });
+
+  it("WARNs missing Grok skills when Grok enabled", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "grok-build",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+    fs.rmSync(path.join(root, ".grok", "skills"), {
+      recursive: true,
+      force: true,
+    });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /WARN\s+5 skill\(s\) missing under \.grok\/skills\//i,
+    );
+    expect(joined).not.toMatch(/OK\s+skills/);
+  });
+
+  it("OKs Kimi skills under .agents/skills", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-doc-kimi-sk-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      const { ok, lines } = runDoctor(root);
+      expect(ok).toBe(true);
+      expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+
+  it("WARNs missing Kimi skills when Kimi enabled", () => {
+    root = tmpProject();
+    const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "ap-doc-kimi-miss-"));
+    const prev = process.env.KIMI_CODE_HOME;
+    process.env.KIMI_CODE_HOME = kimiHome;
+    try {
+      expect(
+        installInitYes({
+          projectRoot: root,
+          platform: "kimi-code",
+          surface: "cli",
+          locale: "en",
+          force: false,
+        }).ok,
+      ).toBe(true);
+      new StateStore(root).close();
+      fs.rmSync(path.join(root, ".agents", "skills"), {
+        recursive: true,
+        force: true,
+      });
+      const { ok, lines } = runDoctor(root);
+      expect(ok).toBe(true);
+      const joined = lines.join("\n");
+      expect(joined).toMatch(
+        /WARN\s+5 skill\(s\) missing under \.agents\/skills\//i,
+      );
+      expect(joined).not.toMatch(/OK\s+skills/);
+    } finally {
+      if (prev === undefined) delete process.env.KIMI_CODE_HOME;
+      else process.env.KIMI_CODE_HOME = prev;
+      fs.rmSync(kimiHome, { recursive: true, force: true });
+    }
+  });
+});

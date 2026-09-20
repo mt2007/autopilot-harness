@@ -473,7 +473,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/auto-attach ≠ ON|auto-attach tip/i);
   });
 
-  it("dogfood .autopilotignore covers Factory + Antigravity + Gemini/Factory skills + Pi", () => {
+  it("dogfood .autopilotignore covers Factory + Antigravity + Gemini/Factory/Copilot/Grok skills + Pi", () => {
     const ignore = fs.readFileSync(
       path.join(repoRoot, ".autopilotignore"),
       "utf8",
@@ -482,6 +482,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(ignore).toMatch(/\.gemini\/settings\.json/);
     expect(ignore).toMatch(/\.gemini\/skills\/\*\*/);
     expect(ignore).toMatch(/\.factory\/skills\/\*\*/);
+    expect(ignore).toMatch(/\.github\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.github\/skills\/\*\*/);
+    expect(ignore).toMatch(/\.grok\/hooks\/\*\*/);
+    expect(ignore).toMatch(/\.grok\/skills\/\*\*/);
     expect(ignore).toMatch(/\.agents\/hooks\.json/);
     expect(ignore).toMatch(/\.agents\/bin\/\*\*/);
     expect(ignore).toMatch(/\.agents\/skills\/\*\*/);
@@ -585,7 +589,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/surface: cli.*shared|hooks shared across terminal/i);
     expect(config).toMatch(/\.codex\/\*\*/);
     expect(config).toMatch(/\.github\/hooks\/\*\*/);
+    expect(config).toMatch(/\.github\/skills\/\*\*/);
     expect(config).toMatch(/\.grok\/hooks\/\*\*/);
+    expect(config).toMatch(/\.grok\/skills\/\*\*/);
     expect(config).toMatch(/\.gemini\/settings\.json/);
     expect(config).toMatch(/\.factory\/hooks\.json/);
     expect(config).toMatch(/FACTORY_PROJECT_DIR/);
@@ -613,6 +619,18 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(en).toMatch(
       /\n(?!#)npx @autopilot-harness\/cli init --yes --add-platform claude-code\n/,
     );
+    expect(en).not.toMatch(/no Autopilot skills path/);
+    expect(en).toMatch(/Codex: `\.agents\/skills` \*\*and\*\* line-start/);
+    expect(en).toMatch(
+      /Copilot CLI: `\.github\/skills` \*\*and\*\* line-start/,
+    );
+    expect(en).toMatch(/Grok Build: `\.grok\/skills` \*\*and\*\* line-start/);
+    expect(en).toMatch(/\/skill:autopilot-on/);
+    expect(zh).not.toMatch(/无 Autopilot skills 路径/);
+    expect(zh).toMatch(/Codex：`\.agents\/skills` \*\*且\*\* 行首/);
+    expect(zh).toMatch(/Copilot CLI：`\.github\/skills` \*\*且\*\* 行首/);
+    expect(zh).toMatch(/Grok Build：`\.grok\/skills` \*\*且\*\* 行首/);
+    expect(zh).toMatch(/\/skill:autopilot-on/);
     expect(en).not.toMatch(/Today \(not on public npm yet\)/);
     expect(en).not.toMatch(/After npm publish/);
     expect(zh).toMatch(/\*\*安装\*\*/);
@@ -849,9 +867,47 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/\*\*`project`\*\* \(default\)/);
     expect(body).toMatch(/executing_only/);
     expect(body).not.toMatch(/\*\*`executing_only`\*\* \(default\)/);
-    // Codex has no Autopilot skills — install flow must not imply slash-only ON/RUN.
-    expect(body).toMatch(/Codex:[\s\S]*triggers\.on/);
-    expect(body).toMatch(/Codex:[\s\S]*triggers\.run/);
+    // Four hosts install Autopilot skills (P0 = skills + line-start).
+    expect(body).toMatch(
+      /Codex: `\.agents\/skills` \*\*and\*\* line-start `triggers\.on`/,
+    );
+    expect(body).toMatch(
+      /Codex: `\.agents\/skills` \*\*and\*\* line-start `triggers\.run`/,
+    );
+    expect(body).toMatch(
+      /For Codex it merges[\s\S]{0,200}`\.agents\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(
+      /For \*\*Kimi Code\*\*[\s\S]{0,320}`\.agents\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(
+      /For \*\*GitHub Copilot CLI\*\*[\s\S]{0,400}`\.github\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(
+      /For \*\*Grok Build CLI\*\*[\s\S]{0,420}`\.grok\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(/Kimi: `\/skill:autopilot-on` \*\*and\*\* line-start/);
+    expect(body).toMatch(/Kimi: `\/skill:autopilot-run` \*\*and\*\* line-start/);
+    expect(body).toMatch(
+      /Copilot: `\.github\/skills` \*\*and\*\* line-start/,
+    );
+    expect(body).toMatch(/Grok: `\.grok\/skills` \*\*and\*\* line-start/);
+    expect(body).not.toMatch(/no Autopilot skills UI/);
+    expect(body).not.toMatch(
+      /Codex:[\s\S]{0,160}no Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /For Codex[\s\S]{0,220}no Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /Kimi Code[\s\S]{0,280}— no Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /GitHub Copilot CLI[\s\S]{0,360}— no Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /Grok Build CLI[\s\S]{0,400}— no Autopilot skills/,
+    );
     expect(body).toMatch(/--platform kimi-code|init --platform kimi-code/);
     expect(body).toMatch(/port-kimi-code/);
     expect(body).toMatch(/--platform copilot-cli|init --platform copilot-cli/);
@@ -983,8 +1039,44 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/\*\*`project`\*\*（默认）/);
     expect(body).toMatch(/executing_only/);
     expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
-    expect(body).toMatch(/Codex：[\s\S]*triggers\.on/);
-    expect(body).toMatch(/Codex：[\s\S]*triggers\.run/);
+    expect(body).toMatch(
+      /Codex：`\.agents\/skills` \*\*且\*\* 行首 `triggers\.on`/,
+    );
+    expect(body).toMatch(
+      /Codex：`\.agents\/skills` \*\*且\*\* 行首 `triggers\.run`/,
+    );
+    expect(body).toMatch(
+      /Codex 合并[\s\S]{0,200}`\.agents\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(
+      /\*\*Kimi Code\*\*[\s\S]{0,320}`\.agents\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(
+      /\*\*GitHub Copilot CLI\*\*[\s\S]{0,400}`\.github\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(
+      /\*\*Grok Build CLI\*\*[\s\S]{0,420}`\.grok\/skills\/autopilot-\*`/,
+    );
+    expect(body).toMatch(/Kimi：`\/skill:autopilot-on` \*\*且\*\* 行首/);
+    expect(body).toMatch(/Kimi：`\/skill:autopilot-run` \*\*且\*\* 行首/);
+    expect(body).toMatch(/Copilot：`\.github\/skills` \*\*且\*\* 行首/);
+    expect(body).toMatch(/Grok：`\.grok\/skills` \*\*且\*\* 行首/);
+    expect(body).not.toMatch(/无 Autopilot skills UI/);
+    expect(body).not.toMatch(
+      /Codex：[\s\S]{0,160}无 Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /Codex 合并[\s\S]{0,220}不写 Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /Kimi Code[\s\S]{0,280}— 不写 Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /GitHub Copilot CLI[\s\S]{0,360}— 不写 Autopilot skills/,
+    );
+    expect(body).not.toMatch(
+      /Grok Build CLI[\s\S]{0,400}— 不写 Autopilot skills/,
+    );
     expect(body).toMatch(/--platform kimi-code|init --platform kimi-code/);
     expect(body).toContain(`npx ${NPM_PACKAGE_NAME}`);
     expect(body).toMatch(/host-plan-bridge\.md/);
