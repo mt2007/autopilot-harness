@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-09-22
+
+### Added
+
+- **Subagent-neutral review closeout (Tier-S / Tier-B / Tier-N)**: Autopilot **does not** tell agents to open or avoid subagents. **docs/hosts.md** documents the full Tier-S/B/N table; architecture / troubleshooting / README cover the neutral policy and Tier-S/B. **Tier-S this release = Cursor + Claude Code only**; **Tier-N** = little/no delegation (nothing to arm).
+- **Cursor `subagentStop`** (`loop_limit: null`) and **Claude Code `SubagentStop`**: when a product-dirty child stop names a **pre-existing** parent session, **arm that parent only** (no new session; **no continue** / no new followup or i18n continue copy). Review still runs on **parent stop**. Init / upgrade / uninstall / doctor + vendor exports + event matrices stay in sync; missing Autopilot `subagentStop` / `SubagentStop` → doctor **FAIL**; Cursor additionally **WARN**s when Autopilot `subagentStop` is present without `loop_limit: null`.
+- **Parent attribution**: edit hooks — payload names a **pre-existing** parent → arm that parent (product paths); no parent (or parent === self) → today's conversation id; named parent session missing → **no-op** (does not invent sessions).
+
+### Changed
+
+- **Background / Tier-B honesty**: Cursor **background** subagents may never emit `subagentStop` — parent stop **dirty-arm** is the documented fallback. **Tier-B** hosts get **no** fake SubagentStop; closeout is parent **Stop dirty-arm** (best-effort, not Tier-S parity). Tests cover Tier-B honesty + parent Stop dirty-arm commentary. No new subagent-stop continue / i18n followup copy.
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.17.0** public packages.
+
 ## [0.16.0] — 2026-09-20
 
 ### Added

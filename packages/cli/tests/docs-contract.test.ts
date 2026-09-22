@@ -2092,7 +2092,33 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section016).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section017 = changelogSection(log, "0.17.0");
+    expect(section017).toMatch(/Tier-S|subagent-neutral/i);
+    expect(section017).toMatch(/Tier-B/);
+    expect(section017).toMatch(/Tier-N/);
+    expect(section017).toMatch(/subagentStop/);
+    expect(section017).toMatch(/SubagentStop/);
+    expect(section017).toMatch(/background/i);
+    expect(section017).toMatch(/dirty-arm/i);
+    expect(section017).toMatch(/pre-existing/);
+    expect(section017).toMatch(/arm that parent only|arms parent only/i);
+    expect(section017).toMatch(/\*\*no continue\*\*|no continue/);
+    expect(section017).toMatch(/no new followup|no new.*i18n continue|no new continue|No new subagent-stop continue/i);
+    expect(section017).toMatch(/`loop_limit: null`|loop_limit:\s*null/);
+    expect(section017).toMatch(/→ doctor \*\*FAIL\*\*|doctor \*\*FAIL\*\*/);
+    expect(section017).toMatch(/without `loop_limit: null`/);
+    expect(section017).toMatch(/today's conversation id/i);
+    expect(section017).toMatch(/does not invent sessions/i);
+    expect(section017).toMatch(/full Tier-S\/B\/N/);
+    expect(section017).toMatch(/docs\/hosts\.md|\*\*hosts\*\*/);
+    expect(section017).toMatch(/pnpm publish/);
+    expect(section017).toMatch(/pnpm pack/);
+    expect(section017).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).not.toMatch(/subagentStop/);
+    expect(unreleased).not.toMatch(/Tier-S/);
     expect(unreleased).not.toMatch(/wantAgentsSkills/);
     expect(unreleased).not.toMatch(/docs-devin-shipped/i);
     expect(unreleased).not.toMatch(/handleDevin/i);

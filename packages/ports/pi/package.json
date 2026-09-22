@@ -1,6 +1,6 @@
 {
   "name": "@autopilot-harness/port-pi",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Autopilot harness host port for Pi coding agent extensions (input/before_agent_start; tool_result arm; agent_settled sendMessage followUp+triggerTurn; soft min Pi ≥0.85.1)",
   "license": "MIT",
   "repository": {
