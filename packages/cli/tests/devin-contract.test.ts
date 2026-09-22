@@ -29,13 +29,19 @@ import {
   uninstallProject,
 } from "../src/index.js";
 import { AUTOPILOT_SKILL_NAMES } from "../src/init/install.js";
+import { DEFAULT_PLANS_DIR } from "../src/init/artifact-defaults.js";
 
 function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-devin-contract-"));
 }
 
-function writeChecklist(root: string, slug: string, body: string): string {
-  const dir = path.join(root, "plans", slug);
+function writeChecklist(
+  root: string,
+  slug: string,
+  body: string,
+  plansDir = "plans",
+): string {
+  const dir = path.join(root, plansDir, slug);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "plan.md"), `# ${slug}\n`);
   const checklist = path.join(dir, "checklist.md");
@@ -106,8 +112,9 @@ describe("tests-devin-contract (v0.15)", () => {
       root,
       "alpha",
       "# Checklist\n\n- [ ] a — A\n",
+      DEFAULT_PLANS_DIR,
     );
-    writeChecklist(root, "beta", "# Checklist\n\n- [ ] b — B\n");
+    writeChecklist(root, "beta", "# Checklist\n\n- [ ] b — B\n", DEFAULT_PLANS_DIR);
 
     const cid = "devin-contract-io";
     const on = spawnDevinHook(root, "UserPromptSubmit", {
@@ -167,7 +174,7 @@ describe("tests-devin-contract (v0.15)", () => {
     const plansPost = spawnDevinHook(root, "PostToolUse", {
       session_id: cid,
       tool_name: "write",
-      tool_input: { path: path.join(root, "plans", "alpha", "plan.md") },
+      tool_input: { path: path.join(root, DEFAULT_PLANS_DIR, "alpha", "plan.md") },
     });
     expect(plansPost.status).toBe(0);
     expect(plansPost.stdout).toBe("");

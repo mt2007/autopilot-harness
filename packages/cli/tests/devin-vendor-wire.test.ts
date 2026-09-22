@@ -21,6 +21,7 @@ import {
   mergeDevinHooks,
 } from "../src/init/devin-hooks-merge.js";
 import { installInitYes, applyDevinSkillFrontmatter } from "../src/init/install.js";
+import { DEFAULT_PLANS_DIR } from "../src/init/artifact-defaults.js";
 import { DEVIN_PLATFORM } from "@autopilot-harness/port-devin";
 
 const cliRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -282,12 +283,12 @@ Body.
         force: false,
       });
       expect(r.ok, r.error).toBe(true);
-      const checklist = path.join(root, "plans", "alpha", "checklist.md");
-      fs.mkdirSync(path.join(root, "plans", "alpha"), { recursive: true });
-      fs.mkdirSync(path.join(root, "plans", "beta"), { recursive: true });
+      const checklist = path.join(root, DEFAULT_PLANS_DIR, "alpha", "checklist.md");
+      fs.mkdirSync(path.join(root, DEFAULT_PLANS_DIR, "alpha"), { recursive: true });
+      fs.mkdirSync(path.join(root, DEFAULT_PLANS_DIR, "beta"), { recursive: true });
       fs.writeFileSync(checklist, "# Checklist — alpha\n\n- [ ] a — A\n");
       fs.writeFileSync(
-        path.join(root, "plans", "beta", "checklist.md"),
+        path.join(root, DEFAULT_PLANS_DIR, "beta", "checklist.md"),
         "# Checklist — beta\n\n- [ ] b — B\n",
       );
       const hook = path.join(

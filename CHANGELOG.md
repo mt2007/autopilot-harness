@@ -9,6 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-09-22
+
+### Added
+
+- **Track asset layout defaults**: new init defaults `artifacts.plans_dir` → `docs/autopilot/plans` and `artifacts.specs_dir` → `docs/autopilot/specs`, with thin `docs/autopilot/README` + `specs/README`. **`.autopilotignore` merges both** configured dirs (archive edits under specs do not arm self-review). Upgrade leaves an existing `plans_dir` alone (never moves files) and can fill missing `specs_dir` + ignore entries. Skill / workflow / quickstart copy uses configured `artifacts.plans_dir` (not a hard-coded root `plans/`).
+- **`autopilot-archive` skill** (+ install/uninstall name table): merge optional `## Behavior deltas` into `artifacts.specs_dir`. **Gate B** on **done** / **review_complete**: when `specs_dir` is set, append an optional `/autopilot-archive` tip (**does not** read or parse brief; not required).
+- **`autopilot-diagnose` skill** (+ doctor one-line tip): read-only stuck diagnosis via status/doctor/pending guidance; skill-only (no new triggers / phase changes / product edits).
+- **Checklist work orders (soft)**: planning/executing suggest indented **Paths / Done when / Verify** under items; never top-level nested `- [ ]` / `- [x]` in supplements; core **`ITEM_RE` unchanged**.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.18.0** public packages.
+
 ## [0.17.0] — 2026-09-22
 
 ### Added

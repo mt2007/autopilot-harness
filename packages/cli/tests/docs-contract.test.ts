@@ -2123,7 +2123,25 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section017).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section018 = changelogSection(log, "0.18.0");
+    expect(section018).toMatch(/docs\/autopilot\/plans|artifacts\.plans_dir/);
+    expect(section018).toMatch(/artifacts\.specs_dir|docs\/autopilot\/specs/);
+    expect(section018).toMatch(/\.autopilotignore/);
+    expect(section018).toMatch(/autopilot-archive/);
+    expect(section018).toMatch(/Gate B|done.*review_complete|review_complete.*done/i);
+    expect(section018).toMatch(/autopilot-diagnose/);
+    expect(section018).toMatch(/Paths\s*\/\s*Done when\s*\/\s*Verify|Paths.*Done when.*Verify/i);
+    expect(section018).toMatch(/ITEM_RE/);
+    expect(section018).toMatch(/pnpm publish/);
+    expect(section018).toMatch(/pnpm pack/);
+    expect(section018).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
+    expect(unreleased).not.toMatch(/docs\/autopilot\/plans/);
+    expect(unreleased).not.toMatch(/autopilot-archive/);
+    expect(unreleased).not.toMatch(/autopilot-diagnose/);
+    expect(unreleased).not.toMatch(/ITEM_RE/);
     expect(unreleased).not.toMatch(/subagentStop/);
     expect(unreleased).not.toMatch(/Tier-S/);
     expect(unreleased).not.toMatch(/wantAgentsSkills/);

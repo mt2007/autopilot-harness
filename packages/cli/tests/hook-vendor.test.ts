@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { StateStore } from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
+import { DEFAULT_PLANS_DIR } from "../src/init/artifact-defaults.js";
 import { runDoctor } from "../src/status-doctor.js";
 
 function tmpProject(): string {
@@ -123,7 +124,7 @@ describe("hook vendor runtime", () => {
       }).ok,
     ).toBe(true);
 
-    const planDir = path.join(root, "plans", "demo");
+    const planDir = path.join(root, DEFAULT_PLANS_DIR, "demo");
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, "plan.md"), "# demo\n");
     fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -169,7 +170,7 @@ describe("hook vendor runtime", () => {
     ).toBe(true);
 
     for (const slug of ["alpha", "beta"] as const) {
-      const planDir = path.join(root, "plans", slug);
+      const planDir = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(planDir, { recursive: true });
       fs.writeFileSync(path.join(planDir, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -243,7 +244,7 @@ describe("hook vendor runtime", () => {
       "bin",
       "autopilot-harness-hook.mjs",
     );
-    const planDir = path.join(root, "plans", "codex-wire");
+    const planDir = path.join(root, DEFAULT_PLANS_DIR, "codex-wire");
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, "plan.md"), "# codex-wire\n");
     fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -423,7 +424,7 @@ describe("hook vendor runtime", () => {
       "bin",
       "autopilot-harness-hook.mjs",
     );
-    const planDir = path.join(root, "plans", "kimi-wire");
+    const planDir = path.join(root, DEFAULT_PLANS_DIR, "kimi-wire");
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, "plan.md"), "# kimi-wire\n");
     fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -506,7 +507,7 @@ describe("hook vendor runtime", () => {
 
     // needPick Channel A: exit 0 + stdout context (never Claude JSON block).
     for (const slug of ["kimi-alpha", "kimi-beta"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -623,7 +624,7 @@ describe("hook vendor runtime", () => {
       "autopilot-harness-hook.mjs",
     );
     for (const slug of ["copilot-alpha", "copilot-beta"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -718,7 +719,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "copilot-alpha",
-      checklist_path: path.join(root, "plans", "copilot-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "copilot-alpha", "checklist.md"),
     });
     armed.updateReviewChain(cid, { code_edited: 1 });
     armed.close();
@@ -768,7 +769,7 @@ describe("hook vendor runtime", () => {
       "autopilot-harness-hook.mjs",
     );
     for (const slug of ["grok-alpha", "grok-beta"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -831,7 +832,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "grok-alpha",
-      checklist_path: path.join(root, "plans", "grok-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "grok-alpha", "checklist.md"),
     });
     armed.updateReviewChain(cid, { code_edited: 1 });
     armed.close();
@@ -889,7 +890,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "grok-alpha",
-      checklist_path: path.join(root, "plans", "grok-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "grok-alpha", "checklist.md"),
     });
     editStore.close();
     fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -944,7 +945,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "grok-alpha",
-      checklist_path: path.join(root, "plans", "grok-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "grok-alpha", "checklist.md"),
     });
     hostileStore.updateReviewChain(cidHostile, { code_edited: 1 });
     hostileStore.close();
@@ -1024,7 +1025,7 @@ describe("hook vendor runtime", () => {
       "autopilot-harness-hook.mjs",
     );
     for (const slug of ["gem-alpha", "gem-beta"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -1154,7 +1155,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "gem-alpha",
-      checklist_path: path.join(root, "plans", "gem-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "gem-alpha", "checklist.md"),
     });
     armed.updateReviewChain(cid, { code_edited: 1 });
     armed.close();
@@ -1230,7 +1231,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "gem-alpha",
-      checklist_path: path.join(root, "plans", "gem-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "gem-alpha", "checklist.md"),
     });
     editStore.close();
     const editProc = spawnSync(
@@ -1372,7 +1373,7 @@ describe("hook vendor runtime", () => {
       "autopilot-harness-hook.mjs",
     );
     for (const slug of ["herm-alpha", "herm-beta"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -1580,7 +1581,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "herm-alpha",
-      checklist_path: path.join(root, "plans", "herm-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "herm-alpha", "checklist.md"),
     });
     editStore.close();
     const editProc = spawnSync(
@@ -1614,7 +1615,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "herm-alpha",
-      checklist_path: path.join(root, "plans", "herm-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "herm-alpha", "checklist.md"),
       reviewing_item_id: "a",
     });
     armed.updateReviewChain(cid, { code_edited: 1 });
@@ -1690,7 +1691,7 @@ describe("hook vendor runtime", () => {
       "autopilot-harness-hook.mjs",
     );
     for (const slug of ["ag-alpha", "ag-beta"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -1887,7 +1888,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "ag-alpha",
-      checklist_path: path.join(root, "plans", "ag-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "ag-alpha", "checklist.md"),
     });
     editStore.close();
     const editProc = spawnSync(
@@ -1923,7 +1924,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "ag-alpha",
-      checklist_path: path.join(root, "plans", "ag-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "ag-alpha", "checklist.md"),
       reviewing_item_id: "a",
     });
     armed.updateReviewChain(cid, { code_edited: 1 });
@@ -2022,7 +2023,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "ag-alpha",
-      checklist_path: path.join(root, "plans", "ag-alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "ag-alpha", "checklist.md"),
       reviewing_item_id: "a",
     });
     armedNoTool.updateReviewChain(cid, { code_edited: 1 });
@@ -2157,7 +2158,7 @@ describe("hook vendor runtime", () => {
       "bin",
       "autopilot-harness-hook.mjs",
     );
-    const planDir = path.join(root, "plans", "copilot-unstamped");
+    const planDir = path.join(root, DEFAULT_PLANS_DIR, "copilot-unstamped");
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, "plan.md"), "# copilot-unstamped\n");
     fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -2223,7 +2224,7 @@ describe("hook vendor runtime", () => {
       }).ok,
     ).toBe(true);
 
-    const planDir = path.join(root, "plans", "demo-hostile");
+    const planDir = path.join(root, DEFAULT_PLANS_DIR, "demo-hostile");
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, "plan.md"), "# demo-hostile\n");
     fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -2293,7 +2294,7 @@ describe("hook vendor runtime", () => {
       "autopilot-harness-hook.mjs",
     );
     for (const slug of ["copilot-leak-a", "copilot-leak-b"] as const) {
-      const d = path.join(root, "plans", slug);
+      const d = path.join(root, DEFAULT_PLANS_DIR, slug);
       fs.mkdirSync(d, { recursive: true });
       fs.writeFileSync(path.join(d, "plan.md"), `# ${slug}\n`);
       fs.writeFileSync(path.join(d, "checklist.md"), "- [ ] a — A\n");
@@ -2347,7 +2348,7 @@ describe("hook vendor runtime", () => {
       }).ok,
     ).toBe(true);
 
-    const planDir = path.join(root, "plans", "demo");
+    const planDir = path.join(root, DEFAULT_PLANS_DIR, "demo");
     fs.mkdirSync(planDir, { recursive: true });
     fs.writeFileSync(path.join(planDir, "plan.md"), "# demo\n");
     fs.writeFileSync(path.join(planDir, "checklist.md"), "- [ ] a — A\n");
@@ -2448,9 +2449,9 @@ describe("hook vendor runtime", () => {
     const editPath = path.join(root, "src", "app.ts");
     fs.mkdirSync(path.dirname(editPath), { recursive: true });
     fs.writeFileSync(editPath, "export {}\n");
-    fs.mkdirSync(path.join(root, "plans", "demo"), { recursive: true });
+    fs.mkdirSync(path.join(root, DEFAULT_PLANS_DIR, "demo"), { recursive: true });
     fs.writeFileSync(
-      path.join(root, "plans", "demo", "checklist.md"),
+      path.join(root, DEFAULT_PLANS_DIR, "demo", "checklist.md"),
       "- [ ] a — A\n- [ ] b — B\n",
     );
 
@@ -2464,7 +2465,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "demo",
-      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "demo", "checklist.md"),
     });
     store.close();
 
@@ -2523,7 +2524,7 @@ describe("hook vendor runtime", () => {
       armed: 0,
       paused: 0,
       track_id: "demo",
-      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "demo", "checklist.md"),
     });
     storeAbort.close();
     const abortStop = spawnSync(process.execPath, [hook, "--event", "Stop"], {
@@ -2555,7 +2556,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "demo",
-      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "demo", "checklist.md"),
     });
     store2.close();
 
@@ -2614,7 +2615,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "demo",
-      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "demo", "checklist.md"),
     });
     store.updateReviewChain(cid, {
       chain_pending: 1,
@@ -2679,7 +2680,7 @@ describe("hook vendor runtime", () => {
       armed: 1,
       paused: 0,
       track_id: "demo",
-      checklist_path: path.join(root, "plans", "demo", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "demo", "checklist.md"),
     });
     store.updateReviewChain(cid, {
       chain_pending: 1,

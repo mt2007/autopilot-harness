@@ -68,6 +68,7 @@ import {
   validateFactoryHooksShape,
 } from "../src/init/factory-hooks-merge.js";
 import { installInitYes } from "../src/init/install.js";
+import { DEFAULT_PLANS_DIR } from "../src/init/artifact-defaults.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOOK_ASSET = path.resolve(
@@ -79,8 +80,13 @@ function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-factory-contract-"));
 }
 
-function writeChecklist(root: string, slug: string, body: string): void {
-  const dir = path.join(root, "plans", slug);
+function writeChecklist(
+  root: string,
+  slug: string,
+  body: string,
+  plansDir = "plans",
+): void {
+  const dir = path.join(root, plansDir, slug);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "plan.md"), `# ${slug}\n`);
   fs.writeFileSync(path.join(dir, "checklist.md"), body);
@@ -796,8 +802,8 @@ describe("factory contract matrix", () => {
         force: false,
       }).ok,
     ).toBe(true);
-    writeChecklist(root, "alpha", "- [ ] a — A\n");
-    writeChecklist(root, "beta", "- [ ] b — B\n");
+    writeChecklist(root, "alpha", "- [ ] a — A\n", DEFAULT_PLANS_DIR);
+    writeChecklist(root, "beta", "- [ ] b — B\n", DEFAULT_PLANS_DIR);
 
     const cid = "hook-factory-contract-aaaa-bbbb-cccc-ddddeeee0001";
 
@@ -852,7 +858,7 @@ describe("factory contract matrix", () => {
       armed: 1,
       paused: 0,
       track_id: "alpha",
-      checklist_path: path.join(root, "plans", "alpha", "checklist.md"),
+      checklist_path: path.join(root, DEFAULT_PLANS_DIR, "alpha", "checklist.md"),
     });
     armed.close();
 
@@ -903,7 +909,7 @@ describe("factory contract matrix", () => {
       session_id: cid,
       tool_name: "Edit",
       tool_input: {
-        file_path: path.join(root, "plans", "alpha", "plan.md"),
+        file_path: path.join(root, DEFAULT_PLANS_DIR, "alpha", "plan.md"),
       },
       cwd: root,
     });
