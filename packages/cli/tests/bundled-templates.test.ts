@@ -10,7 +10,7 @@ import {
   isUsableTemplatesRoot,
 } from "../src/template-paths.js";
 import { AUTOPILOT_SKILL_NAMES, AUTOPILOT_WORKFLOW_FILES } from "../src/init/install.js";
-import { SKILL_I18N_KEYS } from "@autopilot-harness/i18n";
+import { loadLocale, SKILL_I18N_KEYS } from "@autopilot-harness/i18n";
 
 const cliRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -525,6 +525,50 @@ describe("bundled templates for npm publish", () => {
     expect([...AUTOPILOT_SKILL_NAMES].sort()).toEqual(
       Object.keys(SKILL_I18N_KEYS).sort(),
     );
+  });
+
+  it("vendor runtime embeds every SKILL_I18N_KEYS entry for en and zh-CN", () => {
+    const runtime = fs.readFileSync(
+      path.join(cliRoot, "assets", "vendor", "runtime.mjs"),
+      "utf8",
+    );
+    /** esbuild escapes non-ASCII / some punctuation as \\uXXXX (uppercase). */
+    const embedded = (text: string): boolean => {
+      if (runtime.includes(text)) return true;
+      const esc = [...text]
+        .map((ch) => {
+          const cp = ch.codePointAt(0)!;
+          if (cp >= 0x20 && cp <= 0x7e && ch !== "\\" && ch !== '"') {
+            return ch;
+          }
+          if (cp > 0xffff) {
+            const adj = cp - 0x10000;
+            const hi = 0xd800 + (adj >> 10);
+            const lo = 0xdc00 + (adj & 0x3ff);
+            return (
+              "\\u" +
+              hi.toString(16).toUpperCase().padStart(4, "0") +
+              "\\u" +
+              lo.toString(16).toUpperCase().padStart(4, "0")
+            );
+          }
+          return "\\u" + cp.toString(16).toUpperCase().padStart(4, "0");
+        })
+        .join("");
+      return runtime.includes(esc);
+    };
+    const en = loadLocale("en");
+    const zh = loadLocale("zh-CN");
+    for (const key of Object.values(SKILL_I18N_KEYS)) {
+      const hits = runtime.match(new RegExp(`${key}:\\s*\\{`, "g"));
+      expect(hits?.length, key).toBeGreaterThanOrEqual(2);
+      expect(embedded(en.skill[key].description), `en ${key}`).toBe(true);
+      expect(embedded(zh.skill[key].description), `zh ${key}`).toBe(true);
+    }
+    // Followup tip from archive gate — same forgotten-bundle risk.
+    expect(runtime.match(/archive_suggest:/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(embedded(en.followup.archive_suggest)).toBe(true);
+    expect(embedded(zh.followup.archive_suggest)).toBe(true);
   });
 
   it("sync-dist-assets REQUIRED_RELATIVE covers AUTOPILOT_* and core migrations", () => {

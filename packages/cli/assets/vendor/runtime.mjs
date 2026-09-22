@@ -30,6 +30,9 @@ var en_default = {
     },
     autopilot_archive: {
       description: "Archive Behavior deltas into specs_dir"
+    },
+    autopilot_diagnose: {
+      description: "Diagnose stuck Autopilot (read-only)"
     }
   },
   followup: {
@@ -111,6 +114,9 @@ var zh_CN_default = {
     },
     autopilot_archive: {
       description: "\u5C06 Behavior deltas \u5F52\u6863\u8FDB specs_dir"
+    },
+    autopilot_diagnose: {
+      description: "\u8BCA\u65AD\u5361\u4F4F\u7684 Autopilot\uFF08\u53EA\u8BFB\uFF09"
     }
   },
   followup: {
