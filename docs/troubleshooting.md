@@ -39,6 +39,10 @@ Claude’s consecutive Stop **block cap** defaults to **8**.
 - Project `env` may need workspace **trust** before Claude applies it — if the cap never takes effect, accept the trust dialog for the project folder, then restart Claude / open a new session.
 - Dual-host: after Cursor init, `npx @autopilot-harness/cli init --yes --add-platform claude-code`.
 
+### Tier-B hosts (no fake SubagentStop)
+
+- **0.17+ Tier-B** (Codex, Kimi, Copilot, Grok, Gemini, Factory, Hermes, Antigravity, Devin, …): Autopilot **does not** install fake `SubagentStop` / `subagentStop`. If a child changed product files **without** a parent edit hook, expect **parent Stop dirty-arm** only (best-effort; not Tier-S parity). See [hosts.md — Subagents](./hosts.md#subagents-neutral-policy--tiers).
+
 ### Codex
 
 Codex has **no documented numeric** consecutive Stop block cap (research snapshot 2026-09). Long confirm chains still need a healthy install:

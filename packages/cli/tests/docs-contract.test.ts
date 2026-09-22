@@ -158,6 +158,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/subagentStop/);
     expect(tips).toMatch(/SubagentStop/);
     expect(tips).toMatch(/doctor` FAILs when the Autopilot \*\*`SubagentStop`\*\*|doctor` FAILs when.*SubagentStop/i);
+    expect(tips).toMatch(/Tier-B[\s\S]{0,200}does not\*\* install fake|Tier-B[\s\S]{0,200}fake `SubagentStop`/i);
+    expect(tips).toMatch(/parent Stop dirty-arm|Stop dirty-arm/i);
     expect(tips).toMatch(/Tier-S|neutral.*subagent/i);
     expect(tips).toMatch(/double followup/i);
     expect(tips).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
@@ -1162,6 +1164,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/subagent stop \*\*arms only\*\*|arms parent only/i);
     expect(hosts).toMatch(/0\.17\+/);
     expect(hosts).toMatch(
+      /No\*\* fake `SubagentStop`|No\*\* fake SubagentStop|\*\*No\*\* fake `SubagentStop`/i,
+    );
+    expect(hosts).toMatch(/stop dirty-arm|Stop dirty-arm/i);
+    expect(hosts).toMatch(/Tier-B honesty|best-effort/i);
+    expect(hosts).toMatch(
       /Autopilot \*\*`subagentStop`\*\*|also on Autopilot \*\*`subagentStop`\*\*/i,
     );
     expect(hosts).toMatch(/\*\*`SubagentStop`\*\*/);
@@ -1550,6 +1557,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(
       /doctor` FAILs when that Autopilot fingerprint is missing/i,
     );
+    expect(body).toMatch(/Tier-B/);
+    expect(body).toMatch(/No\*\* fake SubagentStop|No fake SubagentStop/i);
+    expect(body).toMatch(/Stop dirty-arm/i);
     expect(body).toMatch(/arms parent only|arm-only/i);
     expect(body).not.toMatch(/See the v0\.1 plan/);
     expect(body).toMatch(/ReviewEngine/);

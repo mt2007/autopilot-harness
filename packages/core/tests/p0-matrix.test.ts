@@ -549,6 +549,11 @@ describe("review-engine P0 matrix", () => {
   });
 
   it("F-DIRTY-STOP: shell-dirty product path arms fix instead of soft need_evidence", () => {
+    // Tier-B honesty (0.17): hosts without a usable SubagentStop do **not** get a
+    // fake subagent-stop hook. This case models a **child / shell / unmatched tool**
+    // that changed product files while the **parent** never saw afterFileEdit /
+    // PostToolUse — closeout is parent Stop **dirty-arm** (git product dirty vs HEAD)
+    // via ReviewEngine.maybeArmCodeEditedFromDirtyTree, then the normal fix tip.
     const dirtyRoot = tmpRoot();
     const run = (args: string[]) => {
       const r = spawnSync("git", args, {
@@ -568,7 +573,7 @@ describe("review-engine P0 matrix", () => {
     fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
     run(["add", "-A"]);
     run(["commit", "-m", "init"]);
-    // Shell-style write (no afterFileEdit): dirties product file vs HEAD.
+    // Product write with **no** edit-hook arm (code_edited stays 0 until Stop).
     fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
 
     const dirtyStore = StateStore.openMemory(dirtyRoot);

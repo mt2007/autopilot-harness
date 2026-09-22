@@ -85,10 +85,12 @@ When a subagent **does** edit product code, Autopilot still wants fix→confirm�
 | Tier | Hosts (this build) | What Autopilot does | Honest limit |
 |------|--------------------|---------------------|--------------|
 | **Tier-S** | **Cursor**, **Claude Code** | **0.17+:** install `subagentStop` / `SubagentStop`; attribute parent when payload names a **pre-existing** parent session; edit hooks with parent → arm parent; subagent stop **arms only** (no followup / no block-continue); review on **parent** stop | Cursor **background** subagents may never fire `subagentStop`; empty `modified_files` → git dirty probe; no parent / missing parent session → **no-op** (does not invent sessions) |
-| **Tier-B** | Codex, Kimi, Copilot, Grok, Gemini, Factory, Hermes, Antigravity, Devin, … | **No** fake SubagentStop wiring (host has no usable event). Rely on parent **stop dirty-arm** + normal edit hooks when they share the parent session id | If a child runs in an isolated session with no parent stop dirty path, closeout is **best-effort only** — do not claim Tier-S parity |
+| **Tier-B** | Codex, Kimi, Copilot, Grok, Gemini, Factory, Hermes, Antigravity, Devin, … | **No** fake `SubagentStop` / `subagentStop` install (host has no usable event). Rely on parent **stop dirty-arm** (git product dirty vs HEAD on parent Stop) + normal edit hooks when they share the parent session id | If a child edits product code **without** parent `afterFileEdit` / `PostToolUse` (isolated session, shell, unmatched tool), closeout is **parent Stop dirty-arm only** — **best-effort**; do **not** claim Tier-S parity |
 | **Tier-N** | Hosts / surfaces with little or no delegation (e.g. some CLI-only flows, Runner meta loop) | N/A — no subagent lifecycle to bridge | Neutrality still applies; nothing to arm |
 
 **Do not** read Tier-S as “please use subagents.” It only means: if the host fires those events, Autopilot can keep the parent review chain coherent.
+
+**Tier-B honesty:** Autopilot will **not** invent SubagentStop-shaped hooks for Codex/Kimi/Copilot/Grok/Gemini/Factory/Hermes/Antigravity/Devin (etc.). When a delegated child mutates product files and the parent never saw an edit hook, the shared ReviewEngine path on **parent Stop** still probes product dirty vs HEAD and may arm `code_edited` — that is the documented closeout, not a silent Tier-S substitute.
 
 ## Stop-loop caps (why ports matter)
 
