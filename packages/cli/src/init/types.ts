@@ -34,9 +34,9 @@ export interface InitYesOptions {
   locale: string;
   force: boolean;
   packageVersion?: string;
-  /** Artifact root under project (default `plans`). */
+  /** Track artifact root under project (new-init default `docs/autopilot/plans`). */
   plansDir?: string;
-  /** How to treat plans/ in git (default commit = do not gitignore). */
+  /** How to treat the plans tree in git (default commit = do not gitignore). */
   plansGit?: PlansGitPolicy;
   /** Write review.verify.enabled (default false). */
   verifyEnabled?: boolean;

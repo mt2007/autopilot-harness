@@ -570,6 +570,7 @@ describe("loadProjectHookConfig", () => {
     const root = hookedRoot();
     const cfg = loadProjectHookConfig(root);
     expect(cfg.plansDir).toBe("plans");
+    expect(cfg.specsDir).toBeNull();
     expect(cfg.triggers.on).toEqual(DEFAULT_TRIGGERS.on);
     expect(cfg.triggers.run).toEqual(DEFAULT_TRIGGERS.run);
     // Defensive copies — mutating the result must not touch DEFAULT_TRIGGERS.
@@ -689,9 +690,52 @@ artifacts:
       fs.symlinkSync(target, path.join(root, ".autopilot", "config.yml"));
       const cfg = loadProjectHookConfig(root);
       expect(cfg.plansDir).toBe("plans");
+      expect(cfg.specsDir).toBeNull();
       expect(cfg.triggers.on).toEqual(DEFAULT_TRIGGERS.on);
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it("loads valid specs_dir and fails open to null when invalid/blank", () => {
+    const root = hookedRoot();
+    writeConfig(
+      root,
+      `
+artifacts:
+  plans_dir: plans
+  specs_dir: docs/autopilot/specs
+`,
+    );
+    expect(loadProjectHookConfig(root).specsDir).toBe("docs/autopilot/specs");
+
+    writeConfig(
+      root,
+      `
+artifacts:
+  plans_dir: plans
+  specs_dir: ../escape
+`,
+    );
+    expect(loadProjectHookConfig(root).specsDir).toBeNull();
+
+    writeConfig(
+      root,
+      `
+artifacts:
+  plans_dir: plans
+  specs_dir: "   "
+`,
+    );
+    expect(loadProjectHookConfig(root).specsDir).toBeNull();
+
+    writeConfig(
+      root,
+      `
+artifacts:
+  plans_dir: plans
+`,
+    );
+    expect(loadProjectHookConfig(root).specsDir).toBeNull();
   });
 });

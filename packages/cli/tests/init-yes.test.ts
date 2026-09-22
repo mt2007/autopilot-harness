@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillDescription } from "@autopilot-harness/i18n";
 import {
   ensureAutopilotIgnore,
+  ensureDocsAutopilotPortal,
   installInitYes,
   mergeHooksJson,
   preflightForceRefresh,
@@ -408,10 +409,24 @@ describe("init --yes install", () => {
     expect(config).toMatch(/id:\s*cursor/);
     expect(config).toMatch(/surface:\s*ide/);
     expect(config).toMatch(/locale:\s*en/);
+    expect(config).toMatch(/plans_dir:\s*docs\/autopilot\/plans/);
+    expect(config).toMatch(/specs_dir:\s*docs\/autopilot\/specs/);
     expect(config).toMatch(/confirm_rounds:\s*5/);
     expect(config).toMatch(/max_before_pause:\s*0/);
     expect(config).toMatch(/# When enabled[\s\S]*#\s*commands:/);
     expect(config).toMatch(/enabled:\s*false/);
+    const ignoreBody = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    expect(ignoreBody).toMatch(/^docs\/autopilot\/plans\/\*\*$/m);
+    expect(ignoreBody).toMatch(/^docs\/autopilot\/specs\/\*\*$/m);
+    expect(
+      fs.existsSync(path.join(root, "docs", "autopilot", "specs", "README.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(root, "docs", "autopilot", "README.md")),
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(root, "docs", "autopilot", "plans", "README.md")),
+    ).toBe(true);
   });
 
   it("refuses existing .autopilot without --force", () => {
@@ -1311,7 +1326,11 @@ locale: en
 
   it("refuses when plansDir is a dangling symlink (not treated as missing)", () => {
     root = tmpProject();
-    fs.symlinkSync(path.join(root, "missing-plans"), path.join(root, "plans"));
+    fs.mkdirSync(path.join(root, "docs", "autopilot"), { recursive: true });
+    fs.symlinkSync(
+      path.join(root, "missing-plans"),
+      path.join(root, "docs", "autopilot", "plans"),
+    );
     const result = installInitYes({
       projectRoot: root,
       platform: "cursor",
@@ -1328,7 +1347,12 @@ locale: en
 
   it("refuses when plansDir is a regular file (not a directory)", () => {
     root = tmpProject();
-    fs.writeFileSync(path.join(root, "plans"), "not-a-dir\n", "utf8");
+    fs.mkdirSync(path.join(root, "docs", "autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "docs", "autopilot", "plans"),
+      "not-a-dir\n",
+      "utf8",
+    );
     const result = installInitYes({
       projectRoot: root,
       platform: "cursor",
@@ -1810,6 +1834,7 @@ describe("ensureAutopilotIgnore merge", () => {
     const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
     expect(body).toMatch(/^plans\/\*\*$/m);
     expect(body).toMatch(/^work\/plans\/\*\*$/m);
+    expect(body).toMatch(/^docs\/autopilot\/specs\/\*\*$/m);
   });
 
   it("merges custom plansDir/** into existing ignore", () => {
@@ -1843,27 +1868,59 @@ describe("ensureAutopilotIgnore merge", () => {
     expect(body).toMatch(/#\s*work\/plans\/\*\*/);
   });
 
-  it("invalid plansDir falls back to plans/** without injecting raw input", () => {
+  it("invalid plansDir falls back to default plans path without injecting raw input", () => {
     root = tmpProject();
     const rel = ensureAutopilotIgnore(root, templatesRoot, "../escape");
     expect(rel).toBe(".autopilotignore");
     const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
-    expect(body).toMatch(/^plans\/\*\*$/m);
+    expect(body).toMatch(/^docs\/autopilot\/plans\/\*\*$/m);
     expect(body).not.toMatch(/\.\.\/escape/);
+  });
+
+  it("blank specsDir falls back to default specs path (not plans/)", () => {
+    root = tmpProject();
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "work/plans", "  ");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");
+    expect(body).toMatch(/^work\/plans\/\*\*$/m);
+    expect(body).toMatch(/^docs\/autopilot\/specs\/\*\*$/m);
+    // Blank must not be treated as core's empty→"plans" fail-open.
+    expect(body).not.toMatch(/# artifacts\.specs_dir \(plans\)/);
+  });
+
+  it("blank specsDir near size cap slim-merge still covers default specs/**", () => {
+    root = tmpProject();
+    const dest = path.join(root, ".autopilotignore");
+    const header = "custom-only/**\n";
+    const slimTail =
+      "\n# --- merged artifacts.plans_dir/specs_dir (upgrade/init) ---\nwork/plans/**\ndocs/autopilot/specs/**\n";
+    const fillerLen =
+      MAX_UNTRUSTED_TEXT_BYTES -
+      Buffer.byteLength(header, "utf8") -
+      Buffer.byteLength(slimTail, "utf8") -
+      20;
+    fs.writeFileSync(dest, header + "z".repeat(Math.max(fillerLen, 1)) + "\n", "utf8");
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "work/plans", "\t");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(dest, "utf8");
+    expect(body).toMatch(/^work\/plans\/\*\*$/m);
+    expect(body).toMatch(/^docs\/autopilot\/specs\/\*\*$/m);
+    expect(body).not.toMatch(
+      /# --- merged artifacts\.plans_dir\/specs_dir \(upgrade\/init\) ---\nwork\/plans\/\*\*\nplans\/\*\*/,
+    );
   });
 
   it("near size cap still merges plansDir/** when full template merge cannot fit", () => {
     root = tmpProject();
     const dest = path.join(root, ".autopilotignore");
-    // Large existing file with room for a short plansDir line only.
+    // Large existing file with room for short plansDir + specsDir slim lines only.
     const header = "custom-only/**\n";
+    const slimTail =
+      "\n# --- merged artifacts.plans_dir/specs_dir (upgrade/init) ---\nwork/plans/**\ndocs/autopilot/specs/**\n";
     const fillerLen =
       MAX_UNTRUSTED_TEXT_BYTES -
       Buffer.byteLength(header, "utf8") -
-      Buffer.byteLength(
-        "\n# --- merged artifacts.plans_dir (upgrade/init) ---\nwork/plans/**\n",
-        "utf8",
-      ) -
+      Buffer.byteLength(slimTail, "utf8") -
       20;
     fs.writeFileSync(dest, header + "z".repeat(Math.max(fillerLen, 1)) + "\n", "utf8");
     const beforeLen = Buffer.byteLength(fs.readFileSync(dest), "utf8");
@@ -1872,8 +1929,72 @@ describe("ensureAutopilotIgnore merge", () => {
     expect(rel).toBe(".autopilotignore");
     const body = fs.readFileSync(dest, "utf8");
     expect(body).toMatch(/^work\/plans\/\*\*$/m);
+    expect(body).toMatch(/^docs\/autopilot\/specs\/\*\*$/m);
     expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
       MAX_UNTRUSTED_TEXT_BYTES,
     );
+  });
+
+  it("near size cap prefers plansDir alone when both slim lines cannot fit", () => {
+    root = tmpProject();
+    const dest = path.join(root, ".autopilotignore");
+    const header = "custom-only/**\n";
+    const bothTail =
+      "\n# --- merged artifacts.plans_dir/specs_dir (upgrade/init) ---\nwork/plans/**\ndocs/autopilot/specs/**\n";
+    const plansOnlyTail =
+      "\n# --- merged artifacts.plans_dir/specs_dir (upgrade/init) ---\nwork/plans/**\n";
+    // Room for plans-only slim write, but not plans+specs together.
+    const fillerLen =
+      MAX_UNTRUSTED_TEXT_BYTES -
+      Buffer.byteLength(header, "utf8") -
+      Buffer.byteLength(plansOnlyTail, "utf8") -
+      5;
+    fs.writeFileSync(dest, header + "z".repeat(Math.max(fillerLen, 1)) + "\n", "utf8");
+    const before = Buffer.byteLength(fs.readFileSync(dest), "utf8");
+    expect(before + Buffer.byteLength(bothTail, "utf8")).toBeGreaterThan(
+      MAX_UNTRUSTED_TEXT_BYTES,
+    );
+    const rel = ensureAutopilotIgnore(root, templatesRoot, "work/plans");
+    expect(rel).toBe(".autopilotignore");
+    const body = fs.readFileSync(dest, "utf8");
+    expect(body).toMatch(/^work\/plans\/\*\*$/m);
+    expect(body).not.toMatch(/^docs\/autopilot\/specs\/\*\*$/m);
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
+      MAX_UNTRUSTED_TEXT_BYTES,
+    );
+  });
+});
+
+describe("ensureDocsAutopilotPortal", () => {
+  let root = "";
+  afterEach(() => {
+    if (root) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses empty projectRoot", () => {
+    expect(() =>
+      ensureDocsAutopilotPortal("", "docs/autopilot/plans", "docs/autopilot/specs"),
+    ).toThrow(/projectRoot must be a non-empty string/);
+  });
+
+  it("writes portal + specs README once (idempotent)", () => {
+    root = tmpProject();
+    const first = ensureDocsAutopilotPortal(
+      root,
+      "docs/autopilot/plans",
+      "docs/autopilot/specs",
+    );
+    expect(first).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/docs[/\\]autopilot[/\\]README\.md$/),
+        expect.stringMatching(/docs[/\\]autopilot[/\\]specs[/\\]README\.md$/),
+      ]),
+    );
+    const second = ensureDocsAutopilotPortal(
+      root,
+      "docs/autopilot/plans",
+      "docs/autopilot/specs",
+    );
+    expect(second).toEqual([]);
   });
 });

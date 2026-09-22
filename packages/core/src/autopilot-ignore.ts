@@ -39,8 +39,12 @@ export const DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot — paths that do NOT 
 .devin/hooks.v1.json
 .devin/skills/**
 
-# Planning artifacts
+# Planning / track artifacts (legacy root + new default portal)
 plans/**
+docs/autopilot/plans/**
+
+# Cross-track behavior specs (default artifacts.specs_dir)
+docs/autopilot/specs/**
 
 # Common build / vendor trees
 node_modules/**

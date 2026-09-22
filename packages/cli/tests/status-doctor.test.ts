@@ -74,7 +74,7 @@ describe("formatStatus", () => {
     expect(text).toMatch(/^Autopilot status/m);
     expect(text).toMatch(/platforms:\s*cursor\(ide\)/);
     expect(text).toMatch(/locale:\s*en/);
-    expect(text).toMatch(/plans:\s*plans/);
+    expect(text).toMatch(/plans:\s*docs\/autopilot\/plans/);
     expect(text).toMatch(/sessions:\s*1/);
     expect(text).toMatch(/Auth fix/);
     expect(text).toMatch(/executing \(paused\)/);
@@ -1298,7 +1298,7 @@ describe("runDoctor", () => {
     const yaml = fs.readFileSync(configPath, "utf8");
     fs.writeFileSync(
       configPath,
-      yaml.replace(/plans_dir:\s*plans/, "plans_dir: ../escape"),
+      yaml.replace(/plans_dir:\s*.+/m, "plans_dir: ../escape"),
     );
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(false);
@@ -1309,6 +1309,32 @@ describe("runDoctor", () => {
     );
     expect(formatStatus(root)).toMatch(/plans:\s*invalid/i);
     expect(formatStatus(root)).toMatch(/not a valid in-project path/i);
+  });
+
+  it("INFO when plans_dir is legacy root plans/ (does not move)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    const yaml = fs.readFileSync(configPath, "utf8");
+    fs.writeFileSync(
+      configPath,
+      yaml.replace(/plans_dir:\s*.+/m, "plans_dir: plans"),
+    );
+    fs.mkdirSync(path.join(root, "plans"), { recursive: true });
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    expect(lines.join("\n")).toMatch(/OK\s+plans \(plans\/\)/);
+    expect(lines.join("\n")).toMatch(
+      /INFO\s+artifacts\.plans_dir is plans\/ \(legacy root\)/i,
+    );
   });
 
   it("readStaleAfterHours respects config (number or numeric string)", () => {
@@ -1401,7 +1427,7 @@ describe("runDoctor", () => {
     const yaml = fs.readFileSync(configPath, "utf8");
     fs.writeFileSync(
       configPath,
-      yaml.replace(/plans_dir:\s*plans/, "plans_dir: 12"),
+      yaml.replace(/plans_dir:\s*.+/m, "plans_dir: 12"),
     );
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(false);
@@ -1587,7 +1613,7 @@ describe("runDoctor", () => {
         force: false,
       }).ok,
     ).toBe(true);
-    const plansDir = path.join(root, "plans");
+    const plansDir = path.join(root, "docs", "autopilot", "plans");
     fs.rmSync(plansDir, { recursive: true, force: true });
     fs.symlinkSync(path.join(root, "missing-plans"), plansDir);
     const { ok, lines } = runDoctor(root);

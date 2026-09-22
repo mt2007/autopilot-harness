@@ -40,7 +40,10 @@ packages/templates          skills (*.tpl) + planning/executing workflows
 ```
 
 State lives in `.autopilot/state.db`. Progress authority is
-`<plansDir>/<slug>/checklist.md` (YAML `artifacts.plans_dir`, default `plans/`).
+`<plansDir>/<slug>/checklist.md` (YAML `artifacts.plans_dir`; **new-init default**
+`docs/autopilot/plans`). Cross-track behavior specs use `artifacts.specs_dir`
+(new-init default `docs/autopilot/specs`). Both dirs are covered in
+`.autopilotignore` so edits there do not arm product-code self-review.
 
 `review.scope` in `.autopilot/config.yml`: **`project`** (init default) runs on any product-code edit without ON/RUN (idle/ambient or **planning** ends at review-complete, not checklist advance); **`executing_only`** runs fix→confirm only during Autopilot RUN. See README **When does self-review run?** and [Config](./config.md).
 

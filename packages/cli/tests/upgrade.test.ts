@@ -216,6 +216,51 @@ review:
     const after = fs.readFileSync(configPath, "utf8");
     expect(after).toMatch(/scope:\s*executing_only/);
     expect(after).not.toMatch(/scope:\s*project/);
+    // Missing plans_dir must fill to legacy effective path, not new-init portal.
+    expect(after).toMatch(/plans_dir:\s*plans\b/);
+    expect(after).not.toMatch(/plans_dir:\s*docs\/autopilot\/plans/);
+    expect(after).toMatch(/specs_dir:\s*docs\/autopilot\/specs/);
+  });
+
+  it("fill-missing keeps existing plans_dir and only adds specs_dir", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const configPath = path.join(root, ".autopilot", "config.yml");
+    fs.writeFileSync(
+      configPath,
+      `platforms:
+  - id: cursor
+    surface: ide
+locale: en
+artifacts:
+  plans_dir: work/plans
+review:
+  confirm_rounds: 5
+  scope: project
+`,
+      "utf8",
+    );
+    const plansFile = path.join(root, "work", "plans", "keep-me.md");
+    fs.mkdirSync(path.dirname(plansFile), { recursive: true });
+    fs.writeFileSync(plansFile, "stay\n", "utf8");
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.1.0" });
+    expect(r.ok).toBe(true);
+    const after = fs.readFileSync(configPath, "utf8");
+    expect(after).toMatch(/plans_dir:\s*work\/plans/);
+    expect(after).toMatch(/specs_dir:\s*docs\/autopilot\/specs/);
+    expect(fs.readFileSync(plansFile, "utf8")).toBe("stay\n");
+    // Upgrade must not relocate or rewrite existing track trees.
+    expect(
+      fs.existsSync(path.join(root, "docs", "autopilot", "plans", "keep-me.md")),
+    ).toBe(false);
   });
 
   it("dry-run lists actions without writing pin bump side effects twice", () => {

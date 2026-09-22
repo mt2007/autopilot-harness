@@ -17,7 +17,7 @@
 Vibe coding 很快，但范围漂移、验收含糊、「看起来做完了」却跳过难审的角度。Autopilot 把工作钉在可持久的轨上：
 
 1. **先烤问方案**，再写产品代码  
-2. **按 checklist 执行**（`plans/<slug>/`）  
+2. **按 checklist 执行**（`artifacts.plans_dir/<slug>/`，新 init 默认 `docs/autopilot/plans`）  
 3. **多角度自审通过后**再勾选完成  
 
 它**不是**通用聊天 Agent，**不是**替代你的 CI/测试框架，**也不是** Jira/看板产品（checklist + 执行 FSM，没有看板 UI）。**本仓已接入 Cursor、Claude Code、Codex、Kimi Code、GitHub Copilot CLI、Grok Build CLI、Gemini CLI、Factory Droid、Hermes Agent、Antigravity、Pi、Devin CLI，以及 Runner（meta）**（CLI 与 App 共用同一 Codex port；**Kimi Code** 为 **Stop≤1/turn 降级**；**Copilot CLI** 为 **Stop consecutive ≤8 降级**；**Grok Build** 为 **Stop ≤8/turn 降级** — 每 turn 重置；**Gemini CLI** 已 **Shipped**，诚实上限 **AfterAgent turn cap ≤100** / `MAX_TURNS`，软建议 CLI **≥0.31.0**；**Factory Droid** 已 **Shipped**，**`stop_hook_active` 下 multi-block 活链已证** — 无 raise；**免活链 → 默认 degraded≤1**；**Hermes Agent** 已 **Shipped**，**shell `pre_verify` continue 活链已证** — nudge ≥32；edit-only；软下限 **≥0.21.3**；**免活链 → degraded + 人闸认 R1**；**Antigravity** 已 **Shipped**（**宿主 Stop continue 活链已证**，**0.10.1**）— `NO_TOOL_CALL` + `transcript_full.jsonl` + **`.agents/bin` shim**；CLI 须挂 workspace；**Pi** 为 **Shipped**（**交互 TUI 活链 Stop-continue ≥1× 已证**） — 进程内 **`.pi/extensions/autopilot.ts`**；软下限 **≥0.85.1**；**`/trust` + `/reload`**；**R10** 仅交互 TUI（**不**支持 `pi -p` / JSON / print）；共用 **`.agents/skills`**；不在 shell `KNOWN_PLATFORMS`（十一路 shell + Pi 扩展）；**Runner** 为 **Shipped (meta)** — `runner start` 外环 + `@autopilot-harness/port-runner`；须配置 **`runner.command`**；在 eleven-way hook stamp 矩阵之外；**`--on` / `--brief` / `--message`** 规划已 shipped（**C6** planning `stopped`→0）；活链可 **waive**）。**Devin CLI** 已 **Shipped**（**交互 CLI 活链 Stop-continue ≥1× 已证** + edit arm；**仅 CLI** — 不写 Desktop 已支持，不含云端 / Cascade；hooks `.devin/hooks.v1.json`；`$DEVIN_PROJECT_DIR`；skills `.devin/skills`；无文档 Stop 硬顶；shell **eleven-way**）。**OpenCode** 为路线图 **1 (next)**（等上游）— 见 [宿主说明](./docs/hosts.md)。
@@ -38,7 +38,7 @@ Autopilot 对「是否开 subagent / Task」**保持中立**——由宿主与 A
 
 | 步骤 | 你做什么 | Autopilot 做什么 | 产物 |
 |------|----------|------------------|------|
-| **规划** | 开 `/autopilot-on`；逐轮回答 grill | 写 `plans/<slug>/`（可改文档）；**不写产品代码** | `brief.md`、`plan.md`、`checklist.md` |
+| **规划** | 开 `/autopilot-on`；逐轮回答 grill | 写在 `artifacts.plans_dir` 下（可改文档）；**不写产品代码** | `<plansDir>/<slug>/brief.md`、`plan.md`、`checklist.md` |
 | **执行** | 开 `/autopilot-run` | 实现 **一项** checklist | 该项代码/文档 |
 | **自审** | （通常不用管 — stop followup 驱动） | 修复 → 旋转镜头确认 | 确认轮通过前该项保持打开 |
 | **推进** | — | 勾选 `[x]`；dirty 则本地 commit（干净跳过；**不**自动 push），然后下一项 | 更新 `checklist.md` |
@@ -54,9 +54,9 @@ Autopilot 对「是否开 subagent / Task」**保持中立**——由宿主与 A
 
 ### 规划（grill）
 
-`/autopilot-on` 启动设计树烤问：每轮问当前决策**前沿**（并给推荐答），等你回复再下一轮。问题序号**跨轮全局递增**（`Q1`、`Q2`…，勿每轮从 Q1 重计），并标注当前 **Round**。规划可改 `plans/**` 与文档 — **直到** `/autopilot-run` 才写产品代码。
+`/autopilot-on` 启动设计树烤问：每轮问当前决策**前沿**（并给推荐答），等你回复再下一轮。问题序号**跨轮全局递增**（`Q1`、`Q2`…，勿每轮从 Q1 重计），并标注当前 **Round**。规划可改 **`<plansDir>/**`**（`artifacts.plans_dir`）与文档 — **直到** `/autopilot-run` 才写产品代码。
 
-产物在 `plans/<slug>/brief.md`、`plan.md`、`checklist.md`。烤问灵感来自 **grill-me / grilling** 设计树技能。
+产物在 `<plansDir>/<slug>/brief.md`、`plan.md`、`checklist.md`（新 init 默认 `docs/autopilot/plans`）。烤问灵感来自 **grill-me / grilling** 设计树技能。
 
 ### 多角度自审
 
@@ -150,7 +150,7 @@ npx @autopilot-harness/cli doctor
 
 重载宿主窗口（Cursor：Reload Window；Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid / Hermes Agent / Antigravity / Pi：重启 / 新开会话 / `/reload`），然后：
 
-1. 规划 — Cursor/Claude：`/autopilot-on`；Codex：`.agents/skills` **且** 行首 `triggers.on`（如 `开启自动驾驶`；手打 slash 仍可解析；需 `/hooks` trust）；Kimi：`/skill:autopilot-on` **且** 行首；Copilot：`.github/skills` **且** 行首；Grok：`.grok/skills` **且** 行首；Gemini / Factory / Hermes / Antigravity / Pi：宿主 skills **且** 行首（Gemini **re-trust / `/hooks panel` / folder trust**，AfterAgent **≤100**；Factory **`$FACTORY_PROJECT_DIR`** + **`/hooks` 快照/reload**；Hermes **`$HERMES_HOME`** + consent/`hermes hooks doctor`；Antigravity **`.agents`**，`decision:continue`，活链已证 / CLI 挂 workspace；Pi **`.pi/extensions`**，`/trust`+`/reload`，软下限 **≥0.85.1**，**R10** 仅 TUI）→ grill → `plans/<slug>/`  
+1. 规划 — Cursor/Claude：`/autopilot-on`；Codex：`.agents/skills` **且** 行首 `triggers.on`（如 `开启自动驾驶`；手打 slash 仍可解析；需 `/hooks` trust）；Kimi：`/skill:autopilot-on` **且** 行首；Copilot：`.github/skills` **且** 行首；Grok：`.grok/skills` **且** 行首；Gemini / Factory / Hermes / Antigravity / Pi：宿主 skills **且** 行首（Gemini **re-trust / `/hooks panel` / folder trust**，AfterAgent **≤100**；Factory **`$FACTORY_PROJECT_DIR`** + **`/hooks` 快照/reload**；Hermes **`$HERMES_HOME`** + consent/`hermes hooks doctor`；Antigravity **`.agents`**，`decision:continue`，活链已证 / CLI 挂 workspace；Pi **`.pi/extensions`**，`/trust`+`/reload`，软下限 **≥0.85.1**，**R10** 仅 TUI）→ grill → `<plansDir>/<slug>/`
 2. 执行 — Cursor/Claude：`/autopilot-run`；Codex：`.agents/skills` **且** 行首 `triggers.run`（如 `开始执行`）；Kimi：`/skill:autopilot-run` **且** 行首；Copilot：`.github/skills` **且** 行首；Grok：`.grok/skills` **且** 行首；Gemini / Factory / Hermes / Antigravity / Pi：宿主 skills **且** 行首  
 
 更多命令：[docs/autopilot/quickstart.zh-CN.md](./docs/autopilot/quickstart.zh-CN.md)（[English](./docs/autopilot/quickstart.md)）。

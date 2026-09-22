@@ -1,14 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { StateStore } from "@autopilot-harness/core";
+import { StateStore, loadProjectHookConfig } from "@autopilot-harness/core";
 import { defaultConfigYaml } from "./init/default-config.js";
 import {
   mergeConfigYamlMissingKeys,
   readConfigInstallHints,
   readConfigPlatformsOrThrow,
 } from "./init/config-merge.js";
-import { installInitYes, preflightForceRefresh } from "./init/install.js";
+import {
+  ensureAutopilotIgnore,
+  ensureDocsAutopilotPortal,
+  installInitYes,
+  preflightForceRefresh,
+} from "./init/install.js";
+import { DEFAULT_SPECS_DIR } from "./init/artifact-defaults.js";
+import { resolveTemplatesRoot } from "./template-paths.js";
+import { fileURLToPath } from "node:url";
 import {
   applyPlatformsToConfigYaml,
   configWantsInstallableHost,
@@ -744,11 +752,15 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
     // Defaults include platforms[] so upgrade can append the key to legacy configs.
     // Keep review.scope fill-missing at executing_only (historical runtime default)
     // so upgrade never flips ambient review when the key was absent.
+    // plans_dir fill-missing must match the effective hook path (legacy fail-open
+    // `plans/`), not the new-init portal default — never retarget existing tracks.
+    const effectivePlansDir = loadProjectHookConfig(projectRoot).plansDir;
     const defaultsYaml = defaultConfigYaml({
       platforms,
       platform: hints.platform,
       surface: hints.surface,
       locale,
+      plansDir: effectivePlansDir,
       reviewScope: "executing_only",
     });
 
@@ -980,6 +992,33 @@ export function upgradeProject(opts: UpgradeOptions): UpgradeResult {
           assertNotSymlink(configPath, ".autopilot/config.yml");
           writeFileAtomic(configPath, toWrite, projectRoot);
           written.push(path.relative(projectRoot, configPath));
+        }
+      }
+    }
+
+    // After config merge (specs_dir may be new), refresh ignore coverage and
+    // ensure a thin specs README when specs_dir is configured — never move plans.
+    {
+      const after = loadProjectHookConfig(projectRoot);
+      const cliRoot = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "..",
+      );
+      const templatesRoot = resolveTemplatesRoot(cliRoot);
+      const ignoreRel = ensureAutopilotIgnore(
+        projectRoot,
+        templatesRoot,
+        after.plansDir,
+        after.specsDir ?? DEFAULT_SPECS_DIR,
+      );
+      if (ignoreRel && !written.includes(ignoreRel)) written.push(ignoreRel);
+      if (after.specsDir) {
+        for (const rel of ensureDocsAutopilotPortal(
+          projectRoot,
+          after.plansDir,
+          after.specsDir,
+        )) {
+          if (!written.includes(rel)) written.push(rel);
         }
       }
     }

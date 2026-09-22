@@ -18,13 +18,20 @@ import {
   readUntrustedUtf8File,
   writeFileReplaceSync,
 } from "../read-untrusted-file.js";
+import { DEFAULT_PLANS_DIR } from "./artifact-defaults.js";
 import {
   assertNotSymlink,
   assertParentDirInProject,
   assertRealpathInside,
+  assertRegularFileInsideProject,
   assertWrittenInsideProject,
+  assertPairInsideOrUnlinkAll,
+  assertPresentRealFile,
   mkdirRealDirSync,
   resolveProjectRootOrThrow,
+  isRealRegularFile,
+  isRealDirectory,
+  resolveNofollowFlag,
 } from "../project-fs.js";
 
 export {
@@ -40,7 +47,7 @@ export {
   isRealRegularFile,
   isRealDirectory,
   resolveNofollowFlag,
-} from "../project-fs.js";
+};
 
 /** Cap for .gitignore / shell rc text when appending Autopilot lines. */
 const MAX_APPEND_TEXT_BYTES = MAX_UNTRUSTED_TEXT_BYTES;
@@ -117,8 +124,8 @@ const PLANS_DIR_RE = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 export function normalizePlansDir(
   raw: string | undefined | null,
 ): { ok: true; value: string } | { ok: false; error: string } {
-  const trimmed = (raw ?? "plans").trim().replace(/\/+$/, "");
-  const value = trimmed || "plans";
+  const trimmed = (raw ?? DEFAULT_PLANS_DIR).trim().replace(/\/+$/, "");
+  const value = trimmed || DEFAULT_PLANS_DIR;
   if (path.isAbsolute(value) || value.startsWith("~")) {
     return { ok: false, error: "plansDir must be a relative path" };
   }
@@ -287,7 +294,7 @@ function appendGitignoreLines(
 /** Append plans dir to .gitignore once (dedupe). */
 export function applyPlansGitignore(
   projectRoot: string,
-  plansDir = "plans",
+  plansDir = DEFAULT_PLANS_DIR,
 ): string | null {
   const normalized = normalizePlansDir(plansDir);
   if (!normalized.ok) {
@@ -987,12 +994,12 @@ function hostActivationDocLines(
 export function writeQuickstart(
   projectRoot: string,
   locale: InitLocale,
-  plansDir = "plans",
+  plansDir = DEFAULT_PLANS_DIR,
   platform = "cursor",
 ): string | null {
   const root = resolveProjectRootOrThrow(projectRoot);
   const normalized = normalizePlansDir(plansDir);
-  const plansLabel = normalized.ok ? normalized.value : "plans";
+  const plansLabel = normalized.ok ? normalized.value : DEFAULT_PLANS_DIR;
   const docsDir = path.join(root, "docs");
   const destDir = path.join(docsDir, "autopilot");
   assertNotSymlink(docsDir, "docs/");
@@ -1185,7 +1192,7 @@ ${afterInstall.map((l) => `- ${l}`).join("\n")}
 - \`project\` 下双重 followup：关掉 \`~/.cursor\` 全局自审，或只用 Autopilot。
 - 改了代码却不自审：检查 \`review.scope\`、是否 paused/OFF、路径是否被 \`.autopilotignore\` / 未跟踪+\`.gitignore\` 排除。
 
-方案与清单在 \`${plansLabel}/<slug>/\`（权威进度是 \`checklist.md\`）。
+方案与清单在 \`${plansLabel}/<slug>/\`（\`artifacts.plans_dir\`；权威进度是 \`checklist.md\`）。
 `
       : `# Autopilot quickstart
 
@@ -1224,7 +1231,7 @@ ${executingPrefEn}
 
 **Example script (bare RUN, N≥2):** Hook needPick (phase non-executing) → Cursor continue / Claude additionalContext → agent lists numbered plans → user replies with a number or \`/autopilot-run <slug>\` → then executing.
 
-**Candidate sources:** scan runnable \`${plansLabel}/*/checklist.md\`, and/or \`status\` (\`pending\` + \`candidates\`); fall back to the plans scan if status fails.
+**Candidate sources:** scan runnable \`${plansLabel}/*/checklist.md\`, and/or \`status\` (\`pending\` + \`candidates\`); fall back to the plans-dir scan if status fails.
 
 ${runSkillEn}
 
@@ -1273,7 +1280,7 @@ Product-code paths exclude \`.autopilotignore\` hits and **untracked** \`.gitign
 - Double followups under \`project\`: disable \`~/.cursor\` global self-review, or use Autopilot alone.
 - Edited code but no self-review: check \`review.scope\`, paused/OFF, and whether the path is excluded by \`.autopilotignore\` or untracked+\`.gitignore\`.
 
-Artifacts live under \`${plansLabel}/<slug>/\` (progress authority is \`checklist.md\`).
+Artifacts live under \`${plansLabel}/<slug>/\` (\`artifacts.plans_dir\`; progress authority is \`checklist.md\`).
 `;
   assertNotSymlink(dest, "docs/autopilot/quickstart.md");
   writeTextFileReplace(dest, body, root);
@@ -1283,11 +1290,11 @@ Artifacts live under \`${plansLabel}/<slug>/\` (progress authority is \`checklis
 export function formatCheatSheet(
   locale: InitLocale,
   cliCommand: string = resolveCliCommand(),
-  plansDir = "plans",
+  plansDir = DEFAULT_PLANS_DIR,
   platformOrPlatforms: string | readonly string[] = "cursor",
 ): string[] {
   const normalized = normalizePlansDir(plansDir);
-  const plansLabel = normalized.ok ? normalized.value : "plans";
+  const plansLabel = normalized.ok ? normalized.value : DEFAULT_PLANS_DIR;
   const ids = uniquePlatformIds(platformOrPlatforms);
   const host =
     ids.length <= 1

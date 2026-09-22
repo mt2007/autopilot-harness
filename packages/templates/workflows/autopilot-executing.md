@@ -2,9 +2,11 @@
 
 Implement the current unchecked checklist item, then obey stop-hook followups.
 
+Track checklist lives under **`artifacts.plans_dir`** (`<plansDir>/<slug>/checklist.md`). Do not assume the literal path `plans/`.
+
 ## Per-item flow
 
-1. Read `plans/<slug>/checklist.md` — work only on `firstUnchecked()` (`- [ ] <id> — <title>`).
+1. Read `<plansDir>/<slug>/checklist.md` — work only on `firstUnchecked()` (`- [ ] <id> — <title>`).
 2. Implement within that item's scope (align with `plan.md`).
 3. Machine verify / completion evidence: write `.autopilot/verify-last.json` with matching `itemId` (and `ok: true` when using a hand-written report). Run configured verify commands when present.
    - **Required for every item before you stop** — especially no-code / ops / verify-only items. A stale `itemId` from a prior item blocks advance.
@@ -38,7 +40,7 @@ Implement the current unchecked checklist item, then obey stop-hook followups.
 When followup is advance or done:
 
 1. Mark **only** the completed current item named in the followup `[x]` in `checklist.md`. Do **not** mark the next item.
-2. Scoped conventional commit if the working tree has this item's changes — **include `checklist.md`** when `plans/` is committed (no `git add -A`, no secrets / `.autopilot/state.db`).
+2. Scoped conventional commit if the working tree has this item's changes — **include `checklist.md`** when `<plansDir>/` is committed (no `git add -A`, no secrets / `.autopilot/state.db`).
 3. **Then** start the next unchecked item named in the followup (next turn is OK for large code).
 
 ### Checklist `[x]` timing (hard)

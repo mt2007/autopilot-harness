@@ -266,6 +266,8 @@ dist/
     expect(qsZh).toMatch(/排障速查/);
     expect(qsZh).toMatch(/loop_limit/);
     expect(qsZh).toMatch(/--platform cursor/);
+    expect(qsZh).toMatch(/artifacts\.plans_dir/);
+    expect(qsZh).toMatch(/docs\/autopilot\/plans/);
 
     const rootEn = tmpProject();
     try {
@@ -284,6 +286,9 @@ dist/
       expect(qsEn).toMatch(/Troubleshooting/);
       expect(qsEn).toMatch(/loop_limit/);
       expect(qsEn).toMatch(/--platform cursor/);
+      expect(qsEn).toMatch(/artifacts\.plans_dir/);
+      expect(qsEn).toMatch(/plans-dir scan/);
+      expect(qsEn).toMatch(/docs\/autopilot\/plans/);
       expect(qsEn).not.toMatch(/快速开始/);
     } finally {
       fs.rmSync(rootEn, { recursive: true, force: true });
@@ -1108,7 +1113,7 @@ dist/
 
   it("refuses writing through a dangling plans README symlink", () => {
     root = tmpProject();
-    const plansDir = path.join(root, "plans");
+    const plansDir = path.join(root, "docs", "autopilot", "plans");
     fs.mkdirSync(plansDir, { recursive: true });
     const outside = path.join(root, "outside-plans-readme.md");
     fs.symlinkSync(outside, path.join(plansDir, "README.md"));
@@ -1248,7 +1253,7 @@ describe("interactive init (scripted prompts)", () => {
     });
     expect(answers).not.toBeNull();
     expect(answers!.force).toBe(true);
-    expect(answers!.plansDir).toBe("plans");
+    expect(answers!.plansDir).toBe("docs/autopilot/plans");
     expect(answers!.locale).toBe("zh-CN");
   });
 
@@ -1282,7 +1287,7 @@ describe("interactive init (scripted prompts)", () => {
         confirms: [true, true], // install here, ready
         selects: [
           "en",
-          "plans",
+          "docs/autopilot/plans",
           "commit",
           "project",
           "skip",
@@ -1295,7 +1300,7 @@ describe("interactive init (scripted prompts)", () => {
     expect(answers).not.toBeNull();
     expect(answers!.locale).toBe("en");
     expect(answers!.platforms).toEqual([{ id: "cursor", surface: "ide" }]);
-    expect(answers!.plansDir).toBe("plans");
+    expect(answers!.plansDir).toBe("docs/autopilot/plans");
     expect(answers!.plansGit).toBe("commit");
     expect(answers!.verifyEnabled).toBe(false);
     expect(answers!.reviewScope).toBe("project");

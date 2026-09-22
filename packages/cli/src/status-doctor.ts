@@ -2982,6 +2982,11 @@ export function runDoctor(
       } else {
         assertRealpathInside(root, plansRoot, `plans (${cfg.plansDir})`);
         lines.push(`OK    plans (${cfg.plansDir}/)`);
+        if (cfg.plansDir === "plans") {
+          lines.push(
+            "INFO  artifacts.plans_dir is plans/ (legacy root). New init defaults to docs/autopilot/plans; upgrade does not move existing plans.",
+          );
+        }
       }
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;

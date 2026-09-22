@@ -40,6 +40,11 @@ export interface ProjectHookConfig {
   triggers: ProjectHookTriggers;
   /** Relative in-project plans directory (normalized). */
   plansDir: string;
+  /**
+   * Relative in-project behavior-specs directory when configured and valid;
+   * null when absent/blank/invalid (suggest/archive stay off).
+   */
+  specsDir: string | null;
 }
 
 export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
@@ -78,6 +83,7 @@ function cloneDefaultHookConfig(): ProjectHookConfig {
   return {
     triggers: cloneDefaultTriggers(),
     plansDir: "plans",
+    specsDir: null,
   };
 }
 
@@ -378,6 +384,24 @@ function plansDirFromParsed(
   return normalizeInProjectPlansDir(root, candidate) ?? "plans";
 }
 
+function specsDirFromParsed(
+  root: string,
+  parsed: Record<string, unknown>,
+): string | null {
+  const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
+  if (
+    !Object.prototype.hasOwnProperty.call(artifacts, "specs_dir") ||
+    artifacts.specs_dir === undefined ||
+    artifacts.specs_dir === null
+  ) {
+    return null;
+  }
+  if (typeof artifacts.specs_dir !== "string") return null;
+  const trimmed = artifacts.specs_dir.trim();
+  if (!trimmed) return null;
+  return normalizeInProjectPlansDir(root, trimmed);
+}
+
 /**
  * Lightweight id/surface normalize for config.yml — mirrors CLI
  * `sanitizePlatformId` / `sanitizeSurfaceId` (controls, junk strip, lower, cap).
@@ -513,8 +537,10 @@ export function loadProjectReviewConfig(
 }
 
 /**
- * Load submit/edit hook settings (`triggers.*`, `artifacts.plans_dir`).
- * Missing / unreadable / corrupt / empty phrase lists → DEFAULT_TRIGGERS + `plans/`.
+ * Load submit/edit hook settings (`triggers.*`, `artifacts.plans_dir`,
+ * `artifacts.specs_dir`).
+ * Missing / unreadable / corrupt / empty phrase lists → DEFAULT_TRIGGERS + `plans/`
+ * + specsDir null.
  */
 export function loadProjectHookConfig(projectRoot: string): ProjectHookConfig {
   const loaded = readProjectConfigYaml(projectRoot);
@@ -522,6 +548,7 @@ export function loadProjectHookConfig(projectRoot: string): ProjectHookConfig {
   return {
     triggers: triggersFromParsed(loaded.parsed),
     plansDir: plansDirFromParsed(loaded.root, loaded.parsed),
+    specsDir: specsDirFromParsed(loaded.root, loaded.parsed),
   };
 }
 

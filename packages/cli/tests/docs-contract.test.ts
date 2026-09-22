@@ -118,6 +118,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       expect(body).toContain(`not bare \`npx ${CLI_NAME}\``);
       expect(body).not.toMatch(/Today \(not on public npm yet\)/);
       expect(body).not.toMatch(/After npm publish/);
+      expect(body).toMatch(/artifacts\.plans_dir/);
+      expect(body).toMatch(/plans-dir scan/);
+      expect(body).toMatch(/docs\/autopilot\/plans/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -139,6 +142,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       expect(body).toContain(`裸 \`npx ${CLI_NAME}\``);
       expect(body).not.toMatch(/今天（尚未上公共 npm）/);
       expect(body).not.toMatch(/发布到 npm 之后/);
+      expect(body).toMatch(/artifacts\.plans_dir/);
+      expect(body).toMatch(/docs\/autopilot\/plans/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -21,6 +21,7 @@ import {
   type PlatformBinding,
 } from "./platforms.js";
 import { readConfigInstallHints } from "./config-merge.js";
+import { DEFAULT_PLANS_DIR } from "./artifact-defaults.js";
 import {
   MAX_UNTRUSTED_TEXT_BYTES,
   readUntrustedUtf8File,
@@ -276,7 +277,7 @@ export async function collectWizardAnswers(
       platforms: [{ id: "cursor", surface: "ide" }],
       platform: "cursor",
       surface: "ide",
-      plansDir: "plans",
+      plansDir: DEFAULT_PLANS_DIR,
       plansGit: "commit",
       verifyEnabled: false,
       reviewScope: "project",
@@ -357,17 +358,22 @@ export async function collectWizardAnswers(
     [
       "Plans live as ordinary markdown in your repo:",
       "  <dir>/<slug>/{brief,plan,checklist}.md",
-      "Most people keep them at plans/ next to the code.",
+      `New install default: ${DEFAULT_PLANS_DIR}/ (docs portal).`,
     ].join("\n"),
     "Plans",
   );
-  const plansChoice = await p.select<"plans" | "custom">({
+  const plansChoice = await p.select<string>({
     message: "Where should plan files live?",
     options: [
       {
+        value: DEFAULT_PLANS_DIR,
+        label: `${DEFAULT_PLANS_DIR}/`,
+        hint: "recommended — docs portal",
+      },
+      {
         value: "plans",
         label: "plans/ at the repo root",
-        hint: "recommended",
+        hint: "legacy layout",
       },
       {
         value: "custom",
@@ -375,13 +381,13 @@ export async function collectWizardAnswers(
         hint: "e.g. docs/plans",
       },
     ],
-    initialValue: "plans",
+    initialValue: DEFAULT_PLANS_DIR,
   });
   if (p.isCancel(plansChoice)) {
     return cancelOut(p, "Cancelled — nothing was changed.");
   }
 
-  let plansDir = "plans";
+  let plansDir = DEFAULT_PLANS_DIR;
   if (plansChoice === "custom") {
     const custom = await p.text({
       message: "Relative path from the project root:",
@@ -400,6 +406,9 @@ export async function collectWizardAnswers(
       return cancelOut(p, n.error);
     }
     plansDir = n.value;
+  } else {
+    const n = normalizePlansDir(plansChoice);
+    plansDir = n.ok ? n.value : DEFAULT_PLANS_DIR;
   }
 
   const plansGit = await p.select<PlansGitPolicy>({

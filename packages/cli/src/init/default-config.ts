@@ -8,6 +8,10 @@ import {
   MAX_PLATFORM_BINDINGS,
   type PlatformBinding,
 } from "./platforms.js";
+import {
+  DEFAULT_PLANS_DIR,
+  DEFAULT_SPECS_DIR,
+} from "./artifact-defaults.js";
 import { normalizePlansDir } from "./wizard-helpers.js";
 
 function resolveConfigPlatforms(opts: {
@@ -51,8 +55,10 @@ export function defaultConfigYaml(opts: {
   /** project (default) | executing_only */
   reviewScope?: "executing_only" | "project";
 }): string {
-  const plansNorm = normalizePlansDir(opts.plansDir);
-  const plansDir = plansNorm.ok ? plansNorm.value : "plans";
+  const plansNorm = normalizePlansDir(opts.plansDir ?? DEFAULT_PLANS_DIR);
+  const plansDir = plansNorm.ok ? plansNorm.value : DEFAULT_PLANS_DIR;
+  const specsNorm = normalizePlansDir(DEFAULT_SPECS_DIR);
+  const specsDir = specsNorm.ok ? specsNorm.value : DEFAULT_SPECS_DIR;
   const verifyEnabled = Boolean(opts.verifyEnabled);
   const maxErrors =
     typeof opts.maxErrorsBeforePause === "number" &&
@@ -80,6 +86,7 @@ locale: ${opts.locale}
 
 artifacts:
   plans_dir: ${plansDir}
+  specs_dir: ${specsDir}
   files:
     brief: brief.md
     plan: plan.md

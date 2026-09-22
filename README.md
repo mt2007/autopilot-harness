@@ -15,7 +15,7 @@
 Vibe coding is fast until scope drifts, acceptance stays implicit, and “looks done” skips hard review angles. Autopilot keeps the agent on a durable track:
 
 1. **Grill the plan** before writing product code  
-2. **Execute against a checklist** (`plans/<slug>/`)  
+2. **Execute against a checklist** (`artifacts.plans_dir/<slug>/`, new-init default `docs/autopilot/plans`)  
 3. **Self-review under rotating lenses** before an item is marked done  
 
 It is **not** a general-purpose chat agent, **not** a substitute for your CI/test framework, **not** a Jira/kanban product (checklist + execution FSM, not a board UI). **This build ships Cursor, Claude Code, Codex, Kimi Code, GitHub Copilot CLI, Grok Build CLI, Gemini CLI, Factory Droid, Hermes Agent, Antigravity, Pi, Devin CLI, and Runner (meta)** (CLI + App share one Codex port; **Kimi Code** is **degraded Stop≤1/turn**; **Copilot CLI** is **degraded Stop consecutive ≤8**; **Grok Build** is **degraded Stop ≤8/turn** — per-turn reset; **Gemini CLI** is **Shipped** with honest **AfterAgent turn cap ≤100** / `MAX_TURNS` and soft min-CLI **≥0.31.0**; **Factory Droid** is **Shipped** with **multi-block under `stop_hook_active` live-proved** — no raise; **waive live → degraded≤1**; **Hermes Agent** is **Shipped** with **shell `pre_verify` continue live-proved** — nudge ≥32; edit-only; soft min **≥0.21.3**; **waive live → degraded + human R1 ack**; **Antigravity** is **Shipped** (**host Stop continue live-proved** in **0.10.1**) — `NO_TOOL_CALL` + `transcript_full.jsonl` + **`.agents/bin` shim**; CLI must mount workspace; **Pi** is **Shipped** (**interactive TUI live Stop-continue ≥1× proved**) — in-process **`.pi/extensions/autopilot.ts`**; soft min **≥0.85.1**; **`/trust` + `/reload`**; **R10** TUI only (**not** `pi -p` / JSON / print); shares **`.agents/skills`**; outside shell `KNOWN_PLATFORMS` (eleven-way shell + Pi extension); **Runner** is **Shipped (meta)** — `runner start` external loop + `@autopilot-harness/port-runner`; requires **`runner.command`**; outside the eleven-way hook stamp set; **`--on` / `--brief` / `--message`** planning shipped (**C6** planning `stopped`→0); live agent smoke may be **waived**). **Devin CLI** is **Shipped** (**interactive CLI live Stop-continue ≥1× proved** + edit arm; **CLI only** — not Desktop, not cloud Devin, not Cascade; hooks `.devin/hooks.v1.json`; `$DEVIN_PROJECT_DIR`; skills `.devin/skills`; no documented Stop cap; shell dispatch **eleven-way**). **OpenCode** is **1 (next)** on the roadmap (wait upstream) — see [Hosts](./docs/hosts.md).
@@ -36,7 +36,7 @@ done (checklist clear)
 
 | Step | You do | Autopilot does | Artifacts |
 |------|--------|----------------|-----------|
-| **Plan** | Start `/autopilot-on`; reply to each grill round | Writes `plans/<slug>/` (may edit docs); **no product code** | `plans/<slug>/brief.md`, `plan.md`, `checklist.md` |
+| **Plan** | Start `/autopilot-on`; reply to each grill round | Writes under `artifacts.plans_dir` (may edit docs); **no product code** | `<plansDir>/<slug>/brief.md`, `plan.md`, `checklist.md` |
 | **Run** | Start `/autopilot-run` | Implements **one** checklist item | Code / docs for that item |
 | **Review** | (Usually nothing — stop followups drive the loop) | Fix → confirm under rotating lenses | Item stays open until confirm rounds pass |
 | **Advance** | — | Marks the item `[x]`, local commit if dirty (skip if clean; **no auto-push**), then next item | Updated `checklist.md` |
@@ -52,9 +52,9 @@ On one **author-run** track in **Cursor**, after `/autopilot-run`, Autopilot sus
 
 ### Planning (grill)
 
-`/autopilot-on` starts a design-tree grill: each round asks the current **frontier** of decisions (with recommended answers), then waits for you before the next round. Questions are numbered **globally across rounds** (`Q1`, `Q2`, … — do not restart at Q1), and each frontier is labeled with its **Round**. Planning may edit `plans/**` and docs — **no product code** until `/autopilot-run`.
+`/autopilot-on` starts a design-tree grill: each round asks the current **frontier** of decisions (with recommended answers), then waits for you before the next round. Questions are numbered **globally across rounds** (`Q1`, `Q2`, … — do not restart at Q1), and each frontier is labeled with its **Round**. Planning may edit `<plansDir>/**` (`artifacts.plans_dir`) and docs — **no product code** until `/autopilot-run`.
 
-Artifacts land in `plans/<slug>/brief.md`, `plan.md`, and `checklist.md`.
+Artifacts land in `<plansDir>/<slug>/brief.md`, `plan.md`, and `checklist.md` (`artifacts.plans_dir`; new-init default `docs/autopilot/plans`).
 
 Planning grill rounds are inspired by the **grill-me / grilling** design-tree skill.
 
@@ -83,7 +83,7 @@ Configured in `.autopilot/config.yml` under `review.scope` (chosen at `init`, ch
 
 Notes:
 
-- **`/autopilot-on` alone does not start self-review.** Planning is for grill + `plans/<slug>/` (no product code by design). Review starts only after a **product-code** edit that counts under the scope above.
+- **`/autopilot-on` alone does not start self-review.** Planning is for grill + `<plansDir>/<slug>/` (no product code by design). Review starts only after a **product-code** edit that counts under the scope above.
 - Under **`executing_only`**, editing code outside RUN does **not** open the Autopilot fix/confirm chain.
 - Under **`project`**, confirm still runs the same lenses; when you are **not** checklist-executing (idle ambient, or still **planning**), the chain ends with **review complete** (local commit if dirty) — it does **not** advance/check off checklist items. While **RUN** + executing, the same lenses still end in checklist **advance** / **done** as usual.
 - **Paused** or OFF sessions do not run fix→confirm until resumed (even with `project`).
@@ -148,7 +148,7 @@ Developing or dogfooding from a clone of this repo: see [Contributing](./CONTRIB
 
 Reload the host window (Cursor: Reload Window; Claude Code / Codex / Kimi Code / Copilot CLI / Grok Build / Gemini CLI / Factory Droid / Hermes Agent / Antigravity / Pi: restart / new session / `/reload`), then:
 
-1. Plan — Cursor/Claude: `/autopilot-on`; Codex: `.agents/skills` **and** line-start `triggers.on` (e.g. `Autopilot ON`; typed slash still parses; trust `/hooks`); Kimi: `/skill:autopilot-on` **and** line-start; Copilot: `.github/skills` **and** line-start; Grok: `.grok/skills` **and** line-start; Gemini / Factory / Hermes / Antigravity / Pi: host skills **and** line-start (Gemini **re-trust / `/hooks panel` / folder trust**, AfterAgent **≤100**; Factory **`$FACTORY_PROJECT_DIR`** + **`/hooks` snapshot/reload**; Hermes **`$HERMES_HOME`** + consent/`hermes hooks doctor`; Antigravity **`.agents`**, `decision:continue`, live-proved continue / CLI workspace mount; Pi **`.pi/extensions`**, `/trust`+`/reload`, soft min **≥0.85.1**, **R10** TUI only) → grill → `plans/<slug>/`  
+1. Plan — Cursor/Claude: `/autopilot-on`; Codex: `.agents/skills` **and** line-start `triggers.on` (e.g. `Autopilot ON`; typed slash still parses; trust `/hooks`); Kimi: `/skill:autopilot-on` **and** line-start; Copilot: `.github/skills` **and** line-start; Grok: `.grok/skills` **and** line-start; Gemini / Factory / Hermes / Antigravity / Pi: host skills **and** line-start (Gemini **re-trust / `/hooks panel` / folder trust**, AfterAgent **≤100**; Factory **`$FACTORY_PROJECT_DIR`** + **`/hooks` snapshot/reload**; Hermes **`$HERMES_HOME`** + consent/`hermes hooks doctor`; Antigravity **`.agents`**, `decision:continue`, live-proved continue / CLI workspace mount; Pi **`.pi/extensions`**, `/trust`+`/reload`, soft min **≥0.85.1**, **R10** TUI only) → grill → `<plansDir>/<slug>/`
 2. Execute — Cursor/Claude: `/autopilot-run`; Codex: `.agents/skills` **and** line-start `triggers.run` (e.g. `Autopilot RUN`); Kimi: `/skill:autopilot-run` **and** line-start; Copilot: `.github/skills` **and** line-start; Grok: `.grok/skills` **and** line-start; Gemini / Factory / Hermes / Antigravity / Pi: host skills **and** line-start  
 
 More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quickstart.md) ([中文](./docs/autopilot/quickstart.zh-CN.md)).

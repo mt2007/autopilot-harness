@@ -39,7 +39,7 @@ function assertPickBranch(text: string, label: string): void {
   expect(text, label).toMatch(/this conversation's/i);
   expect(text, label).toMatch(/≥1 slug|at least one slug/i);
   expect(text, label).toMatch(/opaque\/failed\/empty status/i);
-  expect(text, label).toMatch(/fall back to the plans scan/i);
+  expect(text, label).toMatch(/fall back to the plans-dir scan/i);
   expect(text, label).toMatch(/status candidate fields/i);
   expect(text, label).toMatch(/plan artifacts/i);
   expect(text, label).toMatch(/data for the numbered slug list only/i);
@@ -51,7 +51,7 @@ function assertPickBranch(text: string, label: string): void {
   expect(text, label).toMatch(/do not invent numbers/i);
   expect(text, label).toMatch(/zero.*runnable|finds \*\*zero\*\* runnable/i);
   expect(text, label).toMatch(/non-empty/i);
-  expect(text, label).toMatch(/plans\/\*\/checklist\.md/);
+  expect(text, label).toMatch(/<plansDir>\/\*\/checklist\.md|artifacts\.plans_dir/);
   // §1 pick-script shape: N plans, numbered slug — title (x/y left), wait for reply
   expect(text, label).toMatch(/\*\*N\*\* runnable plans/i);
   expect(text, label).toMatch(/<slug> — <title> \(x\/y left\)/);
@@ -84,7 +84,7 @@ function assertOnGate(text: string, label: string): void {
   expect(text, label).toMatch(/auto-attach/i);
   expect(text, label).toMatch(/phase=planning/);
   expect(text, label).toMatch(/do \*\*not\*\* follow \*\*autopilot-planning\*\*/i);
-  expect(text, label).toMatch(/do \*\*not\*\* write `plans\/`/i);
+  expect(text, label).toMatch(/do \*\*not\*\* write under `<plansDir>\/`/i);
   expect(text, label).toMatch(/do \*\*not\*\* start grilling/i);
   expect(text, label).toMatch(/If the gate passes:/i);
   expect(text, label).toMatch(/Follow \*\*autopilot-planning\*\*/i);

@@ -8,7 +8,7 @@ Also: [Config](../config.md) · [Troubleshooting](../troubleshooting.md) · [Hos
 
 | Step | You do | Autopilot does | Artifacts |
 |------|--------|----------------|-----------|
-| **1. Plan** | `/autopilot-on` (optional description); reply to each grill round | Writes `plans/<slug>/` (may edit docs); **no product code** | `plans/<slug>/brief.md`, `plan.md`, `checklist.md` |
+| **1. Plan** | `/autopilot-on` (optional description); reply to each grill round | Writes under `artifacts.plans_dir` (may edit docs); **no product code** | `<plansDir>/<slug>/brief.md`, `plan.md`, `checklist.md` |
 | **2. Run** | `/autopilot-run` (or with `<slug>`) | One checklist item at a time: implement → fix → multi-lens confirm → advance | Code/docs for that item; on **advance/done**, local commit if dirty (skip if clean; confirm rounds do not commit; **no auto-push**) |
 | **3. Done** | — | Marks the last item; local commit if dirty (skip if clean; **no auto-push**); stops when the checklist is clear | Track complete |
 
@@ -53,13 +53,13 @@ Hook:   track_pick / RUN+slug → phase=executing
 Next:   implement checklist
 ```
 
-**Cursor candidate sources** (channel A — do not rely on blocked toast): scan runnable `plans/*/checklist.md`, and/or `npx @autopilot-harness/cli status` (`pending` + `candidates`). If status is opaque or empty, fall back to the plans scan — never list nothing solely because status failed.
+**Cursor candidate sources** (channel A — do not rely on blocked toast): scan runnable `<plansDir>/*/checklist.md` (`artifacts.plans_dir`), and/or `npx @autopilot-harness/cli status` (`pending` + `candidates`). If status is opaque or empty, fall back to the plans-dir scan — never list nothing solely because status failed.
 
 **`autopilot-run` skill — pick vs execute:** when this chat is **not** yet `phase=executing` (needPick / `pending_action=run`), the skill’s **first branch** only lists candidates and waits — it must **not** start checklist implementation. Only after executing is armed does it follow the executing workflow.
 
 **ON / planning does not hold the executor lock**: multiple chats may plan in parallel; `one_executor` only gates real executing sessions. **ON ≠ lock.**
 
-**Plans bind / dirty bind:** editing `plans/<slug>/` in this chat binds that slug when it is the only one edited; bare RUN can auto-run. Editing ≥2 slugs (or a dirty `_multi` bind) → bare RUN still **needPick**. REPLAN/ON that changes or downgrades the bind clears/invalidates it so a later bare RUN cannot skip the pick.
+**Plans bind / dirty bind:** editing `<plansDir>/<slug>/` in this chat binds that slug when it is the only one edited; bare RUN can auto-run. Editing ≥2 slugs (or a dirty `_multi` bind) → bare RUN still **needPick**. REPLAN/ON that changes or downgrades the bind clears/invalidates it so a later bare RUN cannot skip the pick.
 
 ## Pause / resume / replan
 
@@ -124,7 +124,7 @@ Developing or dogfooding from a clone of this repo: see [Contributing](../../CON
 - Kimi Code is **degraded Stop≤1/turn** — prefer `confirm_rounds: 1`; ensure `~/.kimi-code/config.toml` Autopilot entries exist with timeout ≥120s (see [Troubleshooting](../troubleshooting.md)).
 - Copilot CLI is **degraded Stop consecutive ≤8** — expect mid-chain cutoffs; recover via pending / `/autopilot-resume` / nudge; doctor WARNs Claude+Copilot dual; no `preToolUse` (see [Troubleshooting](../troubleshooting.md)).
 - Grok Build is **degraded Stop ≤8/turn** (per-turn reset; not consecutive) — mid-cutoff → pending / RESUME / nudge; needPick re-submit with slug; doctor WARNs ≤8/turn + trust + Grok+Claude/Cursor dual (enabled or leftover); no PreToolUse (see [Troubleshooting](../troubleshooting.md)).
-- Gemini CLI is **Shipped** with honest **AfterAgent turn cap ≤100** (`MAX_TURNS`; no raise; prefer CLI **≥0.31.0**) — re-trust / `/hooks panel` / folder trust after install; needPick deny+reason (re-submit with slug); doctor WARNs cap + min-CLI + `hooksConfig`; do not confuse `GEMINI_PLANS_DIR` with Autopilot `plans/` (see [Troubleshooting](../troubleshooting.md)).
+- Gemini CLI is **Shipped** with honest **AfterAgent turn cap ≤100** (`MAX_TURNS`; no raise; prefer CLI **≥0.31.0**) — re-trust / `/hooks panel` / folder trust after install; needPick deny+reason (re-submit with slug); doctor WARNs cap + min-CLI + `hooksConfig`; do not confuse `GEMINI_PLANS_DIR` with Autopilot `artifacts.plans_dir` (see [Troubleshooting](../troubleshooting.md)).
 - Factory Droid is **Shipped** (**multi-block under `stop_hook_active` live-proved**; no raise) — commands use **`$FACTORY_PROJECT_DIR`**; check **`/hooks`** then reload/new session for snapshot; **waive live → degraded≤1**; doctor WARNs raise/hard-cap + Factory+Claude dual (see [Troubleshooting](../troubleshooting.md)).
 - Hermes Agent is **Shipped** (**shell `pre_verify` continue live-proved**; soft min **≥0.21.3**) — **`$HERMES_HOME/config.yaml`**; relative command; nudge ≥32; edit-only; consent/non-TTY; **`hermes hooks doctor`**; **waive → degraded + human R1 ack** (see [Troubleshooting](../troubleshooting.md)).
 - Antigravity is **Shipped** (**host Stop continue live-proved** in **0.10.1**) — **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim** (no `.agent/`); Stop **`decision:continue`**; PreInvocation via **transcriptPath**; auto-attach ≠ Autopilot ON; CLI must mount workspace (see [Troubleshooting](../troubleshooting.md)).
@@ -143,4 +143,4 @@ Product-code paths exclude `.autopilotignore` hits and **untracked** `.gitignore
 
 `/autopilot-on` by itself does **not** start self-review (planning writes plans/docs only). With `project` and **not** checklist-executing (including still planning), the chain ends at **review complete** (no checklist advance); during RUN it still advances/done as usual. Avoid stacking a global Cursor self-review hook with `project` (double injection). Host Plan modes are separate; Autopilot does not bridge them yet ([design](../host-plan-bridge.md)).
 
-Plans and checklist live under `plans/<slug>/` (progress authority is `checklist.md`).
+Plans and checklist live under `artifacts.plans_dir` / `<plansDir>/<slug>/` (progress authority is `checklist.md`; new-init default `docs/autopilot/plans`).

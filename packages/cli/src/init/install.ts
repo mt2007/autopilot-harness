@@ -85,6 +85,10 @@ import {
   loadProjectHookConfig,
   normalizeInProjectPlansDir,
 } from "@autopilot-harness/core";
+import {
+  DEFAULT_PLANS_DIR,
+  DEFAULT_SPECS_DIR,
+} from "./artifact-defaults.js";
 import { readConfigInstallHints, readConfigPlatformsOrThrow } from "./config-merge.js";
 import {
   applyPlatformsToConfigYaml,
@@ -1029,42 +1033,85 @@ function autopilotIgnorePatternLines(text: string): string[] {
 }
 
 /**
- * Ensure `<plansDir>/**` appears in ignore text so planning artifacts under a
- * custom artifacts.plans_dir do not arm product-code self-review.
+ * Resolve an artifacts.* dir for ignore patterns. Blank/invalid → fallbackDir
+ * (do not use core empty→"plans" fail-open when resolving specs_dir).
+ */
+function resolveIgnoreArtifactDir(
+  artifactDir: string,
+  fallbackDir: string,
+  projectRoot?: string,
+): string {
+  const raw = typeof artifactDir === "string" ? artifactDir.trim() : "";
+  if (!raw) return fallbackDir;
+  if (typeof projectRoot === "string" && projectRoot.trim()) {
+    return normalizeInProjectPlansDir(projectRoot, raw) ?? fallbackDir;
+  }
+  const norm = normalizePlansDir(raw);
+  return norm.ok ? norm.value : fallbackDir;
+}
+
+/**
+ * Ensure `<dir>/**` appears in ignore text so artifacts under a configured
+ * artifacts.plans_dir / artifacts.specs_dir do not arm product-code self-review.
  * Prefer core in-project normalization when projectRoot is known (hook parity).
  */
+export function ensureArtifactDirInIgnoreText(
+  text: string,
+  artifactDir: string,
+  label: "plans_dir" | "specs_dir",
+  projectRoot?: string,
+  fallbackDir: string = DEFAULT_PLANS_DIR,
+): string {
+  const dir = resolveIgnoreArtifactDir(artifactDir, fallbackDir, projectRoot);
+  const pattern = `${dir}/**`;
+  let body = text;
+  if (!body.endsWith("\n")) body += "\n";
+  if (autopilotIgnoreOwnedPatterns(body).has(pattern)) return body;
+  return `${body}\n# artifacts.${label} (${dir})\n${pattern}\n`;
+}
+
+/** @deprecated Use ensureArtifactDirInIgnoreText — kept for call-site clarity. */
 export function ensurePlansDirInIgnoreText(
   text: string,
   plansDir: string,
   projectRoot?: string,
 ): string {
-  let dir = "plans";
-  if (typeof projectRoot === "string" && projectRoot.trim()) {
-    dir = normalizeInProjectPlansDir(projectRoot, plansDir) ?? "plans";
-  } else {
-    const norm = normalizePlansDir(plansDir);
-    dir = norm.ok ? norm.value : "plans";
-  }
-  const pattern = `${dir}/**`;
-  let body = text;
-  if (!body.endsWith("\n")) body += "\n";
-  if (autopilotIgnoreOwnedPatterns(body).has(pattern)) return body;
-  return `${body}\n# artifacts.plans_dir (${dir})\n${pattern}\n`;
+  return ensureArtifactDirInIgnoreText(
+    text,
+    plansDir,
+    "plans_dir",
+    projectRoot,
+    DEFAULT_PLANS_DIR,
+  );
 }
 
 /**
  * Write `.autopilotignore` when missing; when present, append template pattern
  * lines that are not already present or commented-out (never delete user lines).
- * Always ensures `plansDir/**` is covered (default `plans` or custom).
+ * Always ensures configured `plansDir/**` and `specsDir/**` are covered.
  */
 export function ensureAutopilotIgnore(
   projectRoot: string,
   templatesRoot: string,
-  plansDir: string = "plans",
+  plansDir: string = DEFAULT_PLANS_DIR,
+  specsDir: string = DEFAULT_SPECS_DIR,
 ): string | null {
   const dest = path.join(projectRoot, ".autopilotignore");
   let contents = resolveAutopilotIgnoreTemplate(templatesRoot);
-  contents = ensurePlansDirInIgnoreText(contents, plansDir, projectRoot);
+  contents = ensureArtifactDirInIgnoreText(
+    contents,
+    plansDir,
+    "plans_dir",
+    projectRoot,
+    DEFAULT_PLANS_DIR,
+  );
+  contents = ensureArtifactDirInIgnoreText(
+    contents,
+    specsDir,
+    "specs_dir",
+    projectRoot,
+    DEFAULT_SPECS_DIR,
+  );
   if (!contents.endsWith("\n")) contents += "\n";
 
   let existing: string | null = null;
@@ -1119,20 +1166,49 @@ export function ensureAutopilotIgnore(
   // Do not write a merge that exceeds the untrusted size cap — runtime would
   // reject the file and fall back to DEFAULT, silently dropping user rules.
   if (Buffer.byteLength(next, "utf8") > MAX_UNTRUSTED_TEXT_BYTES) {
-    // Prefer covering configured plans_dir alone when the full template
-    // merge cannot fit (still never exceed the cap).
-    const plansPattern = `${
-      normalizeInProjectPlansDir(projectRoot, plansDir) ?? "plans"
-    }/**`;
-    if (!have.has(plansPattern) && missing.includes(plansPattern)) {
-      let slim = existing;
-      if (!slim.endsWith("\n")) slim += "\n";
-      slim +=
-        "\n# --- merged artifacts.plans_dir (upgrade/init) ---\n" +
-        plansPattern +
-        "\n";
-      if (Buffer.byteLength(slim, "utf8") <= MAX_UNTRUSTED_TEXT_BYTES) {
+    // Prefer covering configured plans_dir + specs_dir alone when the full
+    // template merge cannot fit (still never exceed the cap).
+    const plansPattern = `${resolveIgnoreArtifactDir(
+      plansDir,
+      DEFAULT_PLANS_DIR,
+      projectRoot,
+    )}/**`;
+    const specsPattern = `${resolveIgnoreArtifactDir(
+      specsDir,
+      DEFAULT_SPECS_DIR,
+      projectRoot,
+    )}/**`;
+    const slimNeeded = [...new Set([plansPattern, specsPattern])].filter(
+      (p) => !have.has(p) && missing.includes(p),
+    );
+    if (slimNeeded.length > 0) {
+      const existingText = existing;
+      const tryWriteSlim = (patterns: string[]): boolean => {
+        let slim = existingText;
+        if (!slim.endsWith("\n")) slim += "\n";
+        slim +=
+          "\n# --- merged artifacts.plans_dir/specs_dir (upgrade/init) ---\n" +
+          patterns.join("\n") +
+          "\n";
+        if (Buffer.byteLength(slim, "utf8") > MAX_UNTRUSTED_TEXT_BYTES) {
+          return false;
+        }
         writeFileAtomic(dest, slim, projectRoot, ".autopilotignore");
+        return true;
+      };
+      // Prefer both; if they cannot fit, cover plans_dir alone first.
+      // Never write specs-only while plans_dir still needs a line but cannot fit
+      // (same priority as pre-specs slim merge).
+      if (tryWriteSlim(slimNeeded)) {
+        return ".autopilotignore";
+      }
+      const needsPlans = slimNeeded.includes(plansPattern);
+      const needsSpecs = slimNeeded.includes(specsPattern);
+      if (needsPlans) {
+        if (tryWriteSlim([plansPattern])) return ".autopilotignore";
+        return null;
+      }
+      if (needsSpecs && tryWriteSlim([specsPattern])) {
         return ".autopilotignore";
       }
     }
@@ -1422,7 +1498,7 @@ function installWorkflows(templatesRoot: string, projectRoot: string): string[] 
 
 function ensurePlansReadme(
   projectRoot: string,
-  plansDir = "plans",
+  plansDir = DEFAULT_PLANS_DIR,
 ): string | null {
   if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
     throw new Error("projectRoot must be a non-empty string");
@@ -1472,11 +1548,112 @@ ${safePlansDir}/<slug>/checklist.md
 \`\`\`
 
 Start with \`/autopilot-on\`, then \`/autopilot-run\` when the checklist is ready.
+
+Configure the directory with \`artifacts.plans_dir\` in \`.autopilot/config.yml\` (this tree is the configured value).
 `,
     resolvedRoot,
     "plansDir",
   );
   return path.relative(resolvedRoot, readme);
+}
+
+/**
+ * Fresh-init portal docs under docs/autopilot/: README + thin specs/README.
+ * Idempotent — skips existing regular files. Also used after upgrade adds specs_dir.
+ */
+export function ensureDocsAutopilotPortal(
+  projectRoot: string,
+  plansDir: string,
+  specsDir: string,
+): string[] {
+  if (typeof projectRoot !== "string" || projectRoot.trim() === "") {
+    throw new Error("projectRoot must be a non-empty string");
+  }
+  const written: string[] = [];
+  const resolvedRoot = path.resolve(projectRoot.trim());
+  const portal = path.join(resolvedRoot, "docs", "autopilot");
+  mkdirRealDirSync(portal, "docs/autopilot/", resolvedRoot);
+  assertRealpathInside(resolvedRoot, portal, "docs/autopilot/");
+
+  const plansNorm = normalizePlansDir(plansDir);
+  const safePlans = plansNorm.ok ? plansNorm.value : DEFAULT_PLANS_DIR;
+  const specsNorm = normalizePlansDir(specsDir);
+  const safeSpecs = specsNorm.ok ? specsNorm.value : DEFAULT_SPECS_DIR;
+
+  const portalReadme = path.join(portal, "README.md");
+  try {
+    const st = fs.lstatSync(portalReadme);
+    if (st.isSymbolicLink()) {
+      throw new Error("docs/autopilot/README.md is a symlink; refusing to open");
+    }
+    if (!st.isFile()) {
+      throw new Error("docs/autopilot/README.md exists and is not a regular file");
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      writeFileAtomic(
+        portalReadme,
+        `# Autopilot docs portal
+
+This directory holds Autopilot **documentation** and (by default) track / behavior-spec artifacts.
+
+| Path | Role |
+|------|------|
+| \`docs/autopilot/quickstart*.md\`, \`workflows/\` | Product docs (how to use Autopilot) |
+| \`${safePlans}/\` | Track artifacts (\`brief\` / \`plan\` / \`checklist\`) — \`artifacts.plans_dir\` |
+| \`${safeSpecs}/\` | Cross-track behavior specs — \`artifacts.specs_dir\` |
+| \`.autopilot/\` | Runtime only (config, state, vendor hooks) — **not** plans/specs |
+
+Override paths in \`.autopilot/config.yml\` under \`artifacts.\`. Existing projects keep their configured \`plans_dir\` across upgrade; upgrade may add a missing \`specs_dir\` without moving files.
+`,
+        resolvedRoot,
+        "docs/autopilot/",
+      );
+      written.push(path.relative(resolvedRoot, portalReadme));
+    } else {
+      throw err;
+    }
+  }
+
+  const specsResolved = path.join(resolvedRoot, safeSpecs);
+  if (
+    specsResolved !== resolvedRoot &&
+    !specsResolved.startsWith(resolvedRoot + path.sep)
+  ) {
+    throw new Error("specsDir resolves outside the project root");
+  }
+  mkdirRealDirSync(specsResolved, "specsDir", resolvedRoot);
+  assertRealpathInside(resolvedRoot, specsResolved, "specsDir");
+
+  const specsReadme = path.join(specsResolved, "README.md");
+  try {
+    const st = fs.lstatSync(specsReadme);
+    if (st.isSymbolicLink()) {
+      throw new Error("specs README is a symlink; refusing to open");
+    }
+    if (st.isFile()) return written;
+    throw new Error("specs README exists and is not a regular file");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "ENOENT") throw err;
+  }
+
+  writeFileAtomic(
+    specsReadme,
+    `# Behavior specs
+
+Cross-track **behavior truth** for this project (not per-track progress).
+
+When a track brief has a \`## Behavior deltas\` section, after done / review-complete you may run \`/autopilot-archive\` to merge those deltas into domain files here (for example \`${safeSpecs}/review.md\`).
+
+Configured by \`artifacts.specs_dir\` (default \`${DEFAULT_SPECS_DIR}\`).
+`,
+    resolvedRoot,
+    "specsDir",
+  );
+  written.push(path.relative(resolvedRoot, specsReadme));
+  return written;
 }
 
 export type PreflightResult = { ok: true } | { ok: false; error: string };
@@ -2112,14 +2289,17 @@ export function installInitYes(opts: InitYesOptions): InitResult {
 
     written.push(...installWorkflows(templatesRoot, projectRoot));
 
-    // Force/upgrade: cover configured plans_dir; fresh init: wizard/opts plansDir.
-    const ignorePlansDir = configExists
-      ? loadProjectHookConfig(projectRoot).plansDir
-      : plansDir;
+    // Force/upgrade: cover configured plans_dir + specs_dir; fresh init: wizard/opts.
+    const hookCfg = configExists
+      ? loadProjectHookConfig(projectRoot)
+      : null;
+    const ignorePlansDir = hookCfg?.plansDir ?? plansDir;
+    const ignoreSpecsDir = hookCfg?.specsDir ?? DEFAULT_SPECS_DIR;
     const ignoreRel = ensureAutopilotIgnore(
       projectRoot,
       templatesRoot,
       ignorePlansDir,
+      ignoreSpecsDir,
     );
     if (ignoreRel && !written.includes(ignoreRel)) written.push(ignoreRel);
 
@@ -2128,6 +2308,8 @@ export function installInitYes(opts: InitYesOptions): InitResult {
     if (!configExists) {
       const plansReadme = ensurePlansReadme(projectRoot, plansDir);
       if (plansReadme) written.push(plansReadme);
+      const portal = ensureDocsAutopilotPortal(projectRoot, plansDir, DEFAULT_SPECS_DIR);
+      written.push(...portal);
     }
 
     const runtimeGi = applyAutopilotRuntimeGitignore(projectRoot);

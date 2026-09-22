@@ -8,7 +8,7 @@
 
 | 步骤 | 你做什么 | Autopilot 做什么 | 产物 |
 |------|----------|------------------|------|
-| **1. 规划** | `/autopilot-on`（可带需求描述）；逐轮回答 grill | 写 `plans/<slug>/`（可改文档），**不写产品代码** | `plans/<slug>/brief.md`、`plan.md`、`checklist.md` |
+| **1. 规划** | `/autopilot-on`（可带需求描述）；逐轮回答 grill | 写在 `artifacts.plans_dir` 下（可改文档），**不写产品代码** | `<plansDir>/<slug>/brief.md`、`plan.md`、`checklist.md` |
 | **2. 执行** | `/autopilot-run`（或带 `<slug>`） | 一项一项：实现 → 自审修复 → 多角度确认 → 勾选推进 | 该项代码/文档；推进/完成时 dirty 则本地 commit（干净则跳过；确认轮不 commit；默认**不**自动 push） |
 | **3. 完成** | — | 勾选最后一项；dirty 则本地 commit（干净则跳过；默认**不**自动 push）；checklist 清空后停止 | 该轨结束 |
 
@@ -53,13 +53,13 @@ Hook:   track_pick / RUN+slug → phase=executing
 下一回合: 真正执行 checklist
 ```
 
-**Cursor 候选来源**（通道 A — 不依赖拦截 toast）：扫描 runnable `plans/*/checklist.md`，和/或 `npx @autopilot-harness/cli status`（`pending` + `candidates`）。若 status 不透明或为空，回退扫盘 — 禁止只因 status 失败就列不出候选。
+**Cursor 候选来源**（通道 A — 不依赖拦截 toast）：扫描 runnable `<plansDir>/*/checklist.md`（`artifacts.plans_dir`），和/或 `npx @autopilot-harness/cli status`（`pending` + `candidates`）。若 status 不透明或为空，回退扫盘 — 禁止只因 status 失败就列不出候选。
 
 **`autopilot-run` skill — 选型 vs 执行：** 本会话**尚未** `phase=executing`（needPick / `pending_action=run`）时，skill **首分支**只列候选并等待——**禁止**开始跑 checklist。只有进入 executing 后才走执行工作流。
 
 **ON / planning 不占执行锁**：多聊可同时规划；`one_executor` 只约束真正执行中的会话。**ON ≠ 锁。**
 
-**Plans 绑定 / 脏 bind：** 本聊编辑 `plans/<slug>/` 时，仅编辑过 1 个 slug 则绑定该轨，裸 RUN 可直跑；编辑 ≥2 个（或脏 `_multi`）→ 裸 RUN 仍 **needPick**。REPLAN/ON 换轨或降级绑定时会清/失效 bind，避免之后裸 RUN 跳过选型。
+**Plans 绑定 / 脏 bind：** 本聊编辑 `<plansDir>/<slug>/` 时，仅编辑过 1 个 slug 则绑定该轨，裸 RUN 可直跑；编辑 ≥2 个（或脏 `_multi`）→ 裸 RUN 仍 **needPick**。REPLAN/ON 换轨或降级绑定时会清/失效 bind，避免之后裸 RUN 跳过选型。
 
 ## 暂停 / 恢复 / 改方案
 
@@ -124,7 +124,7 @@ npx @autopilot-harness/cli upgrade --dry-run
 - Kimi Code 为 **Stop≤1/turn 降级** — 推荐 `confirm_rounds: 1`；确认 `~/.kimi-code/config.toml` 有 Autopilot 条目且 timeout ≥120s（见 [排障](../troubleshooting.md)）。
 - Copilot CLI 为 **Stop consecutive ≤8 降级** — 中途掐断用 pending / `/autopilot-resume` / nudge 恢复；doctor 会 WARN Claude+Copilot 双装；不接 `preToolUse`（见 [排障](../troubleshooting.md)）。
 - Grok Build 为 **Stop ≤8/turn 降级**（每 turn 重置；非 consecutive）— 中途掐断 → pending / RESUME / nudge；needPick 须重提 slug；doctor 会 WARN ≤8/turn + trust + Grok+Claude/Cursor 多指纹（已启用或磁盘残留）；不接 PreToolUse（见 [排障](../troubleshooting.md)）。
-- Gemini CLI 已 **Shipped**，诚实上限 **AfterAgent turn cap ≤100**（`MAX_TURNS`；无 raise；建议 CLI **≥0.31.0**）— 安装后需 re-trust / `/hooks panel` / folder trust；needPick 用 deny+reason（须重提 slug）；doctor 会 WARN cap + min-CLI + `hooksConfig`；勿把 `GEMINI_PLANS_DIR` 当成 Autopilot `plans/`（见 [排障](../troubleshooting.md)）。
+- Gemini CLI 已 **Shipped**，诚实上限 **AfterAgent turn cap ≤100**（`MAX_TURNS`；无 raise；建议 CLI **≥0.31.0**）— 安装后需 re-trust / `/hooks panel` / folder trust；needPick 用 deny+reason（须重提 slug）；doctor 会 WARN cap + min-CLI + `hooksConfig`；勿把 `GEMINI_PLANS_DIR` 当成 Autopilot `artifacts.plans_dir`（见 [排障](../troubleshooting.md)）。
 - Factory Droid 已 **Shipped**（**`stop_hook_active` 下 multi-block 活链已证**；无 raise）— 命令用 **`$FACTORY_PROJECT_DIR`**；查 **`/hooks`** 后 reload/新开会话刷新快照；**免活链 → degraded≤1**；doctor 会 WARN raise/hard-cap + Factory+Claude 双装（见 [排障](../troubleshooting.md)）。
 - Hermes Agent 已 **Shipped**（**shell `pre_verify` continue 活链已证**；软下限 **≥0.21.3**）— **`$HERMES_HOME/config.yaml`**；相对 command；nudge ≥32；edit-only；consent/non-TTY；**`hermes hooks doctor`**；**免活链 → degraded + 人闸认 R1**（见 [排障](../troubleshooting.md)）。
 - Antigravity 已 **Shipped**（**宿主 Stop continue 活链已证**，**0.10.1**）— **`.agents/hooks.json`** + **`.agents/skills`** + **`.agents/bin` shim**（不写 `.agent/`）；Stop **`decision:continue`**；PreInvocation 走 **transcriptPath**；auto-attach ≠ Autopilot ON；CLI 须挂 workspace（见 [排障](../troubleshooting.md)）。
@@ -143,4 +143,4 @@ npx @autopilot-harness/cli upgrade --dry-run
 
 只开 `/autopilot-on` **不会**启动自审（规划只写方案/文档）。`project` 且**未在** checklist 执行中（含仍在 planning）时，确认链以 **自审完成** 结束（不勾选推进 checklist）；在 RUN 执行中则仍按项推进/完成。若已有全局 Cursor 自审 hook，慎与 `project` 叠用（可能双重注入）。各宿主自带的 Plan 模式与 Autopilot 无关，目前未对接（[设计草案](../host-plan-bridge.md)）。
 
-方案与清单始终在 `plans/<slug>/`（权威进度是 `checklist.md`）。
+方案与清单始终在 `artifacts.plans_dir` / `<plansDir>/<slug>/`（权威进度是 `checklist.md`；新 init 默认 `docs/autopilot/plans`）。
