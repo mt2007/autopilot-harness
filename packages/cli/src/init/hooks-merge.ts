@@ -56,21 +56,26 @@ export function autopilotHookCommand(event: string): HookCommand {
   const base: HookCommand = {
     command: autopilotHookCommandLine(HOOK_PLATFORM_CURSOR, event),
   };
-  // Cursor defaults loop_limit to 5 for stop hooks that omit the field.
+  // Cursor defaults loop_limit to 5 for stop / subagentStop when omitted.
   // Autopilot's fix + multi-angle confirm chain routinely exceeds 5
   // auto-followups in one streak; without null the stop hook is skipped
   // mid-chain (e.g. after confirm 3/5) and pending_followup stalls.
-  if (event === "stop") {
+  // subagentStop is arm-only (no continue) but still needs null so the host
+  // does not silently drop Autopilot after 5 child completions.
+  if (event === "stop" || event === "subagentStop") {
     return { ...base, loop_limit: null };
   }
   return base;
 }
 
-/** True when project Autopilot stop entry disables Cursor's default loop cap. */
-export function autopilotStopHasUnlimitedLoop(hooks: HooksFile): boolean {
-  const stops = hooks.hooks?.stop;
-  if (!Array.isArray(stops)) return false;
-  return stops.some((h) => {
+/** True when Autopilot entry for `event` disables Cursor's default loop cap. */
+export function autopilotEventHasUnlimitedLoop(
+  hooks: HooksFile,
+  event: string,
+): boolean {
+  const list = hooks.hooks?.[event];
+  if (!Array.isArray(list)) return false;
+  return list.some((h) => {
     if (!h || typeof h !== "object" || Array.isArray(h)) return false;
     return (
       isAutopilotCommand(h.command) &&
@@ -78,6 +83,18 @@ export function autopilotStopHasUnlimitedLoop(hooks: HooksFile): boolean {
       h.loop_limit === null
     );
   });
+}
+
+/** True when project Autopilot stop entry disables Cursor's default loop cap. */
+export function autopilotStopHasUnlimitedLoop(hooks: HooksFile): boolean {
+  return autopilotEventHasUnlimitedLoop(hooks, "stop");
+}
+
+/** True when Autopilot subagentStop entry disables Cursor's default loop cap. */
+export function autopilotSubagentStopHasUnlimitedLoop(
+  hooks: HooksFile,
+): boolean {
+  return autopilotEventHasUnlimitedLoop(hooks, "subagentStop");
 }
 
 /** True when a hook command belongs to Autopilot (merge/strip/uninstall). */

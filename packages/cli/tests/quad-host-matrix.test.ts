@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { StateStore } from "@autopilot-harness/core";
 import { installInitYes } from "../src/init/install.js";
 import { runDoctor } from "../src/status-doctor.js";
+import { AUTOPILOT_EVENTS } from "../src/init/types.js";
 
 type HostId = "cursor" | "claude-code" | "codex" | "kimi-code";
 
@@ -142,7 +143,7 @@ describe("quad-host Kimi cross-fire matrix", () => {
     const cursorHooks = JSON.parse(
       fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, { command: string }[]> };
-    for (const event of ["beforeSubmitPrompt", "afterFileEdit", "stop"]) {
+    for (const event of AUTOPILOT_EVENTS) {
       const ap = cursorHooks.hooks[event]?.filter((h) =>
         h.command.includes("autopilot-harness"),
       );

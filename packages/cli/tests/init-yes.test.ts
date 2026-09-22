@@ -14,6 +14,7 @@ import { MAX_PLATFORM_BINDINGS } from "../src/init/platforms.js";
 import {
   autopilotHookCommandLine,
   autopilotStopHasUnlimitedLoop,
+  autopilotSubagentStopHasUnlimitedLoop,
   commandHasPlatformStamp,
 } from "../src/init/hooks-merge.js";
 import { parseInitReviewScope } from "../src/init/wizard-helpers.js";
@@ -34,6 +35,7 @@ describe("hooks.json merge", () => {
     expect(JSON.stringify(merged)).toMatch(/--platform cursor/);
     expect(merged.hooks.afterFileEdit).toHaveLength(1);
     expect(merged.hooks.stop).toHaveLength(1);
+    expect(merged.hooks.subagentStop).toHaveLength(1);
   });
 
   it("sets stop loop_limit null so Cursor does not cap Autopilot chains at 5", () => {
@@ -46,6 +48,17 @@ describe("hooks.json merge", () => {
     expect(stop?.loop_limit).toBeNull();
     const submit = merged.hooks.beforeSubmitPrompt?.[0];
     expect(submit && "loop_limit" in submit).toBe(false);
+  });
+
+  it("sets subagentStop loop_limit null (arm-only still needs unlimited host loops)", () => {
+    const merged = mergeHooksJson(null);
+    const sub = merged.hooks.subagentStop?.find((h) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(sub).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(sub, "loop_limit")).toBe(true);
+    expect(sub?.loop_limit).toBeNull();
+    expect(sub?.command).toMatch(/--event subagentStop(?:\s|$)/);
   });
 
   it("commandHasPlatformStamp matches token boundaries", () => {
@@ -104,6 +117,13 @@ describe("hooks.json merge", () => {
     );
     expect(stops).toHaveLength(1);
     expect(stops[0]?.loop_limit).toBeNull();
+    // 0.17 upgrade path: also installs subagentStop with loop_limit null.
+    const subs = (merged.hooks.subagentStop ?? []).filter((h) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(subs).toHaveLength(1);
+    expect(subs[0]?.loop_limit).toBeNull();
+    expect(subs[0]?.command).toMatch(/--event subagentStop(?:\s|$)/);
   });
 
   it("preserves user hooks and replaces Autopilot entries", () => {
@@ -136,6 +156,12 @@ describe("hooks.json merge", () => {
       merged.hooks.stop?.find((h) => h.command.includes("autopilot-harness"))
         ?.loop_limit,
     ).toBeNull();
+    // 0.17: merge also installs Autopilot subagentStop alongside preserved user hooks.
+    const subs = (merged.hooks.subagentStop ?? []).filter((h) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(subs).toHaveLength(1);
+    expect(subs[0]?.loop_limit).toBeNull();
   });
 });
 
@@ -187,6 +213,53 @@ describe("autopilotStopHasUnlimitedLoop", () => {
       autopilotStopHasUnlimitedLoop({
         hooks: {
           stop: [{ command: "echo other", loop_limit: null }],
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("autopilotSubagentStopHasUnlimitedLoop", () => {
+  it("is true only for Autopilot subagentStop with own loop_limit null", () => {
+    expect(
+      autopilotSubagentStopHasUnlimitedLoop({
+        hooks: {
+          subagentStop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event subagentStop",
+              loop_limit: null,
+            },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("is false when loop_limit omitted, numeric, or event missing", () => {
+    expect(autopilotSubagentStopHasUnlimitedLoop({ hooks: {} })).toBe(false);
+    expect(
+      autopilotSubagentStopHasUnlimitedLoop({
+        hooks: {
+          subagentStop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event subagentStop",
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      autopilotSubagentStopHasUnlimitedLoop({
+        hooks: {
+          subagentStop: [
+            {
+              command:
+                "node .autopilot/bin/autopilot-harness-hook.mjs --event subagentStop",
+              loop_limit: 5,
+            },
+          ],
         },
       }),
     ).toBe(false);
@@ -319,6 +392,12 @@ describe("init --yes install", () => {
     expect(Object.prototype.hasOwnProperty.call(stopAp, "loop_limit")).toBe(
       true,
     );
+    const subAp = hooks.hooks.subagentStop.find((h: { command: string }) =>
+      h.command.includes("autopilot-harness"),
+    );
+    expect(subAp?.loop_limit).toBeNull();
+    expect(subAp?.command).toMatch(/--platform cursor(?:\s|$)/);
+    expect(subAp?.command).toMatch(/--event subagentStop(?:\s|$)/);
 
     const config = fs.readFileSync(
       path.join(root, ".autopilot", "config.yml"),

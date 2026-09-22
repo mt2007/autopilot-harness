@@ -81,6 +81,7 @@ export interface HooksFile {
     beforeSubmitPrompt?: HookCommand[];
     afterFileEdit?: HookCommand[];
     stop?: HookCommand[];
+    subagentStop?: HookCommand[];
     [event: string]: HookCommand[] | undefined;
   };
 }
@@ -91,4 +92,5 @@ export const AUTOPILOT_EVENTS = [
   "beforeSubmitPrompt",
   "afterFileEdit",
   "stop",
+  "subagentStop",
 ] as const;

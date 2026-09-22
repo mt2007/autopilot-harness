@@ -11,6 +11,7 @@ import { StateStore, ensureAmbientReviewSession } from "@autopilot-harness/core"
 import { installInitYes } from "../src/init/install.js";
 import { upgradeProject } from "../src/upgrade.js";
 import { uninstallProject } from "../src/uninstall.js";
+import { AUTOPILOT_EVENTS } from "../src/init/types.js";
 
 function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-dual-host-"));
@@ -91,7 +92,7 @@ describe("dual-host Cursor non-regression matrix", () => {
     const hooks = JSON.parse(
       fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, { command: string }[]> };
-    for (const event of ["beforeSubmitPrompt", "afterFileEdit", "stop"]) {
+    for (const event of AUTOPILOT_EVENTS) {
       const ap = hooks.hooks[event]?.filter((h) =>
         h.command.includes("autopilot-harness"),
       );

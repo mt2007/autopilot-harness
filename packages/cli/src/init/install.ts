@@ -122,6 +122,8 @@ export {
   hasCompleteAutopilotHooks,
   summarizeAutopilotHooks,
   autopilotStopHasUnlimitedLoop,
+  autopilotSubagentStopHasUnlimitedLoop,
+  autopilotEventHasUnlimitedLoop,
   autopilotHookCommand,
 } from "./hooks-merge.js";
 export {

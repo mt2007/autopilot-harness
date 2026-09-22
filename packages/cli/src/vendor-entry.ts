@@ -26,7 +26,9 @@ export {
 export {
   handleBeforeSubmitPrompt,
   handleAfterFileEdit,
+  handleSubagentStop,
   handleStop as handleCursorStop,
+  handleSubagentStop as handleCursorSubagentStop,
 } from "@autopilot-harness/port-cursor";
 
 export {

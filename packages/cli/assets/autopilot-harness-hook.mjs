@@ -7,7 +7,7 @@
  * Falls back to project-local packages, then fail-open.
  *
  * Events:
- *   Cursor: beforeSubmitPrompt | afterFileEdit | stop
+ *   Cursor: beforeSubmitPrompt | afterFileEdit | stop | subagentStop
  *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure
  *   Codex: UserPromptSubmit | PostToolUse | Stop (no StopFailure)
  *   Kimi Code: UserPromptSubmit | PostToolUse | Stop (exit 0/2 + stdio; no StopFailure)
@@ -48,6 +48,7 @@ const CURSOR_EVENTS = new Set([
   "beforeSubmitPrompt",
   "afterFileEdit",
   "stop",
+  "subagentStop",
 ]);
 const CLAUDE_EVENTS = new Set([
   "UserPromptSubmit",
@@ -742,6 +743,20 @@ function cursorStopHandler(port) {
     typeof port.handleBeforeSubmitPrompt === "function"
   ) {
     return port.handleStop;
+  }
+  return undefined;
+}
+
+/** Prefer aliased Cursor export; bare handleSubagentStop only on Cursor-shaped ports. */
+function cursorSubagentStopHandler(port) {
+  if (typeof port.handleCursorSubagentStop === "function") {
+    return port.handleCursorSubagentStop;
+  }
+  if (
+    typeof port.handleSubagentStop === "function" &&
+    typeof port.handleBeforeSubmitPrompt === "function"
+  ) {
+    return port.handleSubagentStop;
   }
   return undefined;
 }
@@ -1903,6 +1918,20 @@ async function main() {
       }
       if (event === "afterFileEdit") {
         port.handleAfterFileEdit?.(store, payload, projectRoot);
+        writeReply("{}");
+        return;
+      }
+      if (event === "subagentStop") {
+        // Arm-only: never emit followup / loop. Discard handler return.
+        // Missing / non-Cursor handler → fail-open {}.
+        try {
+          const fn = cursorSubagentStopHandler(port);
+          if (typeof fn === "function") {
+            fn(store, payload, projectRoot);
+          }
+        } catch {
+          /* fail-open */
+        }
         writeReply("{}");
         return;
       }

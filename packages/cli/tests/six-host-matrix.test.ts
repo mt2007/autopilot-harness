@@ -22,6 +22,7 @@ import {
   GROK_POST_TOOL_USE_MATCHER,
 } from "../src/init/grok-hooks-merge.js";
 import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_EVENTS } from "../src/init/types.js";
 import { runDoctor } from "../src/status-doctor.js";
 import { GROK_STOP_PER_TURN_BLOCK_CAP } from "../../ports/grok-build/src/index.js";
 import { COPILOT_STOP_CONSECUTIVE_BLOCK_CAP } from "../../ports/copilot-cli/src/index.js";
@@ -156,7 +157,7 @@ describe("six-host Grok cross-fire matrix", () => {
     const cursorHooks = JSON.parse(
       fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, { command: string }[]> };
-    for (const event of ["beforeSubmitPrompt", "afterFileEdit", "stop"]) {
+    for (const event of AUTOPILOT_EVENTS) {
       const ap = cursorHooks.hooks[event]?.filter((h) =>
         h.command.includes("autopilot-harness"),
       );

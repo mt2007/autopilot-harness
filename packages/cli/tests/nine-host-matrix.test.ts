@@ -28,6 +28,7 @@ import {
   parseHermesConfigYaml,
 } from "../src/init/hermes-hooks-merge.js";
 import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_EVENTS } from "../src/init/types.js";
 import { runDoctor } from "../src/status-doctor.js";
 import { HERMES_PLATFORM } from "../../ports/hermes-agent/src/index.js";
 import { FACTORY_PLATFORM } from "../../ports/factory-droid/src/index.js";
@@ -362,7 +363,7 @@ describe("nine-host Hermes cross-fire matrix", () => {
     const cursorHooks = JSON.parse(
       fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, { command: string }[]> };
-    for (const event of ["beforeSubmitPrompt", "afterFileEdit", "stop"]) {
+    for (const event of AUTOPILOT_EVENTS) {
       const ap = cursorHooks.hooks[event]?.filter((h) =>
         h.command.includes("autopilot-harness"),
       );

@@ -30,11 +30,20 @@ describe("stripAutopilotHooks", () => {
               "node .autopilot/bin/autopilot-harness-hook.mjs --event beforeSubmitPrompt",
           },
         ],
+        subagentStop: [
+          {
+            command:
+              "node .autopilot/bin/autopilot-harness-hook.mjs --event subagentStop",
+            loop_limit: null,
+          },
+          { command: "echo keep-sub" },
+        ],
       },
     };
     const stripped = stripAutopilotHooks(existing);
     expect(stripped.hooks.stop).toEqual([{ command: "echo keep-me" }]);
     expect(stripped.hooks.beforeSubmitPrompt).toEqual([]);
+    expect(stripped.hooks.subagentStop).toEqual([{ command: "echo keep-sub" }]);
   });
 });
 

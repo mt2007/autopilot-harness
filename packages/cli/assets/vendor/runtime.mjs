@@ -6276,6 +6276,72 @@ function applyTrackPick(store, conversationId, projectRoot, pick, opts) {
   });
 }
 
+// ../core/src/parent-attribution.ts
+var MAX_MODIFIED_FILES_SCAN = 200;
+function cleanId(value) {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  if (!id || /[\u0000-\u001f\u007f]/.test(id)) return null;
+  return id;
+}
+function extractParentConversationId(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  return cleanId(payload.parent_conversation_id) ?? cleanId(payload.parentConversationId) ?? cleanId(payload.parent_session_id) ?? cleanId(payload.parentSessionId);
+}
+function resolveEditArmTarget(store, opts) {
+  const self = cleanId(opts.conversationId);
+  const parent = cleanId(opts.parentConversationId ?? null);
+  if (parent && self && parent !== self) {
+    if (!store.getSession(parent)) {
+      return { kind: "noop", reason: "missing_parent_session" };
+    }
+    return { kind: "parent", conversationId: parent };
+  }
+  if (!self) {
+    if (!parent) return { kind: "noop", reason: "blank_self" };
+    if (!store.getSession(parent)) {
+      return { kind: "noop", reason: "missing_parent_session" };
+    }
+    return { kind: "parent", conversationId: parent };
+  }
+  return { kind: "self", conversationId: self };
+}
+function hasProductDirtyFromFilesOrGit(projectRoot, modifiedFiles) {
+  const root = typeof projectRoot === "string" ? projectRoot.trim() : "";
+  if (!root || root.includes("\0")) return false;
+  const files = Array.isArray(modifiedFiles) ? modifiedFiles : [];
+  const limit = Math.min(files.length, MAX_MODIFIED_FILES_SCAN);
+  for (let i = 0; i < limit; i++) {
+    const raw = files[i];
+    if (typeof raw !== "string") continue;
+    const filePath = raw.trim();
+    if (!filePath || filePath.includes("\0")) continue;
+    if (isProductCodeEdit(filePath, { projectRoot: root })) {
+      return true;
+    }
+  }
+  try {
+    return hasDirtyProductCode(root);
+  } catch {
+    return false;
+  }
+}
+function resolveSubagentStopArmTarget(store, opts) {
+  const parent = cleanId(opts.parentConversationId ?? null);
+  if (!parent) {
+    return { kind: "noop", reason: "missing_parent" };
+  }
+  if (!store.getSession(parent)) {
+    return { kind: "noop", reason: "missing_parent_session" };
+  }
+  if (!hasProductDirtyFromFilesOrGit(opts.projectRoot, opts.modifiedFiles)) {
+    return { kind: "noop", reason: "not_product_dirty" };
+  }
+  return { kind: "parent", conversationId: parent };
+}
+
 // ../ports/cursor/src/index.ts
 function normalizeBlockSubmitMessage(message) {
   return typeof message === "string" && message.trim().length > 0 ? message : "Request blocked.";
@@ -6457,16 +6523,22 @@ function handleAfterFileEdit(store, payload, projectRoot) {
   } catch {
   }
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
+  const arm = resolveEditArmTarget(store, {
+    conversationId,
+    parentConversationId: extractParentConversationId(payload)
+  });
+  if (arm.kind === "noop") return;
+  const armCid = arm.conversationId;
   const cfg = loadProjectReviewConfig(projectRoot);
-  if (cfg.reviewScope === "project") {
+  if (arm.kind === "self" && cfg.reviewScope === "project") {
     ensureAmbientReviewSession(
       store,
-      conversationId,
+      armCid,
       projectRoot,
       cfg.reviewScope
     );
   }
-  const session = store.getSession(conversationId);
+  const session = store.getSession(armCid);
   const checklistPath = session?.checklist_path?.trim() ?? "";
   let checklistSnap = null;
   if (checklistPath) {
@@ -6475,7 +6547,7 @@ function handleAfterFileEdit(store, payload, projectRoot) {
     } catch {
     }
   }
-  store.markCodeEdited(conversationId, (chain) => {
+  store.markCodeEdited(armCid, (chain) => {
     const fromPending = parseAdvanceNextItemId(chain.pending_followup);
     if (checklistSnap) {
       if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
@@ -6503,6 +6575,44 @@ function handleStop(engine, payload) {
     return { followup_message: action.message };
   }
   return { followup_message: action.message, loop: true };
+}
+function handleSubagentStop(store, payload, projectRoot) {
+  try {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return {};
+    }
+    const conversationId = cid(payload);
+    const modifiedFiles = Array.isArray(payload.modified_files) ? payload.modified_files : Array.isArray(payload.modifiedFiles) ? payload.modifiedFiles : null;
+    const target = resolveSubagentStopArmTarget(store, {
+      conversationId,
+      parentConversationId: extractParentConversationId(payload),
+      projectRoot,
+      modifiedFiles
+    });
+    if (target.kind !== "parent") return {};
+    const armCid = target.conversationId;
+    const session = store.getSession(armCid);
+    const checklistPath = session?.checklist_path?.trim() ?? "";
+    let checklistSnap = null;
+    if (checklistPath) {
+      try {
+        checklistSnap = parseChecklist(checklistPath, { projectRoot });
+      } catch {
+      }
+    }
+    store.markCodeEdited(armCid, (chain) => {
+      const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+      if (checklistSnap) {
+        if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+          return fromPending;
+        }
+        return firstUnchecked(checklistSnap)?.id ?? null;
+      }
+      return fromPending;
+    });
+  } catch {
+  }
+  return {};
 }
 
 // ../ports/claude-code/src/index.ts
@@ -6782,18 +6892,26 @@ function handlePostToolUse(store, payload, projectRoot) {
   } catch {
   }
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
+  const arm = resolveEditArmTarget(store, {
+    conversationId,
+    parentConversationId: extractParentConversationId(payload)
+  });
+  if (arm.kind === "noop") return;
+  const armCid = arm.conversationId;
   const cfg = loadProjectReviewConfig(projectRoot);
-  if (cfg.reviewScope === "project") {
+  if (arm.kind === "self" && cfg.reviewScope === "project") {
     ensureAmbientReviewSession(
       store,
-      conversationId,
+      armCid,
       projectRoot,
       cfg.reviewScope,
       CLAUDE_PLATFORM
     );
   }
-  stampClaudePlatform(store, conversationId, projectRoot);
-  const session = store.getSession(conversationId);
+  if (arm.kind === "self") {
+    stampClaudePlatform(store, armCid, projectRoot);
+  }
+  const session = store.getSession(armCid);
   const checklistPath = session?.checklist_path?.trim() ?? "";
   let checklistSnap = null;
   if (checklistPath) {
@@ -6802,7 +6920,7 @@ function handlePostToolUse(store, payload, projectRoot) {
     } catch {
     }
   }
-  store.markCodeEdited(conversationId, (chain) => {
+  store.markCodeEdited(armCid, (chain) => {
     const fromPending = parseAdvanceNextItemId(chain.pending_followup);
     if (checklistSnap) {
       if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
@@ -12095,6 +12213,7 @@ export {
   handleUserPromptSubmit4 as handleCopilotUserPromptSubmit,
   handleUserPromptTransformed as handleCopilotUserPromptTransformed,
   handleStop as handleCursorStop,
+  handleSubagentStop as handleCursorSubagentStop,
   handleDevinPostToolUse,
   handleDevinStop,
   handleDevinUserPromptSubmit,
@@ -12124,6 +12243,7 @@ export {
   handlePostToolUse,
   handleStop,
   handleStopFailure,
+  handleSubagentStop,
   handleUserPromptSubmit,
   isAntigravityAllowNoop,
   isFactoryEmptyStdout,

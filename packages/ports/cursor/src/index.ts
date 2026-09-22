@@ -22,6 +22,7 @@ import {
   parseChecklist,
   parseTrigger,
   resolveEditArmTarget,
+  resolveSubagentStopArmTarget,
   ReviewEngine,
   StateStore,
   type FollowupAction,
@@ -64,6 +65,23 @@ export interface CursorStopPayload {
   reason?: unknown;
   detail?: unknown;
   title?: unknown;
+}
+
+/** Cursor subagentStop — arm parent only; never continue / followup. */
+export interface CursorSubagentStopPayload {
+  conversation_id?: string;
+  conversationId?: string;
+  parent_conversation_id?: string;
+  parentConversationId?: string;
+  parent_session_id?: string;
+  parentSessionId?: string;
+  modified_files?: string[];
+  modifiedFiles?: string[];
+  status?: string;
+  subagent_id?: string;
+  subagentId?: string;
+  subagent_type?: string;
+  subagentType?: string;
 }
 
 export interface CursorPortConfig {
@@ -375,4 +393,62 @@ export function handleStop(
     return { followup_message: action.message };
   }
   return { followup_message: action.message, loop: true };
+}
+
+/**
+ * Cursor `subagentStop` → arm existing parent only (no followup / no block-continue).
+ * Fail-open: any error → `{}`. Review continues on parent `stop`.
+ */
+export function handleSubagentStop(
+  store: StateStore,
+  payload: CursorSubagentStopPayload,
+  projectRoot: string,
+): Record<string, never> {
+  try {
+    // Host may deliver null / array / primitive — fail-open without throwing.
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return {};
+    }
+    const conversationId = cid(payload);
+    const modifiedFiles = Array.isArray(payload.modified_files)
+      ? payload.modified_files
+      : Array.isArray(payload.modifiedFiles)
+        ? payload.modifiedFiles
+        : null;
+    const target = resolveSubagentStopArmTarget(store, {
+      conversationId,
+      parentConversationId: extractParentConversationId(payload),
+      projectRoot,
+      modifiedFiles,
+    });
+    if (target.kind !== "parent") return {};
+
+    const armCid = target.conversationId;
+    const session = store.getSession(armCid);
+    const checklistPath = session?.checklist_path?.trim() ?? "";
+    let checklistSnap: ReturnType<typeof parseChecklist> | null = null;
+    if (checklistPath) {
+      try {
+        checklistSnap = parseChecklist(checklistPath, { projectRoot });
+      } catch {
+        /* checklist unreadable — still arm code_edited */
+      }
+    }
+    store.markCodeEdited(armCid, (chain) => {
+      const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+      if (checklistSnap) {
+        if (
+          fromPending &&
+          effectiveReviewingItemId(checklistSnap, fromPending)
+        ) {
+          return fromPending;
+        }
+        return firstUnchecked(checklistSnap)?.id ?? null;
+      }
+      return fromPending;
+    });
+  } catch {
+    /* fail-open — never block / continue from subagentStop */
+  }
+  return {};
 }

@@ -27,6 +27,7 @@ import {
 } from "@autopilot-harness/port-runner";
 import {
   autopilotStopHasUnlimitedLoop,
+  autopilotSubagentStopHasUnlimitedLoop,
   cursorHooksHavePlatformStamp,
   isAutopilotCommand,
   summarizeAutopilotHooks,
@@ -1135,14 +1136,22 @@ export function runDoctor(
               `WARN  hooks.json has ${duplicates} duplicate Autopilot entr(y/ies)`,
             );
           }
-          // Warn even when other events are missing/duplicated — stop can still
-          // be present without loop_limit:null and get Cursor-capped mid-chain.
+          // Warn even when other events are missing/duplicated — stop / subagentStop
+          // can still be present without loop_limit:null and get Cursor-capped.
           if (
             !missingEvents.includes("stop") &&
             !autopilotStopHasUnlimitedLoop(hooks)
           ) {
             lines.push(
               "WARN  Autopilot stop missing loop_limit:null — Cursor defaults to 5 and may skip mid review chain; run upgrade",
+            );
+          }
+          if (
+            !missingEvents.includes("subagentStop") &&
+            !autopilotSubagentStopHasUnlimitedLoop(hooks)
+          ) {
+            lines.push(
+              "WARN  Autopilot subagentStop missing loop_limit:null — Cursor defaults to 5; run upgrade",
             );
           }
           if (
@@ -1157,6 +1166,7 @@ export function runDoctor(
             missingEvents.length === 0 &&
             duplicates === 0 &&
             autopilotStopHasUnlimitedLoop(hooks) &&
+            autopilotSubagentStopHasUnlimitedLoop(hooks) &&
             cursorHooksHavePlatformStamp(hooks)
           ) {
             lines.push("OK    hooks.json Autopilot entries");

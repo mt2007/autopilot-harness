@@ -30,6 +30,7 @@ import {
   parseHermesConfigYaml,
 } from "../src/init/hermes-hooks-merge.js";
 import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_EVENTS } from "../src/init/types.js";
 import { runDoctor } from "../src/status-doctor.js";
 import { ANTIGRAVITY_PLATFORM } from "../../ports/antigravity/src/index.js";
 import { HERMES_PLATFORM } from "../../ports/hermes-agent/src/index.js";
@@ -349,7 +350,7 @@ describe("ten-host Antigravity cross-fire matrix", () => {
     const cursorHooks = JSON.parse(
       fs.readFileSync(path.join(root, ".cursor", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, { command: string }[]> };
-    for (const event of ["beforeSubmitPrompt", "afterFileEdit", "stop"]) {
+    for (const event of AUTOPILOT_EVENTS) {
       const ap = cursorHooks.hooks[event]?.filter((h) =>
         h.command.includes("autopilot-harness"),
       );
@@ -534,6 +535,15 @@ describe("ten-host Antigravity cross-fire matrix", () => {
             conversation_id: cid,
             status: "completed",
             loop_count: 0,
+          },
+        },
+        {
+          event: "subagentStop",
+          payload: {
+            conversation_id: cid,
+            parent_conversation_id: cid,
+            modified_files: ["src/x.ts"],
+            status: "completed",
           },
         },
         {

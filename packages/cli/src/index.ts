@@ -9,6 +9,8 @@ export {
   hasCompleteAutopilotHooks,
   summarizeAutopilotHooks,
   autopilotStopHasUnlimitedLoop,
+  autopilotSubagentStopHasUnlimitedLoop,
+  autopilotEventHasUnlimitedLoop,
   autopilotHookCommand,
   mergeClaudeSettings,
   validateClaudeSettingsShape,

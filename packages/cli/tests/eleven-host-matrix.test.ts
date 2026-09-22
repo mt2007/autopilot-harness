@@ -475,6 +475,15 @@ describe("eleven-host Devin cross-fire matrix (v0.15)", () => {
           payload: { conversation_id: "xf", status: "completed", loop_count: 0 },
         },
         {
+          event: "subagentStop",
+          payload: {
+            conversation_id: "xf",
+            parent_conversation_id: "xf",
+            modified_files: ["src/x.ts"],
+            status: "completed",
+          },
+        },
+        {
           event: "PreInvocation",
           payload: {
             conversationId: "xf-agy",
@@ -711,6 +720,7 @@ describe("eleven-host Devin cross-fire matrix (v0.15)", () => {
         "beforeSubmitPrompt",
         "afterFileEdit",
         "stop",
+        "subagentStop",
         "PreInvocation",
         "BeforeAgent",
         "AfterTool",
