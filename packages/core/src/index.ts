@@ -137,6 +137,16 @@ export {
 export { isProductCodeEdit, hasDirtyProductCode, type ProductCodeEditOptions } from "./code-edit-detector.js";
 
 export {
+  extractParentConversationId,
+  hasProductDirtyFromFilesOrGit,
+  resolveEditArmTarget,
+  resolveSubagentStopArmTarget,
+  type EditArmTarget,
+  type ParentAttributionPayload,
+  type SubagentStopArmTarget,
+} from "./parent-attribution.js";
+
+export {
   DEFAULT_AUTOPILOT_IGNORE_TEXT,
   autopilotIgnorePath,
   parseAutopilotIgnore,

@@ -8,6 +8,7 @@ import {
   applyTrackPick,
   ensureAmbientReviewSession,
   effectiveReviewingItemId,
+  extractParentConversationId,
   firstUnchecked,
   isChannelANeedPick,
   isHarnessFollowupMessage,
@@ -21,6 +22,7 @@ import {
   parseAdvanceNextItemId,
   parseChecklist,
   parseTrigger,
+  resolveEditArmTarget,
   type FollowupAction,
   type PhaseActionConfig,
   type ReviewEngine,
@@ -47,6 +49,11 @@ export interface ClaudeEditPayload {
   sessionId?: string;
   conversation_id?: string;
   conversationId?: string;
+  /** When set, arm the parent session if it already exists (exist-only). */
+  parent_conversation_id?: string;
+  parentConversationId?: string;
+  parent_session_id?: string;
+  parentSessionId?: string;
   cwd?: string;
   tool_name?: string;
   toolName?: string;
@@ -491,18 +498,28 @@ export function handlePostToolUse(
 
   if (!isProductCodeEdit(filePath, { projectRoot })) return;
 
+  const arm = resolveEditArmTarget(store, {
+    conversationId,
+    parentConversationId: extractParentConversationId(payload),
+  });
+  if (arm.kind === "noop") return;
+
+  const armCid = arm.conversationId;
   const cfg = loadProjectReviewConfig(projectRoot);
-  if (cfg.reviewScope === "project") {
+  // Ambient create + platform stamp only for self. Never invent / rewrite a parent.
+  if (arm.kind === "self" && cfg.reviewScope === "project") {
     ensureAmbientReviewSession(
       store,
-      conversationId,
+      armCid,
       projectRoot,
       cfg.reviewScope,
       CLAUDE_PLATFORM,
     );
   }
-  stampClaudePlatform(store, conversationId, projectRoot);
-  const session = store.getSession(conversationId);
+  if (arm.kind === "self") {
+    stampClaudePlatform(store, armCid, projectRoot);
+  }
+  const session = store.getSession(armCid);
   const checklistPath = session?.checklist_path?.trim() ?? "";
   let checklistSnap: ReturnType<typeof parseChecklist> | null = null;
   if (checklistPath) {
@@ -512,7 +529,7 @@ export function handlePostToolUse(
       /* checklist unreadable — still arm code_edited */
     }
   }
-  store.markCodeEdited(conversationId, (chain) => {
+  store.markCodeEdited(armCid, (chain) => {
     const fromPending = parseAdvanceNextItemId(chain.pending_followup);
     if (checklistSnap) {
       if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {

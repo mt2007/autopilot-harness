@@ -457,6 +457,72 @@ describe("port-claude-code adapters", () => {
     store.close();
   });
 
+  it("PostToolUse with parent arms existing parent only; ghost parent no-ops", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
+    store.upsertSession({
+      conversation_id: "parent-s",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      armed: 1,
+      paused: 1,
+      checklist_path: cp,
+      track_id: "demo",
+      platform: "claude-code",
+    });
+
+    handlePostToolUse(
+      store,
+      {
+        session_id: "child-s",
+        parent_session_id: "parent-s",
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(root, "src", "app.ts") },
+      },
+      root,
+    );
+    expect(store.getReviewChain("parent-s")?.code_edited).toBe(1);
+    expect(store.getSession("child-s")).toBeNull();
+    expect(store.getSession("parent-s")?.paused).toBe(1);
+    expect(store.getSession("parent-s")?.platform).toBe("claude-code");
+
+    // Parent platform must not flip when a child edit arms an existing parent.
+    store.upsertSession({
+      conversation_id: "parent-s",
+      platform: "cursor",
+    });
+    store.updateReviewChain("parent-s", { code_edited: 0 });
+    handlePostToolUse(
+      store,
+      {
+        session_id: "child-s",
+        parent_session_id: "parent-s",
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(root, "src", "app.ts") },
+      },
+      root,
+    );
+    expect(store.getReviewChain("parent-s")?.code_edited).toBe(1);
+    expect(store.getSession("parent-s")?.platform).toBe("cursor");
+
+    store.updateReviewChain("parent-s", { code_edited: 0 });
+    handlePostToolUse(
+      store,
+      {
+        session_id: "child-s",
+        parent_session_id: "ghost-parent",
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(root, "src", "app.ts") },
+      },
+      root,
+    );
+    expect(store.getSession("ghost-parent")).toBeNull();
+    expect(store.getReviewChain("parent-s")?.code_edited ?? 0).toBe(0);
+    store.close();
+  });
+
   it("Stop returns decision:block+reason; loop:false hard-stops; StopFailure recovers", () => {
     const root = tmpRoot();
     const store = StateStore.openMemory(root);
