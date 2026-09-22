@@ -590,6 +590,14 @@ describe("nine-host Hermes cross-fire matrix", () => {
           event: "StopFailure",
           payload: { session_id: cid },
         },
+        {
+          event: "SubagentStop",
+          payload: {
+            session_id: cid,
+            modified_files: ["src/x.ts"],
+            hook_event_name: "SubagentStop",
+          },
+        },
       ];
 
     for (const { event, payload } of foreign) {

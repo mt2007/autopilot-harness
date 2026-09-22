@@ -1753,6 +1753,17 @@ describe("runDoctor", () => {
               ],
             },
           ],
+          SubagentStop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --event SubagentStop",
+                },
+              ],
+            },
+          ],
         },
       }),
     );
@@ -1760,6 +1771,80 @@ describe("runDoctor", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(/missing --platform claude-code/i);
+    expect(joined).not.toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
+  });
+
+  it("FAILs when Claude Autopilot SubagentStop event is missing", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    new StateStore(root).close();
+
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        env: { CLAUDE_CODE_STOP_HOOK_BLOCK_CAP: "0" },
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --platform claude-code --event UserPromptSubmit",
+                },
+              ],
+            },
+          ],
+          PostToolUse: [
+            {
+              matcher: "Edit|Write|NotebookEdit",
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --platform claude-code --event PostToolUse",
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --platform claude-code --event Stop",
+                },
+              ],
+            },
+          ],
+          StopFailure: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command:
+                    "node .autopilot/bin/autopilot-harness-hook.mjs --platform claude-code --event StopFailure",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(false);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(/missing Autopilot for:.*SubagentStop/i);
     expect(joined).not.toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
   });
 

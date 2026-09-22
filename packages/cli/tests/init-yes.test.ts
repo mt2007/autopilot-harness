@@ -502,6 +502,7 @@ describe("init --yes install", () => {
     expect(JSON.stringify(settings.hooks)).toMatch(/PostToolUse/);
     expect(JSON.stringify(settings.hooks)).toMatch(/Edit\|Write\|NotebookEdit/);
     expect(JSON.stringify(settings.hooks)).toMatch(/StopFailure/);
+    expect(JSON.stringify(settings.hooks)).toMatch(/SubagentStop/);
     expect(JSON.stringify(settings.hooks)).toMatch(/autopilot-harness-hook/);
 
     expect(

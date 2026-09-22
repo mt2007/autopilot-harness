@@ -351,6 +351,7 @@ describe("uninstallProject", () => {
       false,
     );
     expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBeUndefined();
+    expect(after.hooks?.SubagentStop).toBeUndefined();
     expect(JSON.stringify(after.hooks?.Stop)).toMatch(/foreign-stop/);
     expect(
       fs.existsSync(

@@ -156,6 +156,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(tips).toMatch(/loop_limit/);
     expect(tips).toMatch(/subagentStop/);
+    expect(tips).toMatch(/SubagentStop/);
+    expect(tips).toMatch(/doctor` FAILs when the Autopilot \*\*`SubagentStop`\*\*|doctor` FAILs when.*SubagentStop/i);
     expect(tips).toMatch(/Tier-S|neutral.*subagent/i);
     expect(tips).toMatch(/double followup/i);
     expect(tips).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
@@ -1162,6 +1164,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(
       /Autopilot \*\*`subagentStop`\*\*|also on Autopilot \*\*`subagentStop`\*\*/i,
     );
+    expect(hosts).toMatch(/\*\*`SubagentStop`\*\*/);
+    expect(hosts).toMatch(
+      /doctor` FAILs when that fingerprint is missing|doctor` FAILs when that Autopilot fingerprint is missing/i,
+    );
     expect(hosts).toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Claude Code\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Shipped\*\*/);
@@ -1540,6 +1546,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/Tier-S/);
     expect(body).toMatch(/subagentStop/);
+    expect(body).toMatch(/SubagentStop/);
+    expect(body).toMatch(
+      /doctor` FAILs when that Autopilot fingerprint is missing/i,
+    );
     expect(body).toMatch(/arms parent only|arm-only/i);
     expect(body).not.toMatch(/See the v0\.1 plan/);
     expect(body).toMatch(/ReviewEngine/);

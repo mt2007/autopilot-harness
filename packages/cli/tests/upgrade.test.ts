@@ -781,6 +781,39 @@ review:
     expect(after.env?.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).toBe("0");
   });
 
+  it("upgrade restores missing Claude SubagentStop (pre-0.17 settings)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "claude-code",
+        surface: "cli",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const settingsPath = path.join(root, ".claude", "settings.json");
+    const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    expect(settings.hooks?.SubagentStop).toBeDefined();
+    delete settings.hooks!.SubagentStop;
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+
+    const r = upgradeProject({ projectRoot: root, packageVersion: "0.17.0" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const after = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as {
+      hooks?: Record<string, unknown>;
+    };
+    expect(JSON.stringify(after.hooks?.SubagentStop)).toMatch(
+      /--platform claude-code/,
+    );
+    expect(JSON.stringify(after.hooks?.SubagentStop)).toMatch(
+      /--event SubagentStop/,
+    );
+  });
+
   it("Cursor-only upgrade ignores corrupt leftover .claude/settings.json", () => {
     root = tmpProject();
     expect(

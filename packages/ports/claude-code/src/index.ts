@@ -23,6 +23,7 @@ import {
   parseChecklist,
   parseTrigger,
   resolveEditArmTarget,
+  resolveSubagentStopArmTarget,
   type FollowupAction,
   type PhaseActionConfig,
   type ReviewEngine,
@@ -88,6 +89,28 @@ export interface ClaudeStopPayload {
   status_message?: unknown;
   detail?: unknown;
   title?: unknown;
+}
+
+/** Claude Code SubagentStop — arm parent only; never continue / block. */
+export interface ClaudeSubagentStopPayload {
+  session_id?: string;
+  sessionId?: string;
+  conversation_id?: string;
+  conversationId?: string;
+  parent_conversation_id?: string;
+  parentConversationId?: string;
+  parent_session_id?: string;
+  parentSessionId?: string;
+  modified_files?: string[];
+  modifiedFiles?: string[];
+  status?: string;
+  agent_id?: string;
+  agentId?: string;
+  agent_type?: string;
+  agentType?: string;
+  subagent_type?: string;
+  subagentType?: string;
+  cwd?: string;
 }
 
 export interface ClaudePortConfig {
@@ -594,4 +617,66 @@ export function handleStopFailure(
   payload: ClaudeStopPayload,
 ): ClaudeStopResult {
   return handleStop(engine, payload, { status: "error" });
+}
+
+/**
+ * Claude `SubagentStop` → arm existing parent only (no followup / no block-continue).
+ * Host often omits parent_* and puts the parent/root id in `session_id` — use that
+ * as the exist-only arm target when parent fields are absent.
+ * Fail-open: any error → `{}`. Review continues on parent Stop.
+ */
+export function handleSubagentStop(
+  store: StateStore,
+  payload: ClaudeSubagentStopPayload,
+  projectRoot: string,
+): Record<string, never> {
+  try {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return {};
+    }
+    const conversationId = sid(payload);
+    const parentFromPayload = extractParentConversationId(payload);
+    // Claude: session_id is typically the parent/root when parent_* is absent.
+    const parentConversationId = parentFromPayload ?? (conversationId || null);
+    const modifiedFiles = Array.isArray(payload.modified_files)
+      ? payload.modified_files
+      : Array.isArray(payload.modifiedFiles)
+        ? payload.modifiedFiles
+        : null;
+    const target = resolveSubagentStopArmTarget(store, {
+      conversationId,
+      parentConversationId,
+      projectRoot,
+      modifiedFiles,
+    });
+    if (target.kind !== "parent") return {};
+
+    const armCid = target.conversationId;
+    const session = store.getSession(armCid);
+    const checklistPath = session?.checklist_path?.trim() ?? "";
+    let checklistSnap: ReturnType<typeof parseChecklist> | null = null;
+    if (checklistPath) {
+      try {
+        checklistSnap = parseChecklist(checklistPath, { projectRoot });
+      } catch {
+        /* checklist unreadable — still arm code_edited */
+      }
+    }
+    store.markCodeEdited(armCid, (chain) => {
+      const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+      if (checklistSnap) {
+        if (
+          fromPending &&
+          effectiveReviewingItemId(checklistSnap, fromPending)
+        ) {
+          return fromPending;
+        }
+        return firstUnchecked(checklistSnap)?.id ?? null;
+      }
+      return fromPending;
+    });
+  } catch {
+    /* fail-open — never block / continue from SubagentStop */
+  }
+  return {};
 }

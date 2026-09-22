@@ -8,7 +8,7 @@
  *
  * Events:
  *   Cursor: beforeSubmitPrompt | afterFileEdit | stop | subagentStop
- *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure
+ *   Claude Code: UserPromptSubmit | PostToolUse | Stop | StopFailure | SubagentStop
  *   Codex: UserPromptSubmit | PostToolUse | Stop (no StopFailure)
  *   Kimi Code: UserPromptSubmit | PostToolUse | Stop (exit 0/2 + stdio; no StopFailure)
  *   Copilot CLI: userPromptSubmitted | userPromptTransformed | postToolUse | agentStop
@@ -55,6 +55,7 @@ const CLAUDE_EVENTS = new Set([
   "PostToolUse",
   "Stop",
   "StopFailure",
+  "SubagentStop",
 ]);
 /** Codex/Kimi/Grok/Factory share submit/edit/stop names with Claude; routed by --platform only. */
 const CODEX_EVENTS = new Set(["UserPromptSubmit", "PostToolUse", "Stop"]);
@@ -755,6 +756,24 @@ function cursorSubagentStopHandler(port) {
   if (
     typeof port.handleSubagentStop === "function" &&
     typeof port.handleBeforeSubmitPrompt === "function"
+  ) {
+    return port.handleSubagentStop;
+  }
+  return undefined;
+}
+
+/**
+ * Prefer aliased Claude export; bare handleSubagentStop only on Claude-shaped
+ * ports (StopFailure fingerprint; never Cursor submit).
+ */
+function claudeSubagentStopHandler(port) {
+  if (typeof port.handleClaudeSubagentStop === "function") {
+    return port.handleClaudeSubagentStop;
+  }
+  if (
+    typeof port.handleSubagentStop === "function" &&
+    typeof port.handleStopFailure === "function" &&
+    typeof port.handleBeforeSubmitPrompt !== "function"
   ) {
     return port.handleSubagentStop;
   }
@@ -1882,6 +1901,12 @@ async function main() {
       return;
     }
 
+    // Claude-only SubagentStop under a non-Claude stamp: abort before state.db.
+    if (event === "SubagentStop" && hostId !== "claude-code") {
+      failOpen(event, hostId);
+      return;
+    }
+
     // Copilot command/edit camelCase under a non-Copilot stamp: abort before
     // state.db. Do **not** early-abort `agentStop` — that event shares the
     // Stop|agentStop branch and resolveStopHostId (stamp may still be Cursor /
@@ -2412,6 +2437,20 @@ async function main() {
         }
         const result = failFn(createEngine(coreMod, store), payload);
         writeReply(JSON.stringify(result ?? {}));
+        return;
+      }
+      if (event === "SubagentStop") {
+        // Arm-only: never emit decision:block / continue. Discard handler return.
+        // Missing / non-Claude handler → fail-open {}.
+        try {
+          const fn = claudeSubagentStopHandler(port);
+          if (typeof fn === "function") {
+            fn(store, payload, projectRoot);
+          }
+        } catch {
+          /* fail-open */
+        }
+        writeReply("{}");
         return;
       }
       writeReply("{}");

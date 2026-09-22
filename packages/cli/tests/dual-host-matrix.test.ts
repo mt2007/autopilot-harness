@@ -12,6 +12,7 @@ import { installInitYes } from "../src/init/install.js";
 import { upgradeProject } from "../src/upgrade.js";
 import { uninstallProject } from "../src/uninstall.js";
 import { AUTOPILOT_EVENTS } from "../src/init/types.js";
+import { CLAUDE_AUTOPILOT_EVENTS } from "../src/init/claude-settings-merge.js";
 
 function tmpProject(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ap-dual-host-"));
@@ -106,12 +107,7 @@ describe("dual-host Cursor non-regression matrix", () => {
     ) as {
       hooks: Record<string, { hooks?: { command?: string }[] }[]>;
     };
-    for (const event of [
-      "UserPromptSubmit",
-      "PostToolUse",
-      "Stop",
-      "StopFailure",
-    ]) {
+    for (const event of CLAUDE_AUTOPILOT_EVENTS) {
       const cmds = (settings.hooks[event] ?? [])
         .flatMap((g) => g.hooks ?? [])
         .map((h) => h.command ?? "")
@@ -448,6 +444,10 @@ describe("dual-host Cursor non-regression matrix", () => {
     const src = fs.readFileSync(vendor, "utf8");
     expect(src).toMatch(/handleClaudeStop/);
     expect(src).toMatch(/handleCursorStop/);
+    // 0.17 Tier-S: dual vendor must export distinct subagent-stop aliases
+    // (bare handleSubagentStop alone is Cursor-shaped on the bundle).
+    expect(src).toMatch(/handleClaudeSubagentStop/);
+    expect(src).toMatch(/handleCursorSubagentStop/);
     expect(src).toMatch(/handleCodexStop/);
     expect(src).toMatch(/handleCodexUserPromptSubmit/);
     expect(src).toMatch(/handleCodexPostToolUse/);
@@ -458,6 +458,9 @@ describe("dual-host Cursor non-regression matrix", () => {
     expect(hookSrc).toMatch(
       /Never fall through to Claude-only package handleStop/,
     );
+    // SubagentStop / subagentStop resolve via shape-gated helpers (not bare only).
+    expect(hookSrc).toMatch(/claudeSubagentStopHandler/);
+    expect(hookSrc).toMatch(/cursorSubagentStopHandler/);
     // Ternary Stop host pick (codex stamp wins over shared Pascal shape)
     expect(hookSrc).toMatch(/resolveStopHostId/);
     expect(hookSrc).toMatch(/declaredPlatform === \"codex\"/);

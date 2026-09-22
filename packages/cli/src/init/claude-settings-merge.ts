@@ -17,6 +17,7 @@ export const CLAUDE_AUTOPILOT_EVENTS = [
   "PostToolUse",
   "Stop",
   "StopFailure",
+  "SubagentStop",
 ] as const;
 
 export type ClaudeAutopilotEvent = (typeof CLAUDE_AUTOPILOT_EVENTS)[number];

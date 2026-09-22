@@ -591,6 +591,14 @@ describe("ten-host Antigravity cross-fire matrix", () => {
           payload: { session_id: cid },
         },
         {
+          event: "SubagentStop",
+          payload: {
+            session_id: cid,
+            modified_files: ["src/x.ts"],
+            hook_event_name: "SubagentStop",
+          },
+        },
+        {
           event: "pre_llm_call",
           payload: {
             session_id: cid,

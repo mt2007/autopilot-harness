@@ -67,6 +67,12 @@ describe("claude settings merge", () => {
     expect(stopJson).toMatch(/autopilot-harness/);
     expect(stopJson).toMatch(/legacy-empty/);
     expect(stopJson).toMatch(/meta-only/);
+    // 0.17 upgrade-from-legacy: merge must install SubagentStop even when absent.
+    expect(merged.hooks?.SubagentStop).toBeDefined();
+    expect(JSON.stringify(merged.hooks?.SubagentStop)).toMatch(
+      /--event SubagentStop/,
+    );
+    expect(hasCompleteClaudeAutopilotHooks(merged)).toBe(true);
     const { duplicates } = summarizeClaudeAutopilotHooks(merged);
     expect(duplicates).toBe(0);
   });
@@ -228,6 +234,7 @@ describe("claude settings merge", () => {
 
   it("strip drops Autopilot-only event keys instead of leaving empty arrays", () => {
     const merged = mergeClaudeSettings(null);
+    expect(merged.hooks?.SubagentStop).toBeDefined();
     const stripped = stripAutopilotClaudeSettings(merged);
     expect(stripped.hooks).toBeUndefined();
     expect(stripped.env).toBeUndefined();

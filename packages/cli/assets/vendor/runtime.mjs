@@ -6957,6 +6957,46 @@ function handleStop2(engine, payload, opts) {
 function handleStopFailure(engine, payload) {
   return handleStop2(engine, payload, { status: "error" });
 }
+function handleSubagentStop2(store, payload, projectRoot) {
+  try {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return {};
+    }
+    const conversationId = sid(payload);
+    const parentFromPayload = extractParentConversationId(payload);
+    const parentConversationId = parentFromPayload ?? (conversationId || null);
+    const modifiedFiles = Array.isArray(payload.modified_files) ? payload.modified_files : Array.isArray(payload.modifiedFiles) ? payload.modifiedFiles : null;
+    const target = resolveSubagentStopArmTarget(store, {
+      conversationId,
+      parentConversationId,
+      projectRoot,
+      modifiedFiles
+    });
+    if (target.kind !== "parent") return {};
+    const armCid = target.conversationId;
+    const session = store.getSession(armCid);
+    const checklistPath = session?.checklist_path?.trim() ?? "";
+    let checklistSnap = null;
+    if (checklistPath) {
+      try {
+        checklistSnap = parseChecklist(checklistPath, { projectRoot });
+      } catch {
+      }
+    }
+    store.markCodeEdited(armCid, (chain) => {
+      const fromPending = parseAdvanceNextItemId(chain.pending_followup);
+      if (checklistSnap) {
+        if (fromPending && effectiveReviewingItemId(checklistSnap, fromPending)) {
+          return fromPending;
+        }
+        return firstUnchecked(checklistSnap)?.id ?? null;
+      }
+      return fromPending;
+    });
+  } catch {
+  }
+  return {};
+}
 
 // ../ports/codex/src/index.ts
 var CODEX_PLATFORM = "codex";
@@ -12205,6 +12245,7 @@ export {
   handleAntigravityStop,
   handleBeforeSubmitPrompt,
   handleStop2 as handleClaudeStop,
+  handleSubagentStop2 as handleClaudeSubagentStop,
   handlePostToolUse2 as handleCodexPostToolUse,
   handleStop3 as handleCodexStop,
   handleUserPromptSubmit2 as handleCodexUserPromptSubmit,

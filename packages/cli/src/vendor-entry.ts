@@ -36,6 +36,7 @@ export {
   handlePostToolUse,
   handleStop as handleClaudeStop,
   handleStopFailure,
+  handleSubagentStop as handleClaudeSubagentStop,
 } from "@autopilot-harness/port-claude-code";
 
 export {

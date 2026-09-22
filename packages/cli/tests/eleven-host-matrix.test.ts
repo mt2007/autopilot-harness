@@ -540,6 +540,14 @@ describe("eleven-host Devin cross-fire matrix (v0.15)", () => {
           payload: { session_id: "xf-claude" },
         },
         {
+          event: "SubagentStop",
+          payload: {
+            session_id: "xf-claude",
+            modified_files: ["src/x.ts"],
+            hook_event_name: "SubagentStop",
+          },
+        },
+        {
           event: "pre_llm_call",
           payload: {
             session_id: "xf-hermes",
@@ -732,6 +740,7 @@ describe("eleven-host Devin cross-fire matrix (v0.15)", () => {
         "post_tool_call",
         "pre_verify",
         "StopFailure",
+        "SubagentStop",
         "agentStop",
       ] as const) {
         const r = runHook(
