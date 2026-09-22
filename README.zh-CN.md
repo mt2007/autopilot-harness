@@ -24,6 +24,8 @@ Vibe coding 很快，但范围漂移、验收含糊、「看起来做完了」�
 
 Autopilot **不保证**无缺陷软件。它提高的是：工作经过规划、落在 checklist 范围内、并在多种审查镜头下压测过，再宣称某一项完成。
 
+Autopilot 对「是否开 subagent / Task」**保持中立**——由宿主与 Agent 自行决定。**0.17+：** Cursor / Claude Code 若委派，自审仍收在**父会话**（**Tier-S**）；其余宿主多为父 Stop dirty-arm **尽力而为**（**Tier-B**）。详见 [宿主 — Subagents](./docs/hosts.md#subagents-neutral-policy--tiers)。
+
 ## 怎么工作
 
 ```text

@@ -20,10 +20,12 @@ Autopilot fix + multi-lens confirm needs **many consecutive** stop continuations
 
 ### Cursor
 
-Cursor’s default stop `loop_limit` is **5** if omitted.
+Cursor’s default stop / `subagentStop` `loop_limit` is **5** if omitted.
 
-- Autopilot stop entries must set `"loop_limit": null` (`init` / `upgrade` / `mergeHooksJson`).
-- `doctor` WARNs when Autopilot stop is missing `loop_limit: null` — run `upgrade`.
+- Autopilot **stop** entries must set `"loop_limit": null` (`init` / `upgrade` / `mergeHooksJson`).
+- `doctor` WARNs when Autopilot **stop** is missing `loop_limit: null` — run `upgrade`.
+- **0.17+:** Autopilot **`subagentStop`** also uses `"loop_limit": null`; `doctor` WARNs when that entry is missing null.
+- Autopilot does **not** tell agents to open or avoid subagents. **0.17+ Tier-S:** if a subagent edits product code, `subagentStop` (when it fires) only **arms the parent** conversation; review still continues on **parent stop**. Background subagents may never emit `subagentStop` — parent stop **dirty-arm** is the fallback (see [hosts.md — Subagents](./hosts.md#subagents-neutral-policy--tiers)).
 - Typing `continue` may reset some host counters; it is **not** a substitute for correct install.
 
 ### Claude Code
@@ -32,6 +34,8 @@ Claude’s consecutive Stop **block cap** defaults to **8**.
 
 - Autopilot init / upgrade sets `env.CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=0` in `.claude/settings.json`.
 - `doctor` WARNs when Claude is installed but the cap is missing or not `0`.
+- **0.17+:** also installs **`SubagentStop`** (arm parent only; no continue); `doctor` WARNs when the Autopilot **`SubagentStop`** fingerprint is missing.
+- Same **neutral** subagent policy as Cursor (Tier-S from **0.17**): host/agent decides; Autopilot keeps parent review coherent when events fire.
 - Project `env` may need workspace **trust** before Claude applies it — if the cap never takes effect, accept the trust dialog for the project folder, then restart Claude / open a new session.
 - Dual-host: after Cursor init, `npx @autopilot-harness/cli init --yes --add-platform claude-code`.
 

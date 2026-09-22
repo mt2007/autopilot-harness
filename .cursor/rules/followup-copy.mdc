@@ -1,5 +1,5 @@
 ---
-description: Autopilot followup/i18n/workflow copy hygiene — no subagent bans or hardcoded reply language
+description: Autopilot followup/i18n/workflow copy hygiene — neutral on subagents; no hardcoded reply language
 alwaysApply: true
 ---
 
@@ -9,7 +9,7 @@ When editing Autopilot stop-hook followups, locale JSON, `defaultRender`, or wor
 
 ## Do not
 
-- Put **「不要开 subagent」 / 「Do not start subagents」** (or similar) in followup, i18n, or workflow copy. Ban-on-subagents is already a workspace rule; followups must not restate it.
+- Put **open/ban-subagent guidance** in followup, i18n, or workflow copy (e.g. 「不要开 subagent」 / 「Do not start subagents」 / 「请开 subagent」 / 「use Task / subagents」). Autopilot is **neutral** — the host/agent decides; product copy must not steer either way. (Repo-local Agent habits are separate from Autopilot product guidance.)
 - Hardcode a **specific human language** for user-visible replies (e.g. 「必须用中文」, 「reply in Chinese」, 「reply in English」) inside locale followup strings. Harness `locale` chooses the **template language**; chat replies follow the **user's language**.
 
 ## Do

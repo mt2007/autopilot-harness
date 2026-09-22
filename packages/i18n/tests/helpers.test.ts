@@ -52,9 +52,18 @@ describe("i18n helpers", () => {
     }
   });
 
-  it("followup copy omits subagent bans and hardcoded reply-language locks", () => {
-    const banned =
-      /do not start subagents?|不要开\s*subagent|必须用中文|reply in (chinese|english)/i;
+  it("followup copy omits subagent steering and hardcoded reply-language locks", () => {
+    // Steer either way — ban or request. `\buse Task\b` stays case-sensitive
+    // (Task tool), so ordinary "use task" checklist wording is not banned.
+    const banned: RegExp[] = [
+      /do not start subagents?/i,
+      /不要开\s*subagent/,
+      /请开\s*subagent/,
+      /(?:please\s+)?(?:open|start|use)\s+subagents?/i,
+      /\buse Task\b/,
+      /必须用中文/,
+      /reply in (chinese|english)/i,
+    ];
     for (const code of ["en", "zh-CN"] as const) {
       const f = loadLocale(code).followup;
       const blobs = [
@@ -74,7 +83,9 @@ describe("i18n helpers", () => {
         f.track_pick,
       ];
       for (const text of blobs) {
-        expect(text, `${code}: ${text.slice(0, 40)}…`).not.toMatch(banned);
+        for (const re of banned) {
+          expect(text, `${code}: ${re} :: ${text.slice(0, 40)}…`).not.toMatch(re);
+        }
       }
       expect(f.need_evidence).toMatch(/^Need evidence:|^需要完成证据：/);
       expect(f.review_complete).toMatch(/^Review complete|^自审完成/);

@@ -155,6 +155,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       "utf8",
     );
     expect(tips).toMatch(/loop_limit/);
+    expect(tips).toMatch(/subagentStop/);
+    expect(tips).toMatch(/Tier-S|neutral.*subagent/i);
     expect(tips).toMatch(/double followup/i);
     expect(tips).toMatch(/CLAUDE_CODE_STOP_HOOK_BLOCK_CAP/);
     expect(tips).toMatch(/trust/i);
@@ -808,6 +810,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
 
   it("README English ships Runner meta, Pi + Devin Shipped, OpenCode next", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+    expect(body).toMatch(/neutral.*subagent|Tier-S/i);
+    expect(body).toMatch(/hosts\.md#subagents-neutral-policy--tiers/);
+    expect(body).toMatch(/0\.17\+/);
     expect(body).toMatch(/Runner \(meta\)|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× proved/i);
     // Same-line ban — intro Pi→EOL is ~1500 chars; a 160 window misses status drifted to the line tail.
@@ -838,6 +843,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
 
   it("README.zh-CN ships Runner meta, Pi + Devin Shipped, OpenCode next", () => {
     const body = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf8");
+    expect(body).toMatch(/中立|Tier-S/);
+    expect(body).toMatch(/hosts\.md#subagents-neutral-policy--tiers/);
+    expect(body).toMatch(/0\.17\+/);
     expect(body).toMatch(/Runner（meta）|Runner.*Shipped \(meta\)/i);
     expect(body).toMatch(/Pi[\s\S]{0,120}\*\*Shipped\*\*|Pi[\s\S]{0,160}≥1× 已证/);
     // Same-line ban — zh intro Pi→EOL is ~1200 chars; a 160 window misses status at the line tail.
@@ -1144,6 +1152,16 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
 
   it("hosts.md marks Codex, Claude, Kimi, Copilot, and Grok as shipped", () => {
     const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
+    expect(hosts).toMatch(/## Subagents \(neutral policy \+ tiers\)/);
+    expect(hosts).toMatch(/\*\*Tier-S\*\*/);
+    expect(hosts).toMatch(/\*\*Tier-B\*\*/);
+    expect(hosts).toMatch(/\*\*Tier-N\*\*/);
+    expect(hosts).toMatch(/\*\*does not\*\* tell the agent to open or avoid subagents/i);
+    expect(hosts).toMatch(/subagent stop \*\*arms only\*\*|arms parent only/i);
+    expect(hosts).toMatch(/0\.17\+/);
+    expect(hosts).toMatch(
+      /Autopilot \*\*`subagentStop`\*\*|also on Autopilot \*\*`subagentStop`\*\*/i,
+    );
     expect(hosts).toMatch(/\|\s*\*\*Codex\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Claude Code\*\*\s*\|\s*\*\*Shipped\*\*/);
     expect(hosts).toMatch(/\|\s*\*\*Kimi Code\*\*\s*\|\s*\*\*Shipped\*\*/);
@@ -1520,6 +1538,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       path.join(repoRoot, "docs/architecture.md"),
       "utf8",
     );
+    expect(body).toMatch(/Tier-S/);
+    expect(body).toMatch(/subagentStop/);
+    expect(body).toMatch(/arms parent only|arm-only/i);
     expect(body).not.toMatch(/See the v0\.1 plan/);
     expect(body).toMatch(/ReviewEngine/);
     expect(body).toMatch(/hosts\.md/);

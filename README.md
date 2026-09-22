@@ -22,6 +22,8 @@ It is **not** a general-purpose chat agent, **not** a substitute for your CI/tes
 
 Autopilot does **not** guarantee bug-free software. It **raises confidence** that work was planned, checklist-scoped, and pressure-tested under several review lenses before you call an item complete.
 
+Autopilot is **neutral** on whether the host agent opens subagents / Task workers during a turn — that choice stays with the host. **0.17+:** when Cursor or Claude Code do delegate, Autopilot keeps review on the **parent** track (**Tier-S**); other hosts remain **best-effort** via parent stop dirty-arm (**Tier-B**). Details: [Hosts — Subagents](./docs/hosts.md#subagents-neutral-policy--tiers).
+
 ## How it works
 
 ```text
