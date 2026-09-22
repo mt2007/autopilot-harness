@@ -29,6 +29,9 @@
     },
     "autopilot_archive": {
       "description": "Archive Behavior deltas into specs_dir"
+    },
+    "autopilot_diagnose": {
+      "description": "Diagnose stuck Autopilot (read-only)"
     }
   },
   "followup": {

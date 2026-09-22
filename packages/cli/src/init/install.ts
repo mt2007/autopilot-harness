@@ -380,6 +380,7 @@ export const AUTOPILOT_SKILL_NAMES = [
   "autopilot-resume",
   "autopilot-replan",
   "autopilot-archive",
+  "autopilot-diagnose",
 ] as const;
 
 /** Workflow docs written by init; uninstall must remove the same set. */

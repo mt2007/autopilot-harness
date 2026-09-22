@@ -10,6 +10,7 @@ import {
   isUsableTemplatesRoot,
 } from "../src/template-paths.js";
 import { AUTOPILOT_SKILL_NAMES, AUTOPILOT_WORKFLOW_FILES } from "../src/init/install.js";
+import { SKILL_I18N_KEYS } from "@autopilot-harness/i18n";
 
 const cliRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -518,6 +519,12 @@ describe("bundled templates for npm publish", () => {
     expect(parseList(workflowsMatch![1]!)).toEqual([
       ...AUTOPILOT_WORKFLOW_FILES,
     ]);
+  });
+
+  it("AUTOPILOT_SKILL_NAMES stays in sync with SKILL_I18N_KEYS", () => {
+    expect([...AUTOPILOT_SKILL_NAMES].sort()).toEqual(
+      Object.keys(SKILL_I18N_KEYS).sort(),
+    );
   });
 
   it("sync-dist-assets REQUIRED_RELATIVE covers AUTOPILOT_* and core migrations", () => {

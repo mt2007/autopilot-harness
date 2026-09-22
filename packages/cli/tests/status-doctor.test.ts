@@ -6,7 +6,8 @@ import {
   normalizeInProjectPlansDir,
   StateStore,
 } from "@autopilot-harness/core";
-import { installInitYes } from "../src/init/install.js";
+import { skillDescription } from "@autopilot-harness/i18n";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import { applyPlatformsToConfigYaml } from "../src/init/platforms.js";
 import { normalizePlansDir } from "../src/init/wizard-helpers.js";
 import {
@@ -1337,6 +1338,34 @@ describe("runDoctor", () => {
     );
   });
 
+  it("INFO points at /autopilot-diagnose (one-line; not a pending dump)", () => {
+    root = tmpProject();
+    expect(
+      installInitYes({
+        projectRoot: root,
+        platform: "cursor",
+        surface: "ide",
+        locale: "en",
+        force: false,
+      }).ok,
+    ).toBe(true);
+    const diagnoseSkill = fs.readFileSync(
+      path.join(root, ".cursor", "skills", "autopilot-diagnose", "SKILL.md"),
+      "utf8",
+    );
+    expect(diagnoseSkill).toContain(skillDescription("en", "autopilot-diagnose"));
+    expect(diagnoseSkill).not.toContain("{{description}}");
+    const { ok, lines } = runDoctor(root);
+    expect(ok).toBe(true);
+    const joined = lines.join("\n");
+    expect(joined).toMatch(
+      /INFO\s+Stuck review \/ pending \/ status\? Run \/autopilot-diagnose/i,
+    );
+    expect(joined).toMatch(/read-only; does not change phase/i);
+    expect(joined).not.toMatch(/pending_followup_at|pending dump/i);
+    expect(joined.match(/\/autopilot-diagnose/g)?.length).toBe(1);
+  });
+
   it("readStaleAfterHours respects config (number or numeric string)", () => {
     root = tmpProject();
     expect(
@@ -1918,7 +1947,7 @@ describe("runDoctor", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
-    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
     expect(joined).not.toMatch(/hooks\.json Autopilot entries/);
   });
 
@@ -1956,7 +1985,7 @@ describe("runDoctor", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(/OK\s+\.codex\/hooks\.json Autopilot entries/);
-    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
     expect(joined).toMatch(/\/hooks trust/i);
     expect(joined).toMatch(/re-trust/i);
     expect(joined).not.toMatch(/FAIL\s+\.codex\/hooks\.json missing/i);
@@ -2146,7 +2175,7 @@ describe("runDoctor", () => {
       expect(ok).toBe(true);
       const joined = lines.join("\n");
       expect(joined).toMatch(/OK\s+Kimi Code config\.toml Autopilot entries/);
-      expect(joined).toMatch(/OK\s+skills \(5\)/);
+      expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
       expect(joined).toMatch(/Stop-continue.*≤1|≤1\/turn/i);
       expect(joined).toMatch(/confirm_rounds:\s*1/);
       expect(joined).toMatch(/\/hooks/i);
@@ -2528,7 +2557,7 @@ describe("runDoctor", () => {
     const joined = lines.join("\n");
     expect(joined).toMatch(/OK\s+hooks\.json Autopilot entries/);
     expect(joined).toMatch(/OK\s+\.claude\/settings\.json Autopilot entries/);
-    expect(joined).toMatch(/OK\s+skills \(10\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length * 2}\\)`));
   });
 
   it("Claude-only doctor does not WARN about global Cursor self-review hooks", () => {
@@ -2587,7 +2616,7 @@ describe("runDoctor", () => {
     expect(joined).toMatch(
       /OK\s+\.github\/hooks\/autopilot-harness\.json Autopilot entries/,
     );
-    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
     expect(joined).toMatch(/Stop-continue consecutive block cap ≤8/i);
     expect(joined).toMatch(/Restart Copilot CLI/i);
     expect(joined).not.toMatch(
@@ -2962,7 +2991,7 @@ describe("runDoctor", () => {
     expect(joined).toMatch(
       /OK\s+\.grok\/hooks\/autopilot-harness\.json Autopilot entries/,
     );
-    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
     expect(joined).toMatch(/Stop-continue per-turn block cap ≤8/i);
     expect(joined).toMatch(/hooks-trust|--trust/i);
     expect(joined).toMatch(/Reload Grok Build|new session/i);
@@ -4567,7 +4596,7 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     );
     expect(joined).toMatch(/Auto-attach.*Autopilot ON/i);
     expect(joined).toMatch(/Reload Antigravity|new session/i);
-    expect(joined).toMatch(/OK\s+skills \(5\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
     expect(joined).not.toMatch(/FAIL\s+\.agents\/hooks\.json missing/i);
   });
 
@@ -4919,7 +4948,7 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     const joined = lines.join("\n");
     expect(joined).toMatch(/Antigravity \+ Gemini CLI both enabled/i);
     // Co-install still plants both skill trees.
-    expect(joined).toMatch(/OK\s+skills \(10\)/);
+    expect(joined).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length * 2}\\)`));
   });
 
   it("WARNs missing Gemini skills when Gemini enabled", () => {
@@ -4942,7 +4971,10 @@ describe("status/doctor plans_dir aligns with core normalizeInProjectPlansDir", 
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(
-      /WARN\s+5 skill\(s\) missing under \.gemini\/skills\//i,
+      new RegExp(
+        `WARN\\s+${AUTOPILOT_SKILL_NAMES.length} skill\\(s\\) missing under \\.gemini\\/skills\\/`,
+        "i",
+      ),
     );
     expect(joined).not.toMatch(/OK\s+skills/);
   });
@@ -4971,7 +5003,7 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
     new StateStore(root).close();
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(true);
-    expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+    expect(lines.join("\n")).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
   });
 
   it("WARNs missing Codex skills when Codex enabled", () => {
@@ -4994,7 +5026,10 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(
-      /WARN\s+5 skill\(s\) missing under \.agents\/skills\//i,
+      new RegExp(
+        `WARN\\s+${AUTOPILOT_SKILL_NAMES.length} skill\\(s\\) missing under \\.agents\\/skills\\/`,
+        "i",
+      ),
     );
     expect(joined).not.toMatch(/OK\s+skills/);
   });
@@ -5013,7 +5048,7 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
     new StateStore(root).close();
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(true);
-    expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+    expect(lines.join("\n")).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
   });
 
   it("WARNs missing Copilot skills when Copilot enabled", () => {
@@ -5036,7 +5071,10 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(
-      /WARN\s+5 skill\(s\) missing under \.github\/skills\//i,
+      new RegExp(
+        `WARN\\s+${AUTOPILOT_SKILL_NAMES.length} skill\\(s\\) missing under \\.github\\/skills\\/`,
+        "i",
+      ),
     );
     expect(joined).not.toMatch(/OK\s+skills/);
   });
@@ -5055,7 +5093,7 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
     new StateStore(root).close();
     const { ok, lines } = runDoctor(root);
     expect(ok).toBe(true);
-    expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+    expect(lines.join("\n")).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
   });
 
   it("WARNs missing Grok skills when Grok enabled", () => {
@@ -5078,7 +5116,10 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
     expect(ok).toBe(true);
     const joined = lines.join("\n");
     expect(joined).toMatch(
-      /WARN\s+5 skill\(s\) missing under \.grok\/skills\//i,
+      new RegExp(
+        `WARN\\s+${AUTOPILOT_SKILL_NAMES.length} skill\\(s\\) missing under \\.grok\\/skills\\/`,
+        "i",
+      ),
     );
     expect(joined).not.toMatch(/OK\s+skills/);
   });
@@ -5101,7 +5142,7 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
       new StateStore(root).close();
       const { ok, lines } = runDoctor(root);
       expect(ok).toBe(true);
-      expect(lines.join("\n")).toMatch(/OK\s+skills \(5\)/);
+      expect(lines.join("\n")).toMatch(new RegExp(`OK\\s+skills \\(${AUTOPILOT_SKILL_NAMES.length}\\)`));
     } finally {
       if (prev === undefined) delete process.env.KIMI_CODE_HOME;
       else process.env.KIMI_CODE_HOME = prev;
@@ -5133,7 +5174,10 @@ describe("runDoctor skillHosts for Codex/Kimi/Copilot/Grok", () => {
       expect(ok).toBe(true);
       const joined = lines.join("\n");
       expect(joined).toMatch(
-        /WARN\s+5 skill\(s\) missing under \.agents\/skills\//i,
+        new RegExp(
+          `WARN\\s+${AUTOPILOT_SKILL_NAMES.length} skill\\(s\\) missing under \\.agents\\/skills\\/`,
+          "i",
+        ),
       );
       expect(joined).not.toMatch(/OK\s+skills/);
     } finally {

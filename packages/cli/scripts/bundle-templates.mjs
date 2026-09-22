@@ -22,6 +22,7 @@ const REQUIRED_SKILLS = [
   "autopilot-resume",
   "autopilot-replan",
   "autopilot-archive",
+  "autopilot-diagnose",
 ];
 const REQUIRED_WORKFLOWS = [
   "autopilot-planning.md",

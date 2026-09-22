@@ -29,6 +29,9 @@
     },
     "autopilot_archive": {
       "description": "将 Behavior deltas 归档进 specs_dir"
+    },
+    "autopilot_diagnose": {
+      "description": "诊断卡住的 Autopilot（只读）"
     }
   },
   "followup": {

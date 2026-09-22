@@ -116,6 +116,14 @@ describe("i18n helpers", () => {
     expect(en).not.toBe(zh);
   });
 
+  it("autopilot-diagnose description is short and locale-specific", () => {
+    const en = skillDescription("en", "autopilot-diagnose");
+    const zh = skillDescription("zh-CN", "autopilot-diagnose");
+    expect(en).toMatch(/Diagnose stuck Autopilot/i);
+    expect(zh).toMatch(/诊断|Autopilot/);
+    expect(en).not.toBe(zh);
+  });
+
   it("autopilot-on description is short user-facing; still bans casual discuss cues", () => {
     const en = skillDescription("en", "autopilot-on");
     const zh = skillDescription("zh-CN", "autopilot-on");

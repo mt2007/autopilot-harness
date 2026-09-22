@@ -157,3 +157,42 @@ describe("autopilot-archive skill template", () => {
     assertArchiveSkill(bundled, "packages/cli/assets");
   });
 });
+
+const templatesDiagnoseSkill = path.resolve(
+  here,
+  "../skills/autopilot-diagnose/SKILL.md.tpl",
+);
+const bundledDiagnoseSkill = path.resolve(
+  here,
+  "../../cli/assets/templates/skills/autopilot-diagnose/SKILL.md.tpl",
+);
+
+function assertDiagnoseSkill(text: string, label: string): void {
+  expect(text, label).toMatch(/^name:\s*autopilot-diagnose$/m);
+  expect(text, label).toMatch(/\/autopilot-diagnose/);
+  expect(text, label).toMatch(/read-only/i);
+  expect(text, label).toMatch(/does \*\*not\*\* change Autopilot phase/i);
+  expect(text, label).toMatch(/artifacts\.plans_dir/);
+  expect(text, label).toMatch(/npx @autopilot-harness\/cli status/);
+  expect(text, label).toMatch(/npx @autopilot-harness\/cli doctor/);
+  expect(text, label).toMatch(/pending/i);
+  expect(text, label).toMatch(/session reset-review/);
+  expect(text, label).toMatch(/session purge/);
+  expect(text, label).toMatch(/No product-code edits|does \*\*not\*\* write product code/i);
+  expect(text, label).toMatch(/state\.db/);
+  expect(text, label).not.toMatch(/triggers\./);
+}
+
+describe("autopilot-diagnose skill template", () => {
+  it("is skill-only read-only diagnose; no phase change", () => {
+    const text = fs.readFileSync(templatesDiagnoseSkill, "utf8");
+    assertDiagnoseSkill(text, "packages/templates");
+  });
+
+  it("keeps cli bundled assets copy identical to packages/templates", () => {
+    const src = fs.readFileSync(templatesDiagnoseSkill, "utf8");
+    const bundled = fs.readFileSync(bundledDiagnoseSkill, "utf8");
+    expect(bundled).toBe(src);
+    assertDiagnoseSkill(bundled, "packages/cli/assets");
+  });
+});

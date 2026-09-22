@@ -33,6 +33,7 @@ export const SKILL_I18N_KEYS = {
   "autopilot-resume": "autopilot_resume",
   "autopilot-replan": "autopilot_replan",
   "autopilot-archive": "autopilot_archive",
+  "autopilot-diagnose": "autopilot_diagnose",
 } as const;
 
 export type SkillFolderName = keyof typeof SKILL_I18N_KEYS;
@@ -56,6 +57,7 @@ export function skillDescriptions(
     "autopilot-resume": skillDescription(locale, "autopilot-resume"),
     "autopilot-replan": skillDescription(locale, "autopilot-replan"),
     "autopilot-archive": skillDescription(locale, "autopilot-archive"),
+    "autopilot-diagnose": skillDescription(locale, "autopilot-diagnose"),
   };
 }
 

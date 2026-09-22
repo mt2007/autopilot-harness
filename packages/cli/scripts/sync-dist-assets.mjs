@@ -35,6 +35,7 @@ const REQUIRED_RELATIVE = [
   "templates/skills/autopilot-resume/SKILL.md.tpl",
   "templates/skills/autopilot-replan/SKILL.md.tpl",
   "templates/skills/autopilot-archive/SKILL.md.tpl",
+  "templates/skills/autopilot-diagnose/SKILL.md.tpl",
   "templates/workflows/autopilot-planning.md",
   "templates/workflows/autopilot-executing.md",
   "autopilot-harness-hook.mjs",

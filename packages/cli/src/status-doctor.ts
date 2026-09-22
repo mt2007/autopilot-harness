@@ -3120,6 +3120,10 @@ export function runDoctor(
     lines.push(`OK    skills (${n})`);
   }
 
+  lines.push(
+    "INFO  Stuck review / pending / status? Run /autopilot-diagnose (read-only; does not change phase).",
+  );
+
   const opened = openStateStore(root);
   if (!opened.ok) {
     if (opened.error === "missing") {
