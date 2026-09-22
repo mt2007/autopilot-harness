@@ -23,7 +23,7 @@ import {
   stripAutopilotHermesConfigYaml,
   stripAutopilotHermesHooks,
 } from "../src/init/hermes-hooks-merge.js";
-import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import {
   formatHostActivationTips,
   formatPostInstallOutro,
@@ -272,13 +272,7 @@ hooks:
     );
     expect(projectCfg).toMatch(/confirm_rounds:\s*5/);
     expect(projectCfg).not.toMatch(/confirm_rounds:\s*1/);
-    for (const name of [
-      "autopilot-on",
-      "autopilot-run",
-      "autopilot-off",
-      "autopilot-resume",
-      "autopilot-replan",
-    ]) {
+    for (const name of AUTOPILOT_SKILL_NAMES) {
       expect(
         fs.existsSync(path.join(hermesHome, "skills", name, "SKILL.md")),
       ).toBe(true);

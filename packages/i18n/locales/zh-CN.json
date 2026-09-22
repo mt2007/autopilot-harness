@@ -26,6 +26,9 @@
     },
     "autopilot_replan": {
       "description": "修改方案"
+    },
+    "autopilot_archive": {
+      "description": "将 Behavior deltas 归档进 specs_dir"
     }
   },
   "followup": {
@@ -44,7 +47,8 @@
     "stuck_soft": "卡住：连续多轮无进展（缺完成证据）。请换策略并写入匹配的 .autopilot/verify-last.json 后结束回合。会话仍在运行，无需 RESUME；仅在已 pause 时才发送 Autopilot RESUME。",
     "verify_fix": "校验失败（{reason}）。请修复 verify 命令并重写 verify-last.json；不要推进。",
     "need_evidence": "需要完成证据：无代码改动项 {currentId}{currentTitleSuffix} 缺少匹配的 soft 完成证据，无法推进。请写入 .autopilot/verify-last.json（itemId 为 \"{currentId}\"，ok: true；须在该项工作完成后）。然后结束本回合，由 stop hook 推进/完成。不要让用户说「继续」；不要自行发明推进/完成指令。",
-    "track_pick": "请用数字或 slug 选择要执行的 plan。"
+    "track_pick": "请用数字或 slug 选择要执行的 plan。",
+    "archive_suggest": "若本轨 brief 含 ## Behavior deltas，可运行 /autopilot-archive 合并进 artifacts.specs_dir；否则忽略。可选，非强制。"
   },
   "error": {
     "one_executor_busy": "已有其他会话在执行（{track}）。请先 OFF 或等待后再试。",

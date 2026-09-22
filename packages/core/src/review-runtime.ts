@@ -1,6 +1,10 @@
 import type { StateStore } from "./state-store.js";
-import { ReviewEngine } from "./review-engine.js";
 import {
+  ReviewEngine,
+  DEFAULT_ARCHIVE_SUGGEST_TIP,
+} from "./review-engine.js";
+import {
+  loadProjectHookConfig,
   loadProjectReviewConfig,
   normalizeProjectReviewConfig,
   type ProjectReviewConfig,
@@ -16,7 +20,9 @@ import {
  * Build a ReviewEngine from `.autopilot/config.yml`.
  * Pass `localeBundle` (from `@autopilot-harness/i18n`) for localized followups/lenses;
  * without it, English defaultRender / CONFIRM_LENSES are used.
- * Pass `preloaded` to avoid a second config.yml read (vendor already loaded locale).
+ * Pass `preloaded` to reuse an already-normalized review config (vendor loads locale
+ * from the same file first). Gate B still reads `artifacts.specs_dir` via
+ * `loadProjectHookConfig` (cheap parse; never opens brief).
  */
 export function createConfiguredReviewEngine(
   store: StateStore,
@@ -35,6 +41,17 @@ export function createConfiguredReviewEngine(
       (safeRoot ? loadProjectReviewConfig(safeRoot) : undefined),
   );
   const usableLocale = Boolean(localeBundle?.followup?.review?.fix);
+  // Gate B: tip when specs_dir is set — cheap config parse only; never open brief.
+  const specsDir = safeRoot
+    ? loadProjectHookConfig(safeRoot).specsDir
+    : null;
+  const suggestArchive = Boolean(specsDir);
+  const archiveSuggestTip = suggestArchive
+    ? (
+        (usableLocale && localeBundle?.followup?.archive_suggest?.trim()) ||
+        DEFAULT_ARCHIVE_SUGGEST_TIP
+      )
+    : undefined;
   return new ReviewEngine(store, {
     confirmRounds: cfg.confirmRounds,
     reviewScope: cfg.reviewScope,
@@ -44,6 +61,8 @@ export function createConfiguredReviewEngine(
     maxIdleStops: cfg.maxIdleStops,
     maxErrorsBeforePause: cfg.maxErrorsBeforePause,
     projectRoot: safeRoot,
+    suggestArchive,
+    archiveSuggestTip,
     ...(usableLocale && localeBundle
       ? {
           renderFollowup: createRenderFollowup(localeBundle),

@@ -24,6 +24,8 @@ export interface FollowupLocaleBundle {
     stuck_soft?: string;
     verify_fix?: string;
     need_evidence?: string;
+    /** Gate B tip appended to done/review_complete when specs_dir is set. */
+    archive_suggest?: string;
   };
   lens: Record<string, { title: string; focus: string }>;
 }

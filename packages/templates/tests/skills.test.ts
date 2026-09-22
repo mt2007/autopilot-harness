@@ -123,3 +123,37 @@ describe("autopilot-on skill template", () => {
     assertOnGate(bundled, "packages/cli/assets");
   });
 });
+
+const templatesArchiveSkill = path.resolve(
+  here,
+  "../skills/autopilot-archive/SKILL.md.tpl",
+);
+const bundledArchiveSkill = path.resolve(
+  here,
+  "../../cli/assets/templates/skills/autopilot-archive/SKILL.md.tpl",
+);
+
+function assertArchiveSkill(text: string, label: string): void {
+  expect(text, label).toMatch(/^name:\s*autopilot-archive$/m);
+  expect(text, label).toMatch(/## Behavior deltas/);
+  expect(text, label).toMatch(/artifacts\.specs_dir/);
+  expect(text, label).toMatch(/\/autopilot-archive/);
+  expect(text, label).toMatch(/optional/i);
+  expect(text, label).toMatch(/does \*\*not\*\* change Autopilot phase/i);
+  expect(text, label).toMatch(/No product code/i);
+  expect(text, label).not.toMatch(/archive_on_done:\s*require|must archive/i);
+}
+
+describe("autopilot-archive skill template", () => {
+  it("is skill-only optional archive into specs_dir", () => {
+    const text = fs.readFileSync(templatesArchiveSkill, "utf8");
+    assertArchiveSkill(text, "packages/templates");
+  });
+
+  it("keeps cli bundled assets copy identical to packages/templates", () => {
+    const src = fs.readFileSync(templatesArchiveSkill, "utf8");
+    const bundled = fs.readFileSync(bundledArchiveSkill, "utf8");
+    expect(bundled).toBe(src);
+    assertArchiveSkill(bundled, "packages/cli/assets");
+  });
+});

@@ -8,7 +8,6 @@ import {
   skillDescriptions,
   stockTriggers,
   type LocaleCode,
-  type SkillFolderName,
   type TriggerKey,
 } from "@autopilot-harness/i18n";
 import { assertNotSymlink, assertRealpathInside, mkdirRealDirSync, assertParentDirInProject, assertWrittenInsideProject, isRealDirectory, assertPresentRealFile } from "./init/wizard-helpers.js";
@@ -18,20 +17,14 @@ import {
   writeFileReplaceSync,
 } from "./read-untrusted-file.js";
 import { resolveTemplatesRoot as resolveTemplatesRootFromCli } from "./template-paths.js";
-import { applyFactorySkillFrontmatter, applyDevinSkillFrontmatter } from "./init/install.js";
+import { applyFactorySkillFrontmatter, applyDevinSkillFrontmatter, AUTOPILOT_SKILL_NAMES } from "./init/install.js";
 import { readConfigPlatformsOrThrow } from "./init/config-merge.js";
 import { platformsWantAgentsSkills, platformsWantInstallableHost, hostSkillsWantDisableModelInvocation, type HostSkillsParent } from "./init/platforms.js";
 import { resolveHermesHome } from "./init/hermes-hooks-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const SKILL_NAMES = [
-  "autopilot-on",
-  "autopilot-run",
-  "autopilot-off",
-  "autopilot-resume",
-  "autopilot-replan",
-] as const satisfies readonly SkillFolderName[];
+const SKILL_NAMES = AUTOPILOT_SKILL_NAMES;
 
 const TRIGGER_KEYS: TriggerKey[] = [
   "on",

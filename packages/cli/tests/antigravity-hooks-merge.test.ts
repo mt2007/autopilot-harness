@@ -22,7 +22,7 @@ import {
   summarizeAntigravityAutopilotHooks,
   validateAntigravityHooksShape,
 } from "../src/init/antigravity-hooks-merge.js";
-import { installInitYes } from "../src/init/install.js";
+import { AUTOPILOT_SKILL_NAMES, installInitYes } from "../src/init/install.js";
 import { uninstallProject } from "../src/uninstall.js";
 import {
   formatHostActivationTips,
@@ -430,13 +430,7 @@ describe("antigravity init wiring", () => {
       ),
     ).toBe(true);
 
-    for (const name of [
-      "autopilot-on",
-      "autopilot-run",
-      "autopilot-off",
-      "autopilot-resume",
-      "autopilot-replan",
-    ]) {
+    for (const name of AUTOPILOT_SKILL_NAMES) {
       expect(
         fs.existsSync(path.join(root, ".agents", "skills", name, "SKILL.md")),
       ).toBe(true);

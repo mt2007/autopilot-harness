@@ -81,10 +81,11 @@ describe("i18n helpers", () => {
         f.verify_fix,
         f.need_evidence,
         f.track_pick,
+        f.archive_suggest,
       ];
       for (const text of blobs) {
         for (const re of banned) {
-          expect(text, `${code}: ${re} :: ${text.slice(0, 40)}…`).not.toMatch(re);
+          expect(text, `${code}: ${re} :: ${String(text).slice(0, 40)}…`).not.toMatch(re);
         }
       }
       expect(f.need_evidence).toMatch(/^Need evidence:|^需要完成证据：/);
@@ -92,6 +93,10 @@ describe("i18n helpers", () => {
       expect(f.review_complete).not.toMatch(
         /do not auto-commit|不要自动 commit|勿再 commit/i,
       );
+      expect(f.archive_suggest).toMatch(/\/autopilot-archive/);
+      expect(f.archive_suggest).toMatch(/Behavior deltas/);
+      expect(f.archive_suggest).toMatch(/Optional|可选/);
+      expect(f.archive_suggest).toMatch(/not required|非强制/);
     }
   });
 
@@ -100,6 +105,14 @@ describe("i18n helpers", () => {
     const zh = skillDescription("zh-CN", "autopilot-on");
     expect(en.length).toBeGreaterThan(0);
     expect(zh.length).toBeGreaterThan(0);
+    expect(en).not.toBe(zh);
+  });
+
+  it("autopilot-archive description is short and locale-specific", () => {
+    const en = skillDescription("en", "autopilot-archive");
+    const zh = skillDescription("zh-CN", "autopilot-archive");
+    expect(en).toMatch(/Archive Behavior deltas/i);
+    expect(zh).toMatch(/Behavior deltas|归档/);
     expect(en).not.toBe(zh);
   });
 

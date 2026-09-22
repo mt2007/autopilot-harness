@@ -27,6 +27,9 @@ var en_default = {
     },
     autopilot_replan: {
       description: "Change the plan"
+    },
+    autopilot_archive: {
+      description: "Archive Behavior deltas into specs_dir"
     }
   },
   followup: {
@@ -45,7 +48,8 @@ var en_default = {
     stuck_soft: "Stuck: no progress for several stops (missing completion evidence). Change strategy, write matching .autopilot/verify-last.json, then end the turn. Session stays armed \u2014 Autopilot RESUME is not required unless the session was paused.",
     verify_fix: "Verify failed ({reason}). Fix verify commands and rewrite verify-last.json; do not advance.",
     need_evidence: `Need evidence: no-code item {currentId}{currentTitleSuffix} cannot advance without matching soft completion evidence. Write .autopilot/verify-last.json with itemId "{currentId}" and ok: true (only after this item's work is done). Then end the turn so the stop hook can advance/done. Do not ask the user to continue; do not invent Advance/Done.`,
-    track_pick: "Select a plan by number or slug."
+    track_pick: "Select a plan by number or slug.",
+    archive_suggest: "If this track's brief has a ## Behavior deltas section, run /autopilot-archive to merge into artifacts.specs_dir; otherwise ignore. Optional \u2014 not required."
   },
   error: {
     one_executor_busy: "Another session is already executing ({track}). OFF or wait, then retry.",
@@ -104,6 +108,9 @@ var zh_CN_default = {
     },
     autopilot_replan: {
       description: "\u4FEE\u6539\u65B9\u6848"
+    },
+    autopilot_archive: {
+      description: "\u5C06 Behavior deltas \u5F52\u6863\u8FDB specs_dir"
     }
   },
   followup: {
@@ -122,7 +129,8 @@ var zh_CN_default = {
     stuck_soft: "\u5361\u4F4F\uFF1A\u8FDE\u7EED\u591A\u8F6E\u65E0\u8FDB\u5C55\uFF08\u7F3A\u5B8C\u6210\u8BC1\u636E\uFF09\u3002\u8BF7\u6362\u7B56\u7565\u5E76\u5199\u5165\u5339\u914D\u7684 .autopilot/verify-last.json \u540E\u7ED3\u675F\u56DE\u5408\u3002\u4F1A\u8BDD\u4ECD\u5728\u8FD0\u884C\uFF0C\u65E0\u9700 RESUME\uFF1B\u4EC5\u5728\u5DF2 pause \u65F6\u624D\u53D1\u9001 Autopilot RESUME\u3002",
     verify_fix: "\u6821\u9A8C\u5931\u8D25\uFF08{reason}\uFF09\u3002\u8BF7\u4FEE\u590D verify \u547D\u4EE4\u5E76\u91CD\u5199 verify-last.json\uFF1B\u4E0D\u8981\u63A8\u8FDB\u3002",
     need_evidence: '\u9700\u8981\u5B8C\u6210\u8BC1\u636E\uFF1A\u65E0\u4EE3\u7801\u6539\u52A8\u9879 {currentId}{currentTitleSuffix} \u7F3A\u5C11\u5339\u914D\u7684 soft \u5B8C\u6210\u8BC1\u636E\uFF0C\u65E0\u6CD5\u63A8\u8FDB\u3002\u8BF7\u5199\u5165 .autopilot/verify-last.json\uFF08itemId \u4E3A "{currentId}"\uFF0Cok: true\uFF1B\u987B\u5728\u8BE5\u9879\u5DE5\u4F5C\u5B8C\u6210\u540E\uFF09\u3002\u7136\u540E\u7ED3\u675F\u672C\u56DE\u5408\uFF0C\u7531 stop hook \u63A8\u8FDB/\u5B8C\u6210\u3002\u4E0D\u8981\u8BA9\u7528\u6237\u8BF4\u300C\u7EE7\u7EED\u300D\uFF1B\u4E0D\u8981\u81EA\u884C\u53D1\u660E\u63A8\u8FDB/\u5B8C\u6210\u6307\u4EE4\u3002',
-    track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002"
+    track_pick: "\u8BF7\u7528\u6570\u5B57\u6216 slug \u9009\u62E9\u8981\u6267\u884C\u7684 plan\u3002",
+    archive_suggest: "\u82E5\u672C\u8F68 brief \u542B ## Behavior deltas\uFF0C\u53EF\u8FD0\u884C /autopilot-archive \u5408\u5E76\u8FDB artifacts.specs_dir\uFF1B\u5426\u5219\u5FFD\u7565\u3002\u53EF\u9009\uFF0C\u975E\u5F3A\u5236\u3002"
   },
   error: {
     one_executor_busy: "\u5DF2\u6709\u5176\u4ED6\u4F1A\u8BDD\u5728\u6267\u884C\uFF08{track}\uFF09\u3002\u8BF7\u5148 OFF \u6216\u7B49\u5F85\u540E\u518D\u8BD5\u3002",
@@ -2444,8 +2452,12 @@ var DEFAULT_AUTOPILOT_IGNORE_TEXT = `# Autopilot \u2014 paths that do NOT trigge
 .devin/hooks.v1.json
 .devin/skills/**
 
-# Planning artifacts
+# Planning / track artifacts (legacy root + new default portal)
 plans/**
+docs/autopilot/plans/**
+
+# Cross-track behavior specs (default artifacts.specs_dir)
+docs/autopilot/specs/**
 
 # Common build / vendor trees
 node_modules/**
@@ -2790,6 +2802,18 @@ function hasDirtyProductCode(projectRoot) {
 }
 
 // ../core/src/review-engine.ts
+var DEFAULT_ARCHIVE_SUGGEST_TIP = "If this track's brief has a ## Behavior deltas section, run /autopilot-archive to merge into artifacts.specs_dir; otherwise ignore. Optional \u2014 not required.";
+function appendArchiveSuggestTip(kind, message, suggestArchive, tip) {
+  if (!suggestArchive || kind !== "done" && kind !== "review_complete") {
+    return message;
+  }
+  const resolved = (tip?.trim() || DEFAULT_ARCHIVE_SUGGEST_TIP).trim();
+  if (!resolved) return message;
+  const base = message.trimEnd();
+  if (!base) return message;
+  if (base.endsWith(resolved)) return message;
+  return `${base} ${resolved}`;
+}
 function defaultRender(kind, vars) {
   switch (kind) {
     case "review.fix":
@@ -2828,7 +2852,13 @@ var ReviewEngine = class {
     this.config = config;
   }
   render(kind, vars) {
-    return (this.config.renderFollowup ?? defaultRender)(kind, vars);
+    const msg = (this.config.renderFollowup ?? defaultRender)(kind, vars);
+    return appendArchiveSuggestTip(
+      kind,
+      msg,
+      this.config.suggestArchive,
+      this.config.archiveSuggestTip
+    );
   }
   lens(roundIndex) {
     const rounds = this.config.confirmRounds;
@@ -5121,7 +5151,8 @@ function cloneDefaultTriggers() {
 function cloneDefaultHookConfig() {
   return {
     triggers: cloneDefaultTriggers(),
-    plansDir: "plans"
+    plansDir: "plans",
+    specsDir: null
   };
 }
 function parseReviewScope(raw) {
@@ -5341,6 +5372,16 @@ function plansDirFromParsed(root, parsed) {
   const candidate = typeof raw === "string" ? raw : "plans";
   return normalizeInProjectPlansDir(root, candidate) ?? "plans";
 }
+function specsDirFromParsed(root, parsed) {
+  const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
+  if (!Object.prototype.hasOwnProperty.call(artifacts, "specs_dir") || artifacts.specs_dir === void 0 || artifacts.specs_dir === null) {
+    return null;
+  }
+  if (typeof artifacts.specs_dir !== "string") return null;
+  const trimmed = artifacts.specs_dir.trim();
+  if (!trimmed) return null;
+  return normalizeInProjectPlansDir(root, trimmed);
+}
 function softPlatformToken(raw, maxLen = 64) {
   return raw.replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/[^A-Za-z0-9._+-]/g, "").toLowerCase().slice(0, maxLen);
 }
@@ -5425,7 +5466,8 @@ function loadProjectHookConfig(projectRoot) {
   if (!loaded) return cloneDefaultHookConfig();
   return {
     triggers: triggersFromParsed(loaded.parsed),
-    plansDir: plansDirFromParsed(loaded.root, loaded.parsed)
+    plansDir: plansDirFromParsed(loaded.root, loaded.parsed),
+    specsDir: specsDirFromParsed(loaded.root, loaded.parsed)
   };
 }
 function normalizeProjectReviewConfig(raw) {
@@ -5544,6 +5586,9 @@ function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloade
     preloaded ?? (safeRoot ? loadProjectReviewConfig(safeRoot) : void 0)
   );
   const usableLocale = Boolean(localeBundle?.followup?.review?.fix);
+  const specsDir = safeRoot ? loadProjectHookConfig(safeRoot).specsDir : null;
+  const suggestArchive = Boolean(specsDir);
+  const archiveSuggestTip = suggestArchive ? usableLocale && localeBundle?.followup?.archive_suggest?.trim() || DEFAULT_ARCHIVE_SUGGEST_TIP : void 0;
   return new ReviewEngine(store, {
     confirmRounds: cfg.confirmRounds,
     reviewScope: cfg.reviewScope,
@@ -5553,6 +5598,8 @@ function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloade
     maxIdleStops: cfg.maxIdleStops,
     maxErrorsBeforePause: cfg.maxErrorsBeforePause,
     projectRoot: safeRoot,
+    suggestArchive,
+    archiveSuggestTip,
     ...usableLocale && localeBundle ? {
       renderFollowup: createRenderFollowup(localeBundle),
       resolveLens: createResolveLens(localeBundle)

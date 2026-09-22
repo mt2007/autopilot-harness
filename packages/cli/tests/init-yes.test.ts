@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { skillDescription } from "@autopilot-harness/i18n";
 import {
+  AUTOPILOT_SKILL_NAMES,
   ensureAutopilotIgnore,
   ensureDocsAutopilotPortal,
   installInitYes,
@@ -355,13 +356,7 @@ describe("init --yes install", () => {
       ),
     ).toBe(true);
 
-    for (const skill of [
-      "autopilot-on",
-      "autopilot-run",
-      "autopilot-off",
-      "autopilot-resume",
-      "autopilot-replan",
-    ]) {
+    for (const skill of AUTOPILOT_SKILL_NAMES) {
       expect(
         fs.existsSync(path.join(root, ".cursor", "skills", skill, "SKILL.md")),
       ).toBe(true);

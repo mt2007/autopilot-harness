@@ -36,9 +36,23 @@ Skip repo survey; start from goals and constraints.
 | When | Write |
 |------|--------|
 | Title is clear | Create `<plansDir>/<slug>/` (`brief.md`, `plan.md`, `checklist.md`); update `<plansDir>/README.md`. **Slug** = `[a-z0-9]+([.-][a-z0-9]+)*`, length 1–128 (kebab; single dots OK, e.g. `v0.1-npm-release`; no `..`, `/`, `\`, `_`) — same rule as `/autopilot-on|run <slug>` |
-| Frontier nearly empty | Checklist **draft** (`- [ ]`); optional `## Behavior deltas` in brief for later archive into `artifacts.specs_dir` |
+| Frontier nearly empty | Checklist **draft** (`- [ ]`); optional `## Behavior deltas` in brief (see below) |
 | User confirms the plan | Finalize checklist: `- [ ] <id> — <title>` (**item id** kebab-case letters/digits/hyphens only — **no dots**) |
 | Ready to build | Prompt **`/autopilot-run`** (or `/autopilot-run <slug>`) |
+
+## Behavior deltas (optional)
+
+When this track changes **cross-track behavior truth** (not just checklist progress), add a section to `brief.md`:
+
+```markdown
+## Behavior deltas
+
+- ADDED: …
+- MODIFIED: …
+- REMOVED: …
+```
+
+After done / review-complete, if `artifacts.specs_dir` is configured, Autopilot may **suggest** `/autopilot-archive` to merge those bullets into domain files under `specs_dir` (agent-driven; **not** required). Skip the section when there is nothing durable to archive.
 
 ## Hard rules
 

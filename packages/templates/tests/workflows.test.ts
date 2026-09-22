@@ -18,6 +18,10 @@ describe("P1 workflow templates", () => {
     expect(text).toContain("➡️");
     expect(text).toMatch(/\/autopilot-run/);
     expect(text.toLowerCase()).toMatch(/no product code|禁.*产品代码|do \*\*not\*\* write product code/);
+    expect(text).toMatch(/## Behavior deltas/);
+    expect(text).toMatch(/\/autopilot-archive/);
+    expect(text).toMatch(/artifacts\.specs_dir/);
+    expect(text).toMatch(/not\*\* required|\*\*not\*\* required|not required/i);
   });
 
   it("planning locks global Qn across rounds (no per-round Q1 example)", () => {

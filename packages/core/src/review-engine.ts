@@ -111,10 +111,42 @@ export interface ReviewEngineConfig {
   sleepSync?: (ms: number) => void;
   /** Optional override for verify report path (tests). */
   verifyReportPath?: string;
+  /**
+   * Gate B: when true, append an archive suggest tip to `done` / `review_complete`.
+   * Set when `artifacts.specs_dir` is configured — do not read brief in the hook.
+   */
+  suggestArchive?: boolean;
+  /** Locale tip for gate B; falls back to English defaultRender tip. */
+  archiveSuggestTip?: string;
   /** Render followup message; default English templates. */
   renderFollowup?: (kind: FollowupKind, vars: Record<string, string | number>) => string;
   /** Resolve confirm lens; default English CONFIRM_LENSES. */
   resolveLens?: (roundIndex: number, confirmRounds: number) => ConfirmLens;
+}
+
+/** English fallback when suggestArchive is on and no locale tip is provided. */
+export const DEFAULT_ARCHIVE_SUGGEST_TIP =
+  "If this track's brief has a ## Behavior deltas section, run /autopilot-archive to merge into artifacts.specs_dir; otherwise ignore. Optional — not required.";
+
+/** Gate B: append archive tip to done/review_complete only (never reads brief). */
+export function appendArchiveSuggestTip(
+  kind: FollowupKind,
+  message: string,
+  suggestArchive: boolean | undefined,
+  tip: string | undefined,
+): string {
+  if (!suggestArchive || (kind !== "done" && kind !== "review_complete")) {
+    return message;
+  }
+  const resolved = (tip?.trim() || DEFAULT_ARCHIVE_SUGGEST_TIP).trim();
+  if (!resolved) return message;
+  const base = message.trimEnd();
+  // Empty base must stay empty — a tip-only pending would not match terminal
+  // prefixes (All checklist / Review complete / …) and could strand clearing.
+  if (!base) return message;
+  // Prefer suffix check so a mid-message substring cannot suppress the tip.
+  if (base.endsWith(resolved)) return message;
+  return `${base} ${resolved}`;
 }
 
 function defaultRender(kind: FollowupKind, vars: Record<string, string | number>): string {
@@ -217,7 +249,13 @@ export class ReviewEngine {
   ) {}
 
   private render(kind: FollowupKind, vars: Record<string, string | number>): string {
-    return (this.config.renderFollowup ?? defaultRender)(kind, vars);
+    const msg = (this.config.renderFollowup ?? defaultRender)(kind, vars);
+    return appendArchiveSuggestTip(
+      kind,
+      msg,
+      this.config.suggestArchive,
+      this.config.archiveSuggestTip,
+    );
   }
 
   private lens(roundIndex: number): ConfirmLens {

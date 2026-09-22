@@ -50,6 +50,8 @@ export {
 
 export {
   ReviewEngine,
+  DEFAULT_ARCHIVE_SUGGEST_TIP,
+  appendArchiveSuggestTip,
   applyOff,
   applyOn,
   applyResume,

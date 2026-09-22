@@ -193,6 +193,7 @@ import {
   readUntrustedUtf8File,
 } from "./read-untrusted-file.js";
 import { formatSessionDisplayName, shortSessionId } from "./session.js";
+import { AUTOPILOT_SKILL_NAMES } from "./init/install.js";
 
 const VALID_PHASES = new Set<Phase>([
   "idle",
@@ -208,13 +209,7 @@ const VALID_PAUSED_REASONS = new Set<PausedReason>([
 const DEFAULT_STALE_HOURS = 72;
 /** Cap absurd values so hours→ms math stays finite. */
 const MAX_STALE_HOURS = 24 * 365 * 100;
-const SKILL_NAMES = [
-  "autopilot-on",
-  "autopilot-run",
-  "autopilot-off",
-  "autopilot-resume",
-  "autopilot-replan",
-] as const;
+const SKILL_NAMES = AUTOPILOT_SKILL_NAMES;
 
 const YAML_TO_JS_OPTS = { maxAliasCount: 64 } as const;
 /** Refuse absurd configs (DoS / accidental paste) — same cap as locale-set. */
