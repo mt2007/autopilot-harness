@@ -49,4 +49,39 @@ describe("P1 workflow templates", () => {
     expect(text).toMatch(/review\.verify\.commands/);
     expect(text).not.toMatch(/No subagents for review/i);
   });
+
+  it("planning and executing soft-suggest Paths / Done when / Verify work orders", () => {
+    const planning = fs.readFileSync(
+      path.join(root, "autopilot-planning.md"),
+      "utf8",
+    );
+    const executing = fs.readFileSync(
+      path.join(root, "autopilot-executing.md"),
+      "utf8",
+    );
+    for (const [label, text] of [
+      ["planning", planning],
+      ["executing", executing],
+    ] as const) {
+      expect(text, label).toMatch(/\*\*Paths:\*\*/);
+      expect(text, label).toMatch(/\*\*Done when:\*\*/);
+      expect(text, label).toMatch(/\*\*Verify:\*\*/);
+      expect(text, label).toMatch(/soft/i);
+      expect(text, label).toMatch(/Never|never/);
+      expect(text, label).toMatch(/ITEM_RE|line-start|top-level/);
+    }
+    expect(planning).toMatch(/Checklist work orders/);
+    expect(executing).toMatch(/Checklist supplements/);
+    expect(planning).toMatch(/Never\*\* put `- \[ \]|Never.*`- \[ \]/);
+    expect(executing).toMatch(/Do \*\*not\*\* put `- \[ \]/);
+  });
+
+  it("keeps cli bundled workflow copies identical to packages/templates", () => {
+    const cliRoot = path.resolve(root, "../../cli/assets/templates/workflows");
+    for (const name of ["autopilot-planning.md", "autopilot-executing.md"]) {
+      const src = fs.readFileSync(path.join(root, name), "utf8");
+      const bundled = fs.readFileSync(path.join(cliRoot, name), "utf8");
+      expect(bundled, name).toBe(src);
+    }
+  });
 });

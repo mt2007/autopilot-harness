@@ -37,8 +37,26 @@ Skip repo survey; start from goals and constraints.
 |------|--------|
 | Title is clear | Create `<plansDir>/<slug>/` (`brief.md`, `plan.md`, `checklist.md`); update `<plansDir>/README.md`. **Slug** = `[a-z0-9]+([.-][a-z0-9]+)*`, length 1–128 (kebab; single dots OK, e.g. `v0.1-npm-release`; no `..`, `/`, `\`, `_`) — same rule as `/autopilot-on|run <slug>` |
 | Frontier nearly empty | Checklist **draft** (`- [ ]`); optional `## Behavior deltas` in brief (see below) |
-| User confirms the plan | Finalize checklist: `- [ ] <id> — <title>` (**item id** kebab-case letters/digits/hyphens only — **no dots**) |
+| User confirms the plan | Finalize checklist: `- [ ] <id> — <title>` (**item id** kebab-case letters/digits/hyphens only — **no dots**); under each item, soft **Paths / Done when / Verify** supplements (see below) |
 | Ready to build | Prompt **`/autopilot-run`** (or `/autopilot-run <slug>`) |
+
+## Checklist work orders (soft)
+
+When finalizing `checklist.md`, prefer a short supplement under each top-level item so the next turn (or another chat) knows scope, acceptance, and how to prove done. **Soft** — missing fields do not block finalize or RUN; parser still only counts top-level checkboxes.
+
+```markdown
+- [ ] <id> — <title>
+
+  - **Paths:** <files or globs this item may change>
+  - **Done when:** <acceptance for this item>
+  - **Verify:** <commands or evidence for this item>
+```
+
+**Rules:**
+
+- Supplements must be **indented** under the item (leading spaces), as non-checkbox bullets: `- **Paths:**` / `- **Done when:**` / `- **Verify:**`.
+- **Never** put `- [ ]` / `- [x]` inside supplements (indented or not). An **unindented** extra checkbox becomes a **second checklist item** (`ITEM_RE` matches line-start checkboxes only). Write steps/verify as prose or indented non-checkbox bullets.
+- Soft only: missing fields do not block finalize or RUN; do not invent fake checkbox children to "fill in" supplements.
 
 ## Behavior deltas (optional)
 

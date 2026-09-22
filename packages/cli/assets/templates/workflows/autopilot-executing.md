@@ -7,11 +7,24 @@ Track checklist lives under **`artifacts.plans_dir`** (`<plansDir>/<slug>/checkl
 ## Per-item flow
 
 1. Read `<plansDir>/<slug>/checklist.md` — work only on `firstUnchecked()` (`- [ ] <id> — <title>`).
-2. Implement within that item's scope (align with `plan.md`).
-3. Machine verify / completion evidence: write `.autopilot/verify-last.json` with matching `itemId` (and `ok: true` when using a hand-written report). Run configured verify commands when present.
+2. If that item has indented soft supplements (**Paths** / **Done when** / **Verify**), use them as the item's work order. Missing supplements are OK — fall back to `plan.md` and the title. **Never** treat indented non-checkbox lines as separate checklist items.
+3. Implement within that item's scope (align with Paths / `plan.md`).
+4. Machine verify / completion evidence: write `.autopilot/verify-last.json` with matching `itemId` (and `ok: true` when using a hand-written report). Prefer the item's **Verify** line when present; otherwise run configured verify commands when present.
    - **Required for every item before you stop** — especially no-code / ops / verify-only items. A stale `itemId` from a prior item blocks advance.
    - After writing the report, **end the turn** so the stop hook can inject advance/done. Do not ask the user to continue; do not invent your own Advance/Done.
-4. Stop hook injects **fix** / **confirm** / **need_evidence** / **advance** / **done** — follow the injected message; do **not** invent your own review lens.
+5. Stop hook injects **fix** / **confirm** / **need_evidence** / **advance** / **done** — follow the injected message; do **not** invent your own review lens.
+
+### Checklist supplements (soft)
+
+Indented bullets under an item are **documentation only**. Prefer:
+
+```markdown
+  - **Paths:** …
+  - **Done when:** …
+  - **Verify:** …
+```
+
+Core parses **only** line-start `- [ ]` / `- [x]` (`ITEM_RE` unchanged). Do **not** put `- [ ]` / `- [x]` inside supplements (indented checkboxes are ignored by the parser but confuse readers; unindented ones become false extra items).
 
 ### Product code vs no-code items
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_CHECKLIST_BYTES,
@@ -15,6 +16,18 @@ import {
 } from "../src/index.js";
 
 describe("parseChecklist hardening", () => {
+  it("keeps ITEM_RE as line-start checkbox only (work-order supplements stay soft)", () => {
+    const src = fs.readFileSync(
+      path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../src/checklist-md.ts",
+      ),
+      "utf8",
+    );
+    expect(src).toMatch(
+      /const ITEM_RE = \/\^-\\s\*\\\[\(\[ xX\]\)\\\]\\s\*\(\.\+\)\$\/;/,
+    );
+  });
   let root: string;
 
   afterEach(() => {
@@ -39,6 +52,37 @@ describe("parseChecklist hardening", () => {
     const cl = parseChecklistMarkdown(`- [ ] only — Item\n`, "/virtual.md");
     expect(cl.path).toBe("/virtual.md");
     expect(cl.items).toHaveLength(1);
+  });
+
+  it("ignores indented Paths/Done when/Verify supplements (ITEM_RE line-start only)", () => {
+    const cl = parseChecklistMarkdown(
+      [
+        "- [ ] work-order — Soft supplements",
+        "",
+        "  - **Paths:** `packages/foo`",
+        "  - **Done when:** tests green",
+        "  - **Verify:** `pnpm test`",
+        "- [ ] next — Second item",
+        "",
+      ].join("\n"),
+      "/virtual.md",
+    );
+    expect(cl.items.map((i) => i.id)).toEqual(["work-order", "next"]);
+    expect(cl.items).toHaveLength(2);
+  });
+
+  it("ignores indented checkbox lookalikes; unindented extras become items", () => {
+    const cl = parseChecklistMarkdown(
+      [
+        "- [ ] parent — Parent",
+        "  - [ ] nested-lookalike — Must not count",
+        "- [ ] sibling — Real second item",
+        "",
+      ].join("\n"),
+      "/virtual.md",
+    );
+    expect(cl.items.map((i) => i.id)).toEqual(["parent", "sibling"]);
+    expect(cl.items).toHaveLength(2);
   });
 
   it("refuses symlinks", () => {

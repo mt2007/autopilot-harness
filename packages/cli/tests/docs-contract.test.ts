@@ -1582,6 +1582,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(body).toMatch(/artifacts\.plans_dir/);
     expect(body).toMatch(/<plansDir>\/<slug>\/checklist\.md/);
+    expect(body).toMatch(/\*\*Paths \/ Done when \/ Verify\*\*/);
+    expect(body).toMatch(/ITEM_RE` unchanged|ITEM_RE unchanged/);
     expect(body).not.toMatch(/does \*\*not\*\* yet load this key from YAML/i);
     expect(body).toMatch(
       /Claude Code[\s\S]*Init writes `\.claude\/settings\.json`/,
