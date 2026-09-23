@@ -2708,6 +2708,431 @@ describe("review-engine P0 matrix", () => {
     expect(done).toBeNull();
   });
 
+  it("F-ERR-DONE-RECOVER: done+project error injects recover_ambient and keeps phase=done", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c-done-err",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-done-err");
+    const action = eng.handleStop({
+      conversationId: "c-done-err",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action?.kind).toBe("recover");
+    // Ambient copy — not checklist `recover` ("继续当前任务。") alone.
+    expect(action?.message).toMatch(/未在执行 checklist|RUN is not active|current work/i);
+    expect(action?.loop).toBe(true);
+    expect(store.getSession("c-done-err")!.phase).toBe("done");
+    expect(store.getSession("c-done-err")!.armed).toBe(0);
+    expect(store.getSession("c-done-err")!.error_count).toBe(1);
+    expect(store.getReviewChain("c-done-err")!.pending_followup).toMatch(
+      /恢复|Recover/,
+    );
+  });
+
+  it("F-ERR-DONE-TERMINAL-PENDING: recover covers leftover 全部完成 pending", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c-done-term",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-done-term");
+    store.updateReviewChain("c-done-term", {
+      pending_followup:
+        "全部完成。自审确认已干净通过（确认轮不 commit）。勾选最后一项 [x]。",
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-done-term",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action?.kind).toBe("recover");
+    expect(action?.message).toMatch(/未在执行 checklist|RUN is not active|current work/i);
+    expect(store.getReviewChain("c-done-term")!.pending_followup).toMatch(
+      /恢复|Recover/,
+    );
+    expect(store.getReviewChain("c-done-term")!.pending_followup).not.toMatch(
+      /^全部完成/,
+    );
+    expect(store.getSession("c-done-term")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-ABORT: user abort on done does not recover", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c-done-abort",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-done-abort",
+      status: "aborted",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-done-abort")!.phase).toBe("done");
+    expect(store.getSession("c-done-abort")!.error_count).toBe(0);
+  });
+
+  it("F-ERR-DONE-PAUSED: paused done does not recover", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c-done-paused",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 1,
+      paused_reason: "human_gate",
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-done-paused",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-done-paused")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-EXECUTING-ONLY: done under executing_only does not recover", () => {
+    const eng = engine(store, root, {
+      reviewScope: "executing_only",
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-done-eo",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-done-eo",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-done-eo")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-ORPHAN-SALVAGE: completed+orphan transcript error recovers on done", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    const transcript = path.join(root, "done-orphan-transcript.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "assistant",
+          message: { content: [{ type: "text", text: "working" }] },
+        }),
+        JSON.stringify({
+          type: "turn_ended",
+          status: "error",
+          error:
+            "You've hit your usage limit Get Cursor Pro for more Agent usage, unlimited Tab, and more.",
+        }),
+      ].join("\n") + "\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-done-orphan",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-done-orphan");
+    const action = eng.handleStop({
+      conversationId: "c-done-orphan",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(action?.kind).toBe("recover");
+    expect(action?.message).toMatch(/未在执行 checklist|RUN is not active|current work/i);
+    expect(store.getSession("c-done-orphan")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-CLEAR-DELIVERED: completed clears delivered recover pending without review", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    const recoverMsg =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    const transcript = path.join(root, "done-clear-transcript.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          type: "turn_ended",
+          status: "error",
+          error: "tool failed",
+        }),
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [
+              {
+                type: "text",
+                text: `<user_query>\n${recoverMsg}\n</user_query>`,
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: { content: [{ type: "text", text: "continued" }] },
+        }),
+        JSON.stringify({ type: "turn_ended", status: "success" }),
+      ].join("\n") + "\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-done-clear",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+      error_count: 1,
+    });
+    store.ensureReviewChain("c-done-clear");
+    store.updateReviewChain("c-done-clear", {
+      pending_followup: recoverMsg,
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 0,
+    });
+    const out = eng.handleStop({
+      conversationId: "c-done-clear",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c-done-clear")!.pending_followup).toBeNull();
+    expect(store.getReviewChain("c-done-clear")!.confirm_left).toBeNull();
+    expect(store.getReviewChain("c-done-clear")!.chain_pending).toBe(0);
+    expect(store.getSession("c-done-clear")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-REDELIVER: completed redelivers undelivered recover on done", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    const recoverMsg =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    const transcript = path.join(root, "done-redeliver-transcript.jsonl");
+    // Host dropped the inject — tip absent from transcript.
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          type: "turn_ended",
+          status: "error",
+          error: "tool failed",
+        }),
+        JSON.stringify({ type: "turn_ended", status: "success" }),
+      ].join("\n") + "\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-done-redeliver",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+      error_count: 1,
+    });
+    store.ensureReviewChain("c-done-redeliver");
+    store.updateReviewChain("c-done-redeliver", {
+      pending_followup: recoverMsg,
+      pending_followup_at: new Date().toISOString(),
+      pending_redeliver_at: null,
+      chain_pending: 0,
+    });
+    const out = eng.handleStop({
+      conversationId: "c-done-redeliver",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out?.kind).toBe("recover");
+    expect(out?.message).toBe(recoverMsg);
+    expect(out?.loop).toBe(true);
+    expect(store.getSession("c-done-redeliver")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-ON: applyOn after done recover still enters planning", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    store.upsertSession({
+      conversation_id: "c-done-on",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-done-on",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action?.kind).toBe("recover");
+    expect(store.getReviewChain("c-done-on")!.pending_followup).toMatch(
+      /恢复|Recover/,
+    );
+    const on = applyOn(store, "c-done-on", root);
+    expect(on.ok).toBe(true);
+    expect(store.getSession("c-done-on")!.phase).toBe("planning");
+    expect(store.getSession("c-done-on")!.paused).toBe(0);
+    // applyOn clears terminal tips only; recover may remain (not a 全部完成 ghost).
+    expect(store.getReviewChain("c-done-on")!.pending_followup).toMatch(
+      /恢复|Recover/,
+    );
+  });
+
+  it("F-ERR-DONE-AMBIENT-DONE: completed after done recover clear does not arm review", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    const recoverMsg =
+      "恢复：上一回合出错。继续当前任务（未在执行 checklist）。";
+    const transcript = path.join(root, "done-ambient-done-transcript.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          type: "turn_ended",
+          status: "error",
+          error: "tool failed",
+        }),
+        JSON.stringify({
+          role: "user",
+          message: {
+            content: [
+              {
+                type: "text",
+                text: `<user_query>\n${recoverMsg}\n</user_query>`,
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          role: "assistant",
+          message: { content: [{ type: "text", text: "ok" }] },
+        }),
+        JSON.stringify({ type: "turn_ended", status: "success" }),
+      ].join("\n") + "\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-done-ad",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-done-ad");
+    store.updateReviewChain("c-done-ad", {
+      pending_followup: recoverMsg,
+      pending_followup_at: new Date().toISOString(),
+      chain_pending: 0,
+      confirm_left: null,
+      code_edited: 0,
+      fix_round: 2,
+    });
+    const out = eng.handleStop({
+      conversationId: "c-done-ad",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(out).toBeNull();
+    expect(store.getReviewChain("c-done-ad")!.pending_followup).toBeNull();
+    expect(store.getReviewChain("c-done-ad")!.confirm_left).toBeNull();
+    expect(store.getReviewChain("c-done-ad")!.chain_pending).toBe(0);
+    expect(store.getSession("c-done-ad")!.phase).toBe("done");
+  });
+
+  it("F-ERR-DONE-EDIT-REVIVE: product edit after done recover still revives to idle", () => {
+    const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
+    fs.mkdirSync(path.join(root, ".autopilot"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".autopilot", "config.yml"),
+      "review:\n  scope: project\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-done-revive",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    eng.handleStop({
+      conversationId: "c-done-revive",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(store.getSession("c-done-revive")!.phase).toBe("done");
+    expect(store.getReviewChain("c-done-revive")!.pending_followup).toMatch(
+      /恢复|Recover/,
+    );
+    handleAfterFileEdit(
+      store,
+      { conversation_id: "c-done-revive", file_path: "src/app.ts" },
+      root,
+    );
+    expect(store.getSession("c-done-revive")!.phase).toBe("idle");
+    expect(store.getSession("c-done-revive")!.armed).toBe(1);
+    expect(store.getReviewChain("c-done-revive")!.pending_followup).toBeNull();
+    expect(store.getReviewChain("c-done-revive")!.code_edited).toBe(1);
+  });
+
   it("F-ERR-AMBIENT-NO-E8: leftover fix_round + loopCount must not E3 after ambient recover", () => {
     const eng = engine(store, root, { reviewScope: "project", maxErrorsBeforePause: 0 });
     eng.handleStop({
