@@ -3015,6 +3015,21 @@ var ReviewEngine = class {
         });
       }
       if (!sessionReviewRunnable(session, this.config.reviewScope)) {
+        if (session.phase === "done" && session.paused === 0 && this.config.reviewScope === "project") {
+          const tip = this.store.getReviewChain(input.conversationId)?.pending_followup?.trim() ?? "";
+          if (isRecoverOrStuckFollowupMessage(tip)) {
+            const transcriptPath2 = input.transcriptPath?.trim() || void 0;
+            const events2 = transcriptPath2 ? readTranscriptTail(transcriptPath2) : [];
+            const chain2 = this.store.getReviewChain(input.conversationId) ?? this.store.ensureReviewChain(input.conversationId);
+            const redelivered2 = this.tryRedeliverPending(
+              input.conversationId,
+              chain2,
+              events2,
+              transcriptPath2
+            );
+            if (redelivered2) return redelivered2;
+          }
+        }
         return null;
       }
       const chain = this.store.ensureReviewChain(input.conversationId);
@@ -3238,12 +3253,12 @@ var ReviewEngine = class {
     }
     try {
       return this.store.exclusiveWrite(() => {
-        if (!this.sessionRunnable(conversationId)) {
-          return { commit: false, value: null };
-        }
         const liveRow = this.store.getReviewChain(conversationId);
         const livePending = liveRow?.pending_followup?.trim() ?? "";
         if (!livePending) {
+          return { commit: false, value: null };
+        }
+        if (!this.sessionRunnable(conversationId) && !this.sessionAllowsDoneRecoverPending(conversationId, livePending)) {
           return { commit: false, value: null };
         }
         if (!pendingRedeliverAllowed(liveRow?.pending_redeliver_at ?? null)) {
@@ -3266,11 +3281,11 @@ var ReviewEngine = class {
           this.store.touchPendingRedeliver(conversationId);
         } catch {
         }
-        if (!this.sessionRunnable(conversationId)) {
-          return { commit: true, value: null };
-        }
         const after = this.store.getReviewChain(conversationId)?.pending_followup?.trim() ?? "";
         if (!after) {
+          return { commit: true, value: null };
+        }
+        if (!this.sessionRunnable(conversationId) && !this.sessionAllowsDoneRecoverPending(conversationId, after)) {
           return { commit: true, value: null };
         }
         if (events.length > 0 && automationFollowupPresent(events, after)) {
@@ -4148,18 +4163,40 @@ var ReviewEngine = class {
     const s = this.store.getSession(conversationId);
     return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
-  /** Genuine error stop may inject recover (planning, project ambient, or armed executing). */
+  /**
+   * Keep-done recover: allow clear/redeliver of recover|stuck pending without
+   * making `sessionReviewRunnable(done)` true (no E2–E5).
+   */
+  sessionAllowsDoneRecoverPending(conversationId, pending) {
+    if (!isRecoverOrStuckFollowupMessage(pending)) return false;
+    try {
+      const s = this.store.getSession(conversationId);
+      return !!s && s.paused === 0 && s.phase === "done" && this.config.reviewScope === "project";
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Genuine error stop may inject recover: planning, project ambient
+   * (`idle`+armed), armed executing, or project-scope **`done`** (post-track
+   * casual work without edit-revive). Abort / paused / `executing_only`+done
+   * stay non-recoverable. Does not open the review chain (`sessionReviewRunnable`
+   * still excludes `done`); done still clears/redelivers recover|stuck pending.
+   */
   sessionErrorRecoverable(session) {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
     if (session.phase === "idle" && session.armed === 1 && this.config.reviewScope === "project") {
       return true;
     }
+    if (session.phase === "done" && this.config.reviewScope === "project") {
+      return true;
+    }
     return session.phase === "executing" && session.armed === 1;
   }
   recoverKindForPhase(phase) {
     if (phase === "planning") return "recover_planning";
-    if (phase === "idle") return "recover_ambient";
+    if (phase === "idle" || phase === "done") return "recover_ambient";
     return "recover";
   }
   /** completed stop → reset error_count */
