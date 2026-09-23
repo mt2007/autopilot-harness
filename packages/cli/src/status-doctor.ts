@@ -43,6 +43,7 @@ import {
 } from "./init/claude-settings-merge.js";
 import {
   codexAutopilotHasSmallTimeout,
+  codexAutopilotPostToolUseMatcherStale,
   codexHooksHavePlatformStamp,
   summarizeCodexAutopilotHooks,
   validateCodexHooksShape,
@@ -1296,6 +1297,14 @@ export function runDoctor(
           }
           if (
             missingEvents.length === 0 &&
+            codexAutopilotPostToolUseMatcherStale(file)
+          ) {
+            lines.push(
+              "WARN  Autopilot Codex PostToolUse matcher lacks exec|js — run upgrade",
+            );
+          }
+          if (
+            missingEvents.length === 0 &&
             !codexHooksHavePlatformStamp(file)
           ) {
             lines.push(
@@ -1312,6 +1321,7 @@ export function runDoctor(
             missingEvents.length === 0 &&
             duplicates === 0 &&
             !codexAutopilotHasSmallTimeout(file) &&
+            !codexAutopilotPostToolUseMatcherStale(file) &&
             codexHooksHavePlatformStamp(file)
           ) {
             lines.push("OK    .codex/hooks.json Autopilot entries");

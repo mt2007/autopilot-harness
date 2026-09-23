@@ -155,6 +155,7 @@ export {
   codexHooksContainAutopilot,
   codexHooksHavePlatformStamp,
   codexAutopilotHasSmallTimeout,
+  codexAutopilotPostToolUseMatcherStale,
   CODEX_AUTOPILOT_EVENTS,
   CODEX_POST_TOOL_USE_MATCHER,
 } from "./codex-hooks-merge.js";

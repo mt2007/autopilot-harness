@@ -158,7 +158,7 @@ describe("triple-host Codex cross-fire matrix", () => {
       true,
     );
     const codexPtu = codexHooks.hooks?.PostToolUse ?? [];
-    expect(codexPtu.some((g) => g.matcher === "apply_patch|Edit|Write")).toBe(
+    expect(codexPtu.some((g) => g.matcher === "apply_patch|Edit|Write|exec|js")).toBe(
       true,
     );
     expect(

@@ -45,7 +45,7 @@ export interface CodexSubmitPayload {
   model?: string;
 }
 
-/** Codex PostToolUse stdin (apply_patch / Edit / Write / …). */
+/** Codex PostToolUse stdin (apply_patch / Edit / Write / exec / js / …). */
 export interface CodexEditPayload {
   session_id?: string;
   sessionId?: string;
@@ -293,6 +293,78 @@ export function pathsFromApplyPatchCommand(command: string): string[] {
   return found;
 }
 
+/** Bound nested tool_input walks for exec/js-wrapped patches. */
+export const MAX_TOOL_INPUT_STRINGS = 64;
+export const MAX_TOOL_INPUT_DEPTH = 6;
+/** Cap total characters collected across nested strings (DoS). */
+export const MAX_TOOL_INPUT_SCAN_CHARS = MAX_APPLY_PATCH_COMMAND_CHARS;
+
+function collectNestedStrings(
+  value: unknown,
+  out: string[],
+  depth: number,
+  seen: WeakSet<object>,
+  totalChars: { n: number },
+): void {
+  if (out.length >= MAX_TOOL_INPUT_STRINGS) return;
+  if (totalChars.n >= MAX_TOOL_INPUT_SCAN_CHARS) return;
+  if (depth > MAX_TOOL_INPUT_DEPTH) return;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const room = MAX_TOOL_INPUT_SCAN_CHARS - totalChars.n;
+    if (room <= 0) return;
+    const slice = value.length > room ? value.slice(0, room) : value;
+    totalChars.n += slice.length;
+    out.push(slice);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (
+        out.length >= MAX_TOOL_INPUT_STRINGS ||
+        totalChars.n >= MAX_TOOL_INPUT_SCAN_CHARS
+      ) {
+        break;
+      }
+      collectNestedStrings(item, out, depth + 1, seen, totalChars);
+    }
+    return;
+  }
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    if (
+      out.length >= MAX_TOOL_INPUT_STRINGS ||
+      totalChars.n >= MAX_TOOL_INPUT_SCAN_CHARS
+    ) {
+      break;
+    }
+    collectNestedStrings(nested, out, depth + 1, seen, totalChars);
+  }
+}
+
+/**
+ * Scan full tool_input (root string + nested string fields) for Begin Patch
+ * headers. Used when Codex wraps apply_patch inside `exec` / `js`.
+ */
+export function pathsFromWrappedPatchToolInput(rawInput: unknown): string[] {
+  const strings: string[] = [];
+  collectNestedStrings(rawInput, strings, 0, new WeakSet<object>(), { n: 0 });
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const s of strings) {
+    for (const p of pathsFromApplyPatchCommand(s)) {
+      if (found.length >= MAX_APPLY_PATCH_PATHS) return found;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      found.push(p);
+    }
+  }
+  return found;
+}
+
 function toolInputObject(
   payload: CodexEditPayload,
 ): Record<string, unknown> | null {
@@ -306,11 +378,16 @@ function toolInputObject(
 
 /**
  * Paths touched by this PostToolUse (0..n).
- * apply_patch → parse command; Edit/Write → file_path-style fields.
+ * apply_patch → parse command; Edit/Write → file_path-style fields;
+ * exec/js → full tool_input string scan for Begin Patch.
  */
 export function filePathsFromCodexEdit(payload: CodexEditPayload): string[] {
   const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
   const rawInput = payload.tool_input ?? payload.toolInput;
+
+  if (toolName === "exec" || toolName === "js") {
+    return pathsFromWrappedPatchToolInput(rawInput);
+  }
 
   if (toolName === "apply_patch" || toolName === "ApplyPatch") {
     // Object `{ command }` or rare stringified command body.
@@ -340,14 +417,16 @@ export function filePathsFromCodexEdit(payload: CodexEditPayload): string[] {
   return [];
 }
 
-/** File-mutating tools Autopilot arms from (Bash relies on dirty-arm). */
+/** File-mutating tools Autopilot arms from (bare shell still relies on dirty-arm). */
 export function isCodexEditTool(toolName: string): boolean {
   const n = toolName.trim();
   return (
     n === "apply_patch" ||
     n === "ApplyPatch" ||
     n === "Edit" ||
-    n === "Write"
+    n === "Write" ||
+    n === "exec" ||
+    n === "js"
   );
 }
 
@@ -561,8 +640,8 @@ export function handlePostToolUse(
 
   const filePaths = filePathsFromCodexEdit(payload);
   if (filePaths.length === 0) {
-    // apply_patch with unparsable command: still stamp platform; dirty-arm
-    // on Stop covers product paths. Do not false-arm without a path.
+    // apply_patch / exec / js with unparsable or empty patch text: stamp
+    // platform; dirty-arm on Stop covers product paths. Do not false-arm.
     stampCodexPlatform(store, conversationId, projectRoot);
     return;
   }

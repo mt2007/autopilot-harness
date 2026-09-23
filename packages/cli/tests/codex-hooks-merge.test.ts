@@ -4,6 +4,7 @@ import {
   CODEX_AUTOPILOT_EVENTS,
   CODEX_POST_TOOL_USE_MATCHER,
   codexAutopilotHasSmallTimeout,
+  codexAutopilotPostToolUseMatcherStale,
   codexHooksContainAutopilot,
   codexHooksHavePlatformStamp,
   hasCompleteCodexAutopilotHooks,
@@ -31,7 +32,55 @@ describe("codex hooks merge", () => {
     expect(JSON.stringify(merged.hooks)).not.toMatch(/StopFailure/);
     const post = merged.hooks?.PostToolUse?.[0];
     expect(post?.matcher).toBe(CODEX_POST_TOOL_USE_MATCHER);
-    expect(CODEX_POST_TOOL_USE_MATCHER).toBe("apply_patch|Edit|Write");
+    expect(CODEX_POST_TOOL_USE_MATCHER).toBe("apply_patch|Edit|Write|exec|js");
+  });
+
+  it("upgrade merge replaces stale PostToolUse matcher with exec|js", () => {
+    const existing = {
+      hooks: {
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command:
+                  "node .autopilot/bin/autopilot-harness-hook.mjs --platform codex --event UserPromptSubmit",
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            matcher: "apply_patch|Edit|Write",
+            hooks: [
+              {
+                type: "command",
+                command:
+                  "node .autopilot/bin/autopilot-harness-hook.mjs --platform codex --event PostToolUse",
+              },
+            ],
+          },
+        ],
+        Stop: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command:
+                  "node .autopilot/bin/autopilot-harness-hook.mjs --platform codex --event Stop",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(codexAutopilotPostToolUseMatcherStale(existing)).toBe(true);
+    const merged = mergeCodexHooks(existing);
+    expect(codexAutopilotPostToolUseMatcherStale(merged)).toBe(false);
+    const post = merged.hooks?.PostToolUse?.find((g) =>
+      JSON.stringify(g).includes("autopilot-harness-hook"),
+    );
+    expect(post?.matcher).toBe(CODEX_POST_TOOL_USE_MATCHER);
   });
 
   it("preserves foreign hooks and replaces Autopilot entries", () => {

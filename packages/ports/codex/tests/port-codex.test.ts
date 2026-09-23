@@ -14,6 +14,7 @@ import {
   loopCountFromStopHookActive,
   MAX_NEED_PICK_SLUGS,
   MAX_APPLY_PATCH_PATHS,
+  MAX_TOOL_INPUT_SCAN_CHARS,
   normalizeCodexStopStatus,
   pathsFromApplyPatchCommand,
 } from "../src/index.js";
@@ -38,6 +39,8 @@ describe("port-codex adapters", () => {
     expect(isCodexEditTool("apply_patch")).toBe(true);
     expect(isCodexEditTool("Edit")).toBe(true);
     expect(isCodexEditTool("Write")).toBe(true);
+    expect(isCodexEditTool("exec")).toBe(true);
+    expect(isCodexEditTool("js")).toBe(true);
     expect(isCodexEditTool("Bash")).toBe(false);
 
     const patch = [
@@ -98,6 +101,75 @@ describe("port-codex adapters", () => {
       filePathsFromCodexEdit({
         tool_name: "apply_patch",
         tool_input: { command: "" },
+      }),
+    ).toEqual([]);
+    const wrappedPatch = [
+      "*** Begin Patch",
+      "*** Update File: src/wrapped.ts",
+      "@@",
+      "-a",
+      "+b",
+      "*** End Patch",
+    ].join("\n");
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "exec",
+        tool_input: {
+          command: "node -e '/* noop */'",
+          script: wrappedPatch,
+        },
+      }),
+    ).toEqual(["src/wrapped.ts"]);
+    // Root string tool_input (not only nested fields).
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "exec",
+        tool_input: wrappedPatch,
+      }),
+    ).toEqual(["src/wrapped.ts"]);
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "js",
+        tool_input: {
+          // Nested string body (real newlines), as hosts embed patch text in js payloads.
+          code: "applyFromString(patch)",
+          patch: wrappedPatch,
+        },
+      }),
+    ).toEqual(["src/wrapped.ts"]);
+    // Cyclic tool_input must not throw / hang.
+    const cyclic: Record<string, unknown> = {
+      command: "echo",
+      patch: wrappedPatch,
+    };
+    cyclic.self = cyclic;
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "exec",
+        tool_input: cyclic,
+      }),
+    ).toEqual(["src/wrapped.ts"]);
+    // Scan budget: earlier huge string consumes the cap; later patch ignored.
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "exec",
+        tool_input: {
+          pad: "x".repeat(MAX_TOOL_INPUT_SCAN_CHARS),
+          patch: wrappedPatch,
+        },
+      }),
+    ).toEqual([]);
+    // Bare exec / empty nested strings → no product paths (Stop dirty-arm).
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "exec",
+        tool_input: { command: "ls -la" },
+      }),
+    ).toEqual([]);
+    expect(
+      filePathsFromCodexEdit({
+        tool_name: "js",
+        tool_input: { code: "console.log(1)" },
       }),
     ).toEqual([]);
     expect(normalizeCodexStopStatus({ status: "aborted" })).toBe("aborted");
@@ -236,6 +308,57 @@ describe("port-codex adapters", () => {
       root,
     );
     expect(store.getReviewChain("s1")?.code_edited ?? 0).toBe(0);
+    store.close();
+  });
+
+  it("exec JS-wrapped Begin Patch arms product path; bare exec does not", () => {
+    const root = tmpRoot();
+    const store = StateStore.openMemory(root);
+    const cp = writeChecklist(root, "demo", `- [ ] a — A\n`);
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.writeFileSync(path.join(root, "src", "w.ts"), "export {}\n");
+    store.upsertSession({
+      conversation_id: "s-exec",
+      project_root: root,
+      code_root: root,
+      phase: "executing",
+      armed: 1,
+      paused: 0,
+      checklist_path: cp,
+      track_id: "demo",
+      platform: CODEX_PLATFORM,
+    });
+
+    const wrapped = [
+      "*** Begin Patch",
+      "*** Update File: src/w.ts",
+      "@@",
+      "-a",
+      "+b",
+      "*** End Patch",
+    ].join("\n");
+    handlePostToolUse(
+      store,
+      {
+        session_id: "s-exec",
+        tool_name: "js",
+        tool_input: { script: wrapped },
+      },
+      root,
+    );
+    expect(store.getReviewChain("s-exec")?.code_edited).toBe(1);
+
+    store.updateReviewChain("s-exec", { code_edited: 0 });
+    handlePostToolUse(
+      store,
+      {
+        session_id: "s-exec",
+        tool_name: "exec",
+        tool_input: { command: "echo hi" },
+      },
+      root,
+    );
+    expect(store.getReviewChain("s-exec")?.code_edited ?? 0).toBe(0);
     store.close();
   });
 

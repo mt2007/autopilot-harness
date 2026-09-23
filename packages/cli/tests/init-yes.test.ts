@@ -550,7 +550,7 @@ describe("init --yes install", () => {
     const json = JSON.stringify(hooks.hooks);
     expect(json).toMatch(/UserPromptSubmit/);
     expect(json).toMatch(/PostToolUse/);
-    expect(json).toMatch(/apply_patch\|Edit\|Write/);
+    expect(json).toMatch(/apply_patch\|Edit\|Write\|exec\|js/);
     expect(json).toMatch(/--platform codex/);
     expect(json).toMatch(/--event Stop/);
     expect(json).not.toMatch(/StopFailure/);

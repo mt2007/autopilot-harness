@@ -20,10 +20,10 @@ export const CODEX_AUTOPILOT_EVENTS = [
 export type CodexAutopilotEvent = (typeof CODEX_AUTOPILOT_EVENTS)[number];
 
 /**
- * PostToolUse matcher per Codex docs: `apply_patch` is canonical; `Edit` /
- * `Write` are aliases that still report `tool_name: "apply_patch"`.
+ * PostToolUse matcher: `apply_patch` / `Edit` / `Write` plus `exec` / `js`
+ * (hosts may wrap Begin Patch inside those generic tools).
  */
-export const CODEX_POST_TOOL_USE_MATCHER = "apply_patch|Edit|Write";
+export const CODEX_POST_TOOL_USE_MATCHER = "apply_patch|Edit|Write|exec|js";
 
 export interface CodexHookHandler {
   type?: string;
@@ -441,6 +441,40 @@ export function codexAutopilotHasSmallTimeout(file: CodexHooksFile): boolean {
           return true;
         }
       }
+    }
+  }
+  return false;
+}
+
+/**
+ * True when an Autopilot Codex PostToolUse group exists but its matcher does
+ * not include both `exec` and `js` (pre-0.18.2 installs). Doctor WARNs.
+ */
+export function codexAutopilotPostToolUseMatcherStale(
+  file: CodexHooksFile,
+): boolean {
+  const bag =
+    file.hooks && typeof file.hooks === "object" && !Array.isArray(file.hooks)
+      ? file.hooks
+      : {};
+  const groups = Array.isArray(bag.PostToolUse)
+    ? (bag.PostToolUse as CodexMatcherGroup[])
+    : [];
+  for (const g of groups) {
+    const handlers: CodexHookHandler[] = [];
+    if (isAutopilotCommand(g.command)) {
+      handlers.push(g as CodexHookHandler);
+    }
+    if (Array.isArray(g.hooks)) handlers.push(...g.hooks);
+    const hasAutopilot = handlers.some((h) => isAutopilotCommand(h?.command));
+    if (!hasAutopilot) continue;
+    const matcher = typeof g.matcher === "string" ? g.matcher : "";
+    const parts = matcher
+      .split("|")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (!parts.includes("exec") || !parts.includes("js")) {
+      return true;
     }
   }
   return false;

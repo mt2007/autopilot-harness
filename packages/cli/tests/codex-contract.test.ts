@@ -221,7 +221,7 @@ describe("codex contract matrix", () => {
     expect(raw).toMatch(/Stop/);
     expect(raw).toMatch(/--platform codex/);
     expect(raw).not.toMatch(/"timeout"\s*:/);
-    expect(raw).toMatch(/apply_patch\|Edit\|Write/);
+    expect(raw).toMatch(/apply_patch\|Edit\|Write\|exec\|js/);
   });
 
   it("doctor: Codex OK + trust WARN; corrupt JSON FAIL; timeout <120 WARN", () => {
@@ -256,6 +256,19 @@ describe("codex contract matrix", () => {
     expect(timed.ok).toBe(true);
     expect(timed.lines.join("\n")).toMatch(/timeout set below 120s/i);
     expect(timed.lines.join("\n")).not.toMatch(
+      /OK\s+\.codex\/hooks\.json Autopilot entries/,
+    );
+
+    // Stale matcher (pre-exec|js) → WARN; no OK line.
+    const stamped = mergeCodexHooks(null);
+    const stalePost = stamped.hooks?.PostToolUse?.[0];
+    expect(stalePost).toBeTruthy();
+    stalePost!.matcher = "apply_patch|Edit|Write";
+    fs.writeFileSync(hooksPath, JSON.stringify(stamped, null, 2) + "\n");
+    const stale = runDoctor(root);
+    expect(stale.ok).toBe(true);
+    expect(stale.lines.join("\n")).toMatch(/matcher lacks exec\|js/i);
+    expect(stale.lines.join("\n")).not.toMatch(
       /OK\s+\.codex\/hooks\.json Autopilot entries/,
     );
 
