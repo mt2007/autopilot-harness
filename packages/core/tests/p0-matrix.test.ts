@@ -727,6 +727,226 @@ describe("review-engine P0 matrix", () => {
     }
   });
 
+  it("F-DIRTY-AMBIENT: project idle+armed dirty arms fix (no checklist executing)", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    dirtyStore.upsertSession({
+      conversation_id: "amb1",
+      project_root: dirtyRoot,
+      code_root: dirtyRoot,
+      platform: "cursor",
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    dirtyStore.ensureReviewChain("amb1");
+    dirtyStore.updateReviewChain("amb1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const eng = engine(dirtyStore, dirtyRoot, { reviewScope: "project" });
+    const out = eng.handleStop({
+      conversationId: "amb1",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out?.kind).toBe("review.fix");
+    const chain = dirtyStore.getReviewChain("amb1")!;
+    expect(chain.fix_round).toBeGreaterThan(0);
+    expect(chain.chain_pending).toBe(1);
+    dirtyStore.close();
+  });
+
+  it("F-DIRTY-AMBIENT: no-session + product dirty ensures ambient then fix", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    expect(dirtyStore.getSession("nosess1")).toBeFalsy();
+    const eng = engine(dirtyStore, dirtyRoot, { reviewScope: "project" });
+    const out = eng.handleStop({
+      conversationId: "nosess1",
+      status: "completed",
+      loopCount: 0,
+      platform: "codex",
+    });
+    expect(out?.kind).toBe("review.fix");
+    const sess = dirtyStore.getSession("nosess1")!;
+    expect(sess.phase).toBe("idle");
+    expect(sess.armed).toBe(1);
+    expect(sess.platform).toBe("codex");
+    expect(dirtyStore.getReviewChain("nosess1")!.fix_round).toBeGreaterThan(0);
+    dirtyStore.close();
+  });
+
+  it("F-DIRTY-AMBIENT: executing_only ignores ambient dirty (no session → null)", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    const eng = engine(dirtyStore, dirtyRoot, { reviewScope: "executing_only" });
+    const out = eng.handleStop({
+      conversationId: "eo-amb",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out).toBeNull();
+    expect(dirtyStore.getSession("eo-amb")).toBeFalsy();
+    dirtyStore.close();
+  });
+
+  it("F-DIRTY-AMBIENT: ignore-only dirt on ambient idle stays null (no fix)", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(
+      path.join(dirtyRoot, ".autopilotignore"),
+      "plans/**\n.autopilot/**\n",
+    );
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    fs.mkdirSync(path.join(dirtyRoot, ".autopilot"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilot", "scratch.ts"), "export {};\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    dirtyStore.upsertSession({
+      conversation_id: "amb-ig",
+      project_root: dirtyRoot,
+      code_root: dirtyRoot,
+      platform: "cursor",
+      phase: "idle",
+      armed: 1,
+      paused: 0,
+      checklist_path: "",
+      track_id: "",
+    });
+    dirtyStore.ensureReviewChain("amb-ig");
+    dirtyStore.updateReviewChain("amb-ig", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      fix_round: 0,
+      item_confirm_complete: 0,
+    });
+    const eng = engine(dirtyStore, dirtyRoot, { reviewScope: "project" });
+    const out = eng.handleStop({
+      conversationId: "amb-ig",
+      status: "completed",
+      loopCount: 0,
+    });
+    expect(out).toBeNull();
+    expect(dirtyStore.getReviewChain("amb-ig")!.fix_round).toBe(0);
+    dirtyStore.close();
+  });
+
+  it("F-DIRTY-AMBIENT: aborted stop must not ensure session from product dirty", () => {
+    const dirtyRoot = tmpRoot();
+    const run = (args: string[]) => {
+      const r = spawnSync("git", args, {
+        cwd: dirtyRoot,
+        encoding: "utf8",
+        timeout: 10_000,
+        windowsHide: true,
+        shell: false,
+      });
+      expect(r.status, r.stderr || r.stdout || "").toBe(0);
+    };
+    run(["init"]);
+    run(["config", "user.email", "t@example.com"]);
+    run(["config", "user.name", "T"]);
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    run(["add", "-A"]);
+    run(["commit", "-m", "init"]);
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    const eng = engine(dirtyStore, dirtyRoot, { reviewScope: "project" });
+    const out = eng.handleStop({
+      conversationId: "abort-dirty",
+      status: "aborted",
+      loopCount: 0,
+    });
+    expect(out).toBeNull();
+    expect(dirtyStore.getSession("abort-dirty")).toBeFalsy();
+    dirtyStore.close();
+  });
+
   it("F-E0-NUDGE: sticky reviewing_item_id binds need_evidence after premature [x]", () => {
     const stickyCp = writeChecklist(
       root,

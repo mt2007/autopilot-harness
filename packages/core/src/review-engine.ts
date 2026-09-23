@@ -436,19 +436,34 @@ export class ReviewEngine {
       // User Stop / host abort must not bootstrap ambient sessions or recover.
       // Genuine error stops — and completed stops with orphan transcript errors —
       // may ensure + inject recover.
-      if (
-        !session &&
-        (input.status === "error" || orphanClass === "salvage") &&
-        this.config.reviewScope === "project"
-      ) {
-        ensureAmbientReviewSession(
-          this.store,
-          input.conversationId,
-          this.config.projectRoot,
-          this.config.reviewScope,
-          input.platform,
-        );
-        session = this.store.getSession(input.conversationId);
+      // Completed + product-dirty (no edit hook / no prior session): ensure so
+      // project-scope ambient dirty-arm can open fix→confirm (0.18.2).
+      if (!session && this.config.reviewScope === "project") {
+        let ensureForDirty = false;
+        if (input.status === "completed") {
+          const root = this.trustedProjectRoot();
+          if (root) {
+            try {
+              ensureForDirty = hasDirtyProductCode(root);
+            } catch {
+              ensureForDirty = false;
+            }
+          }
+        }
+        if (
+          ensureForDirty ||
+          input.status === "error" ||
+          orphanClass === "salvage"
+        ) {
+          ensureAmbientReviewSession(
+            this.store,
+            input.conversationId,
+            this.config.projectRoot,
+            this.config.reviewScope,
+            input.platform,
+          );
+          session = this.store.getSession(input.conversationId);
+        }
       }
       if (!session) return null;
 
@@ -721,7 +736,9 @@ export class ReviewEngine {
 
       // Shell / out-of-band writes never fire afterFileEdit. Before soft E0,
       // arm code_edited from git dirty product paths (vs HEAD + untracked).
-      if (chainNow.code_edited === 0 && isChecklistExecuting(session)) {
+      // Gated by sessionReviewRunnable above: executing_only → RUN only;
+      // project → idle+armed / planning / executing (ambient dirty-arm, 0.18.2).
+      if (chainNow.code_edited === 0) {
         const dirtyArm = this.maybeArmCodeEditedFromDirtyTree(session);
         if (dirtyArm === "dirty_unarmed") {
           // Product dirt exists (or dirty probe threw) but code_edited was not
