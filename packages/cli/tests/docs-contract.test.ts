@@ -2137,11 +2137,22 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section018).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section0181 = changelogSection(log, "0.18.1");
+    expect(section0181).toMatch(/sessionErrorRecoverable|recover_ambient/);
+    expect(section0181).toMatch(/phase[= ]done|keeping phase `done`|keep(?:ing)? phase.*done/i);
+    expect(section0181).toMatch(/orphan salvage|orphan/);
+    expect(section0181).toMatch(/paused\+done|executing_only/);
+    expect(section0181).toMatch(/pnpm publish/);
+    expect(section0181).toMatch(/pnpm pack/);
+    expect(section0181).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs\/autopilot\/plans/);
     expect(unreleased).not.toMatch(/autopilot-archive/);
     expect(unreleased).not.toMatch(/autopilot-diagnose/);
     expect(unreleased).not.toMatch(/ITEM_RE/);
+    expect(unreleased).not.toMatch(/sessionErrorRecoverable|recover_ambient/);
     expect(unreleased).not.toMatch(/subagentStop/);
     expect(unreleased).not.toMatch(/Tier-S/);
     expect(unreleased).not.toMatch(/wantAgentsSkills/);
