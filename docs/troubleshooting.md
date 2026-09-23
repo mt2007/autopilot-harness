@@ -47,7 +47,7 @@ Claude’s consecutive Stop **block cap** defaults to **8**.
 
 Codex has **no documented numeric** consecutive Stop block cap (research snapshot 2026-09). Long confirm chains still need a healthy install:
 
-- Autopilot init / upgrade writes `.codex/hooks.json` only (**not** `config.toml` hooks); PostToolUse matcher `apply_patch|Edit|Write`; **omit timeout** (default ~600s).
+- Autopilot init / upgrade writes `.codex/hooks.json` only (**not** `config.toml` hooks); PostToolUse matcher `apply_patch|Edit|Write|exec|js` (nested Begin Patch inside `exec`/`js`); **omit timeout** (default ~600s). Doctor WARNs if the Autopilot matcher lacks `exec|js` — run upgrade.
 - `doctor` WARNs when Codex is enabled but Autopilot entries are missing, when `timeout` is set and **&lt; 120s**, and reminds **`/hooks` trust** (re-trust after hook definition changes).
 - Stop continue shape is `{ decision: "block", reason }` — hard-stop may use `continue: false`; never `continue: false` to keep the chain going.
 - Dual/triple-host: `npx @autopilot-harness/cli init --yes --add-platform codex`.
@@ -143,9 +143,9 @@ If `review.scope` is **`project`** and you also run a **global** Cursor self-rev
 Check in order:
 
 1. **Paused / OFF** — `/autopilot-resume` (even with `project` scope).
-2. **`review.scope`** — check `.autopilot/config.yml`. Fresh `init` writes **`project`** (any product-code edit). If the key is **missing / invalid**, runtime still loads **`executing_only`** (only during checklist **RUN**). Explicit `executing_only` is the same RUN-only gate.
+2. **`review.scope`** — check `.autopilot/config.yml`. Fresh `init` writes **`project`** (any product-code edit, including ambient idle/planning). If the key is **missing / invalid**, runtime still loads **`executing_only`** (only during checklist **RUN**). Explicit `executing_only` is the same RUN-only gate.
 3. **Path filters** — `.autopilotignore` hits, or **untracked** + `.gitignore`, do not count as product code.
-4. **Shell / out-of-band writes** — if the host skipped `afterFileEdit`, stop still arms fix→confirm from **git-dirty product paths** (same filters as above). Dirt only under `.autopilotignore` / untracked-gitignore paths does **not** arm fix→confirm (soft evidence / `need_evidence` may still apply).
+4. **Shell / out-of-band writes** — if the host skipped `afterFileEdit` / `PostToolUse`, **Stop** still arms fix→confirm from **git-dirty product paths** (same filters as above) when `review.scope` is **`project`** (ambient idle+armed / planning / executing, or completed+no-session+product-dirty ensure). Under **`executing_only`**, dirty-arm only while checklist RUN. Dirt only under `.autopilotignore` / untracked-gitignore paths does **not** arm fix→confirm (soft evidence / `need_evidence` may still apply).
 5. Host Plan modes (Cursor Plan Mode, etc.) are **not** bridged; they do not arm Autopilot review by themselves.
 
 Soft missing-evidence idle may inject a **stuck** nudge after `review.stuck.max_idle_stops` while the session stays **armed** (no hard pause). Required verify failures that hit the same threshold still hard-pause (`paused_reason=stuck`); use `/autopilot-resume` (or line-start `Autopilot RESUME`) only when the session is actually paused.

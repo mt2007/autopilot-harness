@@ -2988,15 +2988,28 @@ var ReviewEngine = class {
     try {
       let session = this.store.getSession(input.conversationId);
       const orphanClass = input.status === "completed" ? this.classifyCompletedOrphan(input.transcriptPath) : "none";
-      if (!session && (input.status === "error" || orphanClass === "salvage") && this.config.reviewScope === "project") {
-        ensureAmbientReviewSession(
-          this.store,
-          input.conversationId,
-          this.config.projectRoot,
-          this.config.reviewScope,
-          input.platform
-        );
-        session = this.store.getSession(input.conversationId);
+      if (!session && this.config.reviewScope === "project") {
+        let ensureForDirty = false;
+        if (input.status === "completed") {
+          const root = this.trustedProjectRoot();
+          if (root) {
+            try {
+              ensureForDirty = hasDirtyProductCode(root);
+            } catch {
+              ensureForDirty = false;
+            }
+          }
+        }
+        if (ensureForDirty || input.status === "error" || orphanClass === "salvage") {
+          ensureAmbientReviewSession(
+            this.store,
+            input.conversationId,
+            this.config.projectRoot,
+            this.config.reviewScope,
+            input.platform
+          );
+          session = this.store.getSession(input.conversationId);
+        }
       }
       if (!session) return null;
       if (input.status === "aborted") {
@@ -3161,7 +3174,7 @@ var ReviewEngine = class {
       if (chainNow.confirm_left === null && chainNow.item_confirm_complete === 0 && inChain) {
         return this.e3ArmConfirm(session, chainNow);
       }
-      if (chainNow.code_edited === 0 && isChecklistExecuting(session)) {
+      if (chainNow.code_edited === 0) {
         const dirtyArm = this.maybeArmCodeEditedFromDirtyTree(session);
         if (dirtyArm === "dirty_unarmed") {
           return null;
@@ -7215,6 +7228,57 @@ function pathsFromApplyPatchCommand(command) {
   }
   return found;
 }
+var MAX_TOOL_INPUT_STRINGS = 64;
+var MAX_TOOL_INPUT_DEPTH = 6;
+var MAX_TOOL_INPUT_SCAN_CHARS = MAX_APPLY_PATCH_COMMAND_CHARS;
+function collectNestedStrings(value, out, depth, seen, totalChars) {
+  if (out.length >= MAX_TOOL_INPUT_STRINGS) return;
+  if (totalChars.n >= MAX_TOOL_INPUT_SCAN_CHARS) return;
+  if (depth > MAX_TOOL_INPUT_DEPTH) return;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const room = MAX_TOOL_INPUT_SCAN_CHARS - totalChars.n;
+    if (room <= 0) return;
+    const slice = value.length > room ? value.slice(0, room) : value;
+    totalChars.n += slice.length;
+    out.push(slice);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (out.length >= MAX_TOOL_INPUT_STRINGS || totalChars.n >= MAX_TOOL_INPUT_SCAN_CHARS) {
+        break;
+      }
+      collectNestedStrings(item, out, depth + 1, seen, totalChars);
+    }
+    return;
+  }
+  for (const nested of Object.values(value)) {
+    if (out.length >= MAX_TOOL_INPUT_STRINGS || totalChars.n >= MAX_TOOL_INPUT_SCAN_CHARS) {
+      break;
+    }
+    collectNestedStrings(nested, out, depth + 1, seen, totalChars);
+  }
+}
+function pathsFromWrappedPatchToolInput(rawInput) {
+  const strings = [];
+  collectNestedStrings(rawInput, strings, 0, /* @__PURE__ */ new WeakSet(), { n: 0 });
+  const found = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const s of strings) {
+    for (const p of pathsFromApplyPatchCommand(s)) {
+      if (found.length >= MAX_APPLY_PATCH_PATHS) return found;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      found.push(p);
+    }
+  }
+  return found;
+}
 function toolInputObject(payload) {
   const input = payload.tool_input ?? payload.toolInput;
   if (!input) return null;
@@ -7226,6 +7290,9 @@ function toolInputObject(payload) {
 function filePathsFromCodexEdit(payload) {
   const toolName = String(payload.tool_name ?? payload.toolName ?? "").trim();
   const rawInput = payload.tool_input ?? payload.toolInput;
+  if (toolName === "exec" || toolName === "js") {
+    return pathsFromWrappedPatchToolInput(rawInput);
+  }
   if (toolName === "apply_patch" || toolName === "ApplyPatch") {
     if (typeof rawInput === "string") {
       return pathsFromApplyPatchCommand(rawInput);
@@ -7252,7 +7319,7 @@ function filePathsFromCodexEdit(payload) {
 }
 function isCodexEditTool(toolName) {
   const n = toolName.trim();
-  return n === "apply_patch" || n === "ApplyPatch" || n === "Edit" || n === "Write";
+  return n === "apply_patch" || n === "ApplyPatch" || n === "Edit" || n === "Write" || n === "exec" || n === "js";
 }
 function stampCodexPlatform(store, conversationId, projectRoot) {
   const session = store.getSession(conversationId);

@@ -9,9 +9,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.2] — 2026-09-23
+
+### Fixed
+
+- **Ambient Stop dirty-arm (project scope)**: under `review.scope=project`, Stop opens fix→confirm from git-dirty product paths not only while checklist **executing** — also **idle+armed** / **planning**, and **completed+no-session+product-dirty** → `ensureAmbient` then E2. `executing_only`, existing `armed=0` / `done` / paused, ignore-only dirt, and abort unchanged.
+- **Codex `exec`/`js` wrapped patches**: PostToolUse matcher is `apply_patch|Edit|Write|exec|js`; `exec`/`js` scan full `tool_input` (root string + nested strings) for Begin Patch paths and arm only when ≥1 path (bare exec does not). Upgrade merges the matcher; doctor **WARN**s when Autopilot Codex PostToolUse matcher lacks `exec|js`.
+
 ### Changed
 
 - **Ambient Stop dirty-arm (project scope)**: all hosts inherit core Stop dirty-arm under `review.scope=project` (idle+armed / planning / executing; completed+no-session+product-dirty ensures ambient). Shell / unmatched write tools still rely on Stop when PostToolUse does not arm. **No** Bash/Execute PostToolUse matcher expansions outside **Codex** (`exec|js` + nested Begin Patch parse). Cursor / Claude / Kimi / Copilot / Grok / Gemini / Factory / Antigravity / Pi / Devin / Hermes keep existing edit-tool matchers (Devin Post still ignores `exec`; shell via Stop dirty-arm).
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.18.2** public packages.
 
 ## [0.18.1] — 2026-09-23
 

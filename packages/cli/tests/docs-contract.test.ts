@@ -154,6 +154,12 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(config).toMatch(/review\.scope/);
     expect(config).toMatch(/confirm_rounds/);
     expect(config).toMatch(/\.autopilotignore/);
+    // 0.18.2 ambient Stop dirty-arm honesty (project scope).
+    expect(config).toMatch(/Stop \*\*dirty-arm\*\*/);
+    expect(config).toMatch(/idle\+armed \/ planning \/ executing/);
+    expect(config).toMatch(/completed Stop with \*\*no session\*\*/);
+    expect(config).toMatch(/may \*\*ensure\*\* an ambient/);
+    expect(config).toMatch(/dirty-arm \/ ensure ambient only while RUN/);
 
     const tips = fs.readFileSync(
       path.join(repoRoot, "docs/troubleshooting.md"),
@@ -171,6 +177,10 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/trust/i);
     expect(tips).toMatch(/--add-platform/);
     expect(tips).toMatch(/\.codex\/hooks\.json/);
+    expect(tips).toMatch(/apply_patch\|Edit\|Write\|exec\|js/);
+    expect(tips).toMatch(/matcher lacks `exec\|js`/);
+    expect(tips).toMatch(/idle\+armed/);
+    expect(tips).toMatch(/completed\+no-session\+product-dirty/);
     expect(tips).toMatch(/\/hooks/);
     expect(tips).toMatch(/timeout/i);
     expect(tips).toMatch(/### Kimi Code/);
@@ -884,6 +894,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/\*\*`project`\*\* \(default\)/);
     expect(body).toMatch(/executing_only/);
     expect(body).not.toMatch(/\*\*`executing_only`\*\* \(default\)/);
+    expect(body).toMatch(/Stop dirty-arm/);
+    expect(body).toMatch(/idle\+armed/);
+    expect(body).toMatch(/completed Stop with \*\*no session\*\*/);
+    expect(body).toMatch(/may \*\*ensure\*\* an ambient/);
+    expect(body).toMatch(/apply_patch\|Edit\|Write\|exec\|js/);
     // Four hosts install Autopilot skills (P0 = skills + line-start).
     expect(body).toMatch(
       /Codex: `\.agents\/skills` \*\*and\*\* line-start `triggers\.on`/,
@@ -1056,6 +1071,11 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(body).toMatch(/\*\*`project`\*\*（默认）/);
     expect(body).toMatch(/executing_only/);
     expect(body).not.toMatch(/\*\*`executing_only`\*\*（默认）/);
+    expect(body).toMatch(/Stop dirty-arm/);
+    expect(body).toMatch(/idle\+armed/);
+    expect(body).toMatch(/completed 且无 session/);
+    expect(body).toMatch(/\*\*ensure\*\* ambient/);
+    expect(body).toMatch(/apply_patch\|Edit\|Write\|exec\|js/);
     expect(body).toMatch(
       /Codex：`\.agents\/skills` \*\*且\*\* 行首 `triggers\.on`/,
     );
@@ -1291,6 +1311,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(hosts).toMatch(/handleDevinUserPromptSubmit|handleDevin\*/);
     expect(hosts).toMatch(/handleDevinPostToolUse|handleDevinStop/);
     expect(hosts).toMatch(/apply_patch/);
+    expect(hosts).toContain("apply_patch\\|Edit\\|Write\\|exec\\|js");
+    expect(hosts).toContain("matcher lacks `exec\\|js`");
     expect(hosts).toMatch(/\/hooks/);
     expect(hosts).toMatch(/triggers\.on/);
     expect(hosts).toMatch(/triggers\.run/);
@@ -2147,12 +2169,28 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0181).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section0182 = changelogSection(log, "0.18.2");
+    expect(section0182).toMatch(/ensureAmbient/);
+    expect(section0182).toMatch(/idle\+armed/);
+    expect(section0182).toMatch(/completed\+no-session\+product-dirty/);
+    expect(section0182).toMatch(/exec\|js/);
+    expect(section0182).toMatch(/Begin Patch/);
+    expect(section0182).toMatch(/tool_input/);
+    expect(section0182).toMatch(/lacks `exec\|js`/);
+    expect(section0182).toMatch(/No\*\* Bash\/Execute|No Bash\/Execute/);
+    expect(section0182).toMatch(/pnpm publish/);
+    expect(section0182).toMatch(/pnpm pack/);
+    expect(section0182).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs\/autopilot\/plans/);
     expect(unreleased).not.toMatch(/autopilot-archive/);
     expect(unreleased).not.toMatch(/autopilot-diagnose/);
     expect(unreleased).not.toMatch(/ITEM_RE/);
     expect(unreleased).not.toMatch(/sessionErrorRecoverable|recover_ambient/);
+    expect(unreleased).not.toMatch(/ensureAmbient/);
+    expect(unreleased).not.toMatch(/exec\|js/);
     expect(unreleased).not.toMatch(/subagentStop/);
     expect(unreleased).not.toMatch(/Tier-S/);
     expect(unreleased).not.toMatch(/wantAgentsSkills/);
