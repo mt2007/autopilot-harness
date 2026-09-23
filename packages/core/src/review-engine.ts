@@ -477,7 +477,35 @@ export class ReviewEngine {
       }
 
       // Precondition: review chain may run (executing_only → RUN; project → ambient/planning/executing)
+      // done+project is not review-runnable, but must still clear/redeliver recover|stuck
+      // pending (keep phase=done; do not open E2–E5).
       if (!sessionReviewRunnable(session, this.config.reviewScope)) {
+        if (
+          session.phase === "done" &&
+          session.paused === 0 &&
+          this.config.reviewScope === "project"
+        ) {
+          const tip =
+            this.store
+              .getReviewChain(input.conversationId)
+              ?.pending_followup?.trim() ?? "";
+          if (isRecoverOrStuckFollowupMessage(tip)) {
+            const transcriptPath = input.transcriptPath?.trim() || undefined;
+            const events = transcriptPath
+              ? readTranscriptTail(transcriptPath)
+              : [];
+            const chain =
+              this.store.getReviewChain(input.conversationId) ??
+              this.store.ensureReviewChain(input.conversationId);
+            const redelivered = this.tryRedeliverPending(
+              input.conversationId,
+              chain,
+              events,
+              transcriptPath,
+            );
+            if (redelivered) return redelivered;
+          }
+        }
         return null;
       }
 
@@ -835,12 +863,16 @@ export class ReviewEngine {
     // chain.pending_redeliver_at snapshot from before a concurrent recover claim.
     try {
       return this.store.exclusiveWrite(() => {
-        if (!this.sessionRunnable(conversationId)) {
-          return { commit: false, value: null };
-        }
         const liveRow = this.store.getReviewChain(conversationId);
         const livePending = liveRow?.pending_followup?.trim() ?? "";
         if (!livePending) {
+          return { commit: false, value: null };
+        }
+        // done+project: allow recover|stuck clear/redeliver without full review.
+        if (
+          !this.sessionRunnable(conversationId) &&
+          !this.sessionAllowsDoneRecoverPending(conversationId, livePending)
+        ) {
           return { commit: false, value: null };
         }
         if (!pendingRedeliverAllowed(liveRow?.pending_redeliver_at ?? null)) {
@@ -872,13 +904,17 @@ export class ReviewEngine {
         // Commit after touch: a nested clear/neutralize (or concurrent-looking
         // mock) must not be rolled back by commit:false, or the outer stop
         // would keep a stale confirm_left and skip-a-lens / re-emit.
-        if (!this.sessionRunnable(conversationId)) {
-          return { commit: true, value: null };
-        }
         const after =
           this.store.getReviewChain(conversationId)?.pending_followup?.trim() ??
           "";
         if (!after) {
+          return { commit: true, value: null };
+        }
+        // Re-check with live tip after touch (done may only redeliver recover|stuck).
+        if (
+          !this.sessionRunnable(conversationId) &&
+          !this.sessionAllowsDoneRecoverPending(conversationId, after)
+        ) {
           return { commit: true, value: null };
         }
         if (events.length > 0 && automationFollowupPresent(events, after)) {
@@ -2087,7 +2123,35 @@ export class ReviewEngine {
     return !!s && sessionReviewRunnable(s, this.config.reviewScope);
   }
 
-  /** Genuine error stop may inject recover (planning, project ambient, or armed executing). */
+  /**
+   * Keep-done recover: allow clear/redeliver of recover|stuck pending without
+   * making `sessionReviewRunnable(done)` true (no E2–E5).
+   */
+  private sessionAllowsDoneRecoverPending(
+    conversationId: string,
+    pending: string,
+  ): boolean {
+    if (!isRecoverOrStuckFollowupMessage(pending)) return false;
+    try {
+      const s = this.store.getSession(conversationId);
+      return (
+        !!s &&
+        s.paused === 0 &&
+        s.phase === "done" &&
+        this.config.reviewScope === "project"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Genuine error stop may inject recover: planning, project ambient
+   * (`idle`+armed), armed executing, or project-scope **`done`** (post-track
+   * casual work without edit-revive). Abort / paused / `executing_only`+done
+   * stay non-recoverable. Does not open the review chain (`sessionReviewRunnable`
+   * still excludes `done`); done still clears/redelivers recover|stuck pending.
+   */
   private sessionErrorRecoverable(session: SessionRow): boolean {
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
@@ -2098,12 +2162,17 @@ export class ReviewEngine {
     ) {
       return true;
     }
+    // Post-checklist: same project gate as ambient idle (no edit-revive yet).
+    if (session.phase === "done" && this.config.reviewScope === "project") {
+      return true;
+    }
     return session.phase === "executing" && session.armed === 1;
   }
 
   private recoverKindForPhase(phase: Phase): FollowupKind {
     if (phase === "planning") return "recover_planning";
-    if (phase === "idle") return "recover_ambient";
+    // done stays done (no idle revive); copy must stay ambient, not checklist recover.
+    if (phase === "idle" || phase === "done") return "recover_ambient";
     return "recover";
   }
 
