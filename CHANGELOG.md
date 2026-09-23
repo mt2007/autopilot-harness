@@ -9,6 +9,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Ambient Stop dirty-arm (project scope)**: all hosts inherit core Stop dirty-arm under `review.scope=project` (idle+armed / planning / executing; completed+no-session+product-dirty ensures ambient). Shell / unmatched write tools still rely on Stop when PostToolUse does not arm. **No** Bash/Execute PostToolUse matcher expansions outside **Codex** (`exec|js` + nested Begin Patch parse). Cursor / Claude / Kimi / Copilot / Grok / Gemini / Factory / Antigravity / Pi / Devin / Hermes keep existing edit-tool matchers (Devin Post still ignores `exec`; shell via Stop dirty-arm).
+
 ## [0.18.1] — 2026-09-23
 
 ### Fixed
