@@ -2,7 +2,7 @@
 
 命令速查 + 每步产物。产品前门：[README.md](../../README.md)（[中文 README](../../README.zh-CN.md)）。英文速查：[quickstart.md](./quickstart.md)。
 
-另见：[配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主说明](../hosts.md) · [Plan 桥接](../host-plan-bridge.md)。
+另见：[安装说明](../install.zh-CN.md)（[English](../install.md)）· [配置说明](../config.md) · [排障](../troubleshooting.md) · [宿主说明](../hosts.md) · [Plan 桥接](../host-plan-bridge.md)。
 
 ## 推荐流程（产物）
 

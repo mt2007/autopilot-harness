@@ -98,7 +98,7 @@ Autopilot 对「是否开 subagent / Task」**保持中立**——由宿主与 A
 
 ### 安装
 
-优先用 scoped 包名（不要用不存在的裸 `npx autopilot-harness`）。命令以 **当前工作目录** 为项目根：
+完整分宿主矩阵（发现 → init → doctor）：**[docs/install.zh-CN.md](./docs/install.zh-CN.md)**（[English](./docs/install.md)）。优先用 scoped 包名（不要用不存在的裸 `npx autopilot-harness`）。命令以 **当前工作目录** 为项目根：
 
 ```bash
 cd /path/to/your-app
@@ -159,6 +159,7 @@ npx @autopilot-harness/cli doctor
 
 ## 文档
 
+- [安装](./docs/install.zh-CN.md) — 分宿主发现 → init → doctor（[English](./docs/install.md)）  
 - [Architecture](./docs/architecture.md)  
 - [配置说明](./docs/config.md)  
 - [排障](./docs/troubleshooting.md) — doctor WARN、双重 hook、Claude `BLOCK_CAP`、Codex trust/timeout、Kimi Stop≤1/turn、Copilot Stop≤8 / 重启 / 双装、Grok Stop≤8/turn / trust / 多指纹、Gemini AfterAgent cap ≤100 / min-CLI / re-trust / folder trust / `hooksConfig`、Factory multi-block / `$FACTORY_PROJECT_DIR` / `/hooks` 快照、Hermes `$HERMES_HOME` / 相对 command / consent / `hermes hooks doctor`、Antigravity `.agents` / `decision:continue` / PreInvocation transcript / CLI workspace / 活链已证、Devin `$DEVIN_PROJECT_DIR` / `.devin/hooks.v1.json` / `/hooks` / 仅 CLI、Pi `.pi/extensions` / `/trust`+`/reload` / 软下限 0.85.1 / R10 仅 TUI、Runner 缺 `runner.command` / 双轨 `one_executor`  

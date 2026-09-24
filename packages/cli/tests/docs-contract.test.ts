@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { writeQuickstart } from "../src/init/wizard-helpers.js";
 import { PACKAGE_VERSION } from "../src/init/types.js";
+import { INSTALLABLE_BINDINGS } from "../src/init/platforms.js";
 import { CLI_NAME, NPM_PACKAGE_NAME } from "../src/names.js";
 import os from "node:os";
 import { PUBLIC_PACKAGE_JSON_PATHS } from "./public-npm-packages.js";
@@ -725,6 +726,51 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       );
       expect(body).toMatch(/\.agents\/hooks\.json|decision:continue|degraded/i);
     }
+    // Install matrix SoT cross-links (marketplace-distribution).
+    expect(en).toMatch(/install\.md/);
+    expect(zh).toMatch(/install\.zh-CN\.md|install\.md/);
+  });
+
+  it("docs/install.md is SoT for all INSTALLABLE_BINDINGS ids", () => {
+    const en = fs.readFileSync(path.join(repoRoot, "docs/install.md"), "utf8");
+    const zh = fs.readFileSync(
+      path.join(repoRoot, "docs/install.zh-CN.md"),
+      "utf8",
+    );
+    const ids = INSTALLABLE_BINDINGS.map((b) => b.id);
+    expect(ids.length).toBeGreaterThanOrEqual(13);
+    for (const id of ids) {
+      expect(en, `install.md missing id ${id}`).toMatch(
+        new RegExp(`\`${escapeRegExp(id)}\``),
+      );
+      expect(zh, `install.zh-CN.md missing id ${id}`).toMatch(
+        new RegExp(`\`${escapeRegExp(id)}\``),
+      );
+    }
+    expect(en).toMatch(/Wiring always requires/i);
+    expect(en).toMatch(/Never[\s\S]{0,40}`pi install`/i);
+    expect(en).toMatch(/plugins\/gemini-cli/);
+    expect(en).toMatch(/plugins\/cursor/);
+    expect(en).toMatch(/Batch-1 discover honesty|skip Discover/i);
+    expect(en).toMatch(/When present:/);
+    expect(zh).toMatch(/若存在：/);
+    expect(en).not.toMatch(/Superpowers|OpenSpec/i);
+    expect(zh).not.toMatch(/Superpowers|OpenSpec/i);
+    expect(zh).toMatch(/跳过发现|Batch 1 发现诚实/);
+    const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+    const readmeZh = fs.readFileSync(
+      path.join(repoRoot, "README.zh-CN.md"),
+      "utf8",
+    );
+    const hosts = fs.readFileSync(path.join(repoRoot, "docs/hosts.md"), "utf8");
+    const cliReadme = fs.readFileSync(
+      path.join(repoRoot, "packages/cli/README.md"),
+      "utf8",
+    );
+    expect(readme).toMatch(/docs\/install\.md/);
+    expect(readmeZh).toMatch(/docs\/install\.zh-CN\.md/);
+    expect(hosts).toMatch(/install\.md/);
+    expect(cliReadme).toMatch(/docs\/install\.md/);
   });
 
   it("package npm READMEs keep install entrypoints", () => {

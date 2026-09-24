@@ -71,7 +71,7 @@ Next:   implement checklist
 
 CLI package: `@autopilot-harness/cli` (bin: `autopilot-harness`).
 
-**Install** with the scoped package (not bare `npx autopilot-harness`). **cwd = the project you want to instrument**:
+**Install** with the scoped package (not bare `npx autopilot-harness`). Per-host matrix: [install.md](../install.md) ([中文](../install.zh-CN.md)). **cwd = the project you want to instrument**:
 
 ```bash
 cd /path/to/your-app

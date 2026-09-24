@@ -96,7 +96,7 @@ Requires **Node.js 22+**. The CLI package is `@autopilot-harness/cli` (bin: `aut
 
 ### Install
 
-Prefer the scoped package (not a bare `npx autopilot-harness` name). Commands use the **current working directory** as the project root:
+Full per-host matrix (discover → init → doctor): **[docs/install.md](./docs/install.md)** ([中文](./docs/install.zh-CN.md)). Prefer the scoped package (not a bare `npx autopilot-harness` name). Commands use the **current working directory** as the project root:
 
 ```bash
 cd /path/to/your-app
@@ -157,6 +157,7 @@ More commands and skills: [docs/autopilot/quickstart.md](./docs/autopilot/quicks
 
 ## Docs
 
+- [Install](./docs/install.md) — per-host discover → init → doctor ([中文](./docs/install.zh-CN.md))  
 - [Architecture](./docs/architecture.md) — packages, vendor runtime, host stop-loop caps  
 - [Config](./docs/config.md) — `.autopilot/config.yml`, triggers, concurrency, `.autopilotignore`  
 - [Troubleshooting](./docs/troubleshooting.md) — doctor WARNs, double hooks, missing skills, Claude `BLOCK_CAP`, Codex trust/timeout, Kimi Stop≤1/turn, Copilot Stop≤8 / restart / dual, Grok Stop≤8/turn / trust / multi-FP, Gemini AfterAgent cap ≤100 / min-CLI / re-trust / folder trust / `hooksConfig`, Factory multi-block / `$FACTORY_PROJECT_DIR` / `/hooks` snapshot, Hermes `$HERMES_HOME` / relative command / consent / `hermes hooks doctor`, Antigravity `.agents` / `decision:continue` / PreInvocation transcript / CLI workspace mount / live-proved continue, Devin `$DEVIN_PROJECT_DIR` / `.devin/hooks.v1.json` / `/hooks` / CLI-only, Pi `.pi/extensions` / `/trust`+`/reload` / soft min 0.85.1 / R10 TUI-only, Runner empty `runner.command` / dual-track `one_executor`  
