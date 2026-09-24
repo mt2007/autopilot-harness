@@ -773,6 +773,147 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(cliReadme).toMatch(/docs\/install\.md/);
   });
 
+  it("Batch-1 thin plugins live under plugins/ with root marketplace indexes only", () => {
+    const batch1 = [
+      "cursor",
+      "claude-code",
+      "codex",
+      "gemini-cli",
+      "factory-droid",
+    ] as const;
+    const cursorMarket = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, ".cursor-plugin/marketplace.json"),
+        "utf8",
+      ),
+    ) as {
+      name: string;
+      plugins: Array<{ name: string; source: string }>;
+    };
+    const claudeMarket = JSON.parse(
+      fs.readFileSync(
+        path.join(repoRoot, ".claude-plugin/marketplace.json"),
+        "utf8",
+      ),
+    ) as { name: string; plugins: Array<{ name: string; source: string }> };
+
+    expect(cursorMarket.name).toBe("autopilot-harness");
+    expect(cursorMarket.plugins).toHaveLength(1);
+    expect(cursorMarket.plugins[0]?.name).toBe("autopilot-cursor");
+    expect(cursorMarket.plugins[0]?.source).toBe("plugins/cursor");
+    expect(
+      fs.existsSync(
+        path.join(repoRoot, cursorMarket.plugins[0]!.source, ".cursor-plugin/plugin.json"),
+      ),
+    ).toBe(true);
+    expect(claudeMarket.name).toBe("autopilot-harness");
+    expect(claudeMarket.plugins).toHaveLength(1);
+    expect(claudeMarket.plugins[0]?.name).toBe("autopilot-claude-code");
+    expect(claudeMarket.plugins[0]?.source).toBe("./plugins/claude-code");
+    expect(
+      fs.existsSync(
+        path.join(
+          repoRoot,
+          claudeMarket.plugins[0]!.source,
+          ".claude-plugin/plugin.json",
+        ),
+      ),
+    ).toBe(true);
+
+    const manifests: Array<{ rel: string; nameKey: string }> = [
+      {
+        rel: "plugins/cursor/.cursor-plugin/plugin.json",
+        nameKey: "autopilot-cursor",
+      },
+      {
+        rel: "plugins/claude-code/.claude-plugin/plugin.json",
+        nameKey: "autopilot-claude-code",
+      },
+      {
+        rel: "plugins/codex/.codex-plugin/plugin.json",
+        nameKey: "autopilot-codex",
+      },
+      {
+        rel: "plugins/gemini-cli/gemini-extension.json",
+        nameKey: "autopilot-gemini-cli",
+      },
+      {
+        rel: "plugins/factory-droid/.factory-plugin/plugin.json",
+        nameKey: "autopilot-factory-droid",
+      },
+    ];
+    for (const { rel, nameKey } of manifests) {
+      const raw = fs.readFileSync(path.join(repoRoot, rel), "utf8");
+      const parsed = JSON.parse(raw) as { name: string };
+      expect(parsed.name, rel).toBe(nameKey);
+    }
+
+    expect(fs.existsSync(path.join(repoRoot, "gemini-extension.json"))).toBe(
+      false,
+    );
+    expect(
+      fs.existsSync(path.join(repoRoot, ".cursor-plugin/plugin.json")),
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(repoRoot, ".claude-plugin/plugin.json")),
+    ).toBe(false);
+
+    const installDocUrl =
+      "https://github.com/mt2007/autopilot-harness/blob/main/docs/install.md";
+    for (const id of batch1) {
+      const skill = path.join(
+        repoRoot,
+        "plugins",
+        id,
+        "skills/autopilot-install/SKILL.md",
+      );
+      expect(fs.existsSync(skill), skill).toBe(true);
+      const body = fs.readFileSync(skill, "utf8");
+      expect(body).toMatch(/discovery-only/i);
+      expect(body).toMatch(/npx @autopilot-harness\/cli init/);
+      expect(body).toMatch(new RegExp(`--platform ${escapeRegExp(id)}`));
+      expect(body).toContain(installDocUrl);
+      expect(body).not.toMatch(/Superpowers|OpenSpec/i);
+
+      const readme = path.join(repoRoot, "plugins", id, "README.md");
+      expect(fs.existsSync(readme), readme).toBe(true);
+      const readmeBody = fs.readFileSync(readme, "utf8");
+      expect(readmeBody).toMatch(/discovery-only/i);
+      expect(readmeBody).toMatch(/npx @autopilot-harness\/cli init/);
+      expect(readmeBody).toMatch(new RegExp(`--platform ${escapeRegExp(id)}`));
+      expect(readmeBody).toContain(installDocUrl);
+      expect(readmeBody).not.toMatch(/\]\(\.\.\/\.\.\/docs\/install/);
+      if (id === "gemini-cli") {
+        expect(readmeBody).toMatch(
+          /this package directory|folder that contains `gemini-extension\.json`/i,
+        );
+        expect(readmeBody).toMatch(/not[\s\S]{0,40}monorepo root/i);
+      }
+
+      const hooksDir = path.join(repoRoot, "plugins", id, "hooks");
+      const vendorDir = path.join(repoRoot, "plugins", id, "vendor");
+      expect(fs.existsSync(hooksDir), hooksDir).toBe(false);
+      expect(fs.existsSync(vendorDir), vendorDir).toBe(false);
+    }
+
+    // Thin packages must not ship hook/vendor trees anywhere under plugins/.
+    const walk = (dir: string): string[] => {
+      const out: string[] = [];
+      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, ent.name);
+        if (ent.isDirectory()) out.push(...walk(full));
+        else out.push(full);
+      }
+      return out;
+    };
+    const pluginFiles = walk(path.join(repoRoot, "plugins")).map((f) =>
+      path.relative(repoRoot, f),
+    );
+    expect(pluginFiles.some((f) => /(^|\/)hooks(\/|$)/.test(f))).toBe(false);
+    expect(pluginFiles.some((f) => /(^|\/)vendor(\/|$)/.test(f))).toBe(false);
+    expect(pluginFiles.some((f) => /hooks\.json$/.test(f))).toBe(false);
+  });
+
   it("package npm READMEs keep install entrypoints", () => {
     const cliReadme = fs.readFileSync(
       path.join(repoRoot, "packages/cli/README.md"),

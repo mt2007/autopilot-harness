@@ -1,0 +1,12 @@
+{
+  "name": "autopilot-factory-droid",
+  "version": "0.18.2",
+  "description": "Thin Autopilot discovery for Factory Droid. Does not wire hooks or vendor — run npx @autopilot-harness/cli init --platform factory-droid.",
+  "author": {
+    "name": "mt2007"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness/blob/main/docs/install.md",
+  "repository": "https://github.com/mt2007/autopilot-harness",
+  "license": "MIT",
+  "keywords": ["autopilot", "factory-droid", "vibecoding", "checklist"]
+}

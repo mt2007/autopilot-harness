@@ -1,0 +1,13 @@
+{
+  "name": "autopilot-codex",
+  "version": "0.18.2",
+  "description": "Thin Autopilot discovery for Codex. Does not wire hooks or vendor — run npx @autopilot-harness/cli init --platform codex.",
+  "author": {
+    "name": "mt2007"
+  },
+  "homepage": "https://github.com/mt2007/autopilot-harness/blob/main/docs/install.md",
+  "repository": "https://github.com/mt2007/autopilot-harness",
+  "license": "MIT",
+  "keywords": ["autopilot", "codex", "vibecoding", "checklist"],
+  "skills": "./skills/"
+}

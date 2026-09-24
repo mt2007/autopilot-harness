@@ -1,0 +1,21 @@
+{
+  "name": "autopilot-harness",
+  "owner": {
+    "name": "mt2007"
+  },
+  "metadata": {
+    "description": "Autopilot thin discovery plugins. Wiring still requires npx @autopilot-harness/cli init."
+  },
+  "plugins": [
+    {
+      "name": "autopilot-cursor",
+      "source": "plugins/cursor",
+      "description": "Thin Autopilot discovery for Cursor. After install, run npx @autopilot-harness/cli init --platform cursor.",
+      "version": "0.18.2",
+      "homepage": "https://github.com/mt2007/autopilot-harness/blob/main/docs/install.md",
+      "repository": "https://github.com/mt2007/autopilot-harness",
+      "license": "MIT",
+      "keywords": ["autopilot", "cursor", "vibecoding", "checklist"]
+    }
+  ]
+}
