@@ -1,6 +1,6 @@
 {
   "name": "autopilot-factory-droid",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "Thin Autopilot discovery for Factory Droid. Does not wire hooks or vendor — run npx @autopilot-harness/cli init --platform factory-droid.",
   "author": {
     "name": "mt2007"

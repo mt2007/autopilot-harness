@@ -1,6 +1,6 @@
 {
   "name": "autopilot-cursor",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "Thin Autopilot discovery for Cursor. Does not wire hooks or vendor — run npx @autopilot-harness/cli init --platform cursor.",
   "author": {
     "name": "mt2007"

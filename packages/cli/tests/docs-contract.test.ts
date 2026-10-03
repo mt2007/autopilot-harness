@@ -788,14 +788,17 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       ),
     ) as {
       name: string;
-      plugins: Array<{ name: string; source: string }>;
+      plugins: Array<{ name: string; source: string; version?: string }>;
     };
     const claudeMarket = JSON.parse(
       fs.readFileSync(
         path.join(repoRoot, ".claude-plugin/marketplace.json"),
         "utf8",
       ),
-    ) as { name: string; plugins: Array<{ name: string; source: string }> };
+    ) as {
+      name: string;
+      plugins: Array<{ name: string; source: string; version?: string }>;
+    };
 
     expect(cursorMarket.name).toBe("autopilot-harness");
     expect(cursorMarket.plugins).toHaveLength(1);
@@ -844,9 +847,13 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     ];
     for (const { rel, nameKey } of manifests) {
       const raw = fs.readFileSync(path.join(repoRoot, rel), "utf8");
-      const parsed = JSON.parse(raw) as { name: string };
+      const parsed = JSON.parse(raw) as { name: string; version?: string };
       expect(parsed.name, rel).toBe(nameKey);
+      expect(parsed.version, rel).toBe(PACKAGE_VERSION);
     }
+
+    expect(cursorMarket.plugins[0]?.version).toBe(PACKAGE_VERSION);
+    expect(claudeMarket.plugins[0]?.version).toBe(PACKAGE_VERSION);
 
     expect(fs.existsSync(path.join(repoRoot, "gemini-extension.json"))).toBe(
       false,
@@ -2370,6 +2377,20 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0182).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section0183 = changelogSection(log, "0.18.3");
+    expect(section0183).toMatch(/docs\/install\.md/);
+    expect(section0183).toMatch(/INSTALLABLE_BINDINGS|13/);
+    expect(section0183).toMatch(/plugins\/\{cursor|plugins\/cursor/);
+    expect(section0183).toMatch(/\.cursor-plugin\/marketplace\.json/);
+    expect(section0183).toMatch(/\.claude-plugin\/marketplace\.json/);
+    expect(section0183).toMatch(/no[\s\S]{0,20}hooks[\s\S]{0,20}vendor|no\*\* hooks\/vendor/i);
+    expect(section0183).toMatch(/GitHub About|topics/i);
+    expect(section0183).toMatch(/No FSM change/i);
+    expect(section0183).toMatch(/pnpm publish/);
+    expect(section0183).toMatch(/pnpm pack/);
+    expect(section0183).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs\/autopilot\/plans/);
     expect(unreleased).not.toMatch(/autopilot-archive/);
@@ -2402,6 +2423,9 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/handlePi/i);
     expect(unreleased).not.toMatch(/Coming v0\.4/);
     expect(unreleased).not.toMatch(/autopilot-on[\s\S]*description/i);
+    expect(unreleased).not.toMatch(/docs\/install\.md/);
+    expect(unreleased).not.toMatch(/marketplace\.json/);
+    expect(unreleased).not.toMatch(/Batch-1|thin discovery/i);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag
     // current or 0.2.x lines (0.1.0 footer link is historical).

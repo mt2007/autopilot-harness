@@ -1,5 +1,5 @@
 {
   "name": "autopilot-gemini-cli",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "Thin Autopilot discovery for Gemini CLI. Does not wire hooks or vendor — run npx @autopilot-harness/cli init --platform gemini-cli. Point Gemini at this package directory (containing gemini-extension.json), not the monorepo root."
 }

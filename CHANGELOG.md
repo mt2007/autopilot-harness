@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.3] — 2026-10-04
+
+### Added
+
+- **Install matrix SoT**: `docs/install.md` + `docs/install.zh-CN.md` cover all 13 `INSTALLABLE_BINDINGS` ids (init required; Pi never `pi install`; Runner npm/docs). Cross-links from README (+zh-CN), `docs/hosts.md`, quickstart (+zh-CN), and `packages/cli/README.md`.
+- **Batch-1 thin discovery plugins** under `plugins/{cursor,claude-code,codex,gemini-cli,factory-droid}/` (host manifest + install-pointer skill; **no** hooks/vendor). Root indexes only: `.cursor-plugin/marketplace.json` and `.claude-plugin/marketplace.json` → `source` → those subtrees. Gemini points at `plugins/gemini-cli/` (not the monorepo root).
+- **GitHub About**: repository description / homepage / topics set for marketplace discoverability.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.18.3** public packages. **No FSM change** this patch.
+
 ## [0.18.2] — 2026-09-23
 
 ### Fixed
