@@ -126,6 +126,14 @@ describe("dotted slug ON/RUN parity", () => {
     });
     expect(pick?.kind).toBe("track_pick");
     expect(pick?.trackPick).toBe("v0.1-npm-release");
+
+    const wrappedOn = parseTrigger({
+      prompt: `<hook_prompt hook_run_id="stop:1">/autopilot-on v0.1-npm-release</hook_prompt>`,
+      conversationId: "c1",
+      projectRoot: root,
+    });
+    expect(wrappedOn?.kind).toBe("on");
+    expect(wrappedOn?.slug).toBe("v0.1-npm-release");
   });
 
   it("applyOn accepts dotted slug; rejects traversal", () => {

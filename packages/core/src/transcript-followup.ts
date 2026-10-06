@@ -11,7 +11,8 @@ import {
   substantivePromptBody,
 } from "./trigger-parser.js";
 
-export const TRANSCRIPT_TAIL_BYTES = 512_000;
+/** Last bytes of an untrusted transcript (2 MiB). */
+export const TRANSCRIPT_TAIL_BYTES = 2_097_152;
 export const TRANSCRIPT_TAIL_EVENTS = 80;
 export const PENDING_REDELIVER_COOLDOWN_MS = 8_000;
 /** Debounce + same-window coalesce for error-stop recover injects. */
@@ -98,12 +99,118 @@ export function readTranscriptTail(transcriptPath: string): TranscriptEvent[] {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      events.push(JSON.parse(trimmed) as TranscriptEvent);
+      const raw = JSON.parse(trimmed) as TranscriptEvent;
+      const canonical = canonicalTranscriptEvent(raw);
+      if (canonical) events.push(canonical);
     } catch {
       /* skip partial first line */
     }
   }
   return events.slice(-TRANSCRIPT_TAIL_EVENTS);
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v);
+}
+
+function contentHasToolResult(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (item) => isPlainObject(item) && item.type === "tool_result",
+  );
+}
+
+function collectContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const item of content) {
+    if (!isPlainObject(item)) continue;
+    const t = item.type;
+    if (t === "text" || t === "input_text" || t === "output_text") {
+      parts.push(String(item.text ?? ""));
+    }
+  }
+  return parts.join("\n");
+}
+
+function messageContent(obj: Record<string, unknown>): unknown {
+  const msg = obj.message;
+  if (isPlainObject(msg) && "content" in msg) return msg.content;
+  if ("content" in obj) return obj.content;
+  return undefined;
+}
+
+/**
+ * Host jsonl → `{role:user|assistant,message}` or `{type:turn_ended,status}`.
+ * Never uses `type=response_item` as a role. Drops tool_result / compacted /
+ * event_msg HookPrompt. Unwraps wrappers so markup skip does not drop the tip.
+ */
+function canonicalTranscriptEvent(
+  raw: TranscriptEvent,
+): TranscriptEvent | null {
+  if (!isPlainObject(raw)) return null;
+  if (raw.type === "compacted") return null;
+  if (raw.type === "turn_ended") {
+    const out: TranscriptEvent = { type: "turn_ended", status: raw.status };
+    if (raw.error !== undefined) out.error = raw.error;
+    return out;
+  }
+  if (raw.type === "event_msg") return null;
+
+  const payload = isPlainObject(raw.payload) ? raw.payload : null;
+  // Only `type: "message"` is a chat turn. `payload.role` on function_call /
+  // tool rows must not become an empty assistant tip (that would close in-flight).
+  const fromPayloadMessage = Boolean(payload && payload.type === "message");
+  const src: Record<string, unknown> = fromPayloadMessage ? payload! : raw;
+
+  if (contentHasToolResult(messageContent(src))) {
+    return null;
+  }
+
+  let role: unknown = src.role;
+  if (role !== "user" && role !== "assistant") {
+    const msg = isPlainObject(src.message)
+      ? src.message
+      : isPlainObject(raw.message)
+        ? raw.message
+        : null;
+    const allowMessageRole =
+      fromPayloadMessage || raw.type === "user" || raw.type === "assistant";
+    if (
+      allowMessageRole &&
+      (msg?.role === "user" || msg?.role === "assistant")
+    ) {
+      role = msg.role;
+    } else if (raw.type === "user" || raw.type === "assistant") {
+      role = raw.type;
+    } else if (
+      typeof raw.USER_INPUT === "string" ||
+      typeof src.USER_INPUT === "string"
+    ) {
+      role = "user";
+    } else {
+      return null;
+    }
+  }
+  if (role !== "user" && role !== "assistant") return null;
+
+  const userInput =
+    typeof raw.USER_INPUT === "string"
+      ? raw.USER_INPUT
+      : typeof src.USER_INPUT === "string"
+        ? src.USER_INPUT
+        : "";
+  const body =
+    userInput ||
+    collectContentText(messageContent(src)) ||
+    (fromPayloadMessage ? "" : collectContentText(messageContent(raw)));
+  const text = substantivePromptBody(body) || body.trim();
+  if (role === "assistant" && !text) return null;
+  return {
+    role,
+    message: { content: [{ type: "text", text }] },
+  };
 }
 
 export function eventText(obj: TranscriptEvent): string {

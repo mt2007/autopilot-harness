@@ -8,7 +8,9 @@ import {
   automationFollowupPresent,
   followupInFlight,
   getLatestSchemaVersion,
+  parseTrigger,
   readTranscriptTail,
+  substantivePromptBody,
   transcriptHasUnresolvedTurnEndedError,
 } from "../src/index.js";
 import { TRANSCRIPT_TAIL_EVENTS } from "../src/transcript-followup.js";
@@ -119,6 +121,55 @@ describe("host transcript normalize", () => {
     expect(followupInFlight(events)).toBe(false);
   });
 
+  it("does not treat Codex function_call payload.role as an assistant tip", () => {
+    writeJsonl(transcript, [
+      codexUserHook(FIX_ZH),
+      {
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          role: "assistant",
+          name: "Read",
+          content: [],
+        },
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    const events = readTranscriptTail(transcript);
+    expect(automationFollowupPresent(events, FIX_ZH)).toBe(true);
+    expect(followupInFlight(events)).toBe(true);
+  });
+
+  it("keeps a Codex payload message when the outer envelope has tool_result", () => {
+    writeJsonl(transcript, [
+      {
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `<hook_prompt hook_run_id="stop:2">${FIX_ZH}</hook_prompt>`,
+            },
+          ],
+        },
+        message: {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "x", content: "noise" },
+          ],
+        },
+      },
+      codexAssistant("ack"),
+    ]);
+    const events = readTranscriptTail(transcript);
+    expect(automationFollowupPresent(events, FIX_ZH)).toBe(true);
+  });
+
   it("unwraps Codex response_item payload + input_text + hook_prompt", () => {
     writeJsonl(transcript, [
       codexUserHook(FIX_ZH),
@@ -223,6 +274,19 @@ describe("host transcript normalize", () => {
     const events = readTranscriptTail(transcript);
     expect(automationFollowupPresent(events, oldFix)).toBe(false);
     expect(automationFollowupPresent(events, FIX_ZH)).toBe(false);
+  });
+
+  it("does not let a mid-prompt hook_prompt example steal parseTrigger", () => {
+    const prompt =
+      "Please document <hook_prompt>Autopilot ON</hook_prompt> in the README.";
+    expect(substantivePromptBody(prompt)).toBe(prompt);
+    expect(
+      parseTrigger({
+        prompt,
+        conversationId: "c1",
+        projectRoot: root,
+      }),
+    ).toBeNull();
   });
 
   it("does not treat Antigravity USER_INPUT as missing", () => {

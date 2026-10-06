@@ -77,9 +77,37 @@ export const HARNESS_FOLLOWUP_PREFIXES = [
   "卡住:",
 ];
 
+/** Cursor often wraps the whole prompt; keep unanchored like the previous matcher. */
+const USER_QUERY_RE = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/i;
+/** Whole remaining string only — mid-prompt examples must not steal parseTrigger. */
+const WHOLE_HOOK_PROMPT_RE =
+  /^<hook_prompt(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/hook_prompt>$/i;
+const WHOLE_USER_REQUEST_RE =
+  /^<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>$/i;
+
+/** Inner text of host wrappers (`user_query` / `hook_prompt` / `USER_REQUEST`). */
 function stripUserQuery(prompt: string): string {
-  const m = prompt.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
-  return (m?.[1] ?? prompt).trim();
+  let text = prompt.trim();
+  let prev = "";
+  while (prev !== text) {
+    prev = text;
+    const uq = text.match(USER_QUERY_RE);
+    if (uq?.[1] != null) {
+      text = uq[1]!.trim();
+      continue;
+    }
+    const hp = text.match(WHOLE_HOOK_PROMPT_RE);
+    if (hp?.[1] != null) {
+      text = hp[1]!.trim();
+      continue;
+    }
+    const ur = text.match(WHOLE_USER_REQUEST_RE);
+    if (ur?.[1] != null) {
+      text = ur[1]!.trim();
+      continue;
+    }
+  }
+  return text;
 }
 
 /**
