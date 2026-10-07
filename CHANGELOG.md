@@ -9,6 +9,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.4] — 2026-10-06
+
+### Fixed
+
+- **Stop followup delivery detection**: `readTranscriptTail` reads the last **2MiB**, parses every jsonl line in that window (no raw `slice(80)` first), unwraps host wrappers (`<hook_prompt>`, `<user_query>`, `<USER_REQUEST>`) **before** markup skip, keeps `{type:turn_ended,status}`, then slices the last **80** canonical `user|assistant|turn_ended` events. Codex `response_item`+`payload.role`+`input_text` and Claude `type:user` + `tool_result` noise no longer look “undelivered”, so the 8s cooldown does not redeliver the same fix tip. **No FSM change.**
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.18.4** public packages.
+
 ## [0.18.3] — 2026-10-04
 
 ### Added

@@ -2040,9 +2040,31 @@ var HARNESS_FOLLOWUP_PREFIXES = [
   "\u6062\u590D:",
   "\u5361\u4F4F:"
 ];
+var USER_QUERY_RE = /<user_query>\s*([\s\S]*?)\s*<\/user_query>/i;
+var WHOLE_HOOK_PROMPT_RE = /^<hook_prompt(?:\s[^>]*)?>\s*([\s\S]*?)\s*<\/hook_prompt>$/i;
+var WHOLE_USER_REQUEST_RE = /^<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>$/i;
 function stripUserQuery(prompt) {
-  const m = prompt.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/i);
-  return (m?.[1] ?? prompt).trim();
+  let text = prompt.trim();
+  let prev = "";
+  while (prev !== text) {
+    prev = text;
+    const uq = text.match(USER_QUERY_RE);
+    if (uq?.[1] != null) {
+      text = uq[1].trim();
+      continue;
+    }
+    const hp = text.match(WHOLE_HOOK_PROMPT_RE);
+    if (hp?.[1] != null) {
+      text = hp[1].trim();
+      continue;
+    }
+    const ur = text.match(WHOLE_USER_REQUEST_RE);
+    if (ur?.[1] != null) {
+      text = ur[1].trim();
+      continue;
+    }
+  }
+  return text;
 }
 function substantivePromptBody(text) {
   const body = stripUserQuery(text || "");
@@ -2212,7 +2234,7 @@ function parseTrigger(options) {
 }
 
 // ../core/src/transcript-followup.ts
-var TRANSCRIPT_TAIL_BYTES = 512e3;
+var TRANSCRIPT_TAIL_BYTES = 2097152;
 var TRANSCRIPT_TAIL_EVENTS = 80;
 var PENDING_REDELIVER_COOLDOWN_MS = 8e3;
 var RECOVER_DEBOUNCE_MS = 3e3;
@@ -2277,11 +2299,80 @@ function readTranscriptTail(transcriptPath) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      events.push(JSON.parse(trimmed));
+      const raw = JSON.parse(trimmed);
+      const canonical = canonicalTranscriptEvent(raw);
+      if (canonical) events.push(canonical);
     } catch {
     }
   }
   return events.slice(-TRANSCRIPT_TAIL_EVENTS);
+}
+function isPlainObject(v) {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v);
+}
+function contentHasToolResult(content) {
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (item) => isPlainObject(item) && item.type === "tool_result"
+  );
+}
+function collectContentText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts = [];
+  for (const item of content) {
+    if (!isPlainObject(item)) continue;
+    const t = item.type;
+    if (t === "text" || t === "input_text" || t === "output_text") {
+      parts.push(String(item.text ?? ""));
+    }
+  }
+  return parts.join("\n");
+}
+function messageContent(obj) {
+  const msg = obj.message;
+  if (isPlainObject(msg) && "content" in msg) return msg.content;
+  if ("content" in obj) return obj.content;
+  return void 0;
+}
+function canonicalTranscriptEvent(raw) {
+  if (!isPlainObject(raw)) return null;
+  if (raw.type === "compacted") return null;
+  if (raw.type === "turn_ended") {
+    const out = { type: "turn_ended", status: raw.status };
+    if (raw.error !== void 0) out.error = raw.error;
+    return out;
+  }
+  if (raw.type === "event_msg") return null;
+  const payload = isPlainObject(raw.payload) ? raw.payload : null;
+  const fromPayloadMessage = Boolean(payload && payload.type === "message");
+  const src = fromPayloadMessage ? payload : raw;
+  if (contentHasToolResult(messageContent(src))) {
+    return null;
+  }
+  let role = src.role;
+  if (role !== "user" && role !== "assistant") {
+    const msg = isPlainObject(src.message) ? src.message : isPlainObject(raw.message) ? raw.message : null;
+    const allowMessageRole = fromPayloadMessage || raw.type === "user" || raw.type === "assistant";
+    if (allowMessageRole && (msg?.role === "user" || msg?.role === "assistant")) {
+      role = msg.role;
+    } else if (raw.type === "user" || raw.type === "assistant") {
+      role = raw.type;
+    } else if (typeof raw.USER_INPUT === "string" || typeof src.USER_INPUT === "string") {
+      role = "user";
+    } else {
+      return null;
+    }
+  }
+  if (role !== "user" && role !== "assistant") return null;
+  const userInput = typeof raw.USER_INPUT === "string" ? raw.USER_INPUT : typeof src.USER_INPUT === "string" ? src.USER_INPUT : "";
+  const body = userInput || collectContentText(messageContent(src)) || (fromPayloadMessage ? "" : collectContentText(messageContent(raw)));
+  const text = substantivePromptBody(body) || body.trim();
+  if (role === "assistant" && !text) return null;
+  return {
+    role,
+    message: { content: [{ type: "text", text }] }
+  };
 }
 function eventText(obj) {
   const msg = obj.message;
@@ -5241,7 +5332,7 @@ function unquote(value) {
   }
   return v;
 }
-function isPlainObject(value) {
+function isPlainObject2(value) {
   return !!value && typeof value === "object" && !Array.isArray(value) && Object.prototype.toString.call(value) === "[object Object]";
 }
 function isUnsafeKey(key) {
@@ -5316,7 +5407,7 @@ function parseSimpleYaml(raw) {
     if (isUnsafeKey(key)) continue;
     if (frame.openKey && frame.openKeyIndent != null && indent > frame.openKeyIndent) {
       let child = frame.obj[frame.openKey];
-      if (!isPlainObject(child) || Array.isArray(child)) {
+      if (!isPlainObject2(child) || Array.isArray(child)) {
         child = {};
         frame.obj[frame.openKey] = child;
       }
@@ -5354,7 +5445,7 @@ function parseVerifyCommands(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
   for (const entry of raw) {
-    if (!isPlainObject(entry)) continue;
+    if (!isPlainObject2(entry)) continue;
     if (typeof entry.id !== "string" || !entry.id.trim()) continue;
     const cmd = { id: entry.id.trim() };
     if (typeof entry.run === "string") cmd.run = entry.run;
@@ -5397,7 +5488,7 @@ function readProjectConfigYaml(projectRoot) {
     if (Buffer.byteLength(raw, "utf8") > MAX_CONFIG_BYTES) return null;
     const text = raw.charCodeAt(0) === 65279 ? raw.slice(1) : raw;
     const parsed = parseSimpleYaml(text);
-    if (!isPlainObject(parsed)) return null;
+    if (!isPlainObject2(parsed)) return null;
     return { root, parsed };
   } catch {
     return null;
@@ -5415,7 +5506,7 @@ function nonEmptyPhraseList(raw) {
 }
 function triggersFromParsed(parsed) {
   const base = cloneDefaultTriggers();
-  const triggers = isPlainObject(parsed.triggers) ? parsed.triggers : {};
+  const triggers = isPlainObject2(parsed.triggers) ? parsed.triggers : {};
   for (const key of TRIGGER_PHRASE_KEYS) {
     const phrases = nonEmptyPhraseList(triggers[key]);
     if (phrases) base[key] = phrases;
@@ -5423,13 +5514,13 @@ function triggersFromParsed(parsed) {
   return base;
 }
 function plansDirFromParsed(root, parsed) {
-  const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
+  const artifacts = isPlainObject2(parsed.artifacts) ? parsed.artifacts : {};
   const raw = artifacts.plans_dir;
   const candidate = typeof raw === "string" ? raw : "plans";
   return normalizeInProjectPlansDir(root, candidate) ?? "plans";
 }
 function specsDirFromParsed(root, parsed) {
-  const artifacts = isPlainObject(parsed.artifacts) ? parsed.artifacts : {};
+  const artifacts = isPlainObject2(parsed.artifacts) ? parsed.artifacts : {};
   if (!Object.prototype.hasOwnProperty.call(artifacts, "specs_dir") || artifacts.specs_dir === void 0 || artifacts.specs_dir === null) {
     return null;
   }
@@ -5461,7 +5552,7 @@ function legacyScalarsWantInstallableKimi(parsed) {
 }
 var MAX_PLATFORM_BINDINGS = 32;
 function configHasInstallableKimiCode(parsed) {
-  if (!isPlainObject(parsed)) return false;
+  if (!isPlainObject2(parsed)) return false;
   const platforms = parsed.platforms;
   if (Array.isArray(platforms) && platforms.length > 0) {
     let sawUsableBinding = false;
@@ -5474,7 +5565,7 @@ function configHasInstallableKimiCode(parsed) {
         id = softPlatformToken(entry);
         if (!id) continue;
         surface = defaultSurfaceForId(id);
-      } else if (isPlainObject(entry)) {
+      } else if (isPlainObject2(entry)) {
         const idRaw = typeof entry.id === "string" ? entry.id : typeof entry.platform === "string" ? entry.platform : "";
         id = softPlatformToken(idRaw);
         if (!id) continue;
@@ -5499,10 +5590,10 @@ function loadProjectReviewConfig(projectRoot) {
   const loaded = readProjectConfigYaml(projectRoot);
   if (!loaded) return cloneDefaultProjectReviewConfig();
   const { parsed } = loaded;
-  const review = isPlainObject(parsed.review) ? parsed.review : {};
-  const verify = isPlainObject(review.verify) ? review.verify : {};
-  const stuck = isPlainObject(review.stuck) ? review.stuck : {};
-  const errors = isPlainObject(review.errors) ? review.errors : {};
+  const review = isPlainObject2(parsed.review) ? parsed.review : {};
+  const verify = isPlainObject2(review.verify) ? review.verify : {};
+  const stuck = isPlainObject2(review.stuck) ? review.stuck : {};
+  const errors = isPlainObject2(review.errors) ? review.errors : {};
   const cfg = normalizeProjectReviewConfig({
     confirmRounds: review.confirm_rounds,
     reviewScope: review.scope,

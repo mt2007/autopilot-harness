@@ -38,6 +38,7 @@ Claude’s consecutive Stop **block cap** defaults to **8**.
 - Same **neutral** subagent policy as Cursor (Tier-S from **0.17**): host/agent decides; Autopilot keeps parent review coherent when events fire.
 - Project `env` may need workspace **trust** before Claude applies it — if the cap never takes effect, accept the trust dialog for the project folder, then restart Claude / open a new session.
 - Dual-host: after Cursor init, `npx @autopilot-harness/cli init --yes --add-platform claude-code`.
+- **Same-round review loop (pre-0.18.4):** Claude `type:user` rows mixed with `tool_result` (and extra `type:text` tool stdout) could hide a delivered Stop followup or push it out of a raw 80-event window. Core then treated pending as missing and redelivered the same fix tip. **Upgrade to 0.18.4**.
 
 ### Tier-B hosts (no fake SubagentStop)
 
@@ -51,6 +52,7 @@ Codex has **no documented numeric** consecutive Stop block cap (research snapsho
 - `doctor` WARNs when Codex is enabled but Autopilot entries are missing, when `timeout` is set and **&lt; 120s**, and reminds **`/hooks` trust** (re-trust after hook definition changes).
 - Stop continue shape is `{ decision: "block", reason }` — hard-stop may use `continue: false`; never `continue: false` to keep the chain going.
 - Dual/triple-host: `npx @autopilot-harness/cli init --yes --add-platform codex`.
+- **Same-round review loop (pre-0.18.4):** Stop `transcript_path` jsonl is Codex-shaped (`response_item` + `payload.role` + `input_text` inside `<hook_prompt>…</hook_prompt>`). Older tails only matched Cursor `role` / `<user_query>`, so pending never cleared and the 8s cooldown redelivered the same fix tip (often bumping fix round if patches landed during review). **Upgrade to 0.18.4**.
 - P0 activation is **slash `/autopilot-*` or line-start** `triggers.on` / `triggers.run` (skills under **`.agents/skills/autopilot-*`**; no default `AGENTS.md`; typed slash still parses).
 
 ### Kimi Code

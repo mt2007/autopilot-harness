@@ -11,7 +11,7 @@
       "name": "autopilot-cursor",
       "source": "plugins/cursor",
       "description": "Thin Autopilot discovery for Cursor. After install, run npx @autopilot-harness/cli init --platform cursor.",
-      "version": "0.18.3",
+      "version": "0.18.4",
       "homepage": "https://github.com/mt2007/autopilot-harness/blob/main/docs/install.md",
       "repository": "https://github.com/mt2007/autopilot-harness",
       "license": "MIT",

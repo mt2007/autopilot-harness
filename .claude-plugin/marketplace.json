@@ -8,7 +8,7 @@
       "name": "autopilot-claude-code",
       "source": "./plugins/claude-code",
       "description": "Thin Autopilot discovery for Claude Code. After install, run npx @autopilot-harness/cli init --platform claude-code.",
-      "version": "0.18.3",
+      "version": "0.18.4",
       "homepage": "https://github.com/mt2007/autopilot-harness/blob/main/docs/install.md",
       "repository": "https://github.com/mt2007/autopilot-harness",
       "license": "MIT",

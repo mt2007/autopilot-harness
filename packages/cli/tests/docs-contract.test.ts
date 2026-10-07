@@ -184,6 +184,15 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(tips).toMatch(/completed\+no-session\+product-dirty/);
     expect(tips).toMatch(/\/hooks/);
     expect(tips).toMatch(/timeout/i);
+    expect(tips).toMatch(/Same-round review loop \(pre-0\.18\.4\)/);
+    // Bound each host section at the next ### heading so one host's bullet
+    // cannot satisfy the other (Upgrade or symptom markers).
+    expect(tips).toMatch(
+      /### Claude Code(?:(?!\n### )[\s\S])*tool_result(?:(?!\n### )[\s\S])*Upgrade to 0\.18\.4/,
+    );
+    expect(tips).toMatch(
+      /### Codex(?:(?!\n### )[\s\S])*response_item(?:(?!\n### )[\s\S])*hook_prompt(?:(?!\n### )[\s\S])*Upgrade to 0\.18\.4/,
+    );
     expect(tips).toMatch(/### Kimi Code/);
     expect(tips).toMatch(/Stop≤1\/turn|≤1\/turn/);
     expect(tips).toMatch(/~\/\.kimi-code|KIMI_CODE_HOME/);
@@ -2391,6 +2400,26 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(section0183).toMatch(
       /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
     );
+    const section0184 = changelogSection(log, "0.18.4");
+    expect(section0184).toMatch(/Stop followup delivery detection|readTranscriptTail/);
+    expect(section0184).toMatch(/2MiB/);
+    expect(section0184).toMatch(/hook_prompt/);
+    expect(section0184).toMatch(/response_item/);
+    expect(section0184).toMatch(/tool_result/);
+    expect(section0184).toMatch(/turn_ended/);
+    expect(section0184).toMatch(/No FSM change/i);
+    expect(section0184).toMatch(/pnpm publish/);
+    expect(section0184).toMatch(/pnpm pack/);
+    expect(section0184).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
+    // 0.18.4 Done when: vendor must carry the 2MiB normalize (not only source).
+    const vendorRuntime = fs.readFileSync(
+      path.join(repoRoot, "packages/cli/assets/vendor/runtime.mjs"),
+      "utf8",
+    );
+    expect(vendorRuntime).toMatch(/TRANSCRIPT_TAIL_BYTES\s*=\s*2097152/);
+    expect(vendorRuntime).toMatch(/function canonicalTranscriptEvent\b/);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs\/autopilot\/plans/);
     expect(unreleased).not.toMatch(/autopilot-archive/);
@@ -2426,6 +2455,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/docs\/install\.md/);
     expect(unreleased).not.toMatch(/marketplace\.json/);
     expect(unreleased).not.toMatch(/Batch-1|thin discovery/i);
+    expect(unreleased).not.toMatch(/readTranscriptTail|Stop followup delivery/);
+    expect(unreleased).not.toMatch(/2MiB/);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag
     // current or 0.2.x lines (0.1.0 footer link is historical).
