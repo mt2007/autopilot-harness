@@ -79,6 +79,8 @@ function engine(store: StateStore, root: string, overrides?: Partial<Constructor
     verifyCommands: [],
     maxIdleStops: 5,
     maxErrorsBeforePause: 3,
+    // Default on — matches review.errors.recover; overrides may set false.
+    errorRecover: true,
     projectRoot: root,
     // Unit tests skip wall-clock recover debounce unless overridden.
     recoverDebounceMs: 0,
@@ -3253,6 +3255,236 @@ describe("review-engine P0 matrix", () => {
     });
     expect(action).toBeNull();
     expect(store.getSession("c-no-session")).toBeNull();
+  });
+
+  it("F-ERR-RECOVER-OFF-EXEC: errorRecover=false skips tip/count/pause on executing", () => {
+    const eng = engine(store, root, {
+      errorRecover: false,
+      maxErrorsBeforePause: 1,
+    });
+    const before = store.getSession("c1")!.error_count;
+    const action = eng.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c1")!.error_count).toBe(before);
+    expect(store.getSession("c1")!.paused).toBe(0);
+    // Burst must not hit repeated_errors either.
+    eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
+    eng.handleStop({ conversationId: "c1", status: "error", loopCount: 0 });
+    expect(store.getSession("c1")!.paused).toBe(0);
+    expect(store.getSession("c1")!.armed).toBe(1);
+    expect(store.getSession("c1")!.error_count).toBe(before);
+  });
+
+  it("F-ERR-RECOVER-OFF-PLAN: planning error stays quiet when recover off", () => {
+    const eng = engine(store, root, {
+      errorRecover: false,
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-plan-off",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "planning",
+      armed: 0,
+      paused: 0,
+      track_id: "_pending",
+    });
+    const action = eng.handleStop({
+      conversationId: "c-plan-off",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-plan-off")!.error_count).toBe(0);
+    expect(store.getSession("c-plan-off")!.phase).toBe("planning");
+  });
+
+  it("F-ERR-RECOVER-OFF-IDLE: project ambient error does not ensure or tip", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      errorRecover: false,
+      maxErrorsBeforePause: 0,
+    });
+    expect(store.getSession("c-idle-off")).toBeNull();
+    const action = eng.handleStop({
+      conversationId: "c-idle-off",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-idle-off")).toBeNull();
+  });
+
+  it("F-ERR-RECOVER-OFF-DONE: done+project error does not recover", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      errorRecover: false,
+      maxErrorsBeforePause: 0,
+    });
+    store.upsertSession({
+      conversation_id: "c-done-off",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    const action = eng.handleStop({
+      conversationId: "c-done-off",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-done-off")!.phase).toBe("done");
+    expect(store.getSession("c-done-off")!.error_count).toBe(0);
+  });
+
+  it("F-ERR-RECOVER-OFF-ORPHAN: completed+orphan does not salvage when recover off", () => {
+    const eng = engine(store, root, {
+      reviewScope: "project",
+      errorRecover: false,
+      maxErrorsBeforePause: 0,
+    });
+    const transcript = path.join(root, "recover-off-orphan.jsonl");
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          role: "assistant",
+          message: { content: [{ type: "text", text: "working" }] },
+        }),
+        JSON.stringify({
+          type: "turn_ended",
+          status: "error",
+          error: "usage limit",
+        }),
+      ].join("\n") + "\n",
+    );
+    store.upsertSession({
+      conversation_id: "c-orphan-off",
+      project_root: root,
+      code_root: root,
+      platform: "cursor",
+      phase: "done",
+      armed: 0,
+      paused: 0,
+      track_id: "shipped",
+      checklist_path: cp,
+    });
+    store.ensureReviewChain("c-orphan-off");
+    const action = eng.handleStop({
+      conversationId: "c-orphan-off",
+      status: "completed",
+      loopCount: 0,
+      transcriptPath: transcript,
+    });
+    expect(action).toBeNull();
+    expect(store.getSession("c-orphan-off")!.error_count).toBe(0);
+    expect(store.getSession("c-orphan-off")!.phase).toBe("done");
+  });
+
+  it("F-ERR-RECOVER-OFF-ABORT: abort path unchanged (no recover tip)", () => {
+    const eng = engine(store, root, {
+      errorRecover: false,
+      maxErrorsBeforePause: 0,
+    });
+    const action = eng.handleStop({
+      conversationId: "c1",
+      status: "aborted",
+      loopCount: 0,
+    });
+    expect(action?.kind).not.toBe("recover");
+    expect(store.getSession("c1")!.error_count).toBe(0);
+  });
+
+  it("F-ERR-RECOVER-OFF-STUCK: soft stuck nudge still fires when recover off", () => {
+    const eng = engine(store, root, {
+      errorRecover: false,
+      maxIdleStops: 2,
+      maxErrorsBeforePause: 0,
+    });
+    store.updateReviewChain("c1", {
+      confirm_left: null,
+      chain_pending: 0,
+      code_edited: 0,
+      item_confirm_complete: 0,
+    });
+    expect(stop(eng, "c1", 0)?.kind).toBe("need_evidence");
+    const stuck = stop(eng, "c1", 0);
+    expect(stuck?.kind).toBe("stuck");
+    expect(stuck?.loop).toBe(true);
+    expect(store.getSession("c1")!.paused).toBe(0);
+    expect(store.getSession("c1")!.armed).toBe(1);
+    expect(store.getSession("c1")!.error_count).toBe(0);
+  });
+
+  it("F-ERR-RECOVER-OFF-ON-REGRESSION: errorRecover true still recovers", () => {
+    const eng = engine(store, root, {
+      maxErrorsBeforePause: 0,
+      errorRecover: true,
+    });
+    const action = eng.handleStop({
+      conversationId: "c1",
+      status: "error",
+      loopCount: 0,
+    });
+    expect(action?.kind).toBe("recover");
+    expect(store.getSession("c1")!.error_count).toBe(1);
+  });
+
+  it("F-ERR-RECOVER-OFF-DIRTY-ARM: dirty completed still arms when recover off", () => {
+    const dirtyRoot = tmpRoot();
+    spawnSync("git", ["init"], { cwd: dirtyRoot, stdio: "ignore" });
+    spawnSync("git", ["config", "user.email", "t@t"], {
+      cwd: dirtyRoot,
+      stdio: "ignore",
+    });
+    spawnSync("git", ["config", "user.name", "t"], {
+      cwd: dirtyRoot,
+      stdio: "ignore",
+    });
+    fs.mkdirSync(path.join(dirtyRoot, "packages"), { recursive: true });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 1;\n");
+    fs.writeFileSync(path.join(dirtyRoot, ".autopilotignore"), "plans/**\n.autopilot/**\n");
+    spawnSync("git", ["add", "."], { cwd: dirtyRoot, stdio: "ignore" });
+    spawnSync("git", ["commit", "-m", "init"], {
+      cwd: dirtyRoot,
+      stdio: "ignore",
+    });
+    fs.writeFileSync(path.join(dirtyRoot, "packages", "x.ts"), "export const n = 2;\n");
+
+    const dirtyStore = StateStore.openMemory(dirtyRoot);
+    try {
+      const eng = engine(dirtyStore, dirtyRoot, {
+        reviewScope: "project",
+        errorRecover: false,
+        maxErrorsBeforePause: 0,
+      });
+      expect(dirtyStore.getSession("c-dirty-off")).toBeNull();
+      const action = eng.handleStop({
+        conversationId: "c-dirty-off",
+        status: "completed",
+        loopCount: 0,
+      });
+      // Ambient session ensured for dirty-arm; no recover tip.
+      expect(action?.kind).not.toBe("recover");
+      const sess = dirtyStore.getSession("c-dirty-off");
+      expect(sess).not.toBeNull();
+      expect(sess!.phase).toBe("idle");
+      expect(sess!.armed).toBe(1);
+      expect(sess!.error_count).toBe(0);
+    } finally {
+      dirtyStore.close();
+      fs.rmSync(dirtyRoot, { recursive: true, force: true });
+    }
   });
 
   it("F-ERR-AMBIENT-DONE: completed after error recover does not arm review chain", () => {
