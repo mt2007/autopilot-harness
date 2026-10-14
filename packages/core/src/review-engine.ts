@@ -101,6 +101,11 @@ export interface ReviewEngineConfig {
   maxIdleStops: number;
   /** 0 = never pause on turn errors. */
   maxErrorsBeforePause: number;
+  /**
+   * When `false`, skip error-stop recover (no tip / error_count / repeated_errors
+   * pause; no error/orphan ambient ensure). Default `true` when omitted.
+   */
+  errorRecover?: boolean;
   projectRoot: string;
   /**
    * Error-stop recover debounce / same-window coalesce (ms).
@@ -438,6 +443,7 @@ export class ReviewEngine {
       // may ensure + inject recover.
       // Completed + product-dirty (no edit hook / no prior session): ensure so
       // project-scope ambient dirty-arm can open fix→confirm (0.18.2).
+      // error/orphan ensure only when errorRecover is on (default true).
       if (!session && this.config.reviewScope === "project") {
         let ensureForDirty = false;
         if (input.status === "completed") {
@@ -450,10 +456,11 @@ export class ReviewEngine {
             }
           }
         }
+        const errorRecoverOn = this.config.errorRecover !== false;
         if (
           ensureForDirty ||
-          input.status === "error" ||
-          orphanClass === "salvage"
+          (errorRecoverOn &&
+            (input.status === "error" || orphanClass === "salvage"))
         ) {
           ensureAmbientReviewSession(
             this.store,
@@ -1068,6 +1075,10 @@ export class ReviewEngine {
   }
 
   private handleErrorStop(session: SessionRow, input: StopHandlerInput): FollowupAction | null {
+    // review.errors.recover: false → quiet error path (no tip / count / pause).
+    if (this.config.errorRecover === false) {
+      return null;
+    }
     const nextCount = session.error_count + 1;
     const maxErrors = this.config.maxErrorsBeforePause;
     // maxErrors <= 0 → unlimited: never pause for repeated_errors
@@ -2165,11 +2176,13 @@ export class ReviewEngine {
   /**
    * Genuine error stop may inject recover: planning, project ambient
    * (`idle`+armed), armed executing, or project-scope **`done`** (post-track
-   * casual work without edit-revive). Abort / paused / `executing_only`+done
-   * stay non-recoverable. Does not open the review chain (`sessionReviewRunnable`
-   * still excludes `done`); done still clears/redelivers recover|stuck pending.
+   * casual work without edit-revive). Abort / paused / `executing_only`+done /
+   * `errorRecover===false` stay non-recoverable. Does not open the review chain
+   * (`sessionReviewRunnable` still excludes `done`). Done-phase clear/redeliver of
+   * recover|stuck pending is separate (not gated by `errorRecover`).
    */
   private sessionErrorRecoverable(session: SessionRow): boolean {
+    if (this.config.errorRecover === false) return false;
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
     if (

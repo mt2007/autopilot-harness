@@ -60,6 +60,7 @@ export function createConfiguredReviewEngine(
     verifyCommands: cfg.verifyCommands.map((c) => ({ ...c })),
     maxIdleStops: cfg.maxIdleStops,
     maxErrorsBeforePause: cfg.maxErrorsBeforePause,
+    errorRecover: cfg.errorRecover,
     projectRoot: safeRoot,
     suggestArchive,
     archiveSuggestTip,
