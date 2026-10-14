@@ -154,6 +154,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     const config = fs.readFileSync(path.join(repoRoot, "docs/config.md"), "utf8");
     expect(config).toMatch(/review\.scope/);
     expect(config).toMatch(/confirm_rounds/);
+    expect(config).toMatch(/review\.errors\.recover/);
+    expect(config).toMatch(/already-queued recover pending|redeliver once/i);
     expect(config).toMatch(/\.autopilotignore/);
     // 0.18.2 ambient Stop dirty-arm honesty (project scope).
     expect(config).toMatch(/Stop \*\*dirty-arm\*\*/);
@@ -166,6 +168,7 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
       path.join(repoRoot, "docs/troubleshooting.md"),
       "utf8",
     );
+    expect(tips).toMatch(/review\.errors\.recover:\s*false|recover:\s*false/);
     expect(tips).toMatch(/loop_limit/);
     expect(tips).toMatch(/subagentStop/);
     expect(tips).toMatch(/SubagentStop/);

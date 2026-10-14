@@ -65,7 +65,8 @@ Effective RUN concurrency gate is still **`one_executor`** (code default when th
 | `review.verify.enabled` | `false` | When `true`, advance/done gates on `.autopilot/verify-last.json` (agent runs the listed commands and writes that report). |
 | `review.verify.commands` | `[]` | List of `{ id, run, required? }` shell commands (only when verify enabled). Treat `run` as **trusted project config** (agent will execute it). |
 | `review.stuck.max_idle_stops` | `5` | Idle-stop streak before a stuck nudge. Clamped to **1..100**. Soft `need_evidence` idle hits the nudge **without** hard-pausing / disarming the track; repeated required-verify failures still hard-stuck pause. |
-| `review.errors.max_before_pause` | `0` | Consecutive turn errors/aborts before `repeated_errors` pause. `0` = never pause on errors (unlimited recover). Clamped to **0..1000**. |
+| `review.errors.max_before_pause` | `0` | Consecutive turn errors/aborts before `repeated_errors` pause. `0` = never pause on errors (unlimited error-count recoveries — not the same as `review.errors.recover`). Clamped to **0..1000**. |
+| `review.errors.recover` | `true` | When **`false`**, skip error-stop recover tips (`Recover:` / `恢复：…`) and do **not** bump `error_count` / `repeated_errors` pause; also skip error/orphan ambient ensure (dirty-arm ensure unchanged). Missing / invalid → **`true`** (fail-open). Setting `false` stops **new** injects only — an already-queued recover pending may still redeliver once; use `/autopilot-off` for an immediate quiet session. |
 
 Aliases accepted for scope: `project`, `always`, and `all` all map to **`project`**. Missing key, empty, or anything else falls back to **`executing_only`**.
 

@@ -133,6 +133,10 @@ Hermes Agent shell `pre_verify` continue is **live-proved** (**Shipped**; soft m
 
 See [architecture.md](./architecture.md) (host stop-loop caps) and [hosts.md](./hosts.md).
 
+## Recover tips keep injecting after turn errors
+
+Stop **error** (or orphan transcript error) injects `Recover:` / `恢复：…` while Autopilot is armed. To disable **new** recover tips project-wide, set `review.errors.recover: false` in `.autopilot/config.yml` (see [config.md](./config.md)). An already-queued pending tip may still redeliver once — use `/autopilot-off` for an immediate quiet session. This does **not** turn off stuck / self-review.
+
 ## Double followup injection
 
 If `review.scope` is **`project`** and you also run a **global** Cursor self-review hook (`~/.cursor`, e.g. `run-global-self-review`), both may inject on the same stop.

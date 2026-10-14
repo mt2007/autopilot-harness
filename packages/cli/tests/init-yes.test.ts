@@ -408,6 +408,7 @@ describe("init --yes install", () => {
     expect(config).toMatch(/specs_dir:\s*docs\/autopilot\/specs/);
     expect(config).toMatch(/confirm_rounds:\s*5/);
     expect(config).toMatch(/max_before_pause:\s*0/);
+    expect(config).toMatch(/recover:\s*true/);
     expect(config).toMatch(/# When enabled[\s\S]*#\s*commands:/);
     expect(config).toMatch(/enabled:\s*false/);
     const ignoreBody = fs.readFileSync(path.join(root, ".autopilotignore"), "utf8");

@@ -120,6 +120,26 @@ review:
     expect(addedPaths).toContain("review.verify");
   });
 
+  it("fills missing review.errors.recover under existing errors block", () => {
+    const { merged, addedPaths } = mergeMissingKeys(
+      {
+        review: {
+          errors: { max_before_pause: 0 },
+        },
+      },
+      {
+        review: {
+          errors: { max_before_pause: 0, recover: true },
+        },
+      },
+    );
+    const errors = (merged.review as { errors: Record<string, unknown> }).errors;
+    expect(errors.max_before_pause).toBe(0);
+    expect(errors.recover).toBe(true);
+    expect(addedPaths).toContain("review.errors.recover");
+    expect(addedPaths).not.toContain("review.errors.max_before_pause");
+  });
+
   it("ignores prototype-pollution keys from existing/defaults", () => {
     // JSON/YAML-style own properties (not object-literal __proto__ setter)
     const existing = JSON.parse(

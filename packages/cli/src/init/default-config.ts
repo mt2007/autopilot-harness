@@ -122,6 +122,9 @@ review:
     # Consecutive turn errors/aborts before pause (repeated_errors).
     # 0 = never pause (unlimited recoveries); e.g. 5 = pause after 5.
     max_before_pause: ${maxErrors}
+    # Inject recover tips on turn errors (Recover: / 恢复：…). false = quiet
+    # (no tip / error_count / repeated_errors pause). Default true.
+    recover: true
 
 triggers:
   match: line_start

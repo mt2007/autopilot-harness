@@ -1394,6 +1394,7 @@ describe("interactive init (scripted prompts)", () => {
       "utf8",
     );
     expect(config).toMatch(/max_before_pause:\s*0/);
+    expect(config).toMatch(/recover:\s*true/);
     expect(config).toMatch(/platforms:/);
     expect(config).toMatch(/id:\s*cursor/);
     expect(
