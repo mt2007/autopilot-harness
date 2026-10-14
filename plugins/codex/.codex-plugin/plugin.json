@@ -1,6 +1,6 @@
 {
   "name": "autopilot-codex",
-  "version": "0.18.4",
+  "version": "0.18.5",
   "description": "Thin Autopilot discovery for Codex. Does not wire hooks or vendor — run npx @autopilot-harness/cli init --platform codex.",
   "author": {
     "name": "mt2007"

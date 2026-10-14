@@ -2423,6 +2423,20 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     );
     expect(vendorRuntime).toMatch(/TRANSCRIPT_TAIL_BYTES\s*=\s*2097152/);
     expect(vendorRuntime).toMatch(/function canonicalTranscriptEvent\b/);
+    const section0185 = changelogSection(log, "0.18.5");
+    expect(section0185).toMatch(/review\.errors\.recover/);
+    expect(section0185).toMatch(/default[\s\S]*true|recover`\*\* \(default \*\*`true`/i);
+    expect(section0185).toMatch(/error_count|repeated_errors/);
+    expect(section0185).toMatch(/dirty-arm/);
+    expect(section0185).toMatch(/autopilot-off|\/autopilot-off/);
+    expect(section0185).toMatch(/pnpm publish/);
+    expect(section0185).toMatch(/pnpm pack/);
+    expect(section0185).toMatch(
+      /ports \(cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner\)/,
+    );
+    // 0.18.5 Done when: vendor must carry errorRecover gates (not only source).
+    expect(vendorRuntime).toMatch(/errorRecover/);
+    expect(vendorRuntime).toMatch(/errors\.recover|errorRecover:\s*errors\.recover/);
     const unreleased = changelogSection(log, "Unreleased");
     expect(unreleased).not.toMatch(/docs\/autopilot\/plans/);
     expect(unreleased).not.toMatch(/autopilot-archive/);
@@ -2460,6 +2474,8 @@ describe("docs contract (review.scope / claim / troubleshooting)", () => {
     expect(unreleased).not.toMatch(/Batch-1|thin discovery/i);
     expect(unreleased).not.toMatch(/readTranscriptTail|Stop followup delivery/);
     expect(unreleased).not.toMatch(/2MiB/);
+    expect(unreleased).not.toMatch(/review\.errors\.recover/);
+    expect(unreleased).not.toMatch(/errorRecover/);
     expect(log).toContain(NPM_PACKAGE_NAME);
     // Release compare URL lands with git-tag / gh release — do not pretentag
     // current or 0.2.x lines (0.1.0 footer link is historical).

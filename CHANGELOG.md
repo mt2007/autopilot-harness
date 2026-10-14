@@ -9,6 +9,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.5] — 2026-10-14
+
+### Added
+
+- **`review.errors.recover`** (default **`true`**): set **`false`** in `.autopilot/config.yml` to skip error-stop recover tips (`Recover:` / `恢复：…`), skip `error_count` / `repeated_errors` pause bumps, and skip error/orphan ambient ensure (dirty-arm ensure unchanged). Missing/invalid → **`true`** (fail-open). Stops **new** injects only — an already-queued recover pending may still redeliver once; use `/autopilot-off` for an immediate quiet session. Documented in `docs/config.md` + troubleshooting; init seeds `recover: true`; upgrade fill-missing can add the key.
+
+### Changed
+
+- Prefer **`pnpm publish`** in order **core → i18n → ports (cursor, claude-code, codex, kimi-code, copilot-cli, grok-build, gemini-cli, factory-droid, hermes-agent, antigravity, pi, devin, runner) → cli** (and local `pnpm pack` assert: no `workspace:*`) for **0.18.5** public packages.
+
 ## [0.18.4] — 2026-10-06
 
 ### Fixed
