@@ -3091,7 +3091,8 @@ var ReviewEngine = class {
             }
           }
         }
-        if (ensureForDirty || input.status === "error" || orphanClass === "salvage") {
+        const errorRecoverOn = this.config.errorRecover !== false;
+        if (ensureForDirty || errorRecoverOn && (input.status === "error" || orphanClass === "salvage")) {
           ensureAmbientReviewSession(
             this.store,
             input.conversationId,
@@ -3500,6 +3501,9 @@ var ReviewEngine = class {
     return null;
   }
   handleErrorStop(session, input) {
+    if (this.config.errorRecover === false) {
+      return null;
+    }
     const nextCount = session.error_count + 1;
     const maxErrors = this.config.maxErrorsBeforePause;
     const shouldPause = maxErrors > 0 && nextCount >= maxErrors;
@@ -4283,11 +4287,13 @@ var ReviewEngine = class {
   /**
    * Genuine error stop may inject recover: planning, project ambient
    * (`idle`+armed), armed executing, or project-scope **`done`** (post-track
-   * casual work without edit-revive). Abort / paused / `executing_only`+done
-   * stay non-recoverable. Does not open the review chain (`sessionReviewRunnable`
-   * still excludes `done`); done still clears/redelivers recover|stuck pending.
+   * casual work without edit-revive). Abort / paused / `executing_only`+done /
+   * `errorRecover===false` stay non-recoverable. Does not open the review chain
+   * (`sessionReviewRunnable` still excludes `done`). Done-phase clear/redeliver of
+   * recover|stuck pending is separate (not gated by `errorRecover`).
    */
   sessionErrorRecoverable(session) {
+    if (this.config.errorRecover === false) return false;
     if (session.paused !== 0) return false;
     if (session.phase === "planning") return true;
     if (session.phase === "idle" && session.armed === 1 && this.config.reviewScope === "project") {
@@ -5274,6 +5280,7 @@ var DEFAULT_PROJECT_REVIEW_CONFIG = {
   verifyCommands: Object.freeze([]),
   maxIdleStops: 5,
   maxErrorsBeforePause: 0,
+  errorRecover: true,
   locale: "en"
 };
 var TRIGGER_PHRASE_KEYS = [
@@ -5315,6 +5322,7 @@ function cloneDefaultProjectReviewConfig() {
     verifyCommands: [],
     maxIdleStops: DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
     maxErrorsBeforePause: DEFAULT_PROJECT_REVIEW_CONFIG.maxErrorsBeforePause,
+    errorRecover: DEFAULT_PROJECT_REVIEW_CONFIG.errorRecover,
     locale: DEFAULT_PROJECT_REVIEW_CONFIG.locale
   };
 }
@@ -5601,6 +5609,7 @@ function loadProjectReviewConfig(projectRoot) {
     verifyCommands: verify.commands,
     maxIdleStops: stuck.max_idle_stops,
     maxErrorsBeforePause: errors.max_before_pause,
+    errorRecover: errors.recover,
     locale: parsed.locale
   });
   if (configHasInstallableKimiCode(parsed) && cfg.confirmRounds > 1) {
@@ -5645,6 +5654,8 @@ function normalizeProjectReviewConfig(raw) {
       1e3,
       DEFAULT_PROJECT_REVIEW_CONFIG.maxErrorsBeforePause
     ),
+    // Missing/invalid → true (fail-open to today's recover-on-error behavior).
+    errorRecover: coerceBool(o.errorRecover) ?? true,
     locale: typeof o.locale === "string" && o.locale.trim() ? o.locale.trim() : DEFAULT_PROJECT_REVIEW_CONFIG.locale
   };
 }
@@ -5744,6 +5755,7 @@ function createConfiguredReviewEngine(store, projectRoot, localeBundle, preloade
     verifyCommands: cfg.verifyCommands.map((c) => ({ ...c })),
     maxIdleStops: cfg.maxIdleStops,
     maxErrorsBeforePause: cfg.maxErrorsBeforePause,
+    errorRecover: cfg.errorRecover,
     projectRoot: safeRoot,
     suggestArchive,
     archiveSuggestTip,
