@@ -29,6 +29,7 @@ describe("loadProjectReviewConfig", () => {
     expect(cfg.verifyCommands).toEqual([]);
     expect(cfg.maxIdleStops).toBe(5);
     expect(cfg.maxErrorsBeforePause).toBe(0);
+    expect(cfg.errorRecover).toBe(true);
     expect(cfg.locale).toBe("en");
     expect(cfg.reviewScope).toBe("executing_only");
   });
@@ -114,7 +115,62 @@ review:
     ]);
     expect(cfg.maxIdleStops).toBe(7);
     expect(cfg.maxErrorsBeforePause).toBe(5);
+    // errors 块无 recover 键 → 默认 true（专用用例覆盖 false）
+    expect(cfg.errorRecover).toBe(true);
     expect(cfg.locale).toBe("zh-CN");
+  });
+
+  it("review.errors.recover: missing/invalid → true; only false/\"false\" disable", () => {
+    const root = tmpRoot();
+    writeConfig(
+      root,
+      `
+review:
+  errors:
+    max_before_pause: 0
+`,
+    );
+    expect(loadProjectReviewConfig(root).errorRecover).toBe(true);
+
+    writeConfig(
+      root,
+      `
+review:
+  errors:
+    recover: true
+`,
+    );
+    expect(loadProjectReviewConfig(root).errorRecover).toBe(true);
+
+    writeConfig(
+      root,
+      `
+review:
+  errors:
+    recover: "false"
+`,
+    );
+    expect(loadProjectReviewConfig(root).errorRecover).toBe(false);
+
+    writeConfig(
+      root,
+      `
+review:
+  errors:
+    recover: no
+`,
+    );
+    expect(loadProjectReviewConfig(root).errorRecover).toBe(true);
+
+    writeConfig(
+      root,
+      `
+review:
+  errors:
+    recover: 0
+`,
+    );
+    expect(loadProjectReviewConfig(root).errorRecover).toBe(true);
   });
 
   it("reads review.scope project from config.yml", () => {
@@ -461,6 +517,13 @@ review:
         verifyCommands: [{ id: "t", run: "x", required: true }],
       }).verifyCommands,
     ).toEqual([{ id: "t", run: "x", required: true }]);
+    expect(normalizeProjectReviewConfig({}).errorRecover).toBe(true);
+    expect(
+      normalizeProjectReviewConfig({ errorRecover: false }).errorRecover,
+    ).toBe(false);
+    expect(
+      normalizeProjectReviewConfig({ errorRecover: "nope" }).errorRecover,
+    ).toBe(true);
   });
 
   it("createConfiguredReviewEngine accepts preloaded config (single-read path)", () => {
@@ -494,6 +557,7 @@ review:
         verifyCommands: [],
         maxIdleStops: 5,
         maxErrorsBeforePause: 0,
+        errorRecover: true,
         locale: "en",
       });
       const action = engine.handleStop({
@@ -538,6 +602,7 @@ review:
         verifyCommands: [],
         maxIdleStops: 5,
         maxErrorsBeforePause: 0,
+        errorRecover: true,
         locale: "en",
       });
       const action = engine.handleStop({

@@ -28,6 +28,11 @@ export interface ProjectReviewConfig {
    * `0` = never pause on errors (unlimited recoveries).
    */
   maxErrorsBeforePause: number;
+  /**
+   * When `false`, skip error-stop recover tips (and do not bump `error_count` /
+   * `repeated_errors` pause). Default `true` (missing/invalid → true).
+   */
+  errorRecover: boolean;
   locale: string;
 }
 
@@ -55,6 +60,7 @@ export const DEFAULT_PROJECT_REVIEW_CONFIG: ProjectReviewConfig = {
   verifyCommands: Object.freeze([]) as unknown as VerifyCommandConfig[],
   maxIdleStops: 5,
   maxErrorsBeforePause: 0,
+  errorRecover: true,
   locale: "en",
 };
 
@@ -102,6 +108,7 @@ function cloneDefaultProjectReviewConfig(): ProjectReviewConfig {
     verifyCommands: [],
     maxIdleStops: DEFAULT_PROJECT_REVIEW_CONFIG.maxIdleStops,
     maxErrorsBeforePause: DEFAULT_PROJECT_REVIEW_CONFIG.maxErrorsBeforePause,
+    errorRecover: DEFAULT_PROJECT_REVIEW_CONFIG.errorRecover,
     locale: DEFAULT_PROJECT_REVIEW_CONFIG.locale,
   };
 }
@@ -528,6 +535,7 @@ export function loadProjectReviewConfig(
     verifyCommands: verify.commands,
     maxIdleStops: stuck.max_idle_stops,
     maxErrorsBeforePause: errors.max_before_pause,
+    errorRecover: errors.recover,
     locale: parsed.locale,
   });
   if (configHasInstallableKimiCode(parsed) && cfg.confirmRounds > 1) {
@@ -586,6 +594,8 @@ export function normalizeProjectReviewConfig(raw: unknown): ProjectReviewConfig 
       1000,
       DEFAULT_PROJECT_REVIEW_CONFIG.maxErrorsBeforePause,
     ),
+    // Missing/invalid → true (fail-open to today's recover-on-error behavior).
+    errorRecover: coerceBool(o.errorRecover) ?? true,
     locale:
       typeof o.locale === "string" && o.locale.trim()
         ? o.locale.trim()
